@@ -7,23 +7,26 @@ hands. Written as the charter's `authority:` field.
 ## Ask
 
 **Delegate roles, never single decisions**: the software-engineering roles this run needs filled
-that the alignment did not keep for the person. Examples, to pick from and adapt:
+that the alignment did not keep for the person. **The list is fixed**, its names the same in every
+swarm, so that two swarms holding one role find each other; what a role covers in a run is
+described in the run's terms. Each role's file is `authority-roles/<role>.md`, read once you
+hold the role:
 
 | Role | Holds |
 |---|---|
-| product owner | scope, priorities, what is in or out |
-| product designer | user flows, screens, the experience |
-| architect | structure, boundaries, the technology choices |
-| tech lead | how the work is cut, conventions, trade-offs inside the design |
-| reviewer | judging what comes back, accepting or sending it back |
-| QA lead | what is checked, when quality is enough |
-| DevOps | build, CI, environments, dependencies, the merge, PR, release, deploys |
-| security | secrets, permissions, supply chain, exposure |
-| editor | a text's structure, claims and tone |
-| facilitator | steering a discussion: phases, seats, when it ends |
+| `product-owner` | scope, priorities, what is in or out |
+| `product-designer` | user journeys and flows, how features fit together |
+| `ui-ux-designer` | screens, interaction, visual design, the prototypes and the component library |
+| `architect` | structure, boundaries, the technology choices |
+| `tech-lead` | how the work is cut, conventions, trade-offs inside the design |
+| `reviewer` | judging what comes back, accepting or sending it back |
+| `qa-lead` | what is checked, when quality is enough |
+| `devops` | build, CI, environments, dependencies, the merge, PR, release, deploys |
+| `security` | secrets, permissions, supply chain, exposure |
+| `editor` | a text's structure, claims and tone |
+| `moderator` | steering a discussion: phases, seats, when it ends |
 
-**Ask only the roles the run will meet**, named in the person's words when they used some; a fix
-run needs no product designer. **A run that ends on a branch always asks DevOps**: every such run
+**Ask only the roles the run will meet**; a fix run needs no product designer. **A run that ends on a branch always asks DevOps**: every such run
 meets the merge.
 
 **One multiple-choice question, several answers allowed** (`AskUserQuestion`, `multiSelect`):
@@ -39,9 +42,15 @@ alignment. Over four roles, a second question in the same call, the next four.
 - **A level the person writes in for a role** ("decide, no need to show", "ask before any work")
   replaces it for that role.
 
+**Facilitator consent**, when the run is given a leadership role: one more option in the question,
+*Let the leadership board's facilitator settle conflicts between swarms*, recommended, with why: without
+it, a conflict involving this swarm waits on the person. Written in the line as `facilitator`.
+
 ## Hold
 
-- **The line**: `authority: product owner · reviewer (yours) · product designer · DevOps (theirs)`.
+- **You hold a leadership role and another active swarm holds one too**: you decide together on
+  the leadership board (`leadership-board.md`, read then).
+- **The line**: `authority: product owner · reviewer (yours) · product designer · DevOps (theirs) · facilitator`.
 - **A decision outside every role asked is the person's.**
 - **The person may hand over or take back a role mid-run** ("you judge from now on"): the field overwritten
   with the decision's id, as any amendment.

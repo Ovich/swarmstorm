@@ -4,7 +4,7 @@
 
 **`YYYY-MM-DD-<project>.roadmap.md`, kind `roadmap`**, dated at declaration and kept for the life of the project. Sections, in order:
 
-1. **Links**: the foundation, every board the project holds.
+1. **Links**: the foundation, every board the project holds, the project's `facilitator-<app>` skill when it has one (its vision; the `facilitator-create` skill).
 2. **The tracker diagram.**
 3. **One section per iteration**: its outcome in one or two sentences in the customer's words, the one end-to-end check a person performs when it lands, and its slots. An iteration with no customer-facing outcome, the foundation, states the operator's check instead: what runs where, and what a commit does.
 4. **The unscheduled pool**: one line per idea not yet placed.
