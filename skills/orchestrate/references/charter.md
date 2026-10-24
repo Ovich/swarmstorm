@@ -15,6 +15,7 @@ beside it (`pace: run through, the person merges (D41)`), and reaches the next b
 - `loop:` when the protocol has a cycle: `until <goal> · cap <n>`, `<n>`, or `unbounded`;
 - `effort:` the members' effort, `low` recommended, the person choosing another level for all,
   or per member where the kind sets levels per member. Passed at every dispatch, as *Dispatch*
-  says; never left to a subagent definition's own level unasked.
+  says; never left to a subagent definition's own level unasked;
+- `authority:` what the person delegates, per role, asked as `references/authority.md` says.
 
 Then the protocol's fields, then the kind's: their order and recommendations are their files'.

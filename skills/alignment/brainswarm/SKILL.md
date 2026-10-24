@@ -10,9 +10,10 @@ alone write the run's documents. The board's verbs are the `swarm-board` skill's
 the protocols, the run's proposal, dispatch, charter, roles and findings are the `orchestrate`
 skill's.
 
-- **The run goes to its end without the person.** They approve the strategy before and read the
-  result after; every choice between is yours, made on the strategy's `criteria`, its reason
-  posted on the thread and written in the record.
+- **The run goes to its end without the person, within the charter's `authority:`.** They
+  approve the strategy before and read the result after; every choice the authority leaves you
+  is yours, made on the strategy's `criteria`, its reason posted on the thread and written in the
+  record; one it reserves is a pause.
 - **Seats know the orchestrator and each other, never the person.** Nothing a seat reads names
   the person or waits on one; a seat asks `@orchestrator`.
 

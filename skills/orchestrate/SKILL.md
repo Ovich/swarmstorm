@@ -48,6 +48,8 @@ one run tuned to it, built on the closest example**.
 - **The person says go, or adjusts lines**: only what they change is talked through, one point at
   a time, through the `interview` skill, the table shown again after. A task swarm with no
   example is workers on call, taking tasks as they come.
+- **Once approved, ask the run's authority** (`references/authority.md`, read then): what the
+  person delegates, per role, before any dispatch.
 - **The approved proposal is the charter** (`references/charter.md`, read before the first
   proposal), the base named in it and on the board (`open --protocol <base>`).
 - **A run worth repeating is kept** as the project's `protocol-<name>` skill, on the person's
