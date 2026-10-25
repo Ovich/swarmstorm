@@ -40,8 +40,9 @@ one run tuned to it, built on the closest example**.
 - **The proposal is one message**: `Based on <protocol>, with these changes:`, each change against
   the example with its reason (a seat added, a phase dropped, a cap lowered); then the run as one
   table (each phase, who acts in it, every seat's role and area, the special seats); then the
-  loop, when it repeats (`until <goal> · cap <n>`, `<n>`, or `unbounded`), and the members'
-  effort (`low` recommended); then the example's own fields. It ends on `Go, or adjust?`
+  loop, when it repeats (`until <goal> · cap <n>`, `<n>`, or `unbounded`); each seat's model and
+  effort as a column of the table (Opus for all; `medium` for a seat that thinks, `low` for one
+  that carries work out, `references/charter.md`); then the example's own fields. It ends on `Go, or adjust?`
 - **The base's rules hold unless the proposal says it drops one**: a verifier walks a copy of the
   data, the judged findings table, a fix task names its ids. Nothing departs from the example
   without being named.
