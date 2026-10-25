@@ -221,18 +221,18 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
 /** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase.
  *  `shownTo`: a member's wait, deliver or read, which gets the full text the first time in a phase, then the short
  *  header naming where its text is (B15); the owed line stays whole elsewhere. */
-const phaseHeader = async (run: number, shownTo?: Participant): Promise<string | null> => {
+const phaseHeader = async (run: number, shownTo?: Participant): Promise<string | null> => (await phaseHeaders(run, shownTo)).printed;
+/** The phase header twice: `printed`, short after a member's first return in the phase (B15); `full`, always whole, for --json (F7). */
+const phaseHeaders = async (run: number, shownTo?: Participant): Promise<{ printed: string | null; full: string | null }> => {
   const shown = shownTo ? await board.showPhase(shownTo) : null;
   const ph = shown ? shown.phase : await board.currentPhase(run);
   const r = (await board.runs()).find((x) => x.id === run);
-  const head = !ph
-    ? null
-    : shown && !shown.first
-      ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo!.name)].join(" ")})`
-      : `phase ${ph.name}: ${ph.text}`;
-  if (r?.paused == null) return head;
+  const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
+  const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo!.name)].join(" ")})` : whole;
+  if (r?.paused == null) return { printed: short, full: whole };
   const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
-  return [head, `PAUSED${why}`].filter(Boolean).join("  ");
+  const withPause = (head: string | null) => [head, `PAUSED${why}`].filter(Boolean).join("  ");
+  return { printed: withPause(short), full: withPause(whole) };
 };
 /** `phase <name>: <text>  <n>/<m> done[, <k> gone]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
@@ -278,14 +278,15 @@ const SHELL_TOOL_TIMEOUT = "give your shell tool a 600000 ms timeout";
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold and the tool timeout to give it. */
 const waitCommand = (name: string, foreground = false): string => {
   const line = [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
-  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS} (${SHELL_TOOL_TIMEOUT})` : line;
+  // the command alone, so it runs as copied (F6); the tool-timeout sentence sits in the prose before the colon
+  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS}` : line;
 };
 const listensInForeground = (p: Pick<Participant, "slice" | "kind">): boolean => p.slice !== "orchestrator" && profileOf(p.kind).member === "seat";
 /** The line that starts a member's listener: the exact command, --as included (D61); `afterPhase`: it
  *  follows the owed-phase line, so a seat waits only once its part is in. */
 const listenNow = (p: Pick<Participant, "name" | "slice" | "kind">, afterPhase = false): string =>
   listensInForeground(p)
-    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone): ${waitCommand(p.name, true)}`
+    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`
     : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
 
 /** The step a member owing the run's open phase takes before any wait: a member that joined, or woke,
@@ -307,7 +308,7 @@ const pausedLine = async (p: Participant): Promise<string | null> => {
   if (!run || run.paused == null) return null;
   // a pause waiting on the person says so (idea 2, B12); any other reads as before
   const why = run.pausedPerson ? `: waiting on the person: ${run.paused || "their decision"}` : run.paused ? `: ${run.paused}` : "";
-  return `run ${p.run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${waitCommand(p.name, true)}`;
+  return `run ${p.run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
 };
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
 const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => {
@@ -618,7 +619,7 @@ ${USAGE}`);
       const name = args.positional[0] ?? fail(`done: which phase?\n${USAGE}`);
       const r = await board.done(p, name);
       // the member's next step (rule 10): wait for the next phase
-      const next = `wait for the next phase, in the foreground: ${waitCommand(p.name, true)}`;
+      const next = `wait for the next phase, in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
       emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
         // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
         const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
@@ -721,10 +722,10 @@ ${USAGE}`);
       if (by && (await answeredClosed(by))) break;
       const m = await board.read(seq, by);
       // the phase the message's run is in, first (the caller's run when one is known)
-      const phase = await phaseHeader(by?.run ?? m.run, by);
+      const { printed: phase, full: phaseFull } = await phaseHeaders(by?.run ?? m.run, by);
       // a member owing the open phase is told to do it, last
       const owes = by ? await owedLine(by) : null;
-      emit({ ...m, phase, ...(owes ? { next: owes } : {}) }, () => {
+      emit({ ...m, phase: phaseFull, ...(owes ? { next: owes } : {}) }, () => {
         if (phase) console.log(phase);
         console.log(fullText(m));
         if (owes) console.log(owes);
@@ -754,10 +755,10 @@ ${USAGE}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
       // the run's phase heads every delivery that carries something
-      const phase = d.full.length || d.lines.length ? await phaseHeader(me.run, me) : null;
+      const { printed: phase, full: phaseFull } = d.full.length || d.lines.length ? await phaseHeaders(me.run, me) : { printed: null, full: null };
       // a member owing the open phase is told to do it, last
       const owes = mentionsOnly ? null : await owedLine(me);
-      emit({ phase, ...d, ...(owes ? { next: owes } : {}) }, () => {
+      emit({ phase: phaseFull, ...d, ...(owes ? { next: owes } : {}) }, () => {
         if (phase) console.log(phase);
         printDelivery(d);
         if (owes) console.log(owes);
@@ -786,13 +787,13 @@ ${USAGE}`);
       if (asJson) again.push("--json");
       // a wait run in the foreground holds under the shell tool's limit (B7); a background listener holds as it was given
       const againForeground = raw === undefined ? [...again, "--timeout", String(FOREGROUND_WAIT_MS)] : again;
-      const foregroundLine = `${againForeground.join(" ")} (${SHELL_TOOL_TIMEOUT})`;
+      const foregroundLine = againForeground.join(" ");
       if (!d.full.length && !d.lines.length) {
         // a timeout: the line to run again (B7); the runner ended: nothing to re-arm
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
         else {
-          const next = (await pausedLine(p)) ?? `nothing yet; wait again: ${p.slice === "orchestrator" ? again.join(" ") : foregroundLine}`;
+          const next = (await pausedLine(p)) ?? (p.slice === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
           emit({ ...d, next }, next);
         }
         break;
@@ -805,16 +806,16 @@ ${USAGE}`);
         : listensInForeground(p)
         ? owes
           ? `${owes}
-only then wait again, in the foreground: ${foregroundLine}`
-          : `answer on the thread if needed, then wait again, in the foreground: ${foregroundLine}`
+only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
+          : `answer on the thread if needed, then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
         : p.slice === "orchestrator"
           ? `act on it, then start this listener again, in the background: ${again.join(" ")}`
-          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: ${foregroundLine}`;
+          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
 ${rearm}` : rearm;
       // the run's phase first, so a member always knows which phase it answers in
-      const phase = await phaseHeader(p.run, p);
-      emit({ phase, next, ...d }, () => {
+      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p);
+      emit({ phase: phaseFull, next, ...d }, () => {
         if (phase) console.log(phase);
         console.log(next);
         printDelivery(d);
