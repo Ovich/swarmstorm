@@ -285,10 +285,11 @@ test("wait prints, before the message, the line that re-arms it with the exact c
     `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 5000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
-  // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the line to run again
+  // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the
+  // line to run again, always at the foreground --timeout 540000 whatever the caller gave (v1-c)
   const again = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50");
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(again.stdout, `nothing yet; wait again (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 50\n`);
+  assert.equal(again.stdout, `nothing yet; wait again (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 540000\n`);
 });
 
 const LISTEN = (runner: string): string =>
@@ -1137,7 +1138,9 @@ test("a printed wait line ends on its bare command, and that command, run as cop
   assert.match(empty, /^nothing yet; wait again \(give your shell tool a 600000 ms timeout\): node /);
   const command = empty.slice(empty.lastIndexOf(": ") + 2);
   assert.doesNotMatch(command, /[()]/, "no prose after the command");
-  const words = command.split(" ");
+  assert.match(command, / --timeout 540000$/, "v1-c: the foreground re-arm, whatever the caller gave");
+  // run as copied, its timeout shortened for the test only
+  const words = command.replace(/--timeout 540000$/, "--timeout 50").split(" ");
   assert.equal(words[0], "node");
   const copied = spawnSync(process.execPath, words.slice(1), { cwd: repo, env: env(), encoding: "utf8" });
   assert.equal(copied.status, 0, copied.stderr);
