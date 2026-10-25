@@ -57,6 +57,8 @@ export function RunViewSwitch({
   phases?: { name: string; text: string }[];
 }) {
   const [copied, setCopied] = useState(false);
+  /** Pressed "n earlier": every phase drawn; pressed "fold" folds them back. */
+  const [unfolded, setUnfolded] = useState(false);
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(false), 1200);
@@ -74,17 +76,20 @@ export function RunViewSwitch({
       {phases.length > 1 ? (
         <span className="phases" data-component="PhaseStrip">
           {phases.length > PHASES_SHOWN && (
-            <span
+            <button
+              type="button"
               className="pseg done earlier"
-              title={phases
+              aria-expanded={unfolded}
+              onClick={() => setUnfolded(!unfolded)}
+              title={unfolded ? "Fold the earlier phases" : phases
                 .slice(0, phases.length - PHASES_SHOWN)
                 .map((p, i) => `${i + 1}. ${labels[i]}${p.text ? `: ${p.text}` : ""}`)
                 .join("\n")}
             >
-              <span className="name">{phases.length - PHASES_SHOWN} earlier</span>
-            </span>
+              <span className="name">{unfolded ? "fold" : `${phases.length - PHASES_SHOWN} earlier`}</span>
+            </button>
           )}
-          {phases.slice(-PHASES_SHOWN).map((p, k, shownPhases) => {
+          {phases.slice(unfolded ? 0 : -PHASES_SHOWN).map((p, k, shownPhases) => {
             const now = k === shownPhases.length - 1;
             const label = labels[phases.length - shownPhases.length + k];
             return (

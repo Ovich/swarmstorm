@@ -612,7 +612,8 @@
 .board .pseg .name { font-size: 13px; font-weight: 600; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; }
 .board .pseg .said { font-size: 12.5px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; }
 .board .pseg.done { flex: 0 1 auto; background: var(--ok-soft); box-shadow: inset 3px 0 0 var(--ok); max-width: 220px; }
-.board .pseg.earlier { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--ok); cursor: help; }
+.board .pseg.earlier { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--ok); cursor: pointer; border: 0; font: inherit; }
+.board .pseg.earlier:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .board .pseg.earlier .name { color: var(--muted-foreground); }
 .board .pseg.done .name { font-weight: 500; }
 .board .pseg.done .ok { color: var(--ok); font-size: 12px; }
