@@ -23,7 +23,7 @@ Dispatched on the `verifier` agent, which holds how a verifier behaves under bui
 brief gives only this run.
 
 ```markdown
-**Plan**: `<file name>`, aiview id `#<id>`. **Board**: run `<run id>` on `<repository>`, protocol build-verify, seat `<v1>`<, the app owner>; what the phases before left is on the thread: `thread <phase>`.
+**Plan**: `<file name>`, aiview id `#<id>`. **Board**: run `<run id>` on `<repository>`, protocol build-verify, seat `<v1>`, ports `<range>` for your own instance<, one instance only: lock `app:<name>`>; what the phases before left is on the thread: `thread <phase>`.
 
 **Workspace**: a detached worktree of `<branch>`. **Prepare**: `<the command>`.
 
