@@ -20,6 +20,8 @@ on:
     paths:
       - .claude-plugin/plugin.json
       - .claude-plugin/marketplace.json
+      - .codex-plugin/plugin.json
+      - .cursor-plugin/plugin.json
   workflow_dispatch:
 
 permissions:
@@ -57,6 +59,16 @@ jobs:
             echo "::error::Version disagreement: plugin.json says '$plugin', marketplace.json says '$market'. plugin.json wins at install time, so this would release '$plugin' while the catalogue advertises '$market'."
             exit 1
           fi
+
+          # Codex caches by its own manifest's version, Cursor's marketplace reads its own:
+          # a stale number there ships the old copy to that harness alone.
+          for f in .codex-plugin/plugin.json .cursor-plugin/plugin.json; do
+            other=$(jq -r '.version // empty' "$f")
+            if [ "$plugin" != "$other" ]; then
+              echo "::error file=$f::Version disagreement: .claude-plugin/plugin.json says '$plugin', $f says '$other'. Bump all four manifests together (RELEASING.md)."
+              exit 1
+            fi
+          done
 
           # Cheap typo guard. Permissive enough for a prerelease (1.2.0-rc1).
           case "$plugin" in
