@@ -318,6 +318,31 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
   emit({ run: p.run, paused: true, refused: verb, next: line }, `${verb} refused: ${line}`);
   return true;
 };
+/** The orchestrator's step after `open` of a task or plan run (idea 3): open the protocol's first phase before any
+ *  task, or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm).
+ *  The reading pointer sits before the colon, the command last (F6). */
+const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): string | null => {
+  if (kind !== "task" && kind !== "plan") return null;
+  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord(`${group}/orchestrator`)}`;
+  const pointer = "(its protocol.md's phase table names them)";
+  return protocol
+    ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}`
+    : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
+};
+
+/** The first-phase line once more, on the orchestrator's first post mentioning a member while its task or plan run
+ *  has no phase open (idea 3, C3); null on any later post, with a phase open, or for any other author. "First" is
+ *  read from the board's recent messages: no earlier orchestrator post of this run mentioning a member. */
+const firstTaskPostLine = async (p: Participant, m: Message): Promise<string | null> => {
+  if (p.slice !== "orchestrator" || !(m.mentions ?? []).some((x) => x !== p.name)) return null;
+  const run = (await board.runs()).find((r) => r.id === p.run);
+  if (!run || (run.kind !== "task" && run.kind !== "plan") || (await board.currentPhase(p.run))) return null;
+  const earlier = (await board.snapshot(p.repo)).events.some(
+    (e) => e.run === p.run && e.seq < m.seq && e.from === p.name && e.kind !== "event" && (e.mentions ?? []).some((x) => x !== p.name),
+  );
+  return earlier ? null : firstPhaseLine(run.kind, run.group, run.protocol);
+};
+
 /** A member's next step where it would be told to listen: the pause first, then the owed phase. */
 const nextStep = async (p: Participant): Promise<string> => {
   const paused = await pausedLine(p);
@@ -522,13 +547,16 @@ async function main(): Promise<void> {
       const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
       // the person watches the project's board on aiview's /board page
       const doc = registerBoard({ toolRoot: toolRoot(), cwd: process.cwd(), repo: run.repo });
+      // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
+      const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
+      const lines = (url: string | null) => [String(run.id), url, link, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link }, [String(run.id), link].join("\n"));
+        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, ...(next ? { next } : {}) }, lines(null));
         break;
       }
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link }, [String(run.id), doc.url, link].join("\n"));
+      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link, ...(next ? { next } : {}) }, lines(doc.url));
       break;
     }
     case "slice": {
@@ -690,12 +718,25 @@ ${USAGE}`);
         kind: args.verb === "agree" ? "agreement" : "msg",
       });
       const unmatched = await unmatchedLines(p, body);
-      await emitHeard(p, { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) }, () => {
+      // the orchestrator's first task post into a run with no phase open ends on the first-phase line, once (idea 3)
+      const phaseNext = args.verb === "post" ? await firstTaskPostLine(p, m) : null;
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
+      const human = () => {
         console.log(seqLine(m));
         // posting is claiming (D7)
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
-      });
+      };
+      if (phaseNext) {
+        // its own last line: a listener line, when one is due, comes before it
+        const listen = !p.ended && !p.listening ? await nextStep(p) : null;
+        emit({ ...json, ...(listen ? { listen } : {}), next: phaseNext }, () => {
+          human();
+          if (listen) console.log(listen);
+          console.log(phaseNext);
+        });
+      }
+      else await emitHeard(p, json, human);
       break;
     }
     case "endorse": {
