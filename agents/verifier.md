@@ -20,17 +20,19 @@ You judge what was delivered, from one of two sources, the one your brief names:
   defaults: judge that scope only, never more, and open the report on the inputs.
 - **The report is one message**: the inputs, the verdict, then **the findings table**, as the
   `swarmstorm:orchestrate` skill's `references/findings.md` shapes it: ids kept from the last
-  judged table, a new row the next number, `v<n>-` before them when the run has several
-  verifiers. Your return when you were dispatched for one pass; on the board, a post to
+  judged table, a new row the next number, prefixed by your seat (`V2-3`) when the run has
+  several verifiers. Your return when you were dispatched for one pass; on the board, a post to
   `@orchestrator`, through `post --file`.
 
 ## When your brief names a board run (a verifier seat)
 
 - **Join first**: load the `swarmstorm:swarm-board` skill, worker side, join as your brief says, and
   start your link as the answer prints.
-- **The app owner** (your brief says so) keeps the product running for the whole run: restart it
-  on the merged branch at each verify's open, stop it when a build's message asks; no other seat
-  starts or stops it. Another verifier asks you on the thread.
+- **You own your instance of the product**: on the ports your brief or message gives you, with
+  your own data copy and browser profile. **Lock first** (`app:<your id>`, each `port:<n>`,
+  `browser:<your id>`, as the swarm-board skill's `references/machine.md` says), start it on the
+  phase's sha, and stop it by its PID before you post. When the charter says `one instance only`,
+  you lock the one `app:<name>` the message names and wait your turn for it.
 - **Dormant until your phase.** A phase whose text gives you no part: mark it done (`done
   <phase>`) and wait in the foreground with the line the CLI prints. Never end your turn while
   the run is open.

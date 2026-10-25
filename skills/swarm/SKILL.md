@@ -20,7 +20,7 @@ skill says, the protocol filled in. On a no, do it yourself.
 **Propose the run as the `orchestrate` skill's *Propose the run* says**, built on the closest example
 (build-verify when the work must be seen working; none for workers on call), with: how many
 workers (3 to start from, reconsidered against the estimate of the work as *Propose the run* says) and each one's area; under
-build-verify, the verifiers, their focus and source, the app owner; the loop; each seat's model and effort (Opus; builders `low`, verifiers `medium`);
+build-verify, the verifiers (sized from the verify's steps), their focus, source and port range, whether only one instance can run; the loop; each seat's model and effort (Opus; builders `low`, verifiers `medium`);
 **the branch** their work merges into, a new `swarm/<topic>` off the current branch by default.
 
 ## Open and dispatch
@@ -28,7 +28,8 @@ build-verify, the verifiers, their focus and source, the app owner; the loop; ea
 1. Create the branch, push it, and leave it checked out nowhere (detach the main checkout): a
    worker fast-forwards it from its own worktree.
 2. A seats file, one row per worker, `w1` … `w<n>`, titled `worker`, and under build-verify one
-   per verifier, `v1` … `v<m>`, titled `verifier · <focus>`; then `$S open --kind task
+   per verifier, `v1` … `v<m>`, titled `verifier · <focus>`, with `"busyMax": 300000` (a browser or
+   other non-shell call hung 5 min is told to you) and its own port range in its brief; then `$S open --kind task
    --group <topic> --title "<what the swarm is for>" --seats <file>` with `--protocol <the
    charter's base>` when it runs one, or `--protocol none` for a swarm with no phases on purpose,
    and start your link as it prints; under a protocol, open its first phase before the first
@@ -45,7 +46,7 @@ build-verify, the verifiers, their focus and source, the app owner; the loop; ea
    (`subagent_type: "swarmstorm:verifier"`), no `isolation`:
 
    ```markdown
-   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`<, the app owner>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Join now; each verify phase's message scopes your pass.
+   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: lock `app:<name>`>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Join now; each verify phase's message scopes your pass.
    ```
 
 ## Giving work

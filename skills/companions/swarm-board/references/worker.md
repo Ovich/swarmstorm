@@ -70,7 +70,7 @@ above, then `$S done <phase>` once it is merged. A phase that gives you no part 
 builder): stay on call, answer a verifier's question on the thread, change nothing, `$S done
 <phase>` at once. **Never start or stop the product the verifiers walk**: a task whose done-when asks to see your
 change running serves your own build on the spare port the task names, stopped right after; any
-other check asks the app owner on the thread. What you start, stop or sign in to follows
+other check asks a verifier on the thread. What you start, stop or sign in to follows
 `references/machine.md`. **A pause**: the board's answer says to stop and wait; do only that until the resume.
 
 ## Along the way

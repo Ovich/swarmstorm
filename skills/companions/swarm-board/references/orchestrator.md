@@ -13,7 +13,7 @@ except `open`, `slice`, `close` and `status`.
 
      ```json
      [{ "id": "w1", "title": "worker", "role": "builder · the api", "link": "<plan URL>" },
-      { "id": "v1", "title": "verifier · the app", "role": "verifier, app owner", "link": "<plan URL>" }]
+      { "id": "v1", "title": "verifier · the app", "role": "verifier", "link": "<plan URL>", "busyMax": 300000 }]
      ```
 
    - **A brainstorm**: every seat, with its `role` and the brainstorm board's URL as `link`;
@@ -32,6 +32,10 @@ except `open`, `slice`, `close` and `status`.
      ended, stale` on a brainstorm (*Watching the thread* says what carried means). An explicit
      `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
      its row's list; `subscribe` / `unsubscribe` change it later.
+   - **`busyMax`** (ms), on any row: how long a **non-shell** call (a browser or other tool step)
+     of that seat may stay open before `stalled · call` tells you; a shell call keeps its own
+     timeout and the default 15 min. Set it on a verifier (`300000`), where a hung browser step
+     would hold the walk. `slice add <id> --busy-max <ms>` sets it on a seat added later.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
