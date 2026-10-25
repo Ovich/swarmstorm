@@ -4,7 +4,7 @@
 import type { Message, Participant } from "./board.ts";
 import { profileOf } from "./kinds.ts";
 
-export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness";
+export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered";
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
 export type Subscription = { event: EventName; scope: Scope };
@@ -21,6 +21,27 @@ export interface EventDef {
 
 /** A POSIX shell word, double-quoted when it holds anything else than plain characters. */
 const word = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
+
+/** The move a `stalled` asks of the orchestrator, by the rule that made its member quiet (idea 1, rule 6); a
+ *  stalled stored before the rules gives the general move. */
+function stalledMove(m: Message, me: Participant, cli: string): string {
+  const meta = m.meta && "rule" in m.meta ? m.meta : null;
+  const id = meta?.member ?? "<member>";
+  switch (meta?.rule) {
+    case "ended":
+      return "a post does not wake it: SendMessage it, or dispatch it again";
+    case "in-turn":
+      return "SendMessage it; if it does not answer, dispatch it again";
+    case "background":
+      return `ask it: ${cli} post ${word(`@${id} …`)} --as ${word(me.name)}, or SendMessage it if its turn ended`;
+    case "call":
+      return "SendMessage it to stop the call";
+    case "owing":
+      return `${cli} post ${word(`@${id} your part of ${meta.phase ?? "<phase>"}`)} --as ${word(me.name)}: its wait returns on it`;
+    default:
+      return `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${word(me.name)})`;
+  }
+}
 
 export const EVENTS: Record<EventName, EventDef> = {
   // a seat backs another member's agreement (D36)
@@ -85,9 +106,10 @@ export const EVENTS: Record<EventName, EventDef> = {
   stalled: {
     name: "stalled",
     toAuthor: true,
-    next: (_m, me, cli) =>
-      me.slice === "orchestrator" ? `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${word(me.name)})` : null,
+    next: (m, me, cli) => (me.slice === "orchestrator" ? stalledMove(m, me, cli) : null),
   },
+  // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
+  recovered: { name: "recovered", toAuthor: true },
   // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
   gone: {
     name: "gone",

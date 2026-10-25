@@ -96,3 +96,7 @@ export const BUSY_MAX_MS = 15 * 60 * 1000;
 export const STALLED_AGAIN_MS = 15 * 60 * 1000;
 /** A member's link closed and not back this long: the member is `gone` (D12). */
 export const LINK_LOST_MS = 30 * 1000;
+/** A member in turn (its last line not an ended turn) is quiet only after this with no line (idea 1, rule 1). */
+export const IN_TURN_MS = 120 * 1000;
+/** A member waiting on the board while it owes the open phase is `quiet · waiting, not done` once its owing span is this long (idea 1, rule 5). */
+export const OWE_WAIT_MS = 10 * 60 * 1000;

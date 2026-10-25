@@ -141,7 +141,22 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   };
   const linked = (m: NonNullable<Speaker["member"]>, connected: boolean): void =>
     keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
-  const presenceIn = (run: number): Presence => (member) => links.get(run)?.get(member) ?? { connected: false, lostAt: null };
+  /** Per run, per member: the transcript path its link last sent (idea 1, rule 4). */
+  const transcripts = new Map<number, Map<string, string>>();
+  /** A transcript's mtime, a stat and never a read; null when it is not a file. */
+  const grewAt = (file: string | undefined): number | null => {
+    if (!file) return null;
+    try {
+      const st = fs.statSync(file);
+      return st.isFile() ? st.mtimeMs : null;
+    } catch {
+      return null;
+    }
+  };
+  const presenceIn = (run: number): Presence => (member) => {
+    const link = links.get(run)?.get(member) ?? { connected: false, lostAt: null };
+    return link.connected ? link : { ...link, transcriptGrewAt: grewAt(transcripts.get(run)?.get(member)) };
+  };
   /** An upkeep or tick that throws is logged, and the server goes on (S21). */
   const logged = (what: string, fn: () => void): void => {
     try {
@@ -259,6 +274,12 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       else if (f.type === "bye") socket.close();
       else if (f.type === "activity" && s.member) {
         const m = s.member;
+        const file = f.activity.transcript;
+        if (file) {
+          const members = transcripts.get(m.run) ?? new Map<string, string>();
+          transcripts.set(m.run, members);
+          members.set(memberOf(m.name), file);
+        }
         logged("activity", () => board.recordActivity(m.run, memberOf(m.name), f.activity, now()));
       } else if (f.type === "subscribe") s.subscribed = true;
     });

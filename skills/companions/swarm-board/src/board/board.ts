@@ -12,7 +12,7 @@ import { statsOf, summarize, type Stats, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
 import { type EventName, type Subscription, EVENTS, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, IDLE_MS, LINK_LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
+import { BUSY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 
 export type RunId = number;
@@ -46,9 +46,10 @@ export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.l
 /** A member's state from its activity and its link (swarm-relay D9, D31, E12, D12). */
 export type MemberStateName = "working" | "busy" | "waiting" | "quiet" | "gone";
 /** `doing`: the open tool, else the last; `since`: ms epoch the state counts from; `reason`: why quiet or gone. */
-export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; reason?: string };
-/** Whether a member's link is connected, and since when it is lost (null: connected, or never linked). Kept by the server. */
-export type Presence = (member: string) => { connected: boolean; lostAt: number | null };
+export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; reason?: string; rule?: StallRule; owes?: string };
+/** Whether a member's link is connected, and since when it is lost (null: connected, or never linked). Kept by the server.
+ *  `transcriptGrewAt`: for a member whose link is lost, its transcript's mtime (ms epoch), null when it cannot be read. */
+export type Presence = (member: string) => { connected: boolean; lostAt: number | null; transcriptGrewAt?: number | null };
 /** A member's liveness as the page draws it (D20): its state, its counter from its link's last activity, and its two
  *  ages (swarm-relay D38): `progressAt` its last progress, `aliveAt` its last sign of life by its link, the time
  *  read while the link is up (ms epoch; null: never linked). */
@@ -194,8 +195,12 @@ export type SnapshotRunner = {
 export type MergedMeta = { rebase: string[]; tell: string[] };
 /** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
 export type PhaseMeta = { phase: string };
-/** What an event carries as data, by its event: merged or phase. */
-export type MessageMeta = MergedMeta | PhaseMeta;
+/** Which rule made a member quiet (idea 1, rule 6): the `stalled` stores it, and its `next` prints that rule's move. */
+export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing";
+/** A stalled event's data: its rule, the member's id, and for `owing` the phase it owes. */
+export type StalledMeta = { rule: StallRule; member: string; phase?: string };
+/** What an event carries as data, by its event: merged, phase or stalled. */
+export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -669,6 +674,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
   upkeep("runs", "protocol", "protocol TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
+  // idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
+  upkeep("member_activity", "in_turn", "in_turn INTEGER");
+  upkeep("member_activity", "last_line", "last_line TEXT");
+  upkeep("member_activity", "bg_target", "bg_target TEXT");
+  upkeep("member_activity", "bg_since", "bg_since INTEGER");
+  upkeep("member_activity", "bg_grew_at", "bg_grew_at INTEGER");
+  upkeep("member_activity", "transcript", "transcript TEXT");
+  // the owing span (idea 1, rule 5): since when the member waits while owing the phase, and when its last wait returned
+  upkeep("member_activity", "owe_since", "owe_since INTEGER");
+  upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
   const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
@@ -1067,7 +1082,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const inWait = heldSince != null;
     if (a && Number(a.finished) === 1) return { member, state: "gone", doing: null, since: Number(a.at), reason: "its agent finished without end" };
     const link = presence(member);
-    if (!link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS) return { member, state: "gone", doing: null, since: link.lostAt, reason: "its link was lost" };
+    // idea 1, rule 4: a lost link is gone only once the transcript too has been still LINK_LOST_MS; lost but growing is working
+    const linkLost = !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS;
+    const transcriptGrowing = link.transcriptGrewAt != null && t - link.transcriptGrewAt < LINK_LOST_MS;
+    if (linkLost && !transcriptGrowing) return { member, state: "gone", doing: null, since: link.lostAt, reason: "its link was lost" };
+    if (linkLost) return { member, state: "working", doing: a?.last_tool == null ? null : String(a.last_tool), since: link.transcriptGrewAt ?? null, reason: "link down" };
     // no activity (no link has spoken): presence only, never working without evidence (D9, D33)
     if (!a) {
       if (inWait) return { member, state: "waiting", doing: null, since: null };
@@ -1077,22 +1096,95 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
     // D31, D35, D45: waiting is the open call that runs the board's own `wait`, while the board holds the member's wait; any
     // other open call (a browser's wait_for, a test run) is work, even with a background listener held
-    if (open && heldSince != null && Number(a.open_wait) === 1) return { member, state: "waiting", doing: open, since: Number(a.open_since) };
+    const stallMs = Number(run.stall_ms ?? STALL_MS_DEFAULT);
+    const last = a.last_tool == null ? null : String(a.last_tool);
+    // idea 1, rule 6: every reason ends on the member's last line, its last text or its last call
+    const lastLine = a.last_line == null ? last : String(a.last_line);
+    const said = `; last: "${lastLine ?? ""}"`;
+    if (open && heldSince != null && Number(a.open_wait) === 1) {
+      // idea 1, rule 5: a wait while owing the phase is quiet once the owing span is long enough
+      const owing = owingOf(p, run, a, t, stallMs);
+      if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
+      return { member, state: "waiting", doing: open, since: Number(a.open_since) };
+    }
     // busy for as long as the call is open, its true state; past BUSY_MAX_MS its reason says so, and the orchestrator is
     // told by the stalled check, since a call that long may be hung (swarm-relay D46)
     if (open) {
       const since = Number(a.open_since);
       const long = t - since >= BUSY_MAX_MS;
-      return { member, state: "busy", doing: open, since, ...(long ? { reason: `busy ${Math.floor((t - since) / 60000)} min in one call, link ${link.connected ? "alive" : "down"}; it may be hung` } : {}) };
+      return { member, state: "busy", doing: open, since, ...(long ? { reason: `call open ${minutes(BUSY_MAX_MS)} min, may be long or hung${said}`, rule: "call" as const } : {}) };
     }
-    const last = a.last_tool == null ? null : String(a.last_tool);
     const progressed = progressAtOf(p, run, a);
-    if (t - progressed < Number(run.stall_ms ?? STALL_MS_DEFAULT)) return { member, state: "working", doing: open ?? last, since: progressed };
-    // E12: a member stopped with no call open (its last line a background task's result) is quiet too; D36: the reason
-    // names the missing signal, the link, and the last call
-    const lastCall = open ? `${open} (open ${Math.floor((t - Number(a.open_since)) / 60000)} min)` : last;
-    const reason = `no progress for ${Math.floor((t - progressed) / 1000)}s, link ${link.connected ? "alive" : "down"}${lastCall ? `; last ${lastCall}` : ""}`;
-    return { member, state: "quiet", doing: open ?? last, since: progressed, reason };
+    if (t - progressed < stallMs) return { member, state: "working", doing: last, since: progressed };
+    // idea 1, rule 1: in turn, a member is quiet only after IN_TURN_MS with no line
+    const inTurn = a.in_turn == null ? null : Number(a.in_turn) === 1;
+    if (inTurn === true && t - progressed < IN_TURN_MS) return { member, state: "working", doing: last, since: progressed };
+    // idea 1, rule 2: an awaited background task keeps it busy while its output grows, up to BUSY_MAX_MS from its start
+    if (a.bg_target != null) {
+      const target = String(a.bg_target);
+      const bgSince = Number(a.bg_since);
+      const outputAt = a.bg_grew_at == null ? bgSince : Number(a.bg_grew_at);
+      const capped = t - bgSince >= BUSY_MAX_MS;
+      if (!capped && t - outputAt < stallMs) return { member, state: "busy", doing: `background ${target}`, since: bgSince };
+      const reason = capped ? `background ${target} ${minutes(BUSY_MAX_MS)} min${said}` : `background ${target} silent ${Math.round(stallMs / 1000)} s`;
+      return { member, state: "quiet", doing: `background ${target}`, since: capped ? bgSince : outputAt, reason, rule: "background" };
+    }
+    if (inTurn === true) return { member, state: "quiet", doing: last, since: progressed, reason: `in turn, no line for ${minutes(IN_TURN_MS)} min (its model may be hung)${said}`, rule: "in-turn" };
+    if (inTurn === false) return { member, state: "quiet", doing: last, since: progressed, reason: `turn ended${said}`, rule: "ended" };
+    // a link older than idea 1 sends no turn state: the reason names the missing signal, the link, and the last call (D36)
+    const reason = `no progress for ${Math.floor((t - progressed) / 1000)}s, link ${link.connected ? "alive" : "down"}${last ? `; last ${last}` : ""}`;
+    return { member, state: "quiet", doing: last, since: progressed, reason };
+  };
+  const minutes = (ms: number): number => Math.round(ms / 60000);
+  /** The phase `p` owes now: the run's open phase it has not run `done` for; null for the orchestrator or none open. */
+  const owedNameOf = (p: Row, run: Row): string | null => {
+    if (String(p.slice) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
+    const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run.id), Number(p.id), String(run.phase));
+    return done ? null : String(run.phase);
+  };
+  /** Since when every other live member (the orchestrator apart) has been in a board wait or done the phase, by run;
+   *  the in-memory start of the condition rule 5 holds stall_ms. */
+  const othersSettledSince = new Map<number, number>();
+  /** Idea 1, rule 5: the owing span of `p`, when it has lasted long enough to be quiet: every other live member waiting
+   *  or done for stall_ms, or the span OWE_WAIT_MS; null otherwise. The span itself is kept by the tick (`keepOwingSpan`). */
+  const owingOf = (p: Row, run: Row, a: Row, t: number, stallMs: number): { phase: string; since: number } | null => {
+    const phase = owedNameOf(p, run);
+    if (phase == null || a.owe_since == null) return null;
+    const since = Number(a.owe_since);
+    if (t - since >= OWE_WAIT_MS) return { phase, since };
+    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND slice != ?").all(Number(run.id), Number(p.id), ORCHESTRATOR) as Row[];
+    const settled = others.every((o) => {
+      const oa = activityOf(Number(run.id), String(o.slice));
+      const waits = heldWaits.has(Number(o.id)) && (oa == null || Number(oa.open_wait) === 1);
+      return waits || owedNameOf(o, run) == null;
+    });
+    const key = Number(p.id);
+    if (!settled) {
+      othersSettledSince.delete(key);
+      return null;
+    }
+    const from = othersSettledSince.get(key) ?? t;
+    othersSettledSince.set(key, from);
+    return t - Math.max(from, since) >= stallMs ? { phase, since } : null;
+  };
+  /** Idea 1, rule 5: the owing span opens at the first board wait entered while the member owes the phase, carries
+   *  across a wait re-entered within stall_ms of the last one returning, and ends on any other progress or on `done`. */
+  const keepOwingSpan = (run: Row, p: Row, a: Row, t: number): void => {
+    const set = (oweSince: number | null, leftAt: number | null): void => {
+      if ((a.owe_since == null ? null : Number(a.owe_since)) === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt) return;
+      db.prepare("UPDATE member_activity SET owe_since = ?, wait_left_at = ? WHERE run = ? AND member = ?").run(oweSince, leftAt, Number(run.id), String(p.slice));
+    };
+    const held = heldWaits.get(Number(p.id));
+    const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
+    if (owedNameOf(p, run) == null) return set(null, null);
+    if (inWait) return set(a.owe_since == null ? held : Number(a.owe_since), null);
+    if (a.owe_since == null) return;
+    const leftAt = a.wait_left_at == null ? t : Number(a.wait_left_at);
+    const progressAt = p.progress_at == null ? 0 : Date.parse(String(p.progress_at));
+    const otherCall = a.open_tool != null && Number(a.open_wait) !== 1;
+    const lapsed = t - leftAt >= Number(run.stall_ms ?? STALL_MS_DEFAULT);
+    if (otherCall || progressAt > leftAt || lapsed) return set(null, null);
+    set(Number(a.owe_since), leftAt);
   };
   /** The states of a run's live members (not ended), keyed by member. */
   const statesOf = (run: RunId, t: number): Map<string, MemberState> => {
@@ -1559,6 +1651,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
            ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
              open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`,
         ).run(run, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
+        // idea 1: the turn state, last line, awaited background task and transcript path; absent from an older link, kept null
+        const bg = act.background ?? null;
+        db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(
+          act.inTurn == null ? null : act.inTurn ? 1 : 0,
+          act.lastLine ?? null,
+          bg?.target ?? null,
+          bg?.since ?? null,
+          bg?.outputGrewAt ?? null,
+          act.transcript ?? null,
+          run,
+          member,
+        );
         db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run, member, at.toISOString(), act.tokens);
         bump(String(r.repo));
       });
@@ -1579,6 +1683,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const t = at.getTime();
       transaction(() => {
         db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run, new Date(t - READINGS_KEPT_MS).toISOString());
+        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run) as Row[]) {
+          const a = activityOf(run, String(p.slice));
+          if (a) keepOwingSpan(r, p, a, t);
+        }
         const states = statesOf(run, t);
         const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR);
         const orch = orchestratorIn(run);
@@ -1588,10 +1696,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         for (const st of others) {
           // D12: gone, once while it lasts, told in the store so a restarted server never tells it again (D37);
           // an ended member is not live, so never gone
-          if (st.state !== "gone") db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run, st.member);
-          else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
+          if (st.state !== "gone") {
+            // idea 1, rule 4: a member told gone that reads non-gone again: one recovered to the orchestrator
+            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run, st.member).changes) === 1)
+              insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+          } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
           }
+          // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
+          if (st.reason === "link down" && st.state === "working") {
+            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run, st.member).changes) === 1)
+              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name });
+          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run, st.member);
           // D11: stalled per member, to the orchestrator alone; never while paused
           const a = activityOf(run, st.member);
           if (!a) {
@@ -1615,7 +1731,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             continue;
           }
           if (a.stalled_at != null && t - Number(a.stalled_at) < STALLED_AGAIN_MS) continue;
-          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name });
+          const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
+          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
           db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
         }
         // D41: the gone members this tick told are out of the count; the last one not done gone means all-done now
