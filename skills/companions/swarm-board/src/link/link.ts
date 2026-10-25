@@ -174,10 +174,12 @@ export async function runLink(opts: {
     const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
     if (grew) lastStirAt = Date.now();
-    const seen = JSON.stringify(read.activity);
+    // the path rides along so the server can stat it while this link is lost (idea 1, link lost)
+    const activity = { ...read.activity, transcript };
+    const seen = JSON.stringify(activity);
     if (seen !== lastSeen) {
       lastSeen = seen;
-      queuedActivity = { type: "activity", at: Date.now(), activity: read.activity };
+      queuedActivity = { type: "activity", at: Date.now(), activity };
     }
     if (read.activity.finished) {
       // the harness says the agent ended (E14): the last activity, then bye

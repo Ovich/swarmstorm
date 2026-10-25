@@ -73,6 +73,15 @@ export type MemberActivity = {
   lastTool: string | null;
   /** the harness says the agent ended (meta.json) */
   finished: boolean;
+  // Accurate states (idea 1): all optional, so an older link's activity still parses.
+  /** the agent's turn is open: its last user/assistant line is not an assistant line ending the turn */
+  inTurn?: boolean;
+  /** the last assistant text (50 chars), or "<tool> <target>" */
+  lastLine?: string | null;
+  /** the oldest awaited background task (latest turn, board's own excluded); null when none */
+  background?: { target: string; since: number; outputGrewAt: number | null } | null;
+  /** the transcript's path, for the server to stat while the link is lost */
+  transcript?: string;
 };
 
 // up: a link (or a CLI with no member) to the server

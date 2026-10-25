@@ -20,7 +20,20 @@ export type TranscriptCursor = {
   lastTool: string | null;
   context: number | null;
   grewAt: number | null;
+  /** the last assistant text (50 chars), or "<tool> <target>" */
+  lastLine: string | null;
+  /** the last user/assistant line was not an assistant line ending the turn */
+  inTurn: boolean;
+  /** how many turns have ended so far: a background task belongs to the turn it opened in */
+  endedTurns: number;
+  /** background tasks not yet notified, by tool_use id; the board's own wait and link never enter */
+  background: Map<string, BackgroundTask>;
+  /** open calls running the board's own `wait` or `link`, by tool_use id: never a background task, whichever way they go there */
+  boardsOwn: Set<string>;
 };
+
+/** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
+type BackgroundTask = { target: string; since: number; turn: number; output: string | null };
 
 export interface HarnessLocator {
   name: string;
@@ -33,8 +46,9 @@ export interface HarnessLocator {
 const TARGET_CHARS = 50;
 const SEPARATORS = new Set([";", "&&", "||", "|", "&", "\n"]);
 
-/** A shell command split into words and separators, quotes removed; `;`, `&&`, `|` split even when glued to a word (§7 E8). */
-function shellWords(command: string): string[] {
+/** A shell command split into words and separators, quotes removed; `;`, `&&`, `|` split even when glued to a word (§7 E8).
+ * `backslashEscapes`: in a POSIX shell `\` escapes the next character; in any other (PowerShell, cmd) it is a path character. */
+function shellWords(command: string, backslashEscapes = true): string[] {
   const words: string[] = [];
   let word = "";
   let inWord = false;
@@ -51,7 +65,7 @@ function shellWords(command: string): string[] {
       word += command.slice(i + 1, end);
       inWord = true;
       i = end;
-    } else if (c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
+    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
       word += command[++i];
       inWord = true;
     } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
@@ -86,14 +100,26 @@ function flagValue(words: string[], names: string[]): string | undefined {
 }
 
 /** Whether this command text runs the swarm tool's `wait` verb (swarm-relay D45). */
-export function commandRunsWait(command: string): boolean {
-  const words = shellWords(command);
-  return words.some((w, i) => w === "wait" && i > 0 && isSwarmTool(words[i - 1]));
+export function commandRunsWait(command: string, backslashEscapes = true): boolean {
+  return commandRunsVerb(command, "wait", backslashEscapes);
 }
 
+/** Whether a shell tool of this name treats `\` as an escape: only Bash; PowerShell and the rest keep it as a path character. */
+const toolEscapesBackslash = (toolName: string | undefined): boolean => toolName === undefined || toolName === "Bash";
+
+/** Whether this command text runs one swarm verb, the word right after the tool's. */
+function commandRunsVerb(command: string, verb: string, backslashEscapes: boolean): boolean {
+  const words = shellWords(command, backslashEscapes);
+  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
+}
+
+/** The board's own background calls, its `wait` and its `link`, never make a member busy (idea 1, §2). */
+const commandIsBoardsOwn = (command: string, backslashEscapes: boolean): boolean =>
+  commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
+
 /** Whether this command text runs the binding verb, matched word by word, flags in any order. */
-export function commandRunsBinding(command: string, binding: Binding): boolean {
-  const words = shellWords(command);
+export function commandRunsBinding(command: string, binding: Binding, backslashEscapes = true): boolean {
+  const words = shellWords(command, backslashEscapes);
   let start = 0;
   for (let i = 0; i <= words.length; i++) {
     if (i < words.length && !SEPARATORS.has(words[i])) continue;
@@ -109,7 +135,7 @@ export function commandRunsBinding(command: string, binding: Binding): boolean {
   return false;
 }
 
-/** Whether a transcript holds a Bash tool_use whose command runs the binding verb. */
+/** Whether a transcript holds a shell tool_use (any tool whose input has a string `command`) that runs the binding verb. */
 function transcriptRunsBinding(file: string, binding: Binding): boolean {
   let text: string;
   try {
@@ -130,7 +156,7 @@ function transcriptRunsBinding(file: string, binding: Binding): boolean {
     }
     if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
     for (const part of obj.message.content as { type?: string; name?: string; input?: { command?: unknown } }[]) {
-      if (part?.type === "tool_use" && part.name === "Bash" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding)) return true;
+      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
     }
   }
   return false;
@@ -228,11 +254,67 @@ const timeOf = (line: { timestamp?: unknown }, fallback: number): number => {
   return Number.isFinite(t) ? t : fallback;
 };
 
-const freshCursor = (): TranscriptCursor => ({ offset: 0, tokens: 0, open: new Map(), lastTool: null, context: null, grewAt: null });
+const freshCursor = (): TranscriptCursor => ({
+  offset: 0,
+  tokens: 0,
+  open: new Map(),
+  lastTool: null,
+  context: null,
+  grewAt: null,
+  lastLine: null,
+  inTurn: false,
+  endedTurns: 0,
+  background: new Map(),
+  boardsOwn: new Set(),
+});
+
+// Claude Code's own wording, read here only (idea 1, Risks): if it drifts, a task reads quiet, never missed.
+// Anchored at the result's start: a result that only quotes these words (a grep, a cat) opens nothing.
+const MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
+const OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
+const NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+
+/** The text of a tool_result's or user line's content, string or parts. */
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((p) => (typeof p === "string" ? p : p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string" ? (p as { text: string }).text : "")).join("\n");
+}
+
+/** Closes every background task a `<task-notification>` in this text names (either notification form, addendum F1). */
+function closeNotified(cursor: TranscriptCursor, text: string): void {
+  if (!text.includes("<task-notification>")) return;
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) cursor.background.delete(m[1]);
+}
+
+/** The latest turn's oldest awaited background task, its output stat'd now; a task from an earlier turn is a service, never awaited. */
+function awaitedBackground(cursor: TranscriptCursor): MemberActivity["background"] {
+  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
+  let oldest: BackgroundTask | null = null;
+  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
+  if (!oldest) return null;
+  let outputGrewAt: number | null = null;
+  if (oldest.output) {
+    try {
+      outputGrewAt = fs.statSync(oldest.output).mtimeMs;
+    } catch {
+      // not written yet, or gone: unknown
+    }
+  }
+  return { target: oldest.target, since: oldest.since, outputGrewAt };
+}
+
+type TranscriptLine = {
+  type?: string;
+  timestamp?: unknown;
+  message?: { content?: unknown; usage?: Record<string, unknown>; stop_reason?: unknown };
+  attachment?: { commandMode?: unknown; prompt?: unknown };
+};
+type ContentPart = { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; text?: unknown; content?: unknown };
 
 /** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0. */
 export function observe(transcript: string, from: TranscriptCursor | null): { activity: MemberActivity; cursor: TranscriptCursor } {
-  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open) } : freshCursor();
+  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn) } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
@@ -254,13 +336,17 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
   if (consumed > 0) {
     for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
       if (!raw.trim()) continue;
-      let line: { type?: string; timestamp?: unknown; message?: { content?: unknown; usage?: Record<string, unknown> } };
+      let line: TranscriptLine;
       try {
         line = JSON.parse(raw);
       } catch {
         continue;
       }
-      const content = Array.isArray(line.message?.content) ? (line.message.content as { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string }[]) : [];
+      // a mid-turn notification arrives as an attachment line: it closes its task, never counts for the turn (F1)
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt);
+      if (line.type !== "assistant" && line.type !== "user") continue;
+      const at = timeOf(line, mtime);
+      const content = Array.isArray(line.message?.content) ? (line.message.content as ContentPart[]) : [];
       if (line.type === "assistant") {
         const usage = line.message?.usage;
         if (usage) {
@@ -268,17 +354,45 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
           cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
         }
         for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
           if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
           const name = part.name ?? "?";
           const target = toolTarget(part.input);
-          const command = (part.input as { command?: unknown } | undefined)?.command;
+          const input = part.input as { command?: unknown; run_in_background?: unknown } | undefined;
+          const command = input?.command;
+          const escapes = toolEscapesBackslash(name);
           // D45: only a shell call running the board's `wait` verb is waiting; a browser's wait_for, a sleep, are work
-          const boardWait = typeof command === "string" && commandRunsWait(command);
-          cursor.open.set(part.id, { name, target, since: timeOf(line, mtime), ...(boardWait ? { boardWait } : {}) });
+          const boardWait = typeof command === "string" && commandRunsWait(command, escapes);
+          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}) });
           cursor.lastTool = target ? `${name} ${target}` : name;
+          cursor.lastLine = cursor.lastTool;
+          const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
+          if (boardsOwn) cursor.boardsOwn.add(part.id);
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
         }
+        // the turn ends on an assistant line not asking for a tool; a line without stop_reason reads as ended (detection first)
+        const inTurn = line.message?.stop_reason === "tool_use";
+        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
+        cursor.inTurn = inTurn;
       } else {
-        for (const part of content) if (part?.type === "tool_result" && typeof part.tool_use_id === "string") cursor.open.delete(part.tool_use_id);
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content);
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text);
+          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
+          const result = textOf(part.content);
+          const call = cursor.open.get(part.tool_use_id);
+          if (MOVED_TO_BACKGROUND.test(result)) {
+            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const task = cursor.background.get(part.tool_use_id);
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
+            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
+              // a foreground call the harness moved to the background: it belongs to the turn it was called in
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
+          }
+          cursor.open.delete(part.tool_use_id);
+          cursor.boardsOwn.delete(part.tool_use_id);
+        }
+        cursor.inTurn = true;
       }
     }
     cursor.offset += consumed;
@@ -296,7 +410,17 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
     }
   }
   return {
-    activity: { grewAt: cursor.grewAt, tokens: cursor.tokens, context: cursor.context, openTool: openTool && { ...openTool }, lastTool: cursor.lastTool, finished },
+    activity: {
+      grewAt: cursor.grewAt,
+      tokens: cursor.tokens,
+      context: cursor.context,
+      openTool: openTool && { ...openTool },
+      lastTool: cursor.lastTool,
+      finished,
+      inTurn: cursor.inTurn,
+      lastLine: cursor.lastLine,
+      background: awaitedBackground(cursor),
+    },
     cursor,
   };
 }
