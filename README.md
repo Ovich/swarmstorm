@@ -4,7 +4,7 @@
 
 **Run a swarm of coding agents in parallel. They settle shared files before the merge, and QA agents test the running app before you review.**
 
-![The Swarmstorm board in aiview: two runs as tabs, the build and verify phases, six agents with their state, and the conversation where they coordinate](assets/board.png)
+![The Swarmstorm board in aiview: a live run under its protocol, its build, verify and human phases, nine agents with their state, and the conversation where they coordinate](assets/board.png)
 
 Swarmstorm is an open-source (MIT) set of agent skills for Claude Code, Codex and Cursor: a plugin in Claude Code, a clone in Codex and Cursor. It turns the coding agents you already pay for into a coordinated team, on your own subscription: no new service to sign up for, no API keys, nothing billed on top. Ask for a swarm, and you get back one branch built by parallel agents that agreed on their shared work before they wrote it.
 
@@ -33,9 +33,9 @@ Agents write faster than people can review, and when several of them work the sa
 
 **Swarmstorm makes the agents work it out between themselves, before it reaches you.** Inside a swarm, agents settle a shared file the moment two of them need it. We call it Peer-to-Peer Lock Negotiation: agents negotiate file locks on a shared board. Between swarms working on the same project, agreements travel to every swarm they concern, so one swarm's change to an interface reaches the others before they build on the old one. We call that Distributed Conflict Resolution. What comes back to you is one branch, already reconciled, instead of a pile of pull requests to untangle.
 
-![The claims on the board: every file an agent holds, and the files two runs share](assets/board-claims.png)
+![The claims on the board: every file an agent holds, and the files two agents share](assets/board-claims.png)
 
-![The merge lock: one merge at a time, how long each waited and held it](assets/board-merge-lock.png)
+![The merge lock: one merge at a time, who holds it now, how long each waited and held it](assets/board-merge-lock.png)
 
 ## Plans, prototypes and QA agents that test the running app
 
