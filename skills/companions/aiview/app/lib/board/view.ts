@@ -251,7 +251,7 @@ export type RunTab = { run: RunId; code: string; title: string; kind: Kind; stat
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };
 /** What the conversation shows: one run (null = All), or the member followed. */
 export type Pick = { run: RunId | null; follow: string | null };
-export type ItemKind = "message" | "flag" | "urgent" | "held" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "liveness";
+export type ItemKind = "message" | "flag" | "urgent" | "held" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "liveness" | "recovered" | "gone";
 export type Tier = "act" | "wait" | "decided" | "talk";
 export type Item =
   | { kind: ItemKind; tier: Tier; seq: number; at: string; run: RunId; from: string; word: string | null; tip: string | null; text: string; joined: boolean; state: string | null; about: string | null }
@@ -276,7 +276,27 @@ export const TIPS = {
   ended: "Ended: the member left the board and its claims were released.",
   stalled: "Idle: no member's token counter has moved for this long. The orchestrator is told: it opens the next phase or asks the member who owes a move. The row keeps only the latest count and leaves once anything happens.",
   liveness: "Liveness: the board cannot read this member's transcript, so the stall check cannot see whether it works.",
+  stalledMember: "Stalled: this member owes a move it is not making. The rule says why (turn ended, in turn with no line, a background task, a long call, waiting while owing a phase), and the orchestrator is told the move that reaches it.",
+  linkDown: "Link down: this member's link to the board is lost, but its transcript still grows, so it is working. The orchestrator asks it to restart its link.",
+  recovered: "Recovered: a member the board had told gone reads alive again. Its seat needs no new agent.",
+  gone: "Gone: this member's agent finished without ending, or its link is lost and its transcript has stopped growing. The orchestrator dispatches it again or closes its seat.",
 } as const;
+
+/** What a stall says, by its rule (idea 1, rule 6): the word on the row. */
+const STALL_WORDS: Record<string, string> = {
+  ended: "turn ended",
+  "in-turn": "in turn, no line",
+  background: "background task",
+  call: "long call",
+  owing: "waiting, owes its part",
+};
+
+/** The stall rule a `stalled` event stores in its data, null for one written before the rules. */
+const stallRuleOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.rule : null);
+/** The member a rule-bearing `stalled` names, null for one written before the rules. */
+const stalledMemberOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.member : null);
+/** A `liveness` that tells of a lost link while the transcript grows, not of a transcript that cannot be read. */
+const isLinkDown = (e: SnapshotEvent): boolean => !!e.meta && "linkDown" in e.meta;
 
 /** A board event's tip, by its word or its stored name. */
 const EVENT_TIPS: Record<string, string> = {
@@ -398,8 +418,16 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     return said("flag", "act", "⚑ flag · open", TIPS.flag, answer.state);
   }
   // the board server's liveness events, told apart from the board's plain lines (`swarm` liveness)
-  if (e.kind === "event" && e.event === "stalled") return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
-  if (e.kind === "event" && e.event === "liveness") return said("liveness", "wait", "liveness · blind", TIPS.liveness);
+  if (e.kind === "event" && e.event === "stalled") {
+    const rule = stallRuleOf(e);
+    if (rule) return said("stalled", "act", `◷ stalled · ${STALL_WORDS[rule] ?? rule}`, TIPS.stalledMember, rule);
+    return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
+  }
+  if (e.kind === "event" && e.event === "liveness") {
+    return isLinkDown(e) ? said("liveness", "wait", "liveness · link down", TIPS.linkDown, "link-down") : said("liveness", "wait", "liveness · blind", TIPS.liveness);
+  }
+  if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", "↺ recovered", TIPS.recovered);
+  if (e.kind === "event" && e.event === "gone") return said("gone", "act", "✕ gone", TIPS.gone);
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
@@ -439,6 +467,8 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   // the board's stored mentions (a flag's holder and writer) or the body's
   const namesPicked = (e: SnapshotEvent): boolean => !!picked && [...(e.mentions ?? []), ...targets(e, ctx)].some((t) => members.has(t) || t === `${picked.group}/*`);
   const items: Item[] = [];
+  /** A rule-bearing stall's seq, to the member it names. */
+  const stalledMembers = new Map<number, string>();
   for (const e of [...snap.events].sort((a, b) => a.seq - b.seq)) {
     const run = runOf(snap, e);
     if (!run) continue;
@@ -449,14 +479,30 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
       if (run.run !== picked.run && !namesPicked(e)) continue;
     } else if (!run.open) continue;
     const item = itemOf(snap, e, run, ctx);
+    const stalledMember = item.kind === "stalled" ? stalledMemberOf(e) : null;
+    if (stalledMember) stalledMembers.set(e.seq, stalledMember);
     const prev = items[items.length - 1];
     const joins = item.kind === "message" && prev?.kind === "message" && prev.from === item.from;
     items.push(joins ? { ...item, joined: true } : item);
   }
   // a stall is the orchestrator's alarm, not the conversation: only the live one shows, as one row, the
   // latest; a stall anything came after has passed and leaves the thread clean
+  // a member's stall under a rule is its own alarm: the latest per member stays, until anything that member says
   const last = items[items.length - 1];
-  return items.filter((i) => i.kind !== "stalled" || i === last);
+  // (the stall stores the member's id, `<id>`, in its run; a post is that member's when its run and id match)
+  const memberKey = (run: RunId, member: string): string => `${run}\u0000${member}`;
+  const latestStallOf = new Map<string, number>();
+  for (const i of items) {
+    const member = i.kind === "stalled" ? stalledMembers.get(i.seq) : undefined;
+    if (member) latestStallOf.set(memberKey(i.run, member), i.seq);
+  }
+  const saidSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.run === i.run && splitRunner(x.from).slice === member);
+  return items.filter((i) => {
+    if (i.kind !== "stalled") return true;
+    const member = stalledMembers.get(i.seq);
+    if (!member) return i === last;
+    return latestStallOf.get(memberKey(i.run, member)) === i.seq && !saidSince(i, member);
+  });
 }
 
 // ── the conversation's filters (SL11) ───────────────────────────────────────────────
