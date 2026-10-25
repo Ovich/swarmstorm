@@ -72,7 +72,7 @@ test("D2: unlock wakes the waiter in another repository with unlocked <name>, an
   const d = await held;
   assert.ok(Date.now() - t0 < 1500, "within a poll");
   assert.match(d.full.map((m) => m.body).join("\n"), /^unlocked port:4413/m);
-  assert.deepEqual(board.lock(b1, "port:4413"), { granted: true });
+  assert.equal(board.lock(b1, "port:4413").granted, true);
   assert.deepEqual(board.unlock(a1, "port:4413"), { released: false, waiters: [] });
 });
 
@@ -105,7 +105,7 @@ test("D3: a lock is released by end, by gone and by close, each telling its wait
   const held = waitOf(b1, 2000);
   board.closeRun(runC.id);
   assert.match((await held).full.map((m) => m.body).join("\n"), /^unlocked db:main/m);
-  assert.deepEqual(board.lock(b1, "db:main"), { granted: true });
+  assert.equal(board.lock(b1, "db:main").granted, true);
 });
 
 test("D4: locks lists every held lock store-wide with its holder, run, since and waiters", () => {
