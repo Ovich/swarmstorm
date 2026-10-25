@@ -1197,3 +1197,11 @@ test("C4: --json carries the line as next, on open and on that first post", () =
   const posted = JSON.parse(run("post", "@w1 task", "--as", "c4b/orchestrator", "--json").stdout);
   assert.equal(posted.next, text, "the first post's next is open's last line");
 });
+
+test("idea 3's addition: open --protocol none ends on next: phaseless, with no phase command, and its first post carries no next:", () => {
+  const r = run("open", "--kind", "task", "--group", "none1", "--title", "T", "--seats", seatsFile("none1", ["w1"]), "--protocol", "none");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trimEnd().split("\n").at(-1), "next: phaseless: the workers take tasks on call");
+  assert.doesNotMatch(run("post", "@w1 task T1", "--as", "none1/orchestrator").stdout, /^next:/m);
+  assert.doesNotMatch(String(JSON.parse(run("post", "@w1 task T2", "--as", "none1/orchestrator", "--json").stdout).next), /^next:/);
+});
