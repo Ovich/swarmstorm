@@ -1171,8 +1171,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
    *  across a wait re-entered within stall_ms of the last one returning, and ends on any other progress or on `done`. */
   const keepOwingSpan = (run: Row, p: Row, a: Row, t: number): void => {
     const set = (oweSince: number | null, leftAt: number | null): void => {
-      if ((a.owe_since == null ? null : Number(a.owe_since)) === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt) return;
-      db.prepare("UPDATE member_activity SET owe_since = ?, wait_left_at = ? WHERE run = ? AND member = ?").run(oweSince, leftAt, Number(run.id), String(p.slice));
+      const was = a.owe_since == null ? null : Number(a.owe_since);
+      if (was === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt) return;
+      // F2 (d3's guard): a span that opens or ends is a real move, so the stalled told before it is cleared; only
+      // the blink inside one span keeps it
+      const spanChanged = was !== oweSince;
+      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt, Number(run.id), String(p.slice));
     };
     const held = heldWaits.get(Number(p.id));
     const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
