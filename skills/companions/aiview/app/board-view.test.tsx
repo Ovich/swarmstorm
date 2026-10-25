@@ -535,3 +535,21 @@ test("a working member whose link is down reads working, not stalled nor gone", 
   expect(card.querySelector(".state")!.textContent).toMatch(/^working$/);
   expect(card.classList.contains("gone")).toBe(false);
 });
+
+// ── idea 2, B12 (F10): a paused run says so on the conversation's head ──────────────
+
+const pausedRun = (paused: { text: string; person: boolean } | null) => ({ ...LIVE, runs: LIVE.runs.map((r) => (r.run === 1 ? { ...r, paused } : r)) }) as BoardSnapshot;
+
+test.each([
+  [{ text: "approve the mockup", person: true }, "waiting on the person: approve the mockup"],
+  [{ text: "hold for the review", person: false }, "paused: hold for the review"],
+])("the conversation's head shows the run's pause: %o", (paused, said) => {
+  show([APP], 1, [pausedRun(paused)]);
+  const pause = document.querySelector('[data-component="RunPause"]');
+  expect(pause?.textContent).toBe(said);
+});
+
+test("a run that is not paused shows no pause on its head", () => {
+  show([APP], 1, [pausedRun(null)]);
+  expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
+});

@@ -131,8 +131,11 @@ describe("conversation: what an item is (D8, D16)", () => {
   test("idea 1: recovered and gone each render as their own row (I2)", () => {
     const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
     const back = item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
+    // F9: a gone row leaves once its recovered follows, so each is rendered on its own here
+    const alone = conversation(board(RUNS, ROSTER, [gone]), { run: 1, follow: null });
+    expect(alone.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ gone"]]);
     const items = conversation(board(RUNS, ROSTER, [gone, back]), { run: 1, follow: null });
-    expect(items.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ gone"], ["recovered", "↺ recovered"]]);
+    expect(items.map((i) => [i.kind, wordOf(i)])).toEqual([["recovered", "↺ recovered"]]);
   });
 
   test("a post about a path by its holder, or naming no holder, is a plain message", () => {
@@ -405,4 +408,24 @@ test("idea 2, B12: the run header says waiting on the person for a pause --perso
   expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "approve idea 1", person: true } })).toBe("waiting on the person: approve idea 1");
   expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "hold on", person: false } })).toBe("paused: hold on");
   expect(pausedText(run(1, "alpha", "AL"))).toBeNull();
+});
+
+describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is back", () => {
+  const AT_MS = Date.parse(AT);
+  const withLiveness = (liveness: object) => ROSTER.map((r) => (r.runner === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotRunner[];
+  const down = () => item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
+  const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
+  const back = () => item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
+  const kinds = (roster: SnapshotRunner[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
+
+  test("a link-down row stays while the member's link has not been heard since; it leaves once it has", () => {
+    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS - 1000 }), [down()])).toEqual(["liveness"]);
+    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS + 60_000 }), [down()])).toEqual([]);
+  });
+
+  test("a gone row stays while the member reads gone; a recovered after it, or a liveness not gone, takes it away", () => {
+    expect(kinds(withLiveness({ state: "gone" }), [gone()])).toEqual(["gone"]);
+    expect(kinds(withLiveness({ state: "gone" }), [gone(), back()])).toEqual(["recovered"]);
+    expect(kinds(withLiveness({ state: "working" }), [gone()])).toEqual([]);
+  });
 });
