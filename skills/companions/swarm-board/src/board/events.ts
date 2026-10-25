@@ -7,7 +7,8 @@ import { profileOf } from "./kinds.ts";
 export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered";
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
-export type Subscription = { event: EventName; scope: Scope };
+/** `carry`: the event never ends a wait by itself; it rides on the next wake, or wakes once due (idea 2). */
+export type Subscription = { event: EventName; scope: Scope; carry?: true };
 
 export interface EventDef {
   name: EventName;
@@ -165,7 +166,7 @@ export function parseSubscriptions(spec: string | string[]): Subscription[] {
 
 /** "agreement, any:merged" */
 export function formatSubscriptions(subs: Subscription[]): string {
-  return subs.map((s) => (s.scope === "any" ? `any:${s.event}` : s.event)).join(", ");
+  return subs.map((s) => `${s.scope === "any" ? `any:${s.event}` : s.event}${s.carry ? " (carried)" : ""}`).join(", ");
 }
 
 /** Mentions `me` by name or its plan's @all. */
@@ -180,5 +181,15 @@ export function wakes(m: Message, me: Participant, subs: Subscription[]): boolea
   const e = eventOf(m);
   if (!e) return false;
   if (EVENTS[e].always) return true;
-  return subs.some((s) => s.event === e && (s.scope === "any" || m.run === me.run));
+  return subs.some((s) => !s.carry && s.event === e && (s.scope === "any" || m.run === me.run));
+}
+
+/** A message carried to `me` (idea 2): an event of a carry subscription in its scope, that does not wake it;
+ *  the same own-message rule as `wakes`. It rides on the next wake, or wakes once due. */
+export function carries(m: Message, me: Participant, subs: Subscription[]): boolean {
+  if (m.from === me.name && !(m.event && isEvent(m.event) && EVENTS[m.event].toAuthor)) return false;
+  if (wakes(m, me, subs)) return false;
+  const e = eventOf(m);
+  if (!e) return false;
+  return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }

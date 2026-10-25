@@ -14,6 +14,7 @@ export const RPC_METHODS = [
   "closeRun",
   "phase",
   "currentPhase",
+  "showPhase",
   "pause",
   "resume",
   "pausedOf",
