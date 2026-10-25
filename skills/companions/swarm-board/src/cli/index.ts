@@ -330,17 +330,15 @@ const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): str
     : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
 
-/** The first-phase line once more, on the orchestrator's first post mentioning a member while its task or plan run
- *  has no phase open (idea 3, C3); null on any later post, with a phase open, or for any other author. "First" is
- *  read from the board's recent messages: no earlier orchestrator post of this run mentioning a member. */
-const firstTaskPostLine = async (p: Participant, m: Message): Promise<string | null> => {
-  if (p.slice !== "orchestrator" || !(m.mentions ?? []).some((x) => x !== p.name)) return null;
+/** The first-phase line once more, on the orchestrator's first post of its task or plan run while no phase is open
+ *  (idea 3, C3, as d1 restated it #12346); null on any later post, with a phase open, or for any other author.
+ *  "First" is the run's own count of the orchestrator's posts, from stats: 1 once this post is in. */
+const firstTaskPostLine = async (p: Participant): Promise<string | null> => {
+  if (p.slice !== "orchestrator") return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
   if (!run || (run.kind !== "task" && run.kind !== "plan") || (await board.currentPhase(p.run))) return null;
-  const earlier = (await board.snapshot(p.repo)).events.some(
-    (e) => e.run === p.run && e.seq < m.seq && e.from === p.name && e.kind !== "event" && (e.mentions ?? []).some((x) => x !== p.name),
-  );
-  return earlier ? null : firstPhaseLine(run.kind, run.group, run.protocol);
+  const mine = (await board.stats({ repo: p.repo, run: p.run })).runs.find((r) => r.run === p.run)?.members.find((x) => x.member === p.name);
+  return mine?.posts === 1 ? firstPhaseLine(run.kind, run.group, run.protocol) : null;
 };
 
 /** A member's next step where it would be told to listen: the pause first, then the owed phase. */
@@ -719,7 +717,7 @@ ${USAGE}`);
       });
       const unmatched = await unmatchedLines(p, body);
       // the orchestrator's first task post into a run with no phase open ends on the first-phase line, once (idea 3)
-      const phaseNext = args.verb === "post" ? await firstTaskPostLine(p, m) : null;
+      const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
       const human = () => {
         console.log(seqLine(m));
