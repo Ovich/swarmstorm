@@ -205,8 +205,10 @@ export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing";
 export type StalledMeta = { rule: StallRule; member: string; phase?: string };
 /** A link-down liveness's data: the member, `<group>/<id>`, whose link is lost while its transcript grows. */
 export type LinkDownMeta = { linkDown: string };
-/** What an event carries as data, by its event: merged, phase, stalled or a link-down liveness. */
-export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta | LinkDownMeta;
+/** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
+export type PauseMeta = { person: boolean; text: string };
+/** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
+export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta | LinkDownMeta | PauseMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -1656,7 +1658,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const person = opts.person === true;
         db.prepare("UPDATE runs SET paused = ?, paused_person = ? WHERE id = ?").run(said, person ? 1 : 0, fresh.run);
         const why = person ? `: waiting on the person${said ? `: ${said}` : ""}` : said ? `: ${said}` : "";
-        return insertMessage(fresh, `pause: stop where you are and wait for the resume${why}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.pause.name });
+        return insertMessage(fresh, `pause: stop where you are and wait for the resume${why}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.pause.name, meta: { person, text: said } });
       });
     },
 

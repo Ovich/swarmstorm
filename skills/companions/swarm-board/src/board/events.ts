@@ -23,6 +23,12 @@ export interface EventDef {
 /** A POSIX shell word, double-quoted when it holds anything else than plain characters. */
 const word = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
 
+/** A foreground wait holds under the shell tool's 600000 ms limit, 60 s spare (idea 2, B7; the CLI's waitCommand says the same). */
+const FOREGROUND_WAIT_MS = 540_000;
+/** The foreground wait line a woken member runs next, its hold and the tool timeout to give it. */
+const foregroundWait = (cli: string, me: Participant): string =>
+  `${cli} wait --mentions --as ${word(me.name)} --timeout ${FOREGROUND_WAIT_MS} (give your shell tool a 600000 ms timeout)`;
+
 /** The move a `stalled` asks of the orchestrator, by the rule that made its member quiet (idea 1, rule 6); a
  *  stalled stored before the rules gives the general move. */
 function stalledMove(m: Message, me: Participant, cli: string): string {
@@ -77,10 +83,13 @@ export const EVENTS: Record<EventName, EventDef> = {
   // the orchestrator pauses its run (`pause [text]`): mentions `<group>/*`, every member stops and waits for the resume
   pause: {
     name: "pause",
-    next: (m, me, cli) =>
-      me.slice === "orchestrator" || m.from === me.name
-        ? null
-        : `stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${cli} wait --mentions --as ${word(me.name)}`,
+    next: (m, me, cli) => {
+      if (me.slice === "orchestrator" || m.from === me.name) return null;
+      // idea 2 (B12): a pause waiting on the person says so, as the CLI's paused line does
+      const pause = m.meta && "person" in m.meta ? m.meta : null;
+      const why = pause?.person ? `waiting on the person: ${pause.text || "their decision"}; ` : "";
+      return `${why}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${foregroundWait(cli, me)}`;
+    },
   },
   // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
   resume: {
