@@ -83,6 +83,9 @@ export type MemberActivity = {
   background?: { target: string; since: number; outputGrewAt: number | null } | null;
   /** the transcript's path, for the server to stat while the link is lost */
   transcript?: string;
+  /** the member's last kill that was not by PID (idea 4): by name or pattern always a breach; by a port lookup a breach
+   *  only for a port whose lock it does not hold, which the board checks. Null or absent when none was seen. */
+  breach?: { command: string; kind: "pattern" | "port"; ports?: number[]; at: number } | null;
 };
 
 // up: a link (or a CLI with no member) to the server
