@@ -511,10 +511,10 @@ test("--help lists no serve: the board server is a hidden verb", () => {
 test("status has no server: the data home, the store and the open runs", () => {
   const empty = run("status", "--json");
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "open", "runs", "sqlite"]);
   const id = openRun();
   const s = JSON.parse(run("status", "--json").stdout);
-  assert.deepEqual(Object.keys(s).sort(), ["home", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "open", "runs", "sqlite"]);
   assert.equal(s.home, toolRoot);
   assert.equal(s.runs, 1);
   const text = run("status").stdout;
@@ -749,7 +749,7 @@ test("join --on with an unknown event exits 1 listing the known ones; --on store
   const id = openBrainstorm();
   const bad = joinSeat(id, "architect", "--on", "agreed");
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, recovered, gone, liveness, flag/);
+  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, recovered, unlocked, breach, gone, liveness, flag/);
   const ok = joinSeat(id, "architect", "--on", "agreement,any:merged");
   assert.equal(ok.status, 0, ok.stderr);
   const roster = run("roster");
