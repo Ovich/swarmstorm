@@ -721,8 +721,10 @@
 
 /* the agents strip folds to a thin rail: marks and state dots */
 .board .side { position: relative; }
-.board .roster-toggle { position: absolute; top: 12px; right: 8px; z-index: 1; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 6px; border-radius: var(--radius-sm); }
-.board .roster-toggle:hover { color: var(--foreground); background: var(--background); }
+.board .roster-toggle { position: absolute; top: 9px; right: 8px; z-index: 1; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); background: var(--background); color: var(--foreground); cursor: pointer; border-radius: var(--radius-sm); }
+.board .roster-toggle svg { width: 16px; height: 16px; }
+.board .roster-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.board .roster-toggle:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .board .run-body.with-roster.roster-folded { grid-template-columns: 52px minmax(0, 1fr); }
 .board .side.folded { padding: 40px 0 12px; align-items: center; }
 .board .side.folded .roster-toggle { right: auto; left: 50%; transform: translateX(-50%); }
