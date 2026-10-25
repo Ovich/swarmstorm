@@ -616,6 +616,11 @@
 .board .pseg.earlier .name { color: var(--muted-foreground); }
 .board .pseg.done .name { font-weight: 500; }
 .board .pseg.done .ok { color: var(--ok); font-size: 12px; }
+/* The orchestrator's retrospective: drawn black, apart from the work phases. */
+.board .pseg[data-phase="retrospective"] { background: #111; box-shadow: inset 3px 0 0 #111; }
+.board .pseg[data-phase="retrospective"] .name,
+.board .pseg[data-phase="retrospective"] .said,
+.board .pseg[data-phase="retrospective"] .ok { color: #fff; }
 .board .pseg.now { flex: 1 1 auto; background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent), 0 0 0 1px var(--accent); }
 .board .runhead .phases + .runline { margin-left: 0; }
 .board .runhead .phases ~ .seg { margin-left: auto; }

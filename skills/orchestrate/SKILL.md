@@ -41,6 +41,13 @@ one run tuned to it, built on the closest example**.
   overkill, here is my suggestion:` and the leaner setup with its cost line; dispatched only on
   the person's word. A run of 2026-10-25 kept three workers idle
   through a test phase only one seat could run.
+- **A retrospective may be proposed** in the run table, optional, after a few phases (or between
+  two iterations of a loop): a phase named `retrospective`, drawn black on the board's strip,
+  where the orchestrator alone reads the run so far (wall-clock per phase, tokens per seat, waits,
+  bottlenecks, idle seats) and proposes changes for the phases left, applied on the person's word
+  before the run goes on. A change worth keeping beyond this run is proposed for the protocol it
+  ran on: the project's own `protocol-<name>` skill when the run used one, else a new one
+  (`references/protocols/new-protocol.md`); never this plugin's examples, which a project does not own.
 - **The person's number wins**: asked for more seats than proposed, re-cut the work finer so
   every seat has work in the first phase (`references/tasks.md`, *Cutting*), never seats left
   idle; asked for fewer, fold tasks together. When the finer cut costs something (tasks sharing
