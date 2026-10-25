@@ -257,6 +257,8 @@ const SCENARIOS: Scenario[] = (() => {
     // A10: owing the open phase in a re-armed wait; (a) w waiting, (b) w working; S11-2 owes a task (out of scope); S11-3 owes nothing
     { id: "S11-1a", what: "A10 re-armed wait owing the phase, w waiting", length: STUCK_LEN, stuckAt: 5, companion: "waits", owe: (bd, o) => bd.phase(o, "p1", "@x @w your part"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     { id: "S11-1b", what: "A10 re-armed wait owing the phase, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.phase(o, "p1", "@x your part"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
+    // d3's guard on F2 (#12027): the span ended by a real call, then the turn ended: told again at once, not 15 min later
+    { id: "S11-guard", what: "owing span, then a real call ends it, then the turn ends", length: 20 * MIN, stuckAt: 5, companion: "waits", owe: (bd, o) => bd.phase(o, "p1", "@x @w your part"), steps: ((a) => [work(0), ...rearmedWait(5, 300), open(340, a, "npm run build"), result(341, a), work(345, "built, reporting next")])(id()) },
     { id: "S11-2", what: "re-armed wait owing a task, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.post(o, "@x task T1: do it"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     { id: "S11-3", what: "A10 re-armed wait after an FYI mention, owing nothing", length: STUCK_LEN, stuckAt: null, companion: "works", owe: (bd, o) => bd.post(o, "@x fyi, nothing to do"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     // A3, A3b: only the board's own listener and link pending, turn ended
@@ -363,10 +365,10 @@ test("A5: a turn ended is stalled within 61 s; the reason says `turn ended` and 
   assert.match(a.body, /^stalled yard\/x: turn ended; last: "I will report once the build is green"/);
   assert.match(a.next!, /a post does not wake it: SendMessage it, or dispatch it again/);
 });
-// F1 (test 1.1): the moved result is a user line, so the member reads in turn 120 s before the background rule is reached
-test("A6: a foreground Bash moved to the background, then silent: stalled within its timeout + 61 s, rule background", { todo: "F1: 240 s and 720 s today" }, () => {
-  bound("S3a-120", 120 + stall, "background");
-  bound("S3a-600", 600 + stall, "background");
+// A6 restated (F1, test 1.1): the moved result keeps the agent in its turn, so the in-turn 120 s comes first
+test("A6: a foreground Bash moved to the background, then silent: stalled within its timeout + 121 s, rule background", () => {
+  bound("S3a-120", 120 + inTurn, "background");
+  bound("S3a-600", 600 + inTurn, "background");
 });
 test("A7: a link lost while the transcript grows is not gone: one liveness, working; S5a gone within loss + 31 s; A7b: no stat, gone as today", () => {
   clean("S13");
@@ -420,4 +422,11 @@ test("A10: an owing member's stalled is told again only after 15 min, its re-arm
     const alerts = rowOf(rid).alerts.map((a) => a.s);
     for (let i = 1; i < alerts.length; i++) assert.ok(alerts[i] - alerts[i - 1] >= 900, `${rid}: stalled at ${alerts.join(", ")}`);
   }
+});
+
+test("d3's guard on F2: a span ended by a real call, then the turn ended, is told `ended` within 61 s of its last line", () => {
+  const r = rowOf("S11-guard");
+  const ended = r.alerts.find((a) => a.rule === "ended");
+  assert.ok(ended, `an ended stalled (${r.events})`);
+  assert.ok(ended.s - 345 <= stall, `ended at ${ended.s} s, last line at 345 s`);
 });
