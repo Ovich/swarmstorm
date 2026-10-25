@@ -276,7 +276,7 @@ const SCENARIOS: Scenario[] = (() => {
 
 /** The numbers after idea 1 (note #11926 + #11931): id, wakes, no-action, wakes per member-hour, M2, M2b s, M3 s, M4, first alert's rule.
  *  Moved on purpose from the baseline (f5f40b0): S2 and S8 lose their false alert, S13 its false `gone`, S11-1 is caught,
- *  S10/S12 keep about 60 s with the turn ended, S3a's old form reads 720 s (Risks). */
+ *  S10/S12 keep about 60 s with the turn ended, S3a's old form reads 720 s (Risks); build 1.2 (F2): an owing stalled is told again only after 15 min. */
 const EXPECTED: [string, number, number, number, number, number, number | null, number, string | null][] =[
   ["S1", 1, 1, 2.4, 1, 0, null, 0, "call"],
   ["S2", 0, 0, 0, 0, 0, null, 0, null],
@@ -299,8 +299,9 @@ const EXPECTED: [string, number, number, number, number, number, number | null, 
   ["A4b", 3, 0, 5.1, 0, 0, 120, 0, "in-turn"],
   ["S9", 1, 1, 2.4, 1, 0, null, 0, "call"],
   ["S10", 3, 0, 5.1, 0, 0, 60, 0, "background"],
-  ["S11-1a", 20, 1, 34.3, 0, 0, 61, 0, "owing"],
-  ["S11-1b", 14, 0, 24, 0, 0, 601, 0, "owing"],
+  ["S11-1a", 4, 1, 6.9, 0, 0, 61, 0, "owing"],
+  ["S11-1b", 2, 0, 3.4, 0, 0, 601, 0, "owing"],
+  ["S11-guard", 3, 1, 9, 0, 0, 61, 0, "owing"],
   ["S11-2", 0, 0, 0, 0, 0, null, 1, null],
   ["S11-3", 0, 0, 0, 0, 0, null, 0, null],
   ["S12", 3, 0, 5.1, 0, 0, 60, 0, "ended"],
@@ -416,8 +417,8 @@ test("A9: a join run through PowerShell with \\ paths is located", () => {
   }
 });
 
-// F2 (test 1.1): a re-armed wait reads working for the second between two waits, which clears stalled_at
-test("A10: an owing member's stalled is told again only after 15 min, its re-arms between", { todo: "F2: told at every re-arm today" }, () => {
+// F2 (test 1.1, fixed in build 1.2): the working blink between two waits of one owing span keeps stalled_at
+test("A10: an owing member's stalled is told again only after 15 min, its re-arms between", () => {
   for (const rid of ["S11-1a", "S11-1b"]) {
     const alerts = rowOf(rid).alerts.map((a) => a.s);
     for (let i = 1; i < alerts.length; i++) assert.ok(alerts[i] - alerts[i - 1] >= 900, `${rid}: stalled at ${alerts.join(", ")}`);
