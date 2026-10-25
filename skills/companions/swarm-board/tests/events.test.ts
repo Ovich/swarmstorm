@@ -20,7 +20,7 @@ test("parseSubscriptions reads scopes and refuses an unknown name, listing the k
   ]);
   assert.deepEqual(parseSubscriptions("main:merged"), [{ event: "merged", scope: "any" }]); // the old spelling reads as any:
   assert.deepEqual(parseSubscriptions(["agreement", "agreement"]), [{ event: "agreement", scope: "run" }]);
-  assert.throws(() => parseSubscriptions("agreed"), /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, gone, liveness, flag$/);
+  assert.throws(() => parseSubscriptions("agreed"), /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, recovered, gone, liveness, flag$/);
   assert.equal(formatSubscriptions(parseSubscriptions("agreement,any:merged")), "agreement, any:merged");
 });
 

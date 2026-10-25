@@ -102,10 +102,10 @@ test("states: growing → working; an open call → busy with its tool and start
   assert.deepEqual([busy.state, busy.doing, busy.since, busy.reason], ["busy", "Bash npm test", base, undefined]);
   board.livenessTick(run.id, at(base, 15 * 60), presence);
   const over = stateOf(run.id, "a", at(base, 15 * 60));
-  assert.deepEqual([over.state, over.reason], ["busy", "busy 15 min in one call, link alive; it may be hung"]);
+  assert.deepEqual([over.state, over.reason], ["busy", "call open 15 min, may be long or hung; last: \"Bash npm test\""]);
   const stalled = events("stalled");
   assert.equal(stalled.length, 1);
-  assert.match(stalled[0].body, /^stalled idea\/a: busy 15 min in one call, link alive; it may be hung/);
+  assert.match(stalled[0].body, /^stalled idea\/a: call open 15 min, may be long or hung; last: "Bash npm test"/);
   // the call returns, the transcript grows: working again
   board.recordActivity(run.id, "a", act({ grewAt: base + 16 * 60_000, lastTool: "Bash npm test" }), at(base, 16 * 60));
   assert.equal(stateOf(run.id, "a", at(base, 16 * 60)).state, "working");
