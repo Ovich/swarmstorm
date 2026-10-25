@@ -34,9 +34,14 @@ into or leave running reaches all of them.
 the funny name, run code, state, since when, and what it is doing. Then the answer's `next:` line
 says how to wait for it. While you wait, the board shows you `waiting · lock <name>, held by …`.
 That is a wait, not a stall, even if you owe a phase. A grant of `port:<n>` lists the PIDs
-listening on `<n>` now. Its `next:` line is the exact stop line for each. Only when a listener
-was still alive at the previous holder's release does the grant warn that it may not be yours;
-otherwise it is plain, and what listens is yours to stop. `$S unlock <name>` releases it. `end`, `gone` and the run's
+listening on `<n>` now, and its `next:` line is the exact stop line for each. It reads in one of
+three ways:
+
+| the grant | means |
+|---|---|
+| plain, no listener | the port is free |
+| `left running by <holder>'s release` | it started before the last release: stop it only if it is yours to stop |
+| `started by someone without the lock` | it started after the release: ask on the board before you stop it | `$S unlock <name>` releases it. `end`, `gone` and the run's
 `close` release it too, and each release wakes the waiters. `status` and `roster` list the held
 locks with their holder, since and waiters.
 
