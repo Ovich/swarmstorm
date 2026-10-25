@@ -118,7 +118,7 @@ git clone https://github.com/Ovich/swarmstorm ~/.cursor/plugins/local/swarmstorm
 
 Start a new session afterwards, in all three. What differs between the harnesses is in [Codex and Cursor](#reference). If your session asks before running shell commands, add [the allow rule](#the-allow-rule) first.
 
-**Nothing runs unless a skill is in use.** The plugin ships no hooks and no event handlers, and never writes to your harness's settings, user or project. Your sessions in other projects, and in this one when no skill is loaded, behave exactly as before.
+**Nothing runs unless a skill is in use.** The plugin ships no hooks and no event handlers, and never writes to your harness's settings, user or project. All it adds to a session is its skills, listed with the others and loaded only when a task calls for one.
 
 Star the repo, and send it to whoever on your team runs coding agents in parallel.
 
