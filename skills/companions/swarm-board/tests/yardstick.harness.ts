@@ -168,3 +168,15 @@ test("d3's guard on F2: a span ended by a real call, then the turn ended, is tol
   assert.ok(ended, `an ended stalled (${r.events})`);
   assert.ok(ended.s - 345 <= stall, `ended at ${ended.s} s, last line at 345 s`);
 });
+
+test("v1-a (build 1.3): a silent background reason ends on the member's last line", () => {
+  assert.match(rowOf("S10").alerts[0].body, /^stalled yard\/x: background npm test silent 60 s; last: "working"/);
+  assert.match(rowOf("S2b").alerts[0].body, /^stalled yard\/x: background npm run build silent 60 s; last: "working"/);
+});
+
+test("v1-b (build 1.3): a link-down liveness tells the orchestrator to SendMessage the member its link command", () => {
+  const live = rowOf("S13").told.filter((t) => t.event === "liveness");
+  assert.equal(live.length, 1);
+  assert.match(live[0].body, /^liveness yard\/x: link lost, transcript still growing: restart its link$/);
+  assert.match(live[0].next!, /^SendMessage yard\/x to restart its link, in the background: swarm link --run \d+ --as yard\/x$/);
+});

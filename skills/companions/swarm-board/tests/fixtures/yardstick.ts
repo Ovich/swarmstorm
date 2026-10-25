@@ -50,7 +50,7 @@ export type Scenario = {
 };
 
 export type Alert = { s: number; event: string; rule: string | null; body: string; next: string | null };
-export type Row = { id: string; wakes: number; noAction: number; perMemberHour: number; falseAlerts: number; falseStateS: number; detectS: number | null; missed: number; rule: string | null; events: string; alerts: Alert[]; wakeAt: { s: number; events: string[] }[] };
+export type Row = { id: string; wakes: number; noAction: number; perMemberHour: number; falseAlerts: number; falseStateS: number; detectS: number | null; missed: number; rule: string | null; events: string; alerts: Alert[]; told: Alert[]; wakeAt: { s: number; events: string[] }[] };
 
 export const iso = (base: number, s: number) => new Date(base + s * 1000).toISOString();
 export const usage = { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -84,6 +84,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     let held: Promise<unknown> | null = null;
     const wakes: { s: number; events: string[] }[] = [];
     const alerts: Alert[] = [];
+    const told: Alert[] = [];
     let falseStateS = 0;
     const stuckFrom = sc.stuckAt;
     const isStuck = (s: number) => stuckFrom !== null && s >= stuckFrom;
@@ -138,6 +139,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
         .deliver(orch)
         .full.map((m) => ({ m, e: eventOf(m) }))
         .filter(({ m, e }) => e !== null && WAKE_EVENTS.has(e) && m.mentions.includes(orch.name) && !m.body.includes("yard/w"));
+      for (const { m, e } of fresh) told.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       for (const { m, e } of fresh) if (ALERTS.has(e!)) alerts.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       if (fresh.length) wakes.push({ s, events: fresh.map(({ e }) => e as string) });
     }
@@ -165,6 +167,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       rule: (firstTrue ?? alerts[0])?.rule ?? null,
       events: wakes.map((wk) => `${wk.events.join("+")}@${wk.s}s`).join(" ") || "-",
       alerts,
+      told,
       wakeAt: wakes,
     };
   } finally {
