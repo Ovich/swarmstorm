@@ -218,12 +218,21 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
   return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}`;
 };
 
-/** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase. */
-const phaseHeader = async (run: number): Promise<string | null> => {
-  const ph = await board.currentPhase(run);
-  const paused = (await board.runs()).find((r) => r.id === run)?.paused;
-  const head = ph ? `phase ${ph.name}: ${ph.text}` : null;
-  return paused == null ? head : [head, `PAUSED${paused ? `: ${paused}` : ""}`].filter(Boolean).join("  ");
+/** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase.
+ *  `shownTo`: a member's wait, deliver or read, which gets the full text the first time in a phase, then the short
+ *  header naming where its text is (B15); the owed line stays whole elsewhere. */
+const phaseHeader = async (run: number, shownTo?: Participant): Promise<string | null> => {
+  const shown = shownTo ? await board.showPhase(shownTo) : null;
+  const ph = shown ? shown.phase : await board.currentPhase(run);
+  const r = (await board.runs()).find((x) => x.id === run);
+  const head = !ph
+    ? null
+    : shown && !shown.first
+      ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo!.name)].join(" ")})`
+      : `phase ${ph.name}: ${ph.text}`;
+  if (r?.paused == null) return head;
+  const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
+  return [head, `PAUSED${why}`].filter(Boolean).join("  ");
 };
 /** `phase <name>: <text>  <n>/<m> done[, <k> gone]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
@@ -263,13 +272,20 @@ const self = (): string[] => ["node", shellWord(process.argv[1].replace(/\\/g, "
  *  and inside one ends on this line (D39). */
 const startLinkLine = (member: BoardMember): string =>
   `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
-const waitCommand = (name: string): string => [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
+/** A foreground wait's hold: 60 s under the shell tool's 600 000 ms limit, so the harness never moves it to the background (idea 2, B7). */
+const FOREGROUND_WAIT_MS = 540_000;
+const SHELL_TOOL_TIMEOUT = "give your shell tool a 600000 ms timeout";
+/** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold and the tool timeout to give it. */
+const waitCommand = (name: string, foreground = false): string => {
+  const line = [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
+  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS} (${SHELL_TOOL_TIMEOUT})` : line;
+};
 const listensInForeground = (p: Pick<Participant, "slice" | "kind">): boolean => p.slice !== "orchestrator" && profileOf(p.kind).member === "seat";
 /** The line that starts a member's listener: the exact command, --as included (D61); `afterPhase`: it
  *  follows the owed-phase line, so a seat waits only once its part is in. */
 const listenNow = (p: Pick<Participant, "name" | "slice" | "kind">, afterPhase = false): string =>
   listensInForeground(p)
-    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone): ${waitCommand(p.name)}`
+    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone): ${waitCommand(p.name, true)}`
     : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
 
 /** The step a member owing the run's open phase takes before any wait: a member that joined, or woke,
@@ -289,7 +305,9 @@ const pausedLine = async (p: Participant): Promise<string | null> => {
   if (p.slice === "orchestrator" || p.ended) return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
   if (!run || run.paused == null) return null;
-  return `run ${p.run} is paused${run.paused ? `: ${run.paused}` : ""}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${waitCommand(p.name)}`;
+  // a pause waiting on the person says so (idea 2, B12); any other reads as before
+  const why = run.pausedPerson ? `: waiting on the person: ${run.paused || "their decision"}` : run.paused ? `: ${run.paused}` : "";
+  return `run ${p.run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${waitCommand(p.name, true)}`;
 };
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
 const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => {
@@ -447,7 +465,7 @@ const seatCommands = (as: string): string[] => {
     `${cli} post "…" --about <D id> ${who}`,
     `${cli} agree "…" --about <D id> ${who}`,
     `${cli} endorse <seq> ${who}`,
-    `${cli} wait --mentions ${who}    # in the foreground, when waiting`,
+    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`,
   ];
 };
 
@@ -550,10 +568,15 @@ async function main(): Promise<void> {
       if (!name) fail(`phase: which phase?
 ${USAGE}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
-      const m = await board.phase(p, name, text);
-      // the orchestrator's next step (rule 10): its listener hears each member's done; the board says when all are in
+      // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
+      const watch = args.list("--watch");
+      const m = await board.phase(p, name, text, watch.length ? { watch } : undefined);
+      // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
       const cli = self().join(" ");
-      const next = `phase ${name} is open; listen for each member's done in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
+      const heard = watch.length
+        ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
+        : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
+      const next = `phase ${name} is open; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
       emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
@@ -566,15 +589,25 @@ ${USAGE}`);
     case "pause":
     case "resume": {
       const p = await caller();
-      const text = args.positional.join(" ");
-      const m = args.verb === "pause" ? await board.pause(p, text) : await board.resume(p, text);
+      // pause --person "<what they decide>": a pause waiting on the person (idea 2, B12)
+      const person = args.verb === "pause" ? args.flag("--person") : undefined;
+      const text = person ?? args.positional.join(" ");
       const cli = self().join(" ");
-      const next =
-        args.verb === "pause"
-          ? `every member of run ${m.run} is told to stop and wait; no stall, quiet or stale alert until the resume. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`
-          : `run ${m.run} resumed; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
-      emit({ seq: m.seq, run: m.run, paused: args.verb === "pause", next }, () => {
+      if (args.verb === "pause") {
+        const m = await board.pause(p, text, person !== undefined ? { person: true } : undefined);
+        const next = `every member of run ${m.run} is told to stop and wait${person !== undefined ? `, waiting on the person: ${text}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`;
+        emit({ seq: m.seq, run: m.run, paused: true, person: person !== undefined, next }, () => {
+          console.log(seqLine(m));
+          console.log(next);
+        });
+        break;
+      }
+      const m = await board.resume(p, text);
+      // what the pause held from the orchestrator, one line each, given once (idea 2, judgment 1)
+      const next = `run ${m.run} resumed${m.held.length ? `; ${m.held.length} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
+      emit({ seq: m.seq, run: m.run, paused: false, held: m.held, next }, () => {
         console.log(seqLine(m));
+        for (const line of m.held) console.log(line);
         console.log(next);
       });
       break;
@@ -585,9 +618,11 @@ ${USAGE}`);
       const name = args.positional[0] ?? fail(`done: which phase?\n${USAGE}`);
       const r = await board.done(p, name);
       // the member's next step (rule 10): wait for the next phase
-      const next = `wait for the next phase, in the foreground: ${self().join(" ")} wait --mentions --as ${shellWord(p.name)}`;
-      emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, next }, () => {
-        console.log(`${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
+      const next = `wait for the next phase, in the foreground: ${waitCommand(p.name, true)}`;
+      emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
+        // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
+        const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
+        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
         console.log(next);
       });
       break;
@@ -686,7 +721,7 @@ ${USAGE}`);
       if (by && (await answeredClosed(by))) break;
       const m = await board.read(seq, by);
       // the phase the message's run is in, first (the caller's run when one is known)
-      const phase = await phaseHeader(by?.run ?? m.run);
+      const phase = await phaseHeader(by?.run ?? m.run, by);
       // a member owing the open phase is told to do it, last
       const owes = by ? await owedLine(by) : null;
       emit({ ...m, phase, ...(owes ? { next: owes } : {}) }, () => {
@@ -719,7 +754,7 @@ ${USAGE}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
       // the run's phase heads every delivery that carries something
-      const phase = d.full.length || d.lines.length ? await phaseHeader(me.run) : null;
+      const phase = d.full.length || d.lines.length ? await phaseHeader(me.run, me) : null;
       // a member owing the open phase is told to do it, last
       const owes = mentionsOnly ? null : await owedLine(me);
       emit({ phase, ...d, ...(owes ? { next: owes } : {}) }, () => {
@@ -743,16 +778,25 @@ ${USAGE}`);
         emit(d, "superseded by a newer wait"); // a newer wait of this runner gets what arrives (D64)
         break;
       }
-      if (!d.full.length && !d.lines.length) {
-        emit(d, ""); // a timeout, or the runner ended: nothing to answer, nothing to re-arm
-        break;
-      }
       // the runner's next step, before the message: the exact command that re-arms this listener (D49)
       const again = [...self(), "wait"];
       if (mentionsOnly) again.push("--mentions");
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
       if (raw !== undefined) again.push("--timeout", raw);
       if (asJson) again.push("--json");
+      // a wait run in the foreground holds under the shell tool's limit (B7); a background listener holds as it was given
+      const againForeground = raw === undefined ? [...again, "--timeout", String(FOREGROUND_WAIT_MS)] : again;
+      const foregroundLine = `${againForeground.join(" ")} (${SHELL_TOOL_TIMEOUT})`;
+      if (!d.full.length && !d.lines.length) {
+        // a timeout: the line to run again (B7); the runner ended: nothing to re-arm
+        const ended = (await board.participant(p.name))?.ended ?? true;
+        if (ended) emit(d, "");
+        else {
+          const next = (await pausedLine(p)) ?? `nothing yet; wait again: ${p.slice === "orchestrator" ? again.join(" ") : foregroundLine}`;
+          emit({ ...d, next }, next);
+        }
+        break;
+      }
       // a member owing the open phase does it before it waits again
       const owes = await owedLine(p);
       const pausedNow = await pausedLine(p);
@@ -761,15 +805,15 @@ ${USAGE}`);
         : listensInForeground(p)
         ? owes
           ? `${owes}
-only then wait again, in the foreground: ${again.join(" ")}`
-          : `answer on the thread if needed, then wait again, in the foreground: ${again.join(" ")}`
+only then wait again, in the foreground: ${foregroundLine}`
+          : `answer on the thread if needed, then wait again, in the foreground: ${foregroundLine}`
         : p.slice === "orchestrator"
           ? `act on it, then start this listener again, in the background: ${again.join(" ")}`
-          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: ${again.join(" ")}`;
+          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: ${foregroundLine}`;
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
 ${rearm}` : rearm;
       // the run's phase first, so a member always knows which phase it answers in
-      const phase = await phaseHeader(p.run);
+      const phase = await phaseHeader(p.run, p);
       emit({ phase, next, ...d }, () => {
         if (phase) console.log(phase);
         console.log(next);
