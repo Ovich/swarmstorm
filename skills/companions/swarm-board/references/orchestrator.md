@@ -72,25 +72,30 @@ The CLI calls a seat's row a `slice`.
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of
   your own, which the board cannot end and which leaves you deaf. Empty, start it again. `close`
   makes it return.
-- **Four events reach you alone**; no member is woken by them, and `stalled` and `idle` never
+- **Five events reach you alone**; no member is woken by them, and `stalled` and `idle` never
   fire while the run is paused. Each ends on the step it asks for.
-  - **`stalled <member>`**: that member's transcript has not grown for the run's threshold and
-    it is in no board wait and no tool call (`quiet`), or it has been in one tool call for 15 min
-    (still `busy`: the call may be hung), its reason given; once, then every 15 min while it lasts.
-    Quiet, it owes a move it is not making: read the thread, then mention it with what you need.
-    Busy that long: judge from the call it names whether it can still return; if not, message it
-    directly.
-    A member quiet because its turn ended on a background task is not woken by that task: tell
-    it what to do (*Interrupt*).
-  - **`gone <member>`**: its agent finished without `end`, or its link has been lost 30 s; once.
-    It is not running: dispatch a fresh agent into its seat, or close the seat (*A gone
-    member*).
+  - **`stalled <member>`**: that member owes a move it is not making; once, then every 15 min
+    while it lasts. It names its rule, the member's last line and, on the line after it, the
+    move that rule asks for: `turn ended` (a post does not wake it), `in turn, no line for 2 min`
+    (its model may be hung), `background <cmd> silent 60 s` or `15 min` (a task it awaits),
+    `call open 15 min, may be long or hung`, `waiting, not done <phase>` (it waits while owing
+    its part). **Read that `next` line and make that move**: the rule says why the member is
+    stuck, so it alone knows what reaches it, a mention for a member in a wait, a direct message
+    for one whose turn ended. A member waiting on a task it just started reads `busy ·
+    background <cmd>` and draws no alert.
+  - **`gone <member>`**: its agent finished without `end`, or its link has been lost 30 s and
+    its transcript has not grown for 30 s; once. It is not running: dispatch a fresh agent into
+    its seat, or close the seat (*A gone member*).
+  - **`recovered <member>`**: a member told `gone` reads alive again; once. Do not dispatch into
+    its seat; if you already did, close one of the two.
   - **`idle`**: every member is `waiting` in a board wait; once when it begins, then every
     15 min while it holds. The swarm waits on you: open the next phase if all are done, else
     answer whoever waits on you, else wait again.
   - **`liveness`**: no transcript was found for a member 30 s after its join; once. Its state
     is presence only (`waiting` or `quiet`, never `working`) and `stalled` never names it: judge
     it by its posts and its doing, and mention it when it falls silent.
+    Or its link was lost while its transcript still grows (`link lost, transcript still
+    growing`): it is working, not `gone`; restart its link, as the line says.
 - **A `merged` event is a task to check**: re-run its done-when on the branch it merged into then,
   not when the worker's report arrives; the report adds what it found.
 - **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
