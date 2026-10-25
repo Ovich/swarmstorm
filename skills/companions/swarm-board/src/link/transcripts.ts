@@ -30,6 +30,8 @@ export type TranscriptCursor = {
   background: Map<string, BackgroundTask>;
   /** open calls running the board's own `wait` or `link`, by tool_use id: never a background task, whichever way they go there */
   boardsOwn: Set<string>;
+  /** the last kill seen that was not by PID (idea 4) */
+  breach: NonNullable<MemberActivity["breach"]> | null;
 };
 
 /** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
@@ -266,7 +268,89 @@ const freshCursor = (): TranscriptCursor => ({
   endedTurns: 0,
   background: new Map(),
   boardsOwn: new Set(),
+  breach: null,
 });
+
+// ── kills (idea 4): the patterns are data, Claude Code's shells' words; a kill by PID is never a breach ──
+/** The verbs that stop a process, at the head of a command segment. */
+const KILL_HEADS = new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
+/** Words before the real head that only wrap it: `sudo kill`, `xargs kill`, `cmd /c taskkill`, `% { Stop-Process … }`. */
+const WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
+/** A process list filtered by name or command line feeding the kill: the kill is by pattern. */
+const PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
+/** A port lookup feeding the kill: the kill is by port. */
+const PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
+/** A segment that is code inside quotes: `powershell -Command "…"`, `bash -c '…'`. */
+const RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
+
+/** The command segments of a shell line, each as it would run: split on separators and subshells, with the code
+ *  inside a `-Command "…"` scanned too and any other quoted text kept as a literal, never a segment's head. */
+function commandSegments(text: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  const flush = () => {
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const close = text.indexOf(c, i + 1);
+      const end = close < 0 ? text.length : close;
+      const inner = text.slice(i + 1, end);
+      if (RUNS_QUOTED.test(cur)) {
+        flush();
+        out.push(...commandSegments(inner));
+      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
+      i = end;
+    } else if (";|&\n(){}`".includes(c) || (c === "$" && text[i + 1] === "(")) flush();
+    else cur += c;
+  }
+  flush();
+  return out;
+}
+
+/** A segment's head word, its wrappers stripped and its path and `.exe` dropped, lower case. */
+function headOf(segment: string): { head: string; rest: string } | null {
+  const words = segment.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
+  if (!words.length) return null;
+  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
+  return { head, rest: words.slice(1).join(" ") };
+}
+
+/** The ports a port-lookup kill names: `-LocalPort 3000,4200`, `:3000`, `-iTCP:3000`, `3000/tcp`. */
+function portsOf(command: string): number[] {
+  const found = new Set<number>();
+  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
+  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
+  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
+}
+
+/** How a shell command kills, when it does: by name or pattern, by a port lookup, or null (by PID, or no kill).
+ *  A call of the swarm tool itself (a post quoting a kill) is never one. */
+export function classifyKill(command: string): { kind: "pattern" | "port"; ports?: number[] } | null {
+  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
+  let kill: "name" | "fed" | null = null;
+  for (const segment of commandSegments(command)) {
+    const h = headOf(segment);
+    if (!h || !KILL_HEADS.has(h.head)) continue;
+    const { head, rest } = h;
+    if (head === "pkill" || head === "killall") kill = "name";
+    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? (kill ?? null) : "fed";
+    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? (kill ?? null) : "fed";
+    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? (kill ?? null) : "fed";
+    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
+    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
+    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
+    if (kill === "name") break;
+  }
+  if (kill === "name") return { kind: "pattern" };
+  if (kill !== "fed") return null;
+  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
+  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
+  return null; // a PID from a variable the line does not show how it found: read as by PID
+}
 
 // Claude Code's own wording, read here only (idea 1, Risks): if it drifts, a task reads quiet, never missed.
 // Anchored at the result's start: a result that only quotes these words (a grep, a cat) opens nothing.
@@ -314,7 +398,7 @@ type ContentPart = { type?: string; id?: string; name?: string; input?: unknown;
 
 /** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0. */
 export function observe(transcript: string, from: TranscriptCursor | null): { activity: MemberActivity; cursor: TranscriptCursor } {
-  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn) } : freshCursor();
+  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
@@ -369,6 +453,9 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
           const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
+          const kill = typeof command === "string" ? classifyKill(command) : null;
+          if (kill) cursor.breach = { command: (command as string).replace(/\s+/g, " ").trim(), ...kill, at };
         }
         // the turn ends on an assistant line not asking for a tool; a line without stop_reason reads as ended (detection first)
         const inTurn = line.message?.stop_reason === "tool_use";
@@ -420,6 +507,7 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
       inTurn: cursor.inTurn,
       lastLine: cursor.lastLine,
       background: awaitedBackground(cursor),
+      breach: cursor.breach,
     },
     cursor,
   };

@@ -53,6 +53,9 @@ const USAGE = [
   "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
   "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
+  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
+  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
+  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
   `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
   "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the runner joined from this worktree",
 ].join("\n");
@@ -318,11 +321,46 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
   emit({ run: p.run, paused: true, refused: verb, next: line }, `${verb} refused: ${line}`);
   return true;
 };
+/** `--protocol none`: a run phaseless on purpose. */
+const PHASELESS = "none";
+
+// ── locks (idea 4): a shared resource of the machine, honoured; for a port, what listens on it read from the OS ──
+const LOCK_PORT = /^port:(\d{1,5})$/;
+/** The PIDs listening on a TCP port now, from the OS on demand: `netstat -ano` on Windows, `lsof` elsewhere; [] when none or unreadable. */
+function listenersOn(port: number): number[] {
+  const found = new Set<number>();
+  if (process.platform === "win32") {
+    const out = spawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const cols = line.trim().split(/\s+/);
+      // Proto  Local  Foreign  State  PID
+      if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
+    }
+  } else {
+    const out = spawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
+  }
+  return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
+}
+/** The line that stops exactly these PIDs, per platform: by PID, never by name. */
+const stopLine = (pids: number[]): string =>
+  process.platform === "win32" ? pids.map((pid) => `taskkill /PID ${pid} /T /F`).join("; ") : `kill ${pids.join(" ")}`;
+/** For a `port:<n>` lock, the port and what listens on it now; null for any other name. */
+const portListeners = (name: string): { port: number; pids: number[] } | null => {
+  const m = LOCK_PORT.exec(name);
+  return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
+};
+/** One held lock as a line: name, holder, since, waiters, and for a port what listens on it. */
+const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>
+  `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
+
 /** The orchestrator's step after `open` of a task or plan run (idea 3): open the protocol's first phase before any
  *  task, or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm).
  *  The reading pointer sits before the colon, the command last (F6). */
 const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): string | null => {
   if (kind !== "task" && kind !== "plan") return null;
+  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
+  if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
   const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord(`${group}/orchestrator`)}`;
   const pointer = "(its protocol.md's phase table names them)";
   return protocol
@@ -336,7 +374,7 @@ const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): str
 const firstTaskPostLine = async (p: Participant): Promise<string | null> => {
   if (p.slice !== "orchestrator") return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
-  if (!run || (run.kind !== "task" && run.kind !== "plan") || (await board.currentPhase(p.run))) return null;
+  if (!run || (run.kind !== "task" && run.kind !== "plan") || run.protocol === PHASELESS || (await board.currentPhase(p.run))) return null;
   const mine = (await board.stats({ repo: p.repo, run: p.run })).runs.find((r) => r.run === p.run)?.members.find((x) => x.member === p.name);
   return mine?.posts === 1 ? firstPhaseLine(run.kind, run.group, run.protocol) : null;
 };
@@ -869,7 +907,11 @@ ${rearm}` : rearm;
       // each run's title and phase above its members
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)] as const)));
-      emit({ repo, roster, runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })) }, () => {
+      // the locks this repository's members hold or wait on (idea 4)
+      const names = new Set(roster.map((r) => r.name));
+      const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
+      emit({ repo, roster, runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
+        for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown: number | null = null;
         for (const r of roster) {
           const run = runs.get(r.run);
@@ -1010,6 +1052,59 @@ ${rearm}` : rearm;
       });
       break;
     }
+    case "lock": {
+      const p = await caller();
+      if (await refusedPaused(p, "lock")) break;
+      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${USAGE}`);
+      const r = await board.lock(p, name, args.flag("--note"));
+      const cli = self().join(" ");
+      const who = shellWord(p.name);
+      if (!r.granted) {
+        // held: who holds it, then how to wait for its unlocked event (exit 3, as a held claim)
+        process.exitCode = 3;
+        const h = r.holder;
+        const held = `held by ${h.nick} (${h.code}·${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
+        const next = `next: wait for its unlocked event, then lock again (${cli} lock ${shellWord(name)} --as ${who}); in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
+        emit({ name, granted: false, holder: h, next }, () => {
+          console.log(held);
+          console.log(next);
+        });
+        break;
+      }
+      // a port lock makes what listens on it yours to stop: its PIDs now, and the line that stops exactly them
+      const port = portListeners(name);
+      const listening = port
+        ? port.pids.length
+          ? `listening on ${port.port} now: ${port.pids.join(", ")} (any not stopped by a release is still running: stop it only if it is yours to stop)`
+          : `nothing listens on ${port.port} now`
+        : null;
+      const next =
+        port && port.pids.length
+          ? `next: to restart what listens on ${port.port}, stop exactly these: ${stopLine(port.pids)}`
+          : `next: unlock it once you are done: ${cli} unlock ${shellWord(name)} --as ${who}`;
+      emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), next }, () => {
+        console.log(`granted ${name}`);
+        if (listening) console.log(listening);
+        console.log(next);
+      });
+      break;
+    }
+    case "unlock": {
+      const p = await caller();
+      const name = args.positional[0] ?? fail(`unlock: which resource?\n${USAGE}`);
+      const r = await board.unlock(p, name);
+      emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
+      break;
+    }
+    case "locks": {
+      const held = await board.locks();
+      const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
+      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })) }, () => {
+        if (!held.length) console.log("no lock held");
+        for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
+      });
+      break;
+    }
     case "status": {
       const runs = await board.runs();
       // each member's worktree, null for a seat or an orchestrator (D64)
@@ -1023,9 +1118,12 @@ ${rearm}` : rearm;
           return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o) }, () => {
+      // the machine's held locks (idea 4): store-wide, so listed once above the runs
+      const held = await board.locks();
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
+        for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
