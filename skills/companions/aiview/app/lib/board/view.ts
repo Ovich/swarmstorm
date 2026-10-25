@@ -512,12 +512,10 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   });
 }
 
-/** A run's pause as the snapshot sends it (idea 2): its text, and whether it waits on the person; absent from an older reader. */
-type RunPause = { text: string; person: boolean } | null | undefined;
 /** The run header's pause words: `waiting on the person: <what>` for `pause --person`, `paused: <why>` for a plain
  *  pause, null when the run is not paused. */
 export function pausedText(run: RunSummary): string | null {
-  const pause = (run as RunSummary & { paused?: RunPause }).paused;
+  const pause = run.paused;
   if (!pause) return null;
   if (pause.person) return `waiting on the person${pause.text ? `: ${pause.text}` : ""}`;
   return pause.text ? `paused: ${pause.text}` : "paused";
