@@ -19,7 +19,7 @@ Swarmstorm is an open-source (MIT) set of agent skills for Claude Code, Codex an
 | **Prototypes** | screens to approve before they're built, in your project's own look |
 | **Workbenches** | your own engineering tools, built as you go: the way you agreed to do a recurring piece of work, kept as a skill and a live page on your real data |
 | **The agents** | an orchestrator that runs each swarm and talks to you, workers that build, verifiers that test, and role seats that brainstorm, debate or write |
-| **The protocols** | ready-made ways to run a swarm: build and verify, brainstorm, debate, editorial, or your own |
+| **The protocols** | ready-made ways to run a swarm: build and verify, idea to outcome, brainstorm, debate, editorial, or your own |
 | **28 skills** | the work around the code, from the interview and the plan to prototypes, reviews and conventions, listed under [Skills](#skills) |
 
 ## Parallel agents without merge conflicts
