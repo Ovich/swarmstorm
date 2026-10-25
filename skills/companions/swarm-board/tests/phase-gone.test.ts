@@ -104,7 +104,8 @@ test("without any gone member, all-done, idle and the progress line read exactly
   assert.deepEqual(events("idle").map((e) => e.body), ["idle 0s: every member is waiting; phase diverge 0/2 done"]);
   await Promise.all(waits);
   for (const m of ["a", "b"]) board.done(members[m], "diverge");
-  assert.deepEqual(events("done").map((e) => e.body), ["done diverge (1/2)", "done diverge (2/2)"]);
+  // idea 2: the done that leaves one member owing names it (the straggler case)
+  assert.deepEqual(events("done").map((e) => e.body), ["done diverge (1/2): all but b", "done diverge (2/2)"]);
   assert.deepEqual(events("all-done").map((e) => e.body), ["all done diverge: every member is done (2/2); open the next phase"]);
   assert.equal(progressText(board.phaseProgress(run.id)!), "2/2 done");
   // a phase opened again tells its all-done again

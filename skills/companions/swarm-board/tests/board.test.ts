@@ -981,9 +981,9 @@ const SEATS = [
 test("join: --on over the seat row's on over the kind's defaults, per role", () => {
   const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   assert.deepEqual(board.join({ run: plan.id, slice: "S3", doing: "x", files: [] }).runner.subscriptions, []);
-  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["merged", "ended", "stale"]);
+  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "merged", "done", "joined", "idle"]);
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale"]);
+  assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale", "done", "joined", "idle"]);
   assert.deepEqual(board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner.subscriptions, []);
   assert.deepEqual(board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner.subscriptions, [{ event: "agreement", scope: "run" }]);
   const on = [{ event: "merged" as const, scope: "any" as const }];
