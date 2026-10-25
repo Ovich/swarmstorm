@@ -474,7 +474,7 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     if (!run) continue;
     if (pick.follow) {
       // a phase separator of the followed member's run stays: it mentions every member of it
-      if (!involves(e, pick.follow, ctx) && !(isPhase(e) && run.group === splitRunner(pick.follow).plan)) continue;
+      if (!involves(e, pick.follow, ctx) && !(isPhase(e) && run.group === splitRunner(pick.follow).plan) && !isAboutMember(e, run, pick.follow)) continue;
     } else if (picked) {
       if (run.run !== picked.run && !namesPicked(e)) continue;
     } else if (!run.open) continue;
@@ -497,12 +497,40 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     if (member) latestStallOf.set(memberKey(i.run, member), i.seq);
   }
   const saidSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.run === i.run && splitRunner(x.from).slice === member);
+  // V4: a stall has passed once the member's liveness reads neither quiet, gone nor under a rule, without a post
+  const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
+  const livenessOf = new Map(snap.roster.map((r) => [r.runner, r.liveness]));
+  const stallPassed = (i: Item, member: string): boolean => {
+    const l = livenessOf.get(`${groupOf.get(i.run)}/${member}`);
+    return !!l && l.state !== "quiet" && l.state !== "gone" && !l.rule;
+  };
   return items.filter((i) => {
     if (i.kind !== "stalled") return true;
     const member = stalledMembers.get(i.seq);
     if (!member) return i === last;
-    return latestStallOf.get(memberKey(i.run, member)) === i.seq && !saidSince(i, member);
+    return latestStallOf.get(memberKey(i.run, member)) === i.seq && !saidSince(i, member) && !stallPassed(i, member);
   });
+}
+
+/** A run's pause as the snapshot sends it (idea 2): its text, and whether it waits on the person; absent from an older reader. */
+type RunPause = { text: string; person: boolean } | null | undefined;
+/** The run header's pause words: `waiting on the person: <what>` for `pause --person`, `paused: <why>` for a plain
+ *  pause, null when the run is not paused. */
+export function pausedText(run: RunSummary): string | null {
+  const pause = (run as RunSummary & { paused?: RunPause }).paused;
+  if (!pause) return null;
+  if (pause.person) return `waiting on the person${pause.text ? `: ${pause.text}` : ""}`;
+  return pause.text ? `paused: ${pause.text}` : "paused";
+}
+
+/** The board's events that tell of one member (stalled, liveness, gone, recovered): its runner in the event's data or
+ *  at the head of its body (`gone <group>/<id>: …`), so following that member keeps them (V5). */
+const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "gone", "recovered"]);
+function isAboutMember(e: SnapshotEvent, run: RunSummary, runner: string): boolean {
+  if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return false;
+  if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}` === runner;
+  if (e.meta && "linkDown" in e.meta) return e.meta.linkDown === runner;
+  return e.body.startsWith(`${e.event} ${runner}:`) || e.body.startsWith(`${e.event} ${runner} `);
 }
 
 // ── the conversation's filters (SL11) ───────────────────────────────────────────────
