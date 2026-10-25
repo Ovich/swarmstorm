@@ -32,6 +32,15 @@ one run tuned to it, built on the closest example**.
   reconsidered the same way. For a brainswarm, the
   estimate is the viewpoints the question needs, one seat each that would catch what the others
   would not. The proposal states it in one line: `≈ 12 tasks, 4 at once, 3 rounds → 4 builders`.
+- **Weigh the run's cost before proposing it**: its wall-clock (phases, waits on the app, rounds a
+  single seat must run in turn) and its tokens (each member's priming, briefs, board traffic,
+  verify passes), against doing the same work in this session or with fewer seats. The proposal
+  states it in one line: `≈ 40 min, ≈ 3× the tokens of one session`. **An overkill run** (seats
+  waiting most of the time, tasks too small to repay a member's priming, a verify loop on work a
+  test already proves, a run slower than doing it alone) **is named before go**: `Might be an
+  overkill, here is my suggestion:` and the leaner setup with its cost line; dispatched only on
+  the person's word. A run of 2026-10-25 kept three workers idle
+  through a test phase only one seat could run.
 - **The person's number wins**: asked for more seats than proposed, re-cut the work finer so
   every seat has work in the first phase (`references/tasks.md`, *Cutting*), never seats left
   idle; asked for fewer, fold tasks together. When the finer cut costs something (tasks sharing
