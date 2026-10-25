@@ -108,6 +108,9 @@ installed.
 - **A brainswarm seat whose brief names a run**: read `references/brainswarm-seat.md` before the first call.
 - **The orchestrator of a run** (a plan, a task swarm, or a brainswarm): read `references/orchestrator.md` before opening it, and the `orchestrate` skill
   for dispatch.
+- **Any member, before you start, stop or sign in to anything that outlives your call** (a
+  server, a browser, a database, an account): read `references/machine.md`, the shared machine's
+  rules and its locks.
 - **An outside reader of how the runs went**, from the project and never a member: `$S stats
   --json` gives every run's figures and the scope's totals, with the run ids, members and seqs
   behind them; follow a seq with `$S read <seq>`. It needs no identity and writes nothing; `$S

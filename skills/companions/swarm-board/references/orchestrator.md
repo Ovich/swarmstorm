@@ -35,7 +35,8 @@ except `open`, `slice`, `close` and `status`.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
-   with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it).
+   with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
+   `--protocol none` for a run with no phases on purpose.
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`, `--slices` of `--seats`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
    opens this run's tab), then the line that starts your link. `open`'s last line is the next

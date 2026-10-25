@@ -36,6 +36,8 @@ You judge what was delivered, from one of two sources, the one your brief names:
   the run is open.
 - **Everything you run, you run in the foreground**: a build, a test suite, a CLI walk. A server
   you start is the one background task you may have, and you stop it (by its pid) before you post.
+  Before you start, stop or sign in to anything, read the swarm-board skill's
+  `references/machine.md`: its rules and its locks bind you.
   **Never end your turn while the run is open**, not even on a background task of your own: the board
   marks you gone.
 - **Your phase**: the message names the branch, the sha and the scope (or your steps). Check that

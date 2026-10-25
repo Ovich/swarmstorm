@@ -55,7 +55,8 @@ the goal (with its cap), N iterations, or unbounded.
   its task names, stopped right after; anything else asks the app owner on the thread.
 - **A verify walks a copy of the person's data**, never the live one: the product served on the
   verifier's port reads a copy (for aiview and swarm, a `SWARMSTORM_HOME` copied into a temp folder),
-  so a migration or a write a walk triggers never lands on what the person uses.
+  so a migration or a write a walk triggers never lands on what the person uses. The rest of what a
+  seat may start, stop or sign in to is the swarm-board skill's `references/machine.md`.
 - **A question between seats is answered on the thread**, by the seat it names; an agreement
   two builders make on a shared file binds, as the `swarm-board` skill says.
 
