@@ -785,17 +785,15 @@ ${USAGE}`);
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
       if (raw !== undefined) again.push("--timeout", raw);
       if (asJson) again.push("--json");
-      // a wait run in the foreground holds under the shell tool's limit (B7); a background listener holds as it was given
-      const againForeground = raw === undefined ? [...again, "--timeout", String(FOREGROUND_WAIT_MS)] : again;
-      const foregroundLine = againForeground.join(" ");
-      // an empty return's foreground re-arm always holds 540000, whatever the caller gave: an old 110000 habit stays on 2-min turns otherwise (v1-c)
-      const emptyForegroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
+      // every foreground re-arm holds 540000 under the shell tool's limit (B7), whatever the caller gave: an old 110000
+      // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
+      const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
       if (!d.full.length && !d.lines.length) {
         // a timeout: the line to run again (B7); the runner ended: nothing to re-arm
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
         else {
-          const next = (await pausedLine(p)) ?? (p.slice === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${emptyForegroundLine}`);
+          const next = (await pausedLine(p)) ?? (p.slice === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
           emit({ ...d, next }, next);
         }
         break;
