@@ -29,7 +29,7 @@ const USAGE = [
   "          # --plan <slug> --slices <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …]}]',
   "  slice   <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
-  "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>]   # adds a slice or seat mid-run (orchestrator)",
+  "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>] [--busy-max <ms>]   # adds a slice or seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
   "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
@@ -218,7 +218,9 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
   // the funny name beside the runner (D43); an orchestrator is its name alone
   const who = r.slice === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
-  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}`;
+  // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
+  const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
+  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
 
 /** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase.
@@ -341,6 +343,40 @@ function listenersOn(port: number): number[] {
     for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
   }
   return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
+}
+/** When each of these processes started (ms epoch), from the OS; a PID it cannot read is left out. About 1 s on Windows, so read only when listeners exist. */
+function processStarts(pids: number[]): Map<number, number> {
+  const starts = new Map<number, number>();
+  if (!pids.length) return starts;
+  if (process.platform === "win32") {
+    const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
+    const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
+    const out = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const [pid, at] = line.trim().split(/\s+/);
+      if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
+    }
+  } else {
+    const out = spawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const m = /^\s*(\d+)\s+(.+)$/.exec(line);
+      if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
+    }
+  }
+  return starts;
+}
+/** F12: a port grant's listeners, told apart by the name's last release. Left running by that release (started before it):
+ *  stop it only if it is yours. Started after it, or with no release at all: by someone without the lock, ask first. */
+function grantListeners(port: number, pids: number[], released: { at: string; by: string } | undefined): { lines: string[]; stoppable: number[] } {
+  const starts = processStarts(pids);
+  const releasedAt = released ? Date.parse(released.at) : NaN;
+  const left = pids.filter((pid) => Number.isFinite(releasedAt) && (starts.get(pid) ?? -Infinity) < releasedAt);
+  const without = pids.filter((pid) => !left.includes(pid));
+  const lines = [
+    ...(left.length ? [`listening on ${port} now: ${left.join(", ")}, left running by ${released!.by}'s release: stop it only if it is yours to stop`] : []),
+    ...(without.length ? [`listening on ${port} now: ${without.join(", ")}, started by someone without the lock: ask on the board before you stop it`] : []),
+  ];
+  return { lines, stoppable: left };
 }
 /** The line that stops exactly these PIDs, per platform: by PID, never by name. */
 const stopLine = (pids: number[]): string =>
@@ -602,10 +638,15 @@ async function main(): Promise<void> {
         const on = args.flag("--on");
         if (on !== undefined) subscriptionsArg(on);
         const role = args.flag("--role");
+        // --busy-max: the seat's bound on a non-shell call (a browser or MCP step), as a seat row's busyMax (idea 5)
+        const rawBusyMax = args.flag("--busy-max");
+        const busyMax = rawBusyMax === undefined ? undefined : Number(rawBusyMax);
+        if (busyMax !== undefined && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
         const added = await board.addSlice(run, {
           id,
           title: need("--title"),
           ...(role ? { role } : {}),
+          ...(busyMax !== undefined ? { busyMax } : {}),
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
           ...(on !== undefined ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}),
@@ -1073,18 +1114,15 @@ ${rearm}` : rearm;
       }
       // a port lock makes what listens on it yours to stop: its PIDs now, and the line that stops exactly them
       const port = portListeners(name);
-      const listening = port
-        ? port.pids.length
-          ? `listening on ${port.port} now: ${port.pids.join(", ")} (any not stopped by a release is still running: stop it only if it is yours to stop)`
-          : `nothing listens on ${port.port} now`
-        : null;
+      // F12: no listener reads plain; one left by the last release, or started without the lock, reads as such
+      const told = port && port.pids.length ? grantListeners(port.port, port.pids, r.released) : null;
       const next =
-        port && port.pids.length
-          ? `next: to restart what listens on ${port.port}, stop exactly these: ${stopLine(port.pids)}`
+        told && told.stoppable.length
+          ? `next: to restart what listens on ${port!.port}, stop exactly these: ${stopLine(told.stoppable)}`
           : `next: unlock it once you are done: ${cli} unlock ${shellWord(name)} --as ${who}`;
-      emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), next }, () => {
+      emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), ...(r.released ? { released: r.released } : {}), next }, () => {
         console.log(`granted ${name}`);
-        if (listening) console.log(listening);
+        for (const line of told?.lines ?? []) console.log(line);
         console.log(next);
       });
       break;
