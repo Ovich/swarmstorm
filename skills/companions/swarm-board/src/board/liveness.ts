@@ -102,3 +102,5 @@ export const IN_TURN_MS = 120 * 1000;
 export const OWE_WAIT_MS = 10 * 60 * 1000;
 /** A carried message pending this long (from its post, or from the resume) is due: it wakes its member by itself (idea 2). */
 export const CARRY_MAX_MS = 5 * 60 * 1000;
+/** A named lock others wait on, held this long since its first waiter queued, is `stalled · lock` to both orchestrators (idea 4). */
+export const LOCK_HELD_MS = 10 * 60 * 1000;

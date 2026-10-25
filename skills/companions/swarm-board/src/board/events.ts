@@ -4,7 +4,7 @@
 import type { Message, Participant } from "./board.ts";
 import { profileOf } from "./kinds.ts";
 
-export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered";
+export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach";
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
 /** `carry`: the event never ends a wait by itself; it rides on the next wake, or wakes once due (idea 2). */
@@ -45,6 +45,8 @@ function stalledMove(m: Message, me: Participant, cli: string): string {
       return "SendMessage it to stop the call";
     case "owing":
       return `${cli} post ${word(`@${id} your part of ${meta.phase ?? "<phase>"}`)} --as ${word(me.name)}: its wait returns on it`;
+    case "lock":
+      return `ask ${meta.holder ?? "its holder"} to unlock ${meta.lock ?? "<lock>"}, or to stop what it holds: ${cli} post ${word(`@${meta.holder ?? "<holder>"} …`)} --as ${word(me.name)}`;
     default:
       return `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${word(me.name)})`;
   }
@@ -120,6 +122,24 @@ export const EVENTS: Record<EventName, EventDef> = {
   },
   // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
   recovered: { name: "recovered", toAuthor: true },
+  // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
+  unlocked: {
+    toAuthor: true,
+    name: "unlocked",
+    next: (m, me, cli) => {
+      const name = m.meta && "unlocked" in m.meta ? m.meta.unlocked : null;
+      return name && m.mentions.includes(me.name) ? `it is free: lock it now: ${cli} lock ${word(name)} --as ${word(me.name)}` : null;
+    },
+  },
+  // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
+  breach: {
+    name: "breach",
+    toAuthor: true,
+    next: (m, me) => {
+      const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
+      return member && me.slice === "orchestrator" ? `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"` : null;
+    },
+  },
   // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
   gone: {
     name: "gone",
