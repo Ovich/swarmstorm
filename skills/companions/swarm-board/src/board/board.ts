@@ -1724,7 +1724,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           // D46: a call open past BUSY_MAX_MS is told as stalled too, the member still busy
           const longCall = st.state === "busy" && st.since != null && t - st.since >= BUSY_MAX_MS;
           if ((st.state !== "quiet" && !longCall) || r.paused != null || !presence(st.member).connected) {
-            if (a.stalled_at != null) {
+            // F2: the working blink between two waits of one owing span keeps the stalled told; again only after STALLED_AGAIN_MS
+            const owingSpanOpen = a.owe_since != null;
+            if (a.stalled_at != null && !owingSpanOpen) {
               db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run, st.member);
               moved = true;
             }
