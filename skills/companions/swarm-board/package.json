@@ -8,7 +8,8 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import ./tests/fixtures/outside-harness.ts --test \"tests/**/*.test.ts\""
+    "test": "node --import ./tests/fixtures/outside-harness.ts --test \"tests/**/*.test.ts\"",
+    "yardstick": "node --import ./tests/fixtures/outside-harness.ts --test tests/yardstick.harness.ts"
   },
   "devDependencies": {
     "@types/node": "26.2.0",
