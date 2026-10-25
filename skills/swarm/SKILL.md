@@ -29,8 +29,9 @@ build-verify, the verifiers, their focus and source, the app owner; the loop; ea
    worker fast-forwards it from its own worktree.
 2. A seats file, one row per worker, `w1` … `w<n>`, titled `worker`, and under build-verify one
    per verifier, `v1` … `v<m>`, titled `verifier · <focus>`; then `$S open --kind task
-   --group <topic> --title "<what the swarm is for>" --seats <file>` with `--protocol <name>` when
-   it runs one, and start your link as it prints. Give the person the board's URL.
+   --group <topic> --title "<what the swarm is for>" --seats <file>` with `--protocol <the
+   charter's base>` when it runs one, and start your link as it prints; under a protocol, open
+   its first phase before the first task post. Give the person the board's URL.
 3. **Every worker at once** on the plugin's `swarm-worker` agent (`subagent_type:
    "swarmstorm:swarm-worker"`), each with `isolation: "worktree"`, as the `orchestrate` skill
    dispatches. The brief holds no task:

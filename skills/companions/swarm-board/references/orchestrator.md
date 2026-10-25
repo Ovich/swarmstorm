@@ -38,7 +38,8 @@ except `open`, `slice`, `close` and `status`.
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it).
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`, `--slices` of `--seats`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
-   opens this run's tab), then the line that starts your link: give the link to the person, who
+   opens this run's tab), then the line that starts your link. `open`'s last line is the next
+   step: the first phase, or why there is none. Give the link to the person, who
    watches the run there, and run the line as it says.
 3. **You register nothing for liveness.** Each member's link finds its transcript in the
    session and reports its activity; the board derives each member's state from it (`SKILL.md`
