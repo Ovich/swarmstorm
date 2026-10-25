@@ -35,6 +35,6 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    evidence, what the shaping changed and why, anything the task did not predict.
 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop
-the product (the app owner's), or edit the plan, unless your brief says so in those words. **One
+the product the verifiers walk (each verifier owns its own instance), or edit the plan, unless your brief says so in those words. **One
 command per shell call**, never chained with `&&` or `;`. **Never end your turn while the run is
 open**: between tasks, wait in the foreground.

@@ -170,7 +170,8 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   const slices = path.join(toolRoot, "s.json");
   const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--slices", slices);
   assert.equal(text.status, 0, text.stderr);
-  assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\n$/, "the run id, then the link line alone");
+  // idea 3: the run id, the link line, then the next step, last
+  assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\nnext: no protocol[^\n]*\n$/, "the run id, the link line, the next step");
   const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
   try {
     assert.deepEqual(board.runs().map((x) => x.id).sort(), [out.run, Number(text.stdout.split("\n")[0])].sort());
@@ -215,7 +216,7 @@ test("--json on every verb parses", () => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
   const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--slices", slices, "--json").stdout);
-  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "plan", "repo", "run", "url"]);
+  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "next", "plan", "repo", "run", "url"]);
   const id = String(opened.run);
   const as = ["--as", "review-tool/S3"];
   const verbs: string[][] = [
@@ -282,13 +283,14 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   const script = CLI.replace(/\\/g, "/");
   assert.equal(
     hint,
-    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: node ${script} wait --mentions --as review-tool/S5 --timeout 5000`,
+    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 540000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
-  // the command it names runs as written: nothing more for S5, so it times out, silent
+  // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the
+  // line to run again, always at the foreground --timeout 540000 whatever the caller gave (v1-c)
   const again = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50");
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(again.stdout, "");
+  assert.equal(again.stdout, `nothing yet; wait again (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 540000\n`);
 });
 
 const LISTEN = (runner: string): string =>
@@ -386,7 +388,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   assert.equal(await exited, 0);
-  assert.match(out, /^answer on the thread if needed[^\n]*wait --mentions --as review-tool\/S5 --timeout 15000\n/);
+  assert.match(out, /^answer on the thread if needed[^\n]* \(give your shell tool a 600000 ms timeout\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 540000\n/);
   assert.match(out, /@S5 your turn/);
   assert.doesNotMatch(out, /joined/);
 });
@@ -509,10 +511,10 @@ test("--help lists no serve: the board server is a hidden verb", () => {
 test("status has no server: the data home, the store and the open runs", () => {
   const empty = run("status", "--json");
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "open", "runs", "sqlite"]);
   const id = openRun();
   const s = JSON.parse(run("status", "--json").stdout);
-  assert.deepEqual(Object.keys(s).sort(), ["home", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "open", "runs", "sqlite"]);
   assert.equal(s.home, toolRoot);
   assert.equal(s.runs, 1);
   const text = run("status").stdout;
@@ -636,7 +638,7 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   assert.doesNotMatch(r.stdout, /--slice/);
   // a seat waits in the foreground, never a background listener
   assert.equal(lines.at(-2), START_LINK("idea/architect", String(id)));
-  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener.* wait --mentions --as idea\/architect$/);
+  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is gone; give your shell tool a 600000 ms timeout\): node \S+ wait --mentions --as idea\/architect --timeout 540000$/);
   const json = JSON.parse(run("join", "--run", String(id), "--seat", "skeptic", "--doing", "doubting", "--json").stdout);
   assert.equal(json.as, "idea/skeptic");
   assert.equal(json.commands.length, 4);
@@ -747,7 +749,7 @@ test("join --on with an unknown event exits 1 listing the known ones; --on store
   const id = openBrainstorm();
   const bad = joinSeat(id, "architect", "--on", "agreed");
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, gone, liveness, flag/);
+  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, recovered, unlocked, breach, gone, liveness, flag/);
   const ok = joinSeat(id, "architect", "--on", "agreement,any:merged");
   assert.equal(ok.status, 0, ok.stderr);
   const roster = run("roster");
@@ -959,7 +961,7 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("deliver", "--as", "idea/orchestrator");
   run("post", "@architect a question", "--as", "idea/orchestrator");
   const seat = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000").stdout;
-  assert.match(seat, /then wait again, in the foreground: node .* wait --mentions --as idea\/architect/);
+  assert.match(seat, /then wait again, in the foreground \(give your shell tool a 600000 ms timeout\): node .* wait --mentions --as idea\/architect/);
   assert.doesNotMatch(seat, /background/);
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
@@ -1030,10 +1032,11 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   assert.match(woken.stdout, /phase build: the first wave/);
 
   const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
+  // B15 (idea 2): after a member's first return in a phase, the header is short and names where its text is
+  const short = /^phase build \(unchanged; its text: .* thread --as review-tool\/S3\)$/;
   const delivered = run("deliver", "--as", s3).stdout.split("\n");
-  assert.equal(delivered[0], header);
-  assert.equal(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], header);
-  assert.equal(JSON.parse(run("read", seqOf(posted.stdout), "--as", s3, "--json").stdout).phase, header);
+  assert.match(delivered[0], short);
+  assert.match(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], short);
 
   const joined = run("join", "--run", String(id), "--slice", "S5", "--doing", "skill").stdout.split("\n");
   const lastRoster = joined.map((l) => / run \d+ {2}\w+ .*doing: /.test(l)).lastIndexOf(true);
@@ -1050,7 +1053,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   const early = joinSeat(id, "architect");
   assert.equal(early.status, 0, early.stderr);
   assert.doesNotMatch(early.stdout, /is open and asks/);
-  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .* wait --mentions --as idea\/architect$/);
+  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/architect --timeout 540000$/);
 
   run("phase", "ping", "say", "hi", "--as", "idea/orchestrator");
   const owed = /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then: node \S+ done ping --as idea\/skeptic$/m;
@@ -1059,7 +1062,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.equal(late.status, 0, late.stderr);
   const lines = late.stdout.trimEnd().split("\n");
   assert.match(lines.at(-2)!, owed);
-  assert.match(lines.at(-1)!, /^only then wait, in the foreground .* wait --mentions --as idea\/skeptic$/);
+  assert.match(lines.at(-1)!, /^only then wait, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/skeptic --timeout 540000$/);
   assert.match(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, owed);
   const posted = run("post", "hello", "--as", "idea/skeptic");
   assert.match(posted.stdout, owed);
@@ -1068,13 +1071,13 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   // a member woken by the phase event is told to do it before it waits again
   const woken = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000");
   assert.match(woken.stdout, /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part now, then: node \S+ done ping --as idea\/architect$/m);
-  assert.match(woken.stdout, /^only then wait again, in the foreground: .* wait --mentions --as idea\/architect/m);
+  assert.match(woken.stdout, /^only then wait again, in the foreground.*: node .* wait --mentions --as idea\/architect/m);
 
   // after done: the wait step, nothing owed
   assert.equal(run("done", "ping", "--as", "idea/skeptic").status, 0);
   const after = run("post", "again", "--as", "idea/skeptic");
   assert.doesNotMatch(after.stdout, /is open and asks/);
-  assert.match(after.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .* wait --mentions --as idea\/skeptic$/);
+  assert.match(after.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/skeptic --timeout 540000$/);
   assert.equal(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, undefined);
   // the orchestrator never owes a phase
   assert.doesNotMatch(run("deliver", "--as", "idea/orchestrator").stdout, /is open and asks/);
@@ -1114,4 +1117,103 @@ test("open --protocol names the run's protocol: status and the board snapshot ca
   const bad = run("open", "--kind", "task", "--group", "tt2", "--title", "T", "--seats", slices, "--protocol", "Build Verify");
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--protocol takes a name in lower case, digits and dashes/);
+});
+
+// F7 (test 2.1, fixed in build 2.2): B15 shortens the printed header; the JSON's `phase` field is data, and keeps the phase's text
+test("read --json gives the current phase's full header in its phase field, also after the member's first return", () => {
+  const id = openRun();
+  const s3 = "review-tool/S3";
+  run("join", "--run", String(id), "--slice", "S3", "--doing", "page");
+  run("phase", "build", "the", "first", "wave", "--as", "review-tool/orchestrator");
+  run("wait", "--mentions", "--as", s3, "--timeout", "3000");
+  const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
+  assert.equal(JSON.parse(run("read", seqOf(posted.stdout), "--as", s3, "--json").stdout).phase, "phase build: the first wave");
+});
+
+// B7, F6 (test 2.1, fixed in build 2.2): the tool-timeout sentence sits before the colon; what follows it runs as written
+test("a printed wait line ends on its bare command, and that command, run as copied, exits 0", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("deliver", "--as", "review-tool/S5");
+  const empty = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50").stdout.trimEnd();
+  assert.match(empty, /^nothing yet; wait again \(give your shell tool a 600000 ms timeout\): node /);
+  const command = empty.slice(empty.lastIndexOf(": ") + 2);
+  assert.doesNotMatch(command, /[()]/, "no prose after the command");
+  assert.match(command, / --timeout 540000$/, "v1-c: the foreground re-arm, whatever the caller gave");
+  // run as copied, its timeout shortened for the test only
+  const words = command.replace(/--timeout 540000$/, "--timeout 50").split(" ");
+  assert.equal(words[0], "node");
+  const copied = spawnSync(process.execPath, words.slice(1), { cwd: repo, env: env(), encoding: "utf8" });
+  assert.equal(copied.status, 0, copied.stderr);
+});
+
+// ── idea 3: phases offered when a swarm opens (note #12311, C3 as #12346) ──────────────
+
+const seatsFile = (name: string, ids: string[]) => {
+  const f = path.join(toolRoot, `${name}.seats.json`);
+  fs.writeFileSync(f, JSON.stringify(ids.map((id) => ({ id, title: id, blockers: [] }))));
+  return f;
+};
+const PHASE_CMD = (group: string) => new RegExp(`: node \\S+ phase <name> "<its message>" --as ${group}\\/orchestrator$`);
+
+test("C1: open under a protocol ends on next: its first phase, the command last and whole, also within the last 6 lines; a plan run too", () => {
+  const r = run("open", "--kind", "task", "--group", "c1", "--title", "T", "--seats", seatsFile("c1", ["w1"]), "--protocol", "build-verify");
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.trimEnd().split("\n");
+  const last = lines.at(-1)!;
+  assert.match(last, /^next: open build-verify's first phase before any task \(its protocol\.md's phase table names them\): /);
+  assert.match(last, PHASE_CMD("c1"));
+  assert.ok(lines.slice(-6).includes(last));
+  const slices = path.join(toolRoot, "c1p.slices.json");
+  fs.writeFileSync(slices, SLICES);
+  const plan = run("open", "--plan", "c1p", "--title", "T", "--slices", slices, "--protocol", "build-verify");
+  assert.match(plan.stdout.trimEnd().split("\n").at(-1)!, /^next: open build-verify's first phase before any task/);
+});
+
+test("C2: open with no protocol ends on next: no protocol, workers on call, and the same phase line", () => {
+  const r = run("open", "--kind", "task", "--group", "c2", "--title", "T", "--seats", seatsFile("c2", ["w1"]));
+  const last = r.stdout.trimEnd().split("\n").at(-1)!;
+  assert.match(last, /^next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task \(its protocol\.md's phase table names them\): /);
+  assert.match(last, PHASE_CMD("c2"));
+});
+
+test("C3: the orchestrator's first post of a task run with no phase open ends on next:; its second does not; with a phase open, never; a brainstorm, never", () => {
+  run("open", "--kind", "task", "--group", "c3", "--title", "T", "--seats", seatsFile("c3", ["w1"]));
+  const first = run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout.trimEnd().split("\n");
+  assert.match(first.at(-1)!, /^next: no protocol/);
+  assert.doesNotMatch(run("post", "@w1 task T2", "--as", "c3/orchestrator").stdout, /^next:/m);
+  run("open", "--kind", "task", "--group", "c3b", "--title", "T", "--seats", seatsFile("c3b", ["w1"]));
+  run("phase", "build", "go", "--as", "c3b/orchestrator");
+  assert.doesNotMatch(run("post", "@w1 task T1", "--as", "c3b/orchestrator").stdout, /^next:/m);
+  const open = run("open", "--kind", "brainstorm", "--group", "c3c", "--title", "T", "--seats", seatsFile("c3c", ["a"]));
+  assert.doesNotMatch(open.stdout, /^next:/m);
+  assert.doesNotMatch(run("post", "@a an idea", "--as", "c3c/orchestrator").stdout, /^next:/m);
+});
+
+test("C4: --json carries the line as next, on open and on that first post", () => {
+  const opened = JSON.parse(run("open", "--kind", "task", "--group", "c4", "--title", "T", "--seats", seatsFile("c4", ["w1"]), "--protocol", "build-verify", "--json").stdout);
+  assert.match(opened.next, /^next: open build-verify's first phase/);
+  const text = run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"])).stdout.trimEnd().split("\n").at(-1)!;
+  const posted = JSON.parse(run("post", "@w1 task", "--as", "c4b/orchestrator", "--json").stdout);
+  assert.equal(posted.next, text, "the first post's next is open's last line");
+});
+
+test("idea 3's addition: open --protocol none ends on next: phaseless, with no phase command, and its first post carries no next:", () => {
+  const r = run("open", "--kind", "task", "--group", "none1", "--title", "T", "--seats", seatsFile("none1", ["w1"]), "--protocol", "none");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trimEnd().split("\n").at(-1), "next: phaseless: the workers take tasks on call");
+  assert.doesNotMatch(run("post", "@w1 task T1", "--as", "none1/orchestrator").stdout, /^next:/m);
+  assert.doesNotMatch(String(JSON.parse(run("post", "@w1 task T2", "--as", "none1/orchestrator", "--json").stdout).next), /^next:/);
+});
+
+test("idea 5: slice add --busy-max gives the seat its bound, shown in the roster; a bad one is refused", () => {
+  const id = openRun();
+  const bad = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "5min");
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--busy-max takes a positive whole number of ms, got 5min/);
+  const ok = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "300000");
+  assert.equal(ok.status, 0, ok.stderr);
+  run("join", "--run", String(id), "--slice", "V2", "--doing", "verify");
+  assert.match(run("roster").stdout, /V2[^\n]*busy max: 300 s \(non-shell calls\)/);
+  assert.doesNotMatch(run("roster").stdout.split("\n").filter((l) => /review-tool\/S3/.test(l)).join("\n"), /busy max/, "the default is not shown");
 });

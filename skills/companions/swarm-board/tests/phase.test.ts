@@ -102,11 +102,14 @@ test("done is stored once per run, member and phase; the last member's done post
   assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 1, of: 2, gone: [] });
   const last = board.done(architect, "diverge");
   assert.equal(last.all, true);
-  const told = board.deliver(orchestrator).full;
-  assert.deepEqual(told.map((m) => m.event), ["done", "done", "all-done"]);
-  assert.match(told[2].body, /^all done diverge: every member is done \(2\/2\)/);
-  assert.match(EVENTS["all-done"].next!(told[2], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
-  assert.equal(EVENTS["all-done"].next!(told[2], skeptic, "swarm"), null);
+  // idea 2: the first done (the straggler case) and all-done in full; the last plain done carried, as a line
+  const delivery = board.deliver(orchestrator);
+  const told = delivery.full;
+  assert.deepEqual(told.map((m) => m.event), ["done", "all-done"]);
+  assert.ok(delivery.lines.some((l) => /done diverge \(2\/2\)/.test(l)), delivery.lines.join("\n"));
+  assert.match(told[1].body, /^all done diverge: every member is done \(2\/2\)/);
+  assert.match(EVENTS["all-done"].next!(told[1], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
+  assert.equal(EVENTS["all-done"].next!(told[1], skeptic, "swarm"), null);
   assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [] });
   board.phase(orchestrator, "converge", "pick");
   board.phase(orchestrator, "diverge", "again");

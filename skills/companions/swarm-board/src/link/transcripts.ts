@@ -16,11 +16,26 @@ export type Binding = { verb: "join"; run: RunId; seat: string } | { verb: "open
 export type TranscriptCursor = {
   offset: number;
   tokens: number;
-  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean }>;
+  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean }>;
   lastTool: string | null;
   context: number | null;
   grewAt: number | null;
+  /** the last assistant text (50 chars), or "<tool> <target>" */
+  lastLine: string | null;
+  /** the last user/assistant line was not an assistant line ending the turn */
+  inTurn: boolean;
+  /** how many turns have ended so far: a background task belongs to the turn it opened in */
+  endedTurns: number;
+  /** background tasks not yet notified, by tool_use id; the board's own wait and link never enter */
+  background: Map<string, BackgroundTask>;
+  /** open calls running the board's own `wait` or `link`, by tool_use id: never a background task, whichever way they go there */
+  boardsOwn: Set<string>;
+  /** the last kill seen that was not by PID (idea 4) */
+  breach: NonNullable<MemberActivity["breach"]> | null;
 };
+
+/** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
+type BackgroundTask = { target: string; since: number; turn: number; output: string | null };
 
 export interface HarnessLocator {
   name: string;
@@ -33,8 +48,9 @@ export interface HarnessLocator {
 const TARGET_CHARS = 50;
 const SEPARATORS = new Set([";", "&&", "||", "|", "&", "\n"]);
 
-/** A shell command split into words and separators, quotes removed; `;`, `&&`, `|` split even when glued to a word (§7 E8). */
-function shellWords(command: string): string[] {
+/** A shell command split into words and separators, quotes removed; `;`, `&&`, `|` split even when glued to a word (§7 E8).
+ * `backslashEscapes`: in a POSIX shell `\` escapes the next character; in any other (PowerShell, cmd) it is a path character. */
+function shellWords(command: string, backslashEscapes = true): string[] {
   const words: string[] = [];
   let word = "";
   let inWord = false;
@@ -51,7 +67,7 @@ function shellWords(command: string): string[] {
       word += command.slice(i + 1, end);
       inWord = true;
       i = end;
-    } else if (c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
+    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
       word += command[++i];
       inWord = true;
     } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
@@ -86,14 +102,26 @@ function flagValue(words: string[], names: string[]): string | undefined {
 }
 
 /** Whether this command text runs the swarm tool's `wait` verb (swarm-relay D45). */
-export function commandRunsWait(command: string): boolean {
-  const words = shellWords(command);
-  return words.some((w, i) => w === "wait" && i > 0 && isSwarmTool(words[i - 1]));
+export function commandRunsWait(command: string, backslashEscapes = true): boolean {
+  return commandRunsVerb(command, "wait", backslashEscapes);
 }
 
+/** Whether a shell tool of this name treats `\` as an escape: only Bash; PowerShell and the rest keep it as a path character. */
+const toolEscapesBackslash = (toolName: string | undefined): boolean => toolName === undefined || toolName === "Bash";
+
+/** Whether this command text runs one swarm verb, the word right after the tool's. */
+function commandRunsVerb(command: string, verb: string, backslashEscapes: boolean): boolean {
+  const words = shellWords(command, backslashEscapes);
+  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
+}
+
+/** The board's own background calls, its `wait` and its `link`, never make a member busy (idea 1, §2). */
+const commandIsBoardsOwn = (command: string, backslashEscapes: boolean): boolean =>
+  commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
+
 /** Whether this command text runs the binding verb, matched word by word, flags in any order. */
-export function commandRunsBinding(command: string, binding: Binding): boolean {
-  const words = shellWords(command);
+export function commandRunsBinding(command: string, binding: Binding, backslashEscapes = true): boolean {
+  const words = shellWords(command, backslashEscapes);
   let start = 0;
   for (let i = 0; i <= words.length; i++) {
     if (i < words.length && !SEPARATORS.has(words[i])) continue;
@@ -109,7 +137,7 @@ export function commandRunsBinding(command: string, binding: Binding): boolean {
   return false;
 }
 
-/** Whether a transcript holds a Bash tool_use whose command runs the binding verb. */
+/** Whether a transcript holds a shell tool_use (any tool whose input has a string `command`) that runs the binding verb. */
 function transcriptRunsBinding(file: string, binding: Binding): boolean {
   let text: string;
   try {
@@ -130,7 +158,7 @@ function transcriptRunsBinding(file: string, binding: Binding): boolean {
     }
     if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
     for (const part of obj.message.content as { type?: string; name?: string; input?: { command?: unknown } }[]) {
-      if (part?.type === "tool_use" && part.name === "Bash" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding)) return true;
+      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
     }
   }
   return false;
@@ -228,11 +256,149 @@ const timeOf = (line: { timestamp?: unknown }, fallback: number): number => {
   return Number.isFinite(t) ? t : fallback;
 };
 
-const freshCursor = (): TranscriptCursor => ({ offset: 0, tokens: 0, open: new Map(), lastTool: null, context: null, grewAt: null });
+const freshCursor = (): TranscriptCursor => ({
+  offset: 0,
+  tokens: 0,
+  open: new Map(),
+  lastTool: null,
+  context: null,
+  grewAt: null,
+  lastLine: null,
+  inTurn: false,
+  endedTurns: 0,
+  background: new Map(),
+  boardsOwn: new Set(),
+  breach: null,
+});
+
+// ── kills (idea 4): the patterns are data, Claude Code's shells' words; a kill by PID is never a breach ──
+/** The verbs that stop a process, at the head of a command segment. */
+const KILL_HEADS = new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
+/** Words before the real head that only wrap it: `sudo kill`, `xargs kill`, `cmd /c taskkill`, `% { Stop-Process … }`. */
+const WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
+/** A process list filtered by name or command line feeding the kill: the kill is by pattern. */
+const PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
+/** A port lookup feeding the kill: the kill is by port. */
+const PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
+/** A segment that is code inside quotes: `powershell -Command "…"`, `bash -c '…'`. */
+const RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
+
+/** The command segments of a shell line, each as it would run: split on separators and subshells, with the code
+ *  inside a `-Command "…"` scanned too and any other quoted text kept as a literal, never a segment's head. */
+function commandSegments(text: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  const flush = () => {
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const close = text.indexOf(c, i + 1);
+      const end = close < 0 ? text.length : close;
+      const inner = text.slice(i + 1, end);
+      if (RUNS_QUOTED.test(cur)) {
+        flush();
+        out.push(...commandSegments(inner));
+      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
+      i = end;
+    } else if (";|&\n(){}`".includes(c) || (c === "$" && text[i + 1] === "(")) flush();
+    else cur += c;
+  }
+  flush();
+  return out;
+}
+
+/** A segment's head word, its wrappers stripped and its path and `.exe` dropped, lower case. */
+function headOf(segment: string): { head: string; rest: string } | null {
+  const words = segment.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
+  if (!words.length) return null;
+  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
+  return { head, rest: words.slice(1).join(" ") };
+}
+
+/** The ports a port-lookup kill names: `-LocalPort 3000,4200`, `:3000`, `-iTCP:3000`, `3000/tcp`. */
+function portsOf(command: string): number[] {
+  const found = new Set<number>();
+  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
+  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
+  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
+}
+
+/** How a shell command kills, when it does: by name or pattern, by a port lookup, or null (by PID, or no kill).
+ *  A call of the swarm tool itself (a post quoting a kill) is never one. */
+export function classifyKill(command: string): { kind: "pattern" | "port"; ports?: number[] } | null {
+  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
+  let kill: "name" | "fed" | null = null;
+  for (const segment of commandSegments(command)) {
+    const h = headOf(segment);
+    if (!h || !KILL_HEADS.has(h.head)) continue;
+    const { head, rest } = h;
+    if (head === "pkill" || head === "killall") kill = "name";
+    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? (kill ?? null) : "fed";
+    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? (kill ?? null) : "fed";
+    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? (kill ?? null) : "fed";
+    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
+    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
+    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
+    if (kill === "name") break;
+  }
+  if (kill === "name") return { kind: "pattern" };
+  if (kill !== "fed") return null;
+  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
+  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
+  return null; // a PID from a variable the line does not show how it found: read as by PID
+}
+
+// Claude Code's own wording, read here only (idea 1, Risks): if it drifts, a task reads quiet, never missed.
+// Anchored at the result's start: a result that only quotes these words (a grep, a cat) opens nothing.
+const MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
+const OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
+const NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+
+/** The text of a tool_result's or user line's content, string or parts. */
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((p) => (typeof p === "string" ? p : p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string" ? (p as { text: string }).text : "")).join("\n");
+}
+
+/** Closes every background task a `<task-notification>` in this text names (either notification form, addendum F1). */
+function closeNotified(cursor: TranscriptCursor, text: string): void {
+  if (!text.includes("<task-notification>")) return;
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) cursor.background.delete(m[1]);
+}
+
+/** The latest turn's oldest awaited background task, its output stat'd now; a task from an earlier turn is a service, never awaited. */
+function awaitedBackground(cursor: TranscriptCursor): MemberActivity["background"] {
+  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
+  let oldest: BackgroundTask | null = null;
+  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
+  if (!oldest) return null;
+  let outputGrewAt: number | null = null;
+  if (oldest.output) {
+    try {
+      outputGrewAt = fs.statSync(oldest.output).mtimeMs;
+    } catch {
+      // not written yet, or gone: unknown
+    }
+  }
+  return { target: oldest.target, since: oldest.since, outputGrewAt };
+}
+
+type TranscriptLine = {
+  type?: string;
+  timestamp?: unknown;
+  message?: { content?: unknown; usage?: Record<string, unknown>; stop_reason?: unknown };
+  attachment?: { commandMode?: unknown; prompt?: unknown };
+};
+type ContentPart = { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; text?: unknown; content?: unknown };
 
 /** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0. */
 export function observe(transcript: string, from: TranscriptCursor | null): { activity: MemberActivity; cursor: TranscriptCursor } {
-  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open) } : freshCursor();
+  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
@@ -254,13 +420,17 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
   if (consumed > 0) {
     for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
       if (!raw.trim()) continue;
-      let line: { type?: string; timestamp?: unknown; message?: { content?: unknown; usage?: Record<string, unknown> } };
+      let line: TranscriptLine;
       try {
         line = JSON.parse(raw);
       } catch {
         continue;
       }
-      const content = Array.isArray(line.message?.content) ? (line.message.content as { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string }[]) : [];
+      // a mid-turn notification arrives as an attachment line: it closes its task, never counts for the turn (F1)
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt);
+      if (line.type !== "assistant" && line.type !== "user") continue;
+      const at = timeOf(line, mtime);
+      const content = Array.isArray(line.message?.content) ? (line.message.content as ContentPart[]) : [];
       if (line.type === "assistant") {
         const usage = line.message?.usage;
         if (usage) {
@@ -268,17 +438,50 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
           cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
         }
         for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
           if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
           const name = part.name ?? "?";
           const target = toolTarget(part.input);
-          const command = (part.input as { command?: unknown } | undefined)?.command;
+          const input = part.input as { command?: unknown; run_in_background?: unknown } | undefined;
+          const command = input?.command;
+          const escapes = toolEscapesBackslash(name);
           // D45: only a shell call running the board's `wait` verb is waiting; a browser's wait_for, a sleep, are work
-          const boardWait = typeof command === "string" && commandRunsWait(command);
-          cursor.open.set(part.id, { name, target, since: timeOf(line, mtime), ...(boardWait ? { boardWait } : {}) });
+          const boardWait = typeof command === "string" && commandRunsWait(command, escapes);
+          // a shell call (any tool whose input holds a string command, idea 1 §3's test) has its own timeout; idea 5 bounds the rest
+          const shell = typeof command === "string";
+          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...(shell ? { shell } : {}) });
           cursor.lastTool = target ? `${name} ${target}` : name;
+          cursor.lastLine = cursor.lastTool;
+          const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
+          if (boardsOwn) cursor.boardsOwn.add(part.id);
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
+          const kill = typeof command === "string" ? classifyKill(command) : null;
+          if (kill) cursor.breach = { command: (command as string).replace(/\s+/g, " ").trim(), ...kill, at };
         }
+        // the turn ends on an assistant line not asking for a tool; a line without stop_reason reads as ended (detection first)
+        const inTurn = line.message?.stop_reason === "tool_use";
+        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
+        cursor.inTurn = inTurn;
       } else {
-        for (const part of content) if (part?.type === "tool_result" && typeof part.tool_use_id === "string") cursor.open.delete(part.tool_use_id);
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content);
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text);
+          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
+          const result = textOf(part.content);
+          const call = cursor.open.get(part.tool_use_id);
+          if (MOVED_TO_BACKGROUND.test(result)) {
+            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const task = cursor.background.get(part.tool_use_id);
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
+            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
+              // a foreground call the harness moved to the background: it belongs to the turn it was called in
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
+          }
+          cursor.open.delete(part.tool_use_id);
+          cursor.boardsOwn.delete(part.tool_use_id);
+        }
+        cursor.inTurn = true;
       }
     }
     cursor.offset += consumed;
@@ -296,7 +499,18 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
     }
   }
   return {
-    activity: { grewAt: cursor.grewAt, tokens: cursor.tokens, context: cursor.context, openTool: openTool && { ...openTool }, lastTool: cursor.lastTool, finished },
+    activity: {
+      grewAt: cursor.grewAt,
+      tokens: cursor.tokens,
+      context: cursor.context,
+      openTool: openTool && { ...openTool },
+      lastTool: cursor.lastTool,
+      finished,
+      inTurn: cursor.inTurn,
+      lastLine: cursor.lastLine,
+      background: awaitedBackground(cursor),
+      breach: cursor.breach,
+    },
     cursor,
   };
 }

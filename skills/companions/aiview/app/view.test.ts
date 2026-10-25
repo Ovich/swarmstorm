@@ -1,7 +1,7 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotRunner } from "../../swarm-board/src/client/reader.ts";
-import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, runTabs, type Item } from "./lib/board/view.ts";
+import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, pausedText, runTabs, type Item } from "./lib/board/view.ts";
 import { PHASE, PHASED } from "./board-fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
@@ -105,6 +105,37 @@ describe("conversation: what an item is (D8, D16)", () => {
     expect(live[1]).toMatchObject({ word: "◷ idle" });
     const passed = conversation(board(RUNS, ROSTER, [stall(5), stall(10), item(1, "alpha/S1", "back")]), { run: 1, follow: null });
     expect(passed.map((i) => i.kind)).toEqual(["message"]);
+  });
+
+  /** An item's word; a phase row has none. */
+  const wordOf = (i: Item): string | null => ("word" in i ? i.word : null);
+
+  test("idea 1: a stalled with a rule renders as stalled with its rule's word, per member, until that member speaks (I2)", () => {
+    const ev = (member: string, rule: string, body: string) => item(1, "alpha/orchestrator", body, { kind: "event", event: "stalled", meta: { rule, member } } as Partial<SnapshotEvent>);
+    const a = ev("S1", "ended", 'stalled alpha/S1: turn ended; last: "done"; no phase open');
+    const b = ev("S9", "owing", 'stalled alpha/S9: waiting, not done p1; last: "x"; no phase open');
+    const live = conversation(board(RUNS, ROSTER, [a, b]), { run: 1, follow: null });
+    expect(live.map((i) => [i.kind, wordOf(i)])).toEqual([["stalled", "◷ stalled · turn ended"], ["stalled", "◷ stalled · waiting, owes its part"]]);
+    expect("tier" in live[0] ? live[0].tier : null).toBe("act");
+    const after = conversation(board(RUNS, ROSTER, [a, b, item(1, "alpha/S1", "back at it")]), { run: 1, follow: null });
+    expect(after.map((i) => i.kind)).toEqual(["stalled", "message"]);
+  });
+
+  test("idea 1: a link-down liveness reads link down; a no-transcript liveness reads blind (V2)", () => {
+    const down = item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
+    const blind = item(1, "alpha/orchestrator", "no transcript found for alpha/S1: its state is presence only", { kind: "event", event: "liveness" } as Partial<SnapshotEvent>);
+    const items = conversation(board(RUNS, ROSTER, [down, blind]), { run: 1, follow: null });
+    expect(items.map(wordOf)).toEqual(["liveness · link down", "liveness · blind"]);
+  });
+
+  test("idea 1: recovered and gone each render as their own row (I2)", () => {
+    const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
+    const back = item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
+    // F9: a gone row leaves once its recovered follows, so each is rendered on its own here
+    const alone = conversation(board(RUNS, ROSTER, [gone]), { run: 1, follow: null });
+    expect(alone.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ gone"]]);
+    const items = conversation(board(RUNS, ROSTER, [gone, back]), { run: 1, follow: null });
+    expect(items.map((i) => [i.kind, wordOf(i)])).toEqual([["recovered", "↺ recovered"]]);
   });
 
   test("a post about a path by its holder, or naming no holder, is a plain message", () => {
@@ -370,5 +401,31 @@ describe("a phase separator (swarm phase)", () => {
     const other = { ...PHASED, runs: [...PHASED.runs, run(9, "beta", "BE")], roster: [...PHASED.roster, member("beta", "S2", "Brave Badger")] };
     expect(conversation(other, { run: null, follow: "beta/S2" }).some((i) => i.kind === "phase")).toBe(false);
     expect(conversation(other, { run: 9, follow: null }).some((i) => i.kind === "phase")).toBe(false);
+  });
+});
+
+test("idea 2, B12: the run header says waiting on the person for a pause --person, paused as before otherwise", () => {
+  expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "approve idea 1", person: true } })).toBe("waiting on the person: approve idea 1");
+  expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "hold on", person: false } })).toBe("paused: hold on");
+  expect(pausedText(run(1, "alpha", "AL"))).toBeNull();
+});
+
+describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is back", () => {
+  const AT_MS = Date.parse(AT);
+  const withLiveness = (liveness: object) => ROSTER.map((r) => (r.runner === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotRunner[];
+  const down = () => item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
+  const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
+  const back = () => item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
+  const kinds = (roster: SnapshotRunner[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
+
+  test("a link-down row stays while the member's link has not been heard since; it leaves once it has", () => {
+    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS - 1000 }), [down()])).toEqual(["liveness"]);
+    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS + 60_000 }), [down()])).toEqual([]);
+  });
+
+  test("a gone row stays while the member reads gone; a recovered after it, or a liveness not gone, takes it away", () => {
+    expect(kinds(withLiveness({ state: "gone" }), [gone()])).toEqual(["gone"]);
+    expect(kinds(withLiveness({ state: "gone" }), [gone(), back()])).toEqual(["recovered"]);
+    expect(kinds(withLiveness({ state: "working" }), [gone()])).toEqual([]);
   });
 });

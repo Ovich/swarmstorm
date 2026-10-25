@@ -10,8 +10,10 @@ import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 type MemberActivity = Liveness;
 const ACTIVITY_STATES: ReadonlySet<string> = new Set(["working", "busy", "waiting", "quiet", "gone"]);
 
-/** Stalled is quiet with its link alive (swarm-relay#D36): the server says so in the reason, the state stays one of D9's five. */
-const isStalled = (activity: MemberActivity): boolean => activity.state === "quiet" && /\blink alive\b/.test(activity.reason ?? "");
+/** Stalled is a member the board names a stall rule for (idea 1, rule 6), quiet or busy past its cap; the state stays
+ *  one of D9's five. A board before the rules says it in the reason only: quiet with its link alive (swarm-relay#D36). */
+const isStalled = (activity: MemberActivity): boolean =>
+  !!activity.rule || (activity.state === "quiet" && /\blink alive\b/.test(activity.reason ?? ""));
 
 /** The member's activity, or null when the reader sends none it knows (a server before swarm-relay#D20): the card draws as before. */
 function activityOf(p: SnapshotRunner): MemberActivity | null {
@@ -48,10 +50,13 @@ function stateHeldFor(activity: MemberActivity, now: number): string | null {
   return timed ? `${isStalled(activity) ? "stalled" : activity.state} for ${minutesSince(activity.since!, now)}` : null;
 }
 
-/** The tool the member has open (busy) or called last, and why it is quiet when the server says. */
+/** The tool the member has open (busy) or called last, and why it is quiet or stalled when the server says. A reason
+ *  under a stall rule ends on the member's own last line, so the last tool is left out: one `last:` per card. */
 function activityText(activity: MemberActivity): string {
-  const tool = activity.doing ? (activity.state === "busy" ? activity.doing : `last: ${activity.doing}`) : null;
-  return [tool, activity.state === "quiet" || activity.state === "gone" ? activity.reason : null].filter(Boolean).join(" · ");
+  const reasonShown = activity.state === "quiet" || activity.state === "gone" || !!activity.rule;
+  const reasonCarriesLast = !!activity.rule && !!activity.reason;
+  const tool = activity.doing && !reasonCarriesLast ? (activity.state === "busy" ? activity.doing : `last: ${activity.doing}`) : null;
+  return [tool, reasonShown ? activity.reason : null].filter(Boolean).join(" · ");
 }
 
 /** The activity line on the card face; its text also reads in the hover title. */
@@ -145,7 +150,7 @@ type Bucket = (typeof BUCKETS)[number]["id"];
 function bucketOf(p: SnapshotRunner): Bucket {
   if (p.state === "ended" || p.state === "done") return "ended";
   const a = activityOf(p);
-  if (a) return a.state === "quiet" || a.state === "gone" ? "attention" : a.state === "waiting" ? "waiting" : "active";
+  if (a) return a.state === "quiet" || a.state === "gone" || isStalled(a) ? "attention" : a.state === "waiting" ? "waiting" : "active";
   if (p.stale) return "attention";
   return p.listening ? "waiting" : "active";
 }

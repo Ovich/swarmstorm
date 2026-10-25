@@ -14,6 +14,10 @@ export const RPC_METHODS = [
   "closeRun",
   "phase",
   "currentPhase",
+  "showPhase",
+  "lock",
+  "unlock",
+  "locks",
   "pause",
   "resume",
   "pausedOf",
@@ -68,11 +72,24 @@ export type MemberActivity = {
   context: number | null;
   /** a tool_use with no result yet */
   /** `boardWait`: the call runs the board's own `wait` verb, the one call that is waiting (swarm-relay D45) */
-  openTool: { name: string; target: string; since: number; boardWait?: boolean } | null;
+  /** `shell`: its input holds a string `command` (a shell call), bounded by its own timeout; any other call is bounded by the seat's `busyMax` (idea 5) */
+  openTool: { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean } | null;
   /** "<name> <target, 50 chars>" */
   lastTool: string | null;
   /** the harness says the agent ended (meta.json) */
   finished: boolean;
+  // Accurate states (idea 1): all optional, so an older link's activity still parses.
+  /** the agent's turn is open: its last user/assistant line is not an assistant line ending the turn */
+  inTurn?: boolean;
+  /** the last assistant text (50 chars), or "<tool> <target>" */
+  lastLine?: string | null;
+  /** the oldest awaited background task (latest turn, board's own excluded); null when none */
+  background?: { target: string; since: number; outputGrewAt: number | null } | null;
+  /** the transcript's path, for the server to stat while the link is lost */
+  transcript?: string;
+  /** the member's last kill that was not by PID (idea 4): by name or pattern always a breach; by a port lookup a breach
+   *  only for a port whose lock it does not hold, which the board checks. Null or absent when none was seen. */
+  breach?: { command: string; kind: "pattern" | "port"; ports?: number[]; at: number } | null;
 };
 
 // up: a link (or a CLI with no member) to the server

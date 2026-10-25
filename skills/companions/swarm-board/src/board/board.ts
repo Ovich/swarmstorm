@@ -10,9 +10,9 @@ import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { claimsOf, type HeldMergeLock } from "./claims.ts";
 import { statsOf, summarize, type Stats, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { type EventName, type Subscription, EVENTS, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
+import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, IDLE_MS, LINK_LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 
 export type RunId = number;
@@ -24,7 +24,8 @@ export type { HeldMergeLock } from "./claims.ts";
 export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
 export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
-export type SeatSpec = { id: string; title: string; role?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null };
+/** `busyMax`: the seat's bound (ms) for a non-shell call, past which it is `stalled · call` (idea 5); absent: BUSY_MAX_MS. */
+export type SeatSpec = { id: string; title: string; role?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
 /** Kept: the plan's own word (D41). */
 export type SliceSpec = SeatSpec;
 export type SliceState = "ready" | "running" | "done" | "blocked";
@@ -46,9 +47,10 @@ export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.l
 /** A member's state from its activity and its link (swarm-relay D9, D31, E12, D12). */
 export type MemberStateName = "working" | "busy" | "waiting" | "quiet" | "gone";
 /** `doing`: the open tool, else the last; `since`: ms epoch the state counts from; `reason`: why quiet or gone. */
-export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; reason?: string };
-/** Whether a member's link is connected, and since when it is lost (null: connected, or never linked). Kept by the server. */
-export type Presence = (member: string) => { connected: boolean; lostAt: number | null };
+export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; reason?: string; rule?: StallRule; owes?: string };
+/** Whether a member's link is connected, and since when it is lost (null: connected, or never linked). Kept by the server.
+ *  `transcriptGrewAt`: for a member whose link is lost, its transcript's mtime (ms epoch), null when it cannot be read. */
+export type Presence = (member: string) => { connected: boolean; lostAt: number | null; transcriptGrewAt?: number | null };
 /** A member's liveness as the page draws it (D20): its state, its counter from its link's last activity, and its two
  *  ages (swarm-relay D38): `progressAt` its last progress, `aliveAt` its last sign of life by its link, the time
  *  read while the link is up (ms epoch; null: never linked). */
@@ -72,6 +74,8 @@ export interface Run {
   phase: Phase | null;
   /** Set by `pause`, the orchestrator's reason ("" when it gave none); null when the run is not paused. */
   paused: string | null;
+  /** `pause --person`: the pause waits on the person (idea 2). */
+  pausedPerson: boolean;
   /** The protocol the run follows, null when it names none. */
   protocol: string | null;
 }
@@ -118,6 +122,8 @@ export interface RosterEntry {
   aliveAt: number | null;
   /** Messages for it (a mention, an urgent post, an event it subscribed to) not yet delivered to it (swarm-relay D43). */
   unread: number;
+  /** Idea 5: its seat's bound for a non-shell call (ms), null when it has the default. */
+  busyMax: number | null;
 }
 
 export interface Message {
@@ -159,6 +165,8 @@ export type RunSummary = {
   stallMs?: number;
   /** The protocol the run follows (build-verify, debate…), null when it names none; absent from a reader before it. */
   protocol?: string | null;
+  /** The run's pause: its text and whether it waits on the person (`pause --person`); null when not paused; absent from a reader before it. */
+  paused?: { text: string; person: boolean } | null;
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
 export type RunnerState = "working" | "waiting" | "merging" | "watching" | "ended" | "done";
@@ -194,8 +202,27 @@ export type SnapshotRunner = {
 export type MergedMeta = { rebase: string[]; tell: string[] };
 /** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
 export type PhaseMeta = { phase: string };
-/** What an event carries as data, by its event: merged or phase. */
-export type MessageMeta = MergedMeta | PhaseMeta;
+/** Which rule made a member quiet (idea 1, rule 6): the `stalled` stores it, and its `next` prints that rule's move. */
+export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing" | "lock";
+/** A stalled event's data: its rule, the member's id, for `owing` the phase it owes, for `lock` the lock and its
+ *  holder as a cross-run handle (`<CODE>·<id>`). */
+export type StalledMeta = { rule: StallRule; member: string; phase?: string; lock?: string; holder?: string };
+/** An unlocked event's data (idea 4): the lock's name. */
+export type UnlockedMeta = { unlocked: string };
+/** A breach event's data (idea 4): the member, `<group>/<id>`, that killed by name, pattern or an unlocked port. */
+export type BreachMeta = { breach: string };
+/** A named lock as `locks` lists it (idea 4): store-wide, its holder `<group>/<id>`, its waiters likewise. */
+/** A named lock's last release (idea 5, F12): when, by whom (`<group>/<id>`), and how. */
+export type LockRelease = { at: string; by: string; how: "unlock" | "end" | "gone" | "close" };
+export type NamedLock = { name: string; member: string; run: RunId; since: string; note: string | null; waiters: string[] };
+/** Who holds a lock a caller was refused (idea 4): enough to find it and judge whether it is stuck. */
+export type LockHolder = { member: string; nick: string; run: RunId; code: string; since: string; state: MemberStateName; doing: string | null };
+/** A link-down liveness's data: the member, `<group>/<id>`, whose link is lost while its transcript grows. */
+export type LinkDownMeta = { linkDown: string };
+/** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
+export type PauseMeta = { person: boolean; text: string };
+/** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
+export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -247,22 +274,32 @@ export interface Board {
   /** The orchestrator opens phase `name` with `text`, the current one ending with it: a `phase` event in its run,
    *  body `phase <name>: <text>`, mentioning `<group>/*` so every member of the run wakes; sets the run's
    *  current phase and clears its done marks. Refused to anyone else and on a closed run, whatever the kind. */
-  phase(p: Participant, name: string, text: string): Message;
+  phase(p: Participant, name: string, text: string, opts?: { watch?: string[] }): Message;
   /** The run's current phase, as `phase` last set it; null until one is opened. Throws on an unknown run. */
   currentPhase(run: RunId): Phase | null;
+  /** The current phase for `p`'s header (B15): `first` the first time it is asked for this member since the phase
+   *  opened, recorded here; null when no phase is open. */
+  showPhase(p: Participant): { phase: Phase; first: boolean } | null;
+  /** Idea 4: takes the store-wide named lock `name` (`port:<n>`, `app:<name>`, `db:<name>`, `browser:<profile>`), or
+   *  records the caller as a waiter and names the holder. Granted again to its holder. */
+  lock(p: Participant, name: string, note?: string): { granted: true; released?: LockRelease } | { granted: false; holder: LockHolder };
+  /** Releases a lock the caller holds: one `unlocked <name>` mentioning each waiter; `released` false when it held none. */
+  unlock(p: Participant, name: string): { released: boolean; waiters: string[] };
+  /** Every named lock held now, store-wide, with its waiters. */
+  locks(): NamedLock[];
   /** The orchestrator pauses its run: every member is told to stop and wait, a `pause` event mentioning
    *  `<group>/*`; claim and merge-lock are refused until `resume`. Refused to anyone else, on a closed run and
    *  on a run already paused. */
-  pause(p: Participant, text?: string): Message;
+  pause(p: Participant, text?: string, opts?: { person?: boolean }): Message;
   /** The orchestrator lifts the pause: a `resume` event mentioning `<group>/*`, its body the message when given.
    *  Refused to anyone else, on a closed run and on a run not paused. */
-  resume(p: Participant, text?: string): Message;
+  resume(p: Participant, text?: string): Message & { held: string[] };
   /** The run's pause reason ("" when none was given), null when it is not paused. Throws on an unknown run. */
   pausedOf(run: RunId): string | null;
   /** A member finished the current phase `name`: stored once per run, member and phase, a `done` event to the
    *  orchestrator; when every member is done, one `all-done` event to it. Refused to the orchestrator, before any
    *  phase and on a phase that is not the current one. `already`: it had run done for it before (no event). */
-  done(p: Participant, name: string): { progress: PhaseProgress; all: boolean; already: boolean; message: Message | null };
+  done(p: Participant, name: string): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; message: Message | null };
   /** The current phase's done count; null before the first phase. */
   phaseProgress(run: RunId): PhaseProgress | null;
   /** The run's last activity, ISO: its open, a member's join or call, a message by one of its members. Throws on an unknown run. */
@@ -658,6 +695,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   // the seats file's `on`, JSON (D59)
   upkeep("slices", "on_events", "on_events TEXT");
+  // idea 5: a seat's bound for a non-shell call, and whether the member's open call is a shell one
+  upkeep("slices", "busy_max", "busy_max INTEGER");
+  upkeep("member_activity", "open_shell", "open_shell INTEGER NOT NULL DEFAULT 0");
   // the run's current phase, set by `phase`: its name and its text; null until one is opened
   upkeep("runs", "phase", "phase TEXT");
   upkeep("runs", "phase_text", "phase_text TEXT");
@@ -669,6 +709,26 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
   upkeep("runs", "protocol", "protocol TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
+  // idea 2: a pause waiting on the person; the current phase's watched members (JSON ids); the phase a member was last shown
+  upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
+  upkeep("runs", "phase_watch", "phase_watch TEXT");
+  upkeep("participants", "phase_shown", "phase_shown TEXT");
+  // idea 2: a carried message past CARRY_MAX_MS for a member, marked by the tick: it wakes that member's wait
+  db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
+  // idea 4: named locks, store-wide (a port is the machine's, not a repository's), and who waits on each
+  db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
+    CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
+    CREATE TABLE IF NOT EXISTS lock_releases (name TEXT PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, how TEXT NOT NULL);`);
+  // idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
+  upkeep("member_activity", "in_turn", "in_turn INTEGER");
+  upkeep("member_activity", "last_line", "last_line TEXT");
+  upkeep("member_activity", "bg_target", "bg_target TEXT");
+  upkeep("member_activity", "bg_since", "bg_since INTEGER");
+  upkeep("member_activity", "bg_grew_at", "bg_grew_at INTEGER");
+  upkeep("member_activity", "transcript", "transcript TEXT");
+  // the owing span (idea 1, rule 5): since when the member waits while owing the phase, and when its last wait returned
+  upkeep("member_activity", "owe_since", "owe_since INTEGER");
+  upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
   const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
@@ -744,6 +804,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const toRun = (r: Row): Run => ({
     phase: phaseOf(r),
     paused: r.paused == null ? null : String(r.paused),
+    pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
     id: Number(r.id),
     repo: String(r.repo),
@@ -759,6 +820,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
       state: String(s.state) as SliceState,
+      ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
 
@@ -773,7 +835,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
 
   const subsOf = (r: Row): Subscription[] =>
-    (JSON.parse(String(r.subs ?? "[]")) as { event: Subscription["event"]; scope: string }[]).map((x) => ({ event: x.event, scope: x.scope === "run" ? "run" : "any" }));
+    (JSON.parse(String(r.subs ?? "[]")) as { event: Subscription["event"]; scope: string; carry?: boolean }[]).map((x) => ({
+      event: x.event,
+      scope: x.scope === "run" ? "run" : "any",
+      ...(x.carry === true ? { carry: true as const } : {}),
+    }));
 
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind FROM participants p JOIN runs r ON r.id = p.run`;
 
@@ -927,16 +993,25 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const messages = transaction(() => {
       const unseen = unseenRows(me);
 
+      // idea 2: a paused run is silent for its orchestrator: nothing wakes it but urgent, and nothing is carried
+      const silentWhilePaused = me.slice === ORCHESTRATOR && runRow(me.run).paused != null;
+      const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
+      // idea 2: carried to the caller, riding on its next wake; one the tick marked due wakes by itself
+      const carried = (r: Row): boolean => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
       // a wake (D59): a mention, an urgent post, or an event the caller subscribed to in its scope
-      const woken = (r: Row): boolean => named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions);
+      const woken = (r: Row): boolean =>
+        silentWhilePaused
+          ? eventOf(toMessage(r)) === "urgent"
+          : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
       // of its own run, everything; of another run, only what wakes the caller (plan D2)
-      const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r));
-      // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone
+      const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried(r));
+      // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone; a wake
+      // brings every carried message with it (idea 2)
       const rows = !mentionsOnly
         ? heard
-        : !heard.some(woken) || !whole
-          ? heard.filter(woken)
-          : heard.filter((r) => woken(r) || ownPost(toMessage(r)));
+        : !heard.some(woken)
+          ? []
+          : heard.filter((r) => woken(r) || carried(r) || (whole && ownPost(toMessage(r))));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
       for (const r of rows) mark.run(me.id, Number(r.seq));
       // a delivery is a call to the board: the runner's last call (D31)
@@ -1001,6 +1076,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
       stallMs: Number(r.stall_ms ?? STALL_MS_DEFAULT),
       protocol: r.protocol == null ? null : String(r.protocol),
+      paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 },
     };
   };
   /** A repository is its common git dir; it is shown by its checkout's folder name. */
@@ -1019,7 +1095,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const insertSlice = (run: RunId, s: SeatSpec, ord: number): void => {
     if (s.on) parseOn(s.on); // an unknown event name is refused at open, not at join
-    db.prepare("INSERT INTO slices (run, id, title, blockers, link, ord, on_events) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    if (s.busyMax != null && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) throw new Error(`seat ${s.id}: busyMax is a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
+    db.prepare("INSERT INTO slices (run, id, title, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
       run,
       s.id,
       s.title,
@@ -1027,6 +1104,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       s.link ?? null,
       ord,
       s.on ? JSON.stringify(s.on) : null,
+      s.busyMax ?? null,
     );
   };
 
@@ -1039,7 +1117,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   // ── liveness: member states from activity (swarm-relay D9, D11, D12, D31) ─────────────
   /** Since when every member of a run (the orchestrator aside) has been waiting, and when its last idle was posted. */
-  const idleSince = new Map<RunId, { since: number; postedAt: number | null }>();
+  const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean }>();
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
@@ -1059,7 +1137,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       Date.parse(String(p.joined_at)),
       run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)),
     );
-  const stateOf = (p: Row, run: Row, t: number, presence: Presence): MemberState => {
+  /** Idea 5: the seat's bound for a non-shell call (ms), from its row or `slice add --busy-max`; null when it has none. */
+  const seatBusyMaxOf = (run: RunId, slice: string): number | null => {
+    const s = db.prepare("SELECT busy_max FROM slices WHERE run = ? AND id = ?").get(run, slice) as Row | undefined;
+    return s?.busy_max == null ? null : Number(s.busy_max);
+  };
+  /** `withHolder`: a lock wait names its holder's state, read with this false so a holder's own wait does not recurse. */
+  const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
     const member = String(p.slice);
     const a = activityOf(Number(run.id), member);
     // D35: waiting is the board's own fact, a wait this server holds for the member, whatever command ran it
@@ -1067,7 +1151,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const inWait = heldSince != null;
     if (a && Number(a.finished) === 1) return { member, state: "gone", doing: null, since: Number(a.at), reason: "its agent finished without end" };
     const link = presence(member);
-    if (!link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS) return { member, state: "gone", doing: null, since: link.lostAt, reason: "its link was lost" };
+    // idea 1, rule 4: a lost link is gone only once the transcript too has been still LINK_LOST_MS; lost but growing is working
+    const linkLost = !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS;
+    const transcriptGrowing = link.transcriptGrewAt != null && t - link.transcriptGrewAt < LINK_LOST_MS;
+    if (linkLost && !transcriptGrowing) return { member, state: "gone", doing: null, since: link.lostAt, reason: "its link was lost" };
+    if (linkLost) return { member, state: "working", doing: a?.last_tool == null ? null : String(a.last_tool), since: link.transcriptGrewAt ?? null, reason: "link down" };
     // no activity (no link has spoken): presence only, never working without evidence (D9, D33)
     if (!a) {
       if (inWait) return { member, state: "waiting", doing: null, since: null };
@@ -1077,22 +1165,104 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
     // D31, D35, D45: waiting is the open call that runs the board's own `wait`, while the board holds the member's wait; any
     // other open call (a browser's wait_for, a test run) is work, even with a background listener held
-    if (open && heldSince != null && Number(a.open_wait) === 1) return { member, state: "waiting", doing: open, since: Number(a.open_since) };
+    const stallMs = Number(run.stall_ms ?? STALL_MS_DEFAULT);
+    const last = a.last_tool == null ? null : String(a.last_tool);
+    // idea 1, rule 6: every reason ends on the member's last line, its last text or its last call
+    const lastLine = a.last_line == null ? last : String(a.last_line);
+    const said = `; last: "${lastLine ?? ""}"`;
+    if (open && heldSince != null && Number(a.open_wait) === 1) {
+      // idea 4 (D9): a member waiting on a lock is blocked, not late: its state names the lock and its holder, never owing
+      const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
+      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      // idea 1, rule 5: a wait while owing the phase is quiet once the owing span is long enough
+      const owing = owingOf(p, run, a, t, stallMs);
+      if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
+      return { member, state: "waiting", doing: open, since: Number(a.open_since) };
+    }
     // busy for as long as the call is open, its true state; past BUSY_MAX_MS its reason says so, and the orchestrator is
     // told by the stalled check, since a call that long may be hung (swarm-relay D46)
     if (open) {
       const since = Number(a.open_since);
-      const long = t - since >= BUSY_MAX_MS;
-      return { member, state: "busy", doing: open, since, ...(long ? { reason: `busy ${Math.floor((t - since) / 60000)} min in one call, link ${link.connected ? "alive" : "down"}; it may be hung` } : {}) };
+      // idea 5: a seat's own bound (`busyMax`) caps a non-shell call; a shell call has its own timeout, so BUSY_MAX_MS
+      const cap = Number(a.open_shell ?? 0) === 1 ? BUSY_MAX_MS : seatBusyMaxOf(Number(run.id), member) ?? BUSY_MAX_MS;
+      const long = t - since >= cap;
+      return { member, state: "busy", doing: open, since, ...(long ? { reason: `call open ${minutes(cap)} min, may be long or hung${said}`, rule: "call" as const } : {}) };
     }
-    const last = a.last_tool == null ? null : String(a.last_tool);
     const progressed = progressAtOf(p, run, a);
-    if (t - progressed < Number(run.stall_ms ?? STALL_MS_DEFAULT)) return { member, state: "working", doing: open ?? last, since: progressed };
-    // E12: a member stopped with no call open (its last line a background task's result) is quiet too; D36: the reason
-    // names the missing signal, the link, and the last call
-    const lastCall = open ? `${open} (open ${Math.floor((t - Number(a.open_since)) / 60000)} min)` : last;
-    const reason = `no progress for ${Math.floor((t - progressed) / 1000)}s, link ${link.connected ? "alive" : "down"}${lastCall ? `; last ${lastCall}` : ""}`;
-    return { member, state: "quiet", doing: open ?? last, since: progressed, reason };
+    if (t - progressed < stallMs) return { member, state: "working", doing: last, since: progressed };
+    // idea 1, rule 1: in turn, a member is quiet only after IN_TURN_MS with no line
+    const inTurn = a.in_turn == null ? null : Number(a.in_turn) === 1;
+    if (inTurn === true && t - progressed < IN_TURN_MS) return { member, state: "working", doing: last, since: progressed };
+    // idea 1, rule 2: an awaited background task keeps it busy while its output grows, up to BUSY_MAX_MS from its start
+    if (a.bg_target != null) {
+      const target = String(a.bg_target);
+      const bgSince = Number(a.bg_since);
+      const outputAt = a.bg_grew_at == null ? bgSince : Number(a.bg_grew_at);
+      const capped = t - bgSince >= BUSY_MAX_MS;
+      if (!capped && t - outputAt < stallMs) return { member, state: "busy", doing: `background ${target}`, since: bgSince };
+      const reason = capped ? `background ${target} ${minutes(BUSY_MAX_MS)} min${said}` : `background ${target} silent ${Math.round(stallMs / 1000)} s${said}`;
+      return { member, state: "quiet", doing: `background ${target}`, since: capped ? bgSince : outputAt, reason, rule: "background" };
+    }
+    if (inTurn === true) return { member, state: "quiet", doing: last, since: progressed, reason: `in turn, no line for ${minutes(IN_TURN_MS)} min (its model may be hung)${said}`, rule: "in-turn" };
+    if (inTurn === false) return { member, state: "quiet", doing: last, since: progressed, reason: `turn ended${said}`, rule: "ended" };
+    // a link older than idea 1 sends no turn state: the reason names the missing signal, the link, and the last call (D36)
+    const reason = `no progress for ${Math.floor((t - progressed) / 1000)}s, link ${link.connected ? "alive" : "down"}${last ? `; last ${last}` : ""}`;
+    return { member, state: "quiet", doing: last, since: progressed, reason };
+  };
+  const minutes = (ms: number): number => Math.round(ms / 60000);
+  /** The phase `p` owes now: the run's open phase it has not run `done` for; null for the orchestrator or none open. */
+  const owedNameOf = (p: Row, run: Row): string | null => {
+    if (String(p.slice) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
+    const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run.id), Number(p.id), String(run.phase));
+    return done ? null : String(run.phase);
+  };
+  /** Since when every other live member (the orchestrator apart) has been in a board wait or done the phase, by run;
+   *  the in-memory start of the condition rule 5 holds stall_ms. */
+  const othersSettledSince = new Map<number, number>();
+  /** Idea 1, rule 5: the owing span of `p`, when it has lasted long enough to be quiet: every other live member waiting
+   *  or done for stall_ms, or the span OWE_WAIT_MS; null otherwise. The span itself is kept by the tick (`keepOwingSpan`). */
+  const owingOf = (p: Row, run: Row, a: Row, t: number, stallMs: number): { phase: string; since: number } | null => {
+    const phase = owedNameOf(p, run);
+    if (phase == null || a.owe_since == null) return null;
+    const since = Number(a.owe_since);
+    if (t - since >= OWE_WAIT_MS) return { phase, since };
+    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND slice != ?").all(Number(run.id), Number(p.id), ORCHESTRATOR) as Row[];
+    const settled = others.every((o) => {
+      const oa = activityOf(Number(run.id), String(o.slice));
+      const waits = heldWaits.has(Number(o.id)) && (oa == null || Number(oa.open_wait) === 1);
+      return waits || owedNameOf(o, run) == null;
+    });
+    const key = Number(p.id);
+    if (!settled) {
+      othersSettledSince.delete(key);
+      return null;
+    }
+    const from = othersSettledSince.get(key) ?? t;
+    othersSettledSince.set(key, from);
+    return t - Math.max(from, since) >= stallMs ? { phase, since } : null;
+  };
+  /** Idea 1, rule 5: the owing span opens at the first board wait entered while the member owes the phase, carries
+   *  across a wait re-entered within stall_ms of the last one returning, and ends on any other progress or on `done`. */
+  const keepOwingSpan = (run: Row, p: Row, a: Row, t: number): void => {
+    const set = (oweSince: number | null, leftAt: number | null): void => {
+      const was = a.owe_since == null ? null : Number(a.owe_since);
+      if (was === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt) return;
+      // F2 (d3's guard): a span that opens or ends is a real move, so the stalled told before it is cleared; only
+      // the blink inside one span keeps it
+      const spanChanged = was !== oweSince;
+      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt, Number(run.id), String(p.slice));
+    };
+    const held = heldWaits.get(Number(p.id));
+    const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
+    if (owedNameOf(p, run) == null) return set(null, null);
+    if (inWait) return set(a.owe_since == null ? held : Number(a.owe_since), null);
+    if (a.owe_since == null) return;
+    const leftAt = a.wait_left_at == null ? t : Number(a.wait_left_at);
+    const progressAt = p.progress_at == null ? 0 : Date.parse(String(p.progress_at));
+    const otherCall = a.open_tool != null && Number(a.open_wait) !== 1;
+    const lapsed = t - leftAt >= Number(run.stall_ms ?? STALL_MS_DEFAULT);
+    if (otherCall || progressAt > leftAt || lapsed) return set(null, null);
+    set(Number(a.owe_since), leftAt);
   };
   /** The states of a run's live members (not ended), keyed by member. */
   const statesOf = (run: RunId, t: number): Map<string, MemberState> => {
@@ -1102,7 +1272,60 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run) as Row[];
     return new Map(live.map((p) => [String(p.slice), stateOf(p, r, t, presence)]));
   };
-  const livenessOf = (run: RunId, st: MemberState | undefined, t: number): Liveness | undefined => {
+
+  // ── named locks (idea 4): store-wide, a port being the machine's ─────────────
+  const LOCK_NAME = /^[a-z0-9:._/-]{1,80}$/;
+  const memberRowOf = (id: number): Row => db.prepare("SELECT p.*, r.plan AS plan, r.repo AS repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row;
+  /** A lock's holder as a refused caller and the stall read it: who, where, since when, and its state now. */
+  const holderOf = (lock: Row, t: number): LockHolder => {
+    const h = memberRowOf(Number(lock.participant));
+    const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run)) as Row;
+    const st = stateOf(h, run, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
+    return { member: `${h.plan}/${h.slice}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: st.state, doing: st.doing };
+  };
+  /** The lock participant `id` waits on, as its state's `doing`: `lock <name>, held by <Name> (<state>)`; null when it waits on none. */
+  const lockWaitOf = (id: number, t: number): string | null => {
+    const w = db.prepare("SELECT l.* FROM named_lock_waiters w JOIN locks l ON l.name = w.name WHERE w.participant = ? ORDER BY w.since LIMIT 1").get(id) as Row | undefined;
+    if (!w) return null;
+    const h = holderOf(w, t);
+    return `lock ${String(w.name)}, held by ${h.nick} (${h.state})`;
+  };
+  /** Releases every lock participant `id` holds (unlock, end, gone, close): one `unlocked <name>` per repository with
+   *  waiters, mentioning each live waiter, posted by the holder in its own repository and by a waiter in another, so
+   *  every waiter's wait sees it. Also drops `id`'s own waits on locks. */
+  const releaseLocksOf = (id: number, how: LockRelease["how"], why: string, only?: string): string[] => {
+    const held = (only == null
+      ? db.prepare("SELECT * FROM locks WHERE participant = ?").all(id)
+      : db.prepare("SELECT * FROM locks WHERE participant = ? AND name = ?").all(id, only)) as Row[];
+    const freed: string[] = [];
+    const holder = memberRowOf(id);
+    for (const l of held) {
+      const name = String(l.name);
+      db.prepare("DELETE FROM locks WHERE name = ?").run(name);
+      // idea 5 (F12): the name's last release, so a later grant can tell a listener left by its holder from a new one
+      db.prepare("INSERT OR REPLACE INTO lock_releases (name, at, by, how) VALUES (?, ?, ?, ?)").run(name, now(), `${holder.plan}/${holder.slice}`, how);
+      db.prepare("DELETE FROM liveness_warned WHERE cond = ?").run(`lock ${name}`);
+      const waiters = (db.prepare("SELECT p.id FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE w.name = ? AND p.ended_at IS NULL ORDER BY w.since").all(name) as Row[]).map((w) => memberRowOf(Number(w.id)));
+      const names = waiters.map((w) => `${w.plan}/${w.slice}`);
+      freed.push(...names);
+      const byRepo = new Map<string, Row[]>();
+      for (const w of waiters) byRepo.set(String(w.repo), [...(byRepo.get(String(w.repo)) ?? []), w]);
+      if (!byRepo.has(String(holder.repo))) byRepo.set(String(holder.repo), []);
+      for (const [repo, inRepo] of byRepo) {
+        const holderRunOpen = (runRow(Number(holder.run)).state as string) === "open";
+        const authorRow = repo === String(holder.repo) && holderRunOpen ? holder : inRepo[0];
+        if (!authorRow) continue;
+        const named = inRepo.map((w) => `${w.plan}/${w.slice}`);
+        insertMessage(participantById(Number(authorRow.id)), `unlocked ${name}${why}${named.length ? `: ${named.map((n) => `@${n}`).join(" ")}` : ""}`, null, "event", named, {
+          event: EVENTS.unlocked.name,
+          meta: { unlocked: name },
+        });
+      }
+    }
+    if (only == null) db.prepare("DELETE FROM named_lock_waiters WHERE participant = ?").run(id);
+    return freed;
+  };
+  const livenessOf =(run: RunId, st: MemberState | undefined, t: number): Liveness | undefined => {
     if (!st) return undefined;
     const a = activityOf(run, st.member);
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row;
@@ -1119,6 +1342,32 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     };
   };
   const agesOf = (l: Liveness | undefined): { progressAt: number | null; aliveAt: number | null } => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
+  /** Idea 2: why `p`'s `done` of the current phase `name` wakes the orchestrator, the case as its body names it; null
+   *  when none holds and the done is carried. The person's cases: a watched member (`phase --watch`), a done without
+   *  its deliverable (the orchestrator mentioned the member in this phase and it posted nothing since), the straggler. */
+  const doneWakeCase = (p: Participant, name: string, progress: PhaseProgress): string | null => {
+    const r = runRow(p.run);
+    const watch = r.phase_watch == null ? [] : (JSON.parse(String(r.phase_watch)) as string[]);
+    if (watch.includes(p.slice)) return "watched";
+    const opened = Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(p.run, EVENTS.phase.name) as Row).seq ?? 0);
+    const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
+    if (orch) {
+      const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), opened) as Row[]).find(
+        (m) => (JSON.parse(String(m.mentions)) as string[]).includes(p.name),
+      );
+      if (asked) {
+        const answered = db.prepare("SELECT 1 FROM messages WHERE author = ? AND seq > ? AND kind != 'event' LIMIT 1").get(p.id, Number(asked.seq));
+        if (!answered) return `no post since the orchestrator's #${Number(asked.seq)}`;
+      }
+    }
+    if (progress.of - progress.done === 1) {
+      const owing = (db.prepare("SELECT id, slice FROM participants WHERE run = ? AND slice != ? AND ended_at IS NULL").all(p.run, ORCHESTRATOR) as Row[]).find(
+        (o) => !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.slice}`),
+      );
+      if (owing) return `all but ${String(owing.slice)}`;
+    }
+    return null;
+  };
   /** The phase's done count: members done, of the members (the orchestrator apart) not ended without their done. */
   const progressOf = (run: RunId, phase: string | null): PhaseProgress | null => {
     if (phase == null) return null;
@@ -1222,6 +1471,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const author = (db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(run, ORCHESTRATOR) ??
           db.prepare("SELECT id FROM participants WHERE run = ? ORDER BY id LIMIT 1").get(run)) as Row | undefined;
         if (author) insertMessage(participantById(Number(author.id)), `run ${run} closed`, null, "event", undefined, { event: EVENTS.closed.name });
+        // idea 4: every named lock its members hold is released while the run can still post
+        for (const m of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) releaseLocksOf(Number(m.id), "close", ` (run ${run} closed)`);
         db.prepare("UPDATE runs SET state = 'closed', closed_at = ? WHERE id = ?").run(now(), run);
         bump(String(runRow(run).repo));
         db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run);
@@ -1432,7 +1683,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     subscribe(p, subs) {
       const fresh = live(p);
-      return setSubs(fresh, [...fresh.subscriptions, ...subs.filter((s) => !fresh.subscriptions.some((o) => sameSub(o, s)))]);
+      // idea 2: an explicit subscription wakes, and replaces a carried one of the same event and scope
+      const kept = fresh.subscriptions.filter((o) => !subs.some((s) => sameSub(o, s) && o.carry && !s.carry));
+      return setSubs(fresh, [...kept, ...subs.filter((s) => !kept.some((o) => sameSub(o, s)))]);
     },
 
     unsubscribe(p, subs) {
@@ -1448,13 +1701,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const ended = { event: EVENTS.ended.name };
         if (waiters.length) insertMessage(fresh, `ended\nthe merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event", waiters, ended);
         else insertMessage(fresh, "ended", null, "event", undefined, ended);
+        // idea 4: the named locks it held are released, their waiters woken
+        releaseLocksOf(fresh.id, "end", " (its holder ended)");
         // the card's last word: what the runner's run came to, not its last doing (D66)
         db.prepare("UPDATE participants SET ended_at = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), fresh.id);
         claims.releaseAll(fresh.id);
       });
     },
 
-    phase(p, name, text) {
+    phase(p, name, text, opts = {}) {
       const fresh = live(p);
       if (fresh.slice !== ORCHESTRATOR) throw new Error(`phase: only the orchestrator opens a phase; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
       if (!PHASE_NAME.test(name)) throw new Error(`phase: a phase name is one word, got ${JSON.stringify(name)}`);
@@ -1463,7 +1718,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (runRow(fresh.run).state !== "open") throw new Error(`run ${fresh.run} is closed`);
       return transaction(() => {
         // the run's current phase, the header of every delivery from now on
-        db.prepare("UPDATE runs SET phase = ?, phase_text = ? WHERE id = ?").run(name, said, fresh.run);
+        // idea 2: the members whose `done` wakes the orchestrator in this phase (`--watch`), by id
+        const watch = (opts.watch ?? []).map((w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "")).filter(Boolean);
+        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         // D41: its all-done told once per opening
@@ -1476,7 +1733,66 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return phaseOf(runRow(run));
     },
 
-    pause(p, text = "") {
+    showPhase(p) {
+      const fresh = participantById(p.id);
+      const phase = phaseOf(runRow(fresh.run));
+      if (!phase) return null;
+      // the phase is "shown" per opening: the phase event's seq, so a phase opened again is shown in full once more
+      const opened = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row;
+      const key = `${phase.name}#${opened.seq ?? 0}`;
+      const shown = db.prepare("SELECT phase_shown FROM participants WHERE id = ?").get(fresh.id) as Row;
+      if (shown.phase_shown === key) return { phase, first: false };
+      db.prepare("UPDATE participants SET phase_shown = ? WHERE id = ?").run(key, fresh.id);
+      return { phase, first: true };
+    },
+
+    lock(p, name, note) {
+      const fresh = live(p);
+      if (!LOCK_NAME.test(name)) throw new Error(`lock: a lock name is [a-z0-9:._/-], at most 80 characters (port:<n>, app:<name>, db:<name>, browser:<profile>); got ${JSON.stringify(name)}`);
+      return transaction(() => {
+        let held = db.prepare("SELECT * FROM locks WHERE name = ?").get(name) as Row | undefined;
+        // a holder that ended without releasing frees the lock now
+        if (held && memberRowOf(Number(held.participant)).ended_at != null) {
+          releaseLocksOf(Number(held.participant), "end", " (its holder ended)", name);
+          held = undefined;
+        }
+        if (!held || Number(held.participant) === fresh.id) {
+          if (!held) db.prepare("INSERT INTO locks (name, participant, since, note) VALUES (?, ?, ?, ?)").run(name, fresh.id, now(), note ?? null);
+          db.prepare("DELETE FROM named_lock_waiters WHERE name = ? AND participant = ?").run(name, fresh.id);
+          bump(fresh.repo);
+          // idea 5 (F12): the name's last release, for the CLI to tell a listener left running from a new one
+          const rel = db.prepare("SELECT at, by, how FROM lock_releases WHERE name = ?").get(name) as Row | undefined;
+          return { granted: true as const, ...(rel ? { released: { at: String(rel.at), by: String(rel.by), how: String(rel.how) as LockRelease["how"] } } : {}) };
+        }
+        db.prepare("INSERT OR IGNORE INTO named_lock_waiters (name, participant, since) VALUES (?, ?, ?)").run(name, fresh.id, now());
+        bump(fresh.repo);
+        return { granted: false as const, holder: holderOf(held, Date.now()) };
+      });
+    },
+
+    unlock(p, name) {
+      const fresh = live(p);
+      return transaction(() => {
+        const held = db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(name, fresh.id);
+        if (!held) return { released: false, waiters: [] };
+        const waiters = releaseLocksOf(fresh.id, "unlock", "", name);
+        bump(fresh.repo);
+        return { released: true, waiters };
+      });
+    },
+
+    locks() {
+      return (db.prepare("SELECT * FROM locks ORDER BY since").all() as Row[]).map((l) => {
+        const h = memberRowOf(Number(l.participant));
+        const waiters = (db.prepare("SELECT participant FROM named_lock_waiters WHERE name = ? ORDER BY since").all(String(l.name)) as Row[]).map((w) => {
+          const r = memberRowOf(Number(w.participant));
+          return `${r.plan}/${r.slice}`;
+        });
+        return { name: String(l.name), member: `${h.plan}/${h.slice}`, run: Number(h.run), since: String(l.since), note: l.note == null ? null : String(l.note), waiters };
+      });
+    },
+
+    pause(p, text = "", opts = {}) {
       const fresh = live(p);
       if (fresh.slice !== ORCHESTRATOR) throw new Error(`pause: only the orchestrator pauses its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
       const r = runRow(fresh.run);
@@ -1484,8 +1800,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (r.paused != null) throw new Error(`run ${fresh.run} is already paused`);
       const said = text.trim();
       return transaction(() => {
-        db.prepare("UPDATE runs SET paused = ? WHERE id = ?").run(said, fresh.run);
-        return insertMessage(fresh, `pause: stop where you are and wait for the resume${said ? `: ${said}` : ""}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.pause.name });
+        const person = opts.person === true;
+        db.prepare("UPDATE runs SET paused = ?, paused_person = ? WHERE id = ?").run(said, person ? 1 : 0, fresh.run);
+        const why = person ? `: waiting on the person${said ? `: ${said}` : ""}` : said ? `: ${said}` : "";
+        return insertMessage(fresh, `pause: stop where you are and wait for the resume${why}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.pause.name, meta: { person, text: said } });
       });
     },
 
@@ -1497,8 +1815,17 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (r.paused == null) throw new Error(`run ${fresh.run} is not paused`);
       const said = text.trim();
       return transaction(() => {
-        db.prepare("UPDATE runs SET paused = NULL, resumed_at = ?, stall_posts = 0 WHERE id = ?").run(now(), fresh.run);
-        return insertMessage(fresh, `resume: continue${said ? `: ${said}` : ""}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.resume.name });
+        // idea 2: what the pause held from the orchestrator (what would have woken it, or been carried to it) comes in
+        // resume's answer, one line each, and is delivered with it; a carried one's deadline then counts from the resume
+        const me = participantById(fresh.id);
+        const held = unseenRows(me)
+          .map(toMessage)
+          .filter((m) => m.run === me.run && (mentionsMe(m, me) || wakes(m, me, me.subscriptions) || carries(m, me, me.subscriptions)));
+        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
+        for (const m of held) mark.run(me.id, m.seq);
+        db.prepare("UPDATE runs SET paused = NULL, paused_person = 0, resumed_at = ?, stall_posts = 0 WHERE id = ?").run(now(), fresh.run);
+        const message = insertMessage(fresh, `resume: continue${said ? `: ${said}` : ""}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.resume.name });
+        return { ...message, held: held.map(messageLine) };
       });
     },
 
@@ -1512,16 +1839,32 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (fresh.slice === ORCHESTRATOR) throw new Error("done: the orchestrator opens phases; a member runs done");
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
-      if (current.name !== name) throw new Error(`done ${name}: the current phase is ${current.name}`);
+      const orch = `${fresh.plan}/${ORCHESTRATOR}`;
+      // idea 2: a done for a phase opened earlier in the run, not the current one, is accepted, recorded, and wakes
+      if (current.name !== name) {
+        const opened = (db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ?").all(fresh.run, EVENTS.phase.name) as Row[]).some(
+          (r) => r.meta != null && (JSON.parse(String(r.meta)) as { phase?: string }).phase === name,
+        );
+        if (!opened) throw new Error(`done ${name}: the current phase is ${current.name}`);
+        return transaction(() => {
+          const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
+          const progress = progressOf(fresh.run, name)!;
+          if (!added) return { progress, all: false, already: true, late: true, message: null };
+          const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
+          return { progress, all: false, already: false, late: true, message };
+        });
+      }
       return transaction(() => {
         const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
         const progress = progressOf(fresh.run, name)!;
         const all = progress.of > 0 && progress.done === progress.of;
-        if (!added) return { progress, all, already: true, message: null };
-        const orch = `${fresh.plan}/${ORCHESTRATOR}`;
-        const message = insertMessage(fresh, `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
+        if (!added) return { progress, all, already: true, late: false, message: null };
+        // idea 2: the done wakes the orchestrator only in the person's cases, named in its body; otherwise it is carried
+        const wakeCase = doneWakeCase(fresh, name, progress);
+        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
+        const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         allDoneOnce(fresh, progress);
-        return { progress, all, already: false, message };
+        return { progress, all, already: false, late: false, message };
       });
     },
 
@@ -1559,7 +1902,35 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
            ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
              open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`,
         ).run(run, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
+        // idea 5: whether the open call is a shell one, bounded by its own timeout rather than the seat's busyMax
+        db.prepare("UPDATE member_activity SET open_shell = ? WHERE run = ? AND member = ?").run(o?.shell ? 1 : 0, run, member);
+        // idea 1: the turn state, last line, awaited background task and transcript path; absent from an older link, kept null
+        const bg = act.background ?? null;
+        db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(
+          act.inTurn == null ? null : act.inTurn ? 1 : 0,
+          act.lastLine ?? null,
+          bg?.target ?? null,
+          bg?.since ?? null,
+          bg?.outputGrewAt ?? null,
+          act.transcript ?? null,
+          run,
+          member,
+        );
         db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run, member, at.toISOString(), act.tokens);
+        // idea 4: a kill the link saw, checked against the locks: by name or pattern always, by port only for a port
+        // whose lock the member does not hold; to the orchestrator alone, once per distinct command per member
+        const kill = act.breach ?? null;
+        if (kill) {
+          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, member) as Row;
+          const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
+          const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
+          const command = kill.command.slice(0, 120);
+          if (breached && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run, member, `breach ${command}`).changes) === 1) {
+            const orch = orchestratorIn(run);
+            const ports = kill.kind === "port" ? ` (port ${unlockedPorts.join(", ")} not locked)` : "";
+            insertMessage(orch, `breach ${String(r.plan)}/${member}: ${command}${ports}`, null, "event", [orch.name], { event: EVENTS.breach.name, meta: { breach: `${String(r.plan)}/${member}` } });
+          }
+        }
         bump(String(r.repo));
       });
     },
@@ -1579,6 +1950,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const t = at.getTime();
       transaction(() => {
         db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run, new Date(t - READINGS_KEPT_MS).toISOString());
+        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run) as Row[]) {
+          const a = activityOf(run, String(p.slice));
+          if (a) keepOwingSpan(r, p, a, t);
+        }
         const states = statesOf(run, t);
         const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR);
         const orch = orchestratorIn(run);
@@ -1588,10 +1963,21 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         for (const st of others) {
           // D12: gone, once while it lasts, told in the store so a restarted server never tells it again (D37);
           // an ended member is not live, so never gone
-          if (st.state !== "gone") db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run, st.member);
-          else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
+          if (st.state !== "gone") {
+            // idea 1, rule 4: a member told gone that reads non-gone again: one recovered to the orchestrator
+            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run, st.member).changes) === 1)
+              insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+          } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            // idea 4: a gone member's named locks are released, their waiters woken (a listener it left may still live)
+            const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
+            if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
           }
+          // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
+          if (st.reason === "link down" && st.state === "working") {
+            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run, st.member).changes) === 1)
+              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name, meta: { linkDown: `${orch.plan}/${st.member}` } });
+          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run, st.member);
           // D11: stalled per member, to the orchestrator alone; never while paused
           const a = activityOf(run, st.member);
           if (!a) {
@@ -1606,17 +1992,49 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           }
           // D36: stalled needs no progress AND the link alive; a member whose link is down is gone, or about to be
           // D46: a call open past BUSY_MAX_MS is told as stalled too, the member still busy
-          const longCall = st.state === "busy" && st.since != null && t - st.since >= BUSY_MAX_MS;
+          // idea 5: the bound is the state's own, the seat's busyMax for a non-shell call
+          const longCall = st.state === "busy" && st.rule === "call";
           if ((st.state !== "quiet" && !longCall) || r.paused != null || !presence(st.member).connected) {
-            if (a.stalled_at != null) {
+            // F2: the working blink between two waits of one owing span keeps the stalled told; again only after STALLED_AGAIN_MS
+            const owingSpanOpen = a.owe_since != null;
+            if (a.stalled_at != null && !owingSpanOpen) {
               db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run, st.member);
               moved = true;
             }
             continue;
           }
           if (a.stalled_at != null && t - Number(a.stalled_at) < STALLED_AGAIN_MS) continue;
-          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name });
+          const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
+          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
           db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
+        }
+        // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
+        // waiting or quiet for stall_ms: `stalled · lock` to this run's orchestrator and to the holder's, once per hold
+        if (r.paused == null) {
+          const waited = db
+            .prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name")
+            .all(run) as Row[];
+          for (const w of waited) {
+            const name = String(w.name);
+            const lock = db.prepare("SELECT * FROM locks WHERE name = ?").get(name) as Row | undefined;
+            if (!lock) continue;
+            const h = holderOf(lock, t);
+            const holderSince = statesOf(h.run, t).get(h.member.slice(h.member.lastIndexOf("/") + 1))?.since ?? null;
+            const heldLong = t - Date.parse(String(w.first)) >= LOCK_HELD_MS;
+            const holderStuck = (h.state === "waiting" || h.state === "quiet") && holderSince != null && t - holderSince >= Number(r.stall_ms ?? STALL_MS_DEFAULT);
+            if (!heldLong && !holderStuck) continue;
+            const holderSlice = h.member.slice(h.member.lastIndexOf("/") + 1);
+            const handle = `${h.code}·${holderSlice}`;
+            const why = heldLong ? `held ${minutes(t - Date.parse(String(w.first)))} min since its first waiter` : `its holder ${h.state} ${Math.round((t - holderSince!) / 1000)} s`;
+            const body = `stalled ${h.member} · lock ${name}: ${why}; ${h.nick} (${h.state}${h.doing ? `, ${h.doing}` : ""}), ${Number(w.n)} waiting`;
+            const meta: StalledMeta = { rule: "lock", member: holderSlice, lock: name, holder: handle };
+            const holderOrch = orchestratorIn(h.run);
+            // once per hold and run: the release clears it
+            for (const to of h.run === run ? [orch] : [orch, holderOrch]) {
+              if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(to.run, ORCHESTRATOR, `lock ${name}`).changes) !== 1) continue;
+              insertMessage(to, body, null, "event", [to.name], { event: EVENTS.stalled.name, meta });
+            }
+          }
         }
         // D41: the gone members this tick told are out of the count; the last one not done gone means all-done now
         progress = progressOf(run, r.phase == null ? null : String(r.phase));
@@ -1632,16 +2050,36 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (!allWaiting) {
           // the last post is kept: a member stirring for a moment does not buy a second idle within IDLE_MS (D44)
           const was = idleSince.get(run);
-          if (was) idleSince.set(run, { since: Number.NaN, postedAt: was.postedAt });
+          if (was) idleSince.set(run, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false });
         } else {
           // D34: once when it begins, then only after IDLE_MS while it lasts
           const kept = idleSince.get(run);
-          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null };
+          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false };
           idleSince.set(run, idle);
           const held = t - idle.since;
           if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS) {
+            // idea 2: a spell's first idle after the current phase's all-done was told is carried (its deadline still
+            // wakes); with no phase open, a member still owing, or a repeat within the spell, it wakes
+            const allDoneTold =
+              r.phase != null && db.prepare("SELECT 1 FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").get(run, ORCHESTRATOR, `all-done ${String(r.phase)}`) != null;
+            const carriedIdle = !idle.spellPosted && allDoneTold;
             idle.postedAt = t;
-            insertMessage(orch, `idle ${Math.floor(held / 1000)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", [orch.name], { event: EVENTS.idle.name });
+            idle.spellPosted = true;
+            insertMessage(orch, `idle ${Math.floor(held / 1000)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
+          }
+        }
+        // idea 2: a carried message pending CARRY_MAX_MS (from its post, or the resume) is due: it wakes its member's
+        // wait by itself. Never while paused: the deadline does not run
+        if (r.paused == null) {
+          const resumedAt = r.resumed_at == null ? 0 : Date.parse(String(r.resumed_at));
+          const markDue = db.prepare("INSERT OR IGNORE INTO carry_due (participant, seq) VALUES (?, ?)");
+          for (const row of db.prepare("SELECT id FROM participants WHERE run = ? AND ended_at IS NULL").all(run) as Row[]) {
+            const me = participantById(Number(row.id));
+            if (!me.subscriptions.some((s) => s.carry)) continue;
+            for (const m of unseenRows(me).map(toMessage)) {
+              if (!carries(m, me, me.subscriptions) || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
+              if (Number(markDue.run(me.id, m.seq).changes) === 1) moved = true;
+            }
           }
         }
         if (moved) bump(String(r.repo));
@@ -1684,6 +2122,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         activity: stateIn(Number(r.run), String(r.slice))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.slice)), t)),
         unread: unreadOf(Number(r.id)),
+        busyMax: seatBusyMaxOf(Number(r.run), String(r.slice)),
       }));
     },
 

@@ -417,7 +417,7 @@ test("a paused run refuses claim and merge-lock with exit 4, tells the runner to
   cli(repo, "pause", "hold on", "--as", "review-tool/orchestrator");
   const refused = swarm(wtA, "claim", "src/b.ts");
   assert.equal(refused.status, 4, refused.stderr);
-  assert.match(refused.stdout, /^claim refused: run \d+ is paused: hold on\. Stop where you are: .*wait in the foreground for the resume: node \S+ wait --mentions --as review-tool\/S3/m);
+  assert.match(refused.stdout, /^claim refused: run \d+ is paused: hold on\. Stop where you are: .*wait in the foreground for the resume \(give your shell tool a 600000 ms timeout\): node \S+ wait --mentions --as review-tool\/S3 --timeout 540000$/m);
   const lock = swarm(wtA, "merge-lock", "--onto", "main");
   assert.equal(lock.status, 4, lock.stderr);
   const roster = cli(wtA, "deliver");

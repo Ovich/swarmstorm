@@ -3,7 +3,7 @@
 // Analytics, and the across-runs view. aiview's theme; board.css reaches only `.board`.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "../../../hooks/useBoard.ts";
-import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, runHue, runTabs, seatCount, workerCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
+import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pausedText, runHue, runTabs, seatCount, workerCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
 import {
   boardFieldsOf,
   DEFAULT_SCOPE,
@@ -53,12 +53,12 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
   // the across-runs view and its scope, in the URL: a reload reopens them (D31)
   const [across, setAcross] = useState<AcrossScope | null>(() => readAcross(location.hash));
   // a picked run tab opens on its conversation; Analytics is in the URL (D31)
-  // the agents strip folded or open, remembered per viewer
+  // the agents strip folded by default, the choice remembered per viewer
   const [rosterOpen, setRosterOpen] = useState<boolean>(() => {
     try {
-      return localStorage.getItem("aiview.board.roster") !== "folded";
+      return localStorage.getItem("aiview.board.roster") === "open";
     } catch {
-      return true;
+      return false;
     }
   });
   const setRoster = (open: boolean): void => {
@@ -215,7 +215,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             <RunAnalytics key={selectedRun.run} repo={snapshot.repo} summary={selectedRun} onView={(v) => showRunView(selectedRun.run, v)} onOpenPost={openPost} phases={phases} />
           ) : (
             <>
-              {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
+              {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} pause={pausedText(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
               {/* the roster sits left of the conversation, under a run tab only: All has none */}
               <div className={selectedRun && members.length > 0 ? (rosterOpen ? "run-body with-roster" : "run-body with-roster roster-folded") : "run-body"}>
                 {selectedRun && members.length > 0 && (
@@ -228,7 +228,11 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
                       title={rosterOpen ? "Fold the agents" : "Show the agents"}
                       onClick={() => setRoster(!rosterOpen)}
                     >
-                      {rosterOpen ? "«" : "»"}
+                      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2" />
+                        <path d="M6 2.5v11" />
+                        <path d={rosterOpen ? "M10.5 6.25 8.75 8l1.75 1.75" : "M9 6.25 10.75 8 9 9.75"} />
+                      </svg>
                     </button>
                     {rosterOpen ? (
                       <AgentStrip agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />

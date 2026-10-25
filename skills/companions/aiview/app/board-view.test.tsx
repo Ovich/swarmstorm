@@ -499,3 +499,57 @@ test("a run that names a protocol shows it in its tab's chip, the kind otherwise
   expect(tabOf("Sessions with refresh tokens").querySelector(".kind")?.textContent).toBe("build-verify");
   expect(tabOf("Audit log").querySelector(".kind")?.textContent).toBe("plan");
 });
+
+// ── idea 1: a stall named by its rule (agent-ergonomics, build 1.4: V1, V3) ──────────
+
+test.each([
+  ["ended", "quiet", 'turn ended; last: "I will report once the build is green"'],
+  ["in-turn", "quiet", 'in turn, no line for 2 min (its model may be hung); last: "Bash ls"'],
+  ["background", "quiet", 'background npm test silent 60 s; last: "working"'],
+  ["call", "busy", 'call open 15 min, may be long or hung; last: "mcp__browser__browser_wait_for"'],
+  ["owing", "quiet", 'waiting, not done p1; last: "Bash node swarm.mjs wait"'],
+])("a member stalled under rule %s reads stalled, its reason once, one last: on the card", (rule, state, reason) => {
+  show([APP], 1, [withActivity({ state, rule, doing: "Bash npm test", since: minutesAgo(2), reason, tokens: null, movedAt: null })]);
+  const card = activeCard();
+  expect(card.querySelector(".state")!.className).toBe("state stalled");
+  const said = card.querySelector('[data-component="MemberActivity"]')!.textContent!;
+  expect(said).toBe(reason);
+  expect(said.match(/last:/g)).toHaveLength(1);
+});
+
+test("the stall is read from the rule, not the wording: a reworded reason under a rule is still stalled", () => {
+  show([APP], 1, [withActivity({ state: "quiet", rule: "ended", doing: "Read", since: minutesAgo(2), reason: "anything at all", tokens: null, movedAt: null })]);
+  expect(activeCard().querySelector(".state")!.className).toBe("state stalled");
+});
+
+test("a quiet member with no rule and no 'link alive' is quiet, not stalled; its last tool is shown", () => {
+  show([APP], 1, [withActivity({ state: "quiet", doing: "Read", since: minutesAgo(2), reason: "no activity yet", tokens: null, movedAt: null })]);
+  const card = activeCard();
+  expect(card.querySelector(".state")!.className).not.toMatch(/stalled/);
+  expect(card.querySelector('[data-component="MemberActivity"]')!.textContent).toBe("last: Read · no activity yet");
+});
+
+test("a working member whose link is down reads working, not stalled nor gone", () => {
+  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, reason: "link down", tokens: null, movedAt: null })]);
+  const card = activeCard();
+  expect(card.querySelector(".state")!.textContent).toMatch(/^working$/);
+  expect(card.classList.contains("gone")).toBe(false);
+});
+
+// ── idea 2, B12 (F10): a paused run says so on the conversation's head ──────────────
+
+const pausedRun = (paused: { text: string; person: boolean } | null) => ({ ...LIVE, runs: LIVE.runs.map((r) => (r.run === 1 ? { ...r, paused } : r)) }) as BoardSnapshot;
+
+test.each([
+  [{ text: "approve the mockup", person: true }, "waiting on the person: approve the mockup"],
+  [{ text: "hold for the review", person: false }, "paused: hold for the review"],
+])("the conversation's head shows the run's pause: %o", (paused, said) => {
+  show([APP], 1, [pausedRun(paused)]);
+  const pause = document.querySelector('[data-component="RunPause"]');
+  expect(pause?.textContent).toBe(said);
+});
+
+test("a run that is not paused shows no pause on its head", () => {
+  show([APP], 1, [pausedRun(null)]);
+  expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
+});

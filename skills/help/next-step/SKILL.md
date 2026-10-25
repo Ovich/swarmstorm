@@ -16,7 +16,7 @@ or something else. A yes loads that skill; it takes over from there.
 | an idea still vague, several choices open, the person hesitating or contradicting an earlier answer | the `interview` skill: "Want me to interview you on this, one question at a time?" | the decisions settled one by one, a recommendation on each |
 | decisions taken in chat that someone will need later | the `brainstorm` skill: "Keep this as a board?" | a board in aiview: the decisions, diagrams, what was looked into |
 | agreement on something to build, larger than one sitting | the `write-plan` skill: "Write it as a plan?" | the plan, its phases and seats, run later on the board |
-| agreement on work that splits into parts or must be seen working, no plan needed | the `swarm` skill, **with the protocol filled in**: "Run it as build-verify: 3 builders, 1 verifier walking the app, until ready (cap 5), effort low. Adjust or go?" | the run on the board, the merged branch |
+| agreement on work that splits into parts or must be seen working, no plan needed | the `swarm` skill, **with the protocol filled in**: "Run it as build-verify: 3 builders, verifiers sized from the steps (2 here) each on its own instance, until ready (cap 5), effort low. Adjust or go?" | the run on the board, the merged branch |
 | a question to decide, options to explore, or a text to write, better from several viewpoints | the `brainswarm` skill, its protocol named: debate, brainstorm, editorial | the run's record in aiview |
 | a screen to build or change | the `design-prototype` skill | a prototype in the project's design language |
 | a project's conventions just decided, or about to be | the `write-conventions` skill | the rule in the conventions file |

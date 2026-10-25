@@ -1,0 +1,30 @@
+{
+  "name": "swarmstorm",
+  "description": "Multi-agent orchestration for Claude Code, Codex and Cursor: parallel coding agents that settle shared files before the merge, QA agents that test the running app, clickable prototypes, workbenches and live plans in aiview. On your own subscription.",
+  "version": "2.4.27",
+  "author": {
+    "name": "Stefan Teofanovic"
+  },
+  "homepage": "https://github.com/Ovich/swarmstorm",
+  "repository": "https://github.com/Ovich/swarmstorm",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "multi-agent",
+    "orchestration",
+    "parallel-agents",
+    "agent-swarm",
+    "worktree",
+    "verification",
+    "prototype",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Swarmstorm",
+    "shortDescription": "Parallel coding agents on one board, live plans and prototypes in aiview",
+    "developerName": "Stefan Teofanovic",
+    "category": "Coding",
+    "websiteURL": "https://github.com/Ovich/swarmstorm"
+  }
+}

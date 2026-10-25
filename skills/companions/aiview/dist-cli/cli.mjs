@@ -9104,6 +9104,10 @@ var init_wire = __esm({
       "closeRun",
       "phase",
       "currentPhase",
+      "showPhase",
+      "lock",
+      "unlock",
+      "locks",
       "pause",
       "resume",
       "pausedOf",
@@ -9148,7 +9152,7 @@ var init_wire = __esm({
 });
 
 // ../swarm-board/src/board/liveness.ts
-var IDLE_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS;
+var IDLE_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
 var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
@@ -9158,6 +9162,10 @@ var init_liveness = __esm({
     BUSY_MAX_MS = 15 * 60 * 1e3;
     STALLED_AGAIN_MS = 15 * 60 * 1e3;
     LINK_LOST_MS = 30 * 1e3;
+    IN_TURN_MS = 120 * 1e3;
+    OWE_WAIT_MS = 10 * 60 * 1e3;
+    CARRY_MAX_MS = 5 * 60 * 1e3;
+    LOCK_HELD_MS = 10 * 60 * 1e3;
   }
 });
 

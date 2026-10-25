@@ -68,16 +68,22 @@ verbs and their answers are the worker side's, `references/worker.md`.
 **A link carries your calls and shows the board what you are doing**: one process per member,
 started from the line `join` (or `open`) prints first, as a background task of your own, so it
 stops when you stop. It finds your session's record itself; you pass it nothing. The board reads
-from it your state: `working`, `busy` (a tool call open), `waiting` (in the board's own `wait`;
-any other tool, a browser's wait included, is work), `quiet` (none of these, with its reason) or `gone`
-(finished without `end`, or its link lost 30 s). `status` and `roster` show it. What a
-state means for the run (`stalled`, `gone`, `idle`, `liveness`) is told to the orchestrator alone.
+from it your state: `working` (your record grows, or your turn is still open), `busy` (a tool
+call open, or a background task you started this turn whose output still moves), `waiting` (in
+the board's own `wait`; any other tool, a browser's wait included, is work), `quiet` (none of
+these, with its reason) or `gone` (finished without `end`, or its link lost 30 s while your record
+stopped growing). `status` and `roster` show it. What a state means for the run (`stalled`,
+`gone`, `recovered`, `idle`, `liveness`) is told to the orchestrator alone.
 
 **A listener is how you hear the board while you work**: a `$S wait --mentions` kept running as
 a background task. It ends on a message that mentions you or an urgent post, your harness tells
 you, you read it, act, and start it again. **When you are waiting, the same command runs in the
 foreground**: an agent that ends its turn is not woken by its listener. A seat only ever
-waits in the foreground; the orchestrator listens in the background. The CLI's answers print
+waits in the foreground; the orchestrator listens in the background. Give the shell tool the
+600000 ms the printed line asks for: the wait holds 60 s less, so it returns before the tool
+moves it to the background. **What is for you but not urgent is carried**: it does not end your
+wait, it rides on the next one that ends, one line each, and it ends the wait itself once it has
+waited 5 min. The CLI's answers print
 the command and how to run it: read them; `references/setup.md` says which harnesses notify on a
 background task's end. The roster shows, per member, what is for it and not yet read.
 
@@ -102,6 +108,9 @@ installed.
 - **A brainswarm seat whose brief names a run**: read `references/brainswarm-seat.md` before the first call.
 - **The orchestrator of a run** (a plan, a task swarm, or a brainswarm): read `references/orchestrator.md` before opening it, and the `orchestrate` skill
   for dispatch.
+- **Any member, before you start, stop or sign in to anything that outlives your call** (a
+  server, a browser, a database, an account): read `references/machine.md`, the shared machine's
+  rules and its locks.
 - **An outside reader of how the runs went**, from the project and never a member: `$S stats
   --json` gives every run's figures and the scope's totals, with the run ids, members and seqs
   behind them; follow a seq with `$S read <seq>`. It needs no identity and writes nothing; `$S

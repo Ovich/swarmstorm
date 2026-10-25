@@ -13,7 +13,7 @@ except `open`, `slice`, `close` and `status`.
 
      ```json
      [{ "id": "w1", "title": "worker", "role": "builder · the api", "link": "<plan URL>" },
-      { "id": "v1", "title": "verifier · the app", "role": "verifier, app owner", "link": "<plan URL>" }]
+      { "id": "v1", "title": "verifier · the app", "role": "verifier", "link": "<plan URL>", "busyMax": 300000 }]
      ```
 
    - **A brainstorm**: every seat, with its `role` and the brainstorm board's URL as `link`;
@@ -27,16 +27,24 @@ except `open`, `slice`, `close` and `status`.
    - **`on`**, on any row: the events that wake that member's `wait --mentions` besides
      mentions and urgent posts, as the strategy assigns them (the skeptic `agreement`).
      `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events. A row without `on`
-     gets its kind's defaults: none for a member; for you, `merged, ended, stale` on a code run,
-     `agreement, endorsement, ended, stale` on a brainstorm. A member's `join --on` replaces
+     gets its kind's defaults: none for a member; for you, waking on `ended, stale` and
+     carrying `merged, done, joined, idle` on a code run, waking on `agreement, endorsement,
+     ended, stale` on a brainstorm (*Watching the thread* says what carried means). An explicit
+     `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
      its row's list; `subscribe` / `unsubscribe` change it later.
+   - **`busyMax`** (ms), on any row: how long a **non-shell** call (a browser or other tool step)
+     of that seat may stay open before `stalled · call` tells you; a shell call keeps its own
+     timeout and the default 15 min. Set it on a verifier (`300000`), where a hung browser step
+     would hold the walk. `slice add <id> --busy-max <ms>` sets it on a seat added later.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
-   with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it).
+   with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
+   `--protocol none` for a run with no phases on purpose.
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`, `--slices` of `--seats`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
-   opens this run's tab), then the line that starts your link: give the link to the person, who
+   opens this run's tab), then the line that starts your link. `open`'s last line is the next
+   step: the first phase, or why there is none. Give the link to the person, who
    watches the run there, and run the line as it says.
 3. **You register nothing for liveness.** Each member's link finds its transcript in the
    session and reports its activity; the board derives each member's state from it (`SKILL.md`
@@ -66,33 +74,46 @@ The CLI calls a seat's row a `slice`.
 
 - **Listen in the background from the open**: `$S wait --mentions --as <group>/orchestrator`,
   started with the harness's background-task feature; you are not a subagent, its end reaches
-  you. The answers of `phase` and of your `wait` print this step: read them. Your subscriptions (a worker's `merged`
-  and `ended`, `stale`), every `done`, `idle`, `stalled` and `liveness` event and every mention
-  of you wake it. When it ends, read its output, act, and start it again at once, in the
+  you. The answers of `phase` and of your `wait` print this step: read them. **These wake it**:
+  every mention of you, `all-done`, `stalled`, `gone`, `recovered`, `liveness`, `urgent`, your
+  waking subscriptions (`ended`, `stale`), a repeated `idle`, and a member's `done` in five cases,
+  its case named in the body: the member is in the phase's `--watch`, it is done without a post
+  since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
+  done for a phase that is not current (`late done`). **These are carried**: `merged`, any other
+  `done`, `joined`, a first `idle` after `all-done`. A carried line does not end your wait; it
+  comes with the next wake, one line each, and wakes you itself after 5 min if nothing else did.
+  To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
+  the phase with `--watch <ids>`. When it ends, read its output, act, and start it again at once, in the
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of
   your own, which the board cannot end and which leaves you deaf. Empty, start it again. `close`
   makes it return.
-- **Four events reach you alone**; no member is woken by them, and `stalled` and `idle` never
+- **Five events reach you alone**; no member is woken by them, and `stalled` and `idle` never
   fire while the run is paused. Each ends on the step it asks for.
-  - **`stalled <member>`**: that member's transcript has not grown for the run's threshold and
-    it is in no board wait and no tool call (`quiet`), or it has been in one tool call for 15 min
-    (still `busy`: the call may be hung), its reason given; once, then every 15 min while it lasts.
-    Quiet, it owes a move it is not making: read the thread, then mention it with what you need.
-    Busy that long: judge from the call it names whether it can still return; if not, message it
-    directly.
-    A member quiet because its turn ended on a background task is not woken by that task: tell
-    it what to do (*Interrupt*).
-  - **`gone <member>`**: its agent finished without `end`, or its link has been lost 30 s; once.
-    It is not running: dispatch a fresh agent into its seat, or close the seat (*A gone
-    member*).
+  - **`stalled <member>`**: that member owes a move it is not making; once, then every 15 min
+    while it lasts. It names its rule, the member's last line and, on the line after it, the
+    move that rule asks for: `turn ended` (a post does not wake it), `in turn, no line for 2 min`
+    (its model may be hung), `background <cmd> silent 60 s` or `15 min` (a task it awaits),
+    `call open 15 min, may be long or hung`, `waiting, not done <phase>` (it waits while owing
+    its part). **Read that `next` line and make that move**: the rule says why the member is
+    stuck, so it alone knows what reaches it, a mention for a member in a wait, a direct message
+    for one whose turn ended. A member waiting on a task it just started reads `busy ·
+    background <cmd>` and draws no alert.
+  - **`gone <member>`**: its agent finished without `end`, or its link has been lost 30 s and
+    its transcript has not grown for 30 s; once. It is not running: dispatch a fresh agent into
+    its seat, or close the seat (*A gone member*).
+  - **`recovered <member>`**: a member told `gone` reads alive again; once. Do not dispatch into
+    its seat; if you already did, close one of the two.
   - **`idle`**: every member is `waiting` in a board wait; once when it begins, then every
     15 min while it holds. The swarm waits on you: open the next phase if all are done, else
     answer whoever waits on you, else wait again.
   - **`liveness`**: no transcript was found for a member 30 s after its join; once. Its state
     is presence only (`waiting` or `quiet`, never `working`) and `stalled` never names it: judge
     it by its posts and its doing, and mention it when it falls silent.
-- **A `merged` event is a task to check**: re-run its done-when on the branch it merged into then,
-  not when the worker's report arrives; the report adds what it found.
+    Or its link was lost while its transcript still grows (`link lost, transcript still
+    growing`): it is working, not `gone`; restart its link, as the line says.
+- **A `merged` event is a task to check**: it is carried, and usually arrives with the worker's
+  report; re-run its done-when at the sha it names, not at the branch's tip by then; the report
+  adds what it found.
 - **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
   you in full. With no background notification in the harness (`references/setup.md`), a
   foreground `$S wait --as <plan>/orchestrator --timeout <ms>` when nothing else is to do.
@@ -116,8 +137,14 @@ The CLI calls a seat's row a `slice`.
 
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
 stop and wait, claim and merge-lock are refused, and no stall, quiet or stale alert fires.
+A paused run is silent for you too: only `urgent` wakes you; everything else (`gone`,
+`liveness`, `recovered`, `done`, `all-done`, `merged`) is held, and the 5 min carry does not run.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
-in their wake. The answers print the next step.
+in their wake, and its answer hands you every held line, one each. The answers print the next step.
+
+**While the run waits on the person**, pause it: `$S pause --person "<what they decide>" --as
+<group>/orchestrator`. The members' paused line and the viewer then say `waiting on the person:
+<what>`; a protocol's human phase opens with it. Resume with their answer.
 
 **A mention reaches a `waiting` member at once**, and one with a listener when its listener ends;
 the roster's `unread` shows what it has not read yet. **You may always message a member

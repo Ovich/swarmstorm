@@ -27,9 +27,9 @@ const USAGE = [
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --slices <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …]}]',
+  '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
   "  slice   <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
-  "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>]   # adds a slice or seat mid-run (orchestrator)",
+  "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>] [--busy-max <ms>]   # adds a slice or seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
   "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
@@ -53,6 +53,9 @@ const USAGE = [
   "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
   "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
+  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
+  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
+  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
   `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
   "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the runner joined from this worktree",
 ].join("\n");
@@ -215,15 +218,26 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
   // the funny name beside the runner (D43); an orchestrator is its name alone
   const who = r.slice === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
-  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}`;
+  // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
+  const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
+  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
 
-/** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase. */
-const phaseHeader = async (run: number): Promise<string | null> => {
-  const ph = await board.currentPhase(run);
-  const paused = (await board.runs()).find((r) => r.id === run)?.paused;
-  const head = ph ? `phase ${ph.name}: ${ph.text}` : null;
-  return paused == null ? head : [head, `PAUSED${paused ? `: ${paused}` : ""}`].filter(Boolean).join("  ");
+/** The run's current phase as the header of what a member reads: `phase <name>: <text>`; null before the first phase.
+ *  `shownTo`: a member's wait, deliver or read, which gets the full text the first time in a phase, then the short
+ *  header naming where its text is (B15); the owed line stays whole elsewhere. */
+const phaseHeader = async (run: number, shownTo?: Participant): Promise<string | null> => (await phaseHeaders(run, shownTo)).printed;
+/** The phase header twice: `printed`, short after a member's first return in the phase (B15); `full`, always whole, for --json (F7). */
+const phaseHeaders = async (run: number, shownTo?: Participant): Promise<{ printed: string | null; full: string | null }> => {
+  const shown = shownTo ? await board.showPhase(shownTo) : null;
+  const ph = shown ? shown.phase : await board.currentPhase(run);
+  const r = (await board.runs()).find((x) => x.id === run);
+  const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
+  const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo!.name)].join(" ")})` : whole;
+  if (r?.paused == null) return { printed: short, full: whole };
+  const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
+  const withPause = (head: string | null) => [head, `PAUSED${why}`].filter(Boolean).join("  ");
+  return { printed: withPause(short), full: withPause(whole) };
 };
 /** `phase <name>: <text>  <n>/<m> done[, <k> gone]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
@@ -263,13 +277,21 @@ const self = (): string[] => ["node", shellWord(process.argv[1].replace(/\\/g, "
  *  and inside one ends on this line (D39). */
 const startLinkLine = (member: BoardMember): string =>
   `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
-const waitCommand = (name: string): string => [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
+/** A foreground wait's hold: 60 s under the shell tool's 600 000 ms limit, so the harness never moves it to the background (idea 2, B7). */
+const FOREGROUND_WAIT_MS = 540_000;
+const SHELL_TOOL_TIMEOUT = "give your shell tool a 600000 ms timeout";
+/** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold and the tool timeout to give it. */
+const waitCommand = (name: string, foreground = false): string => {
+  const line = [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
+  // the command alone, so it runs as copied (F6); the tool-timeout sentence sits in the prose before the colon
+  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS}` : line;
+};
 const listensInForeground = (p: Pick<Participant, "slice" | "kind">): boolean => p.slice !== "orchestrator" && profileOf(p.kind).member === "seat";
 /** The line that starts a member's listener: the exact command, --as included (D61); `afterPhase`: it
  *  follows the owed-phase line, so a seat waits only once its part is in. */
 const listenNow = (p: Pick<Participant, "name" | "slice" | "kind">, afterPhase = false): string =>
   listensInForeground(p)
-    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone): ${waitCommand(p.name)}`
+    ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`
     : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
 
 /** The step a member owing the run's open phase takes before any wait: a member that joined, or woke,
@@ -289,7 +311,9 @@ const pausedLine = async (p: Participant): Promise<string | null> => {
   if (p.slice === "orchestrator" || p.ended) return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
   if (!run || run.paused == null) return null;
-  return `run ${p.run} is paused${run.paused ? `: ${run.paused}` : ""}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume: ${waitCommand(p.name)}`;
+  // a pause waiting on the person says so (idea 2, B12); any other reads as before
+  const why = run.pausedPerson ? `: waiting on the person: ${run.paused || "their decision"}` : run.paused ? `: ${run.paused}` : "";
+  return `run ${p.run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
 };
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
 const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => {
@@ -299,6 +323,98 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
   emit({ run: p.run, paused: true, refused: verb, next: line }, `${verb} refused: ${line}`);
   return true;
 };
+/** `--protocol none`: a run phaseless on purpose. */
+const PHASELESS = "none";
+
+// ── locks (idea 4): a shared resource of the machine, honoured; for a port, what listens on it read from the OS ──
+const LOCK_PORT = /^port:(\d{1,5})$/;
+/** The PIDs listening on a TCP port now, from the OS on demand: `netstat -ano` on Windows, `lsof` elsewhere; [] when none or unreadable. */
+function listenersOn(port: number): number[] {
+  const found = new Set<number>();
+  if (process.platform === "win32") {
+    const out = spawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const cols = line.trim().split(/\s+/);
+      // Proto  Local  Foreign  State  PID
+      if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
+    }
+  } else {
+    const out = spawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
+  }
+  return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
+}
+/** When each of these processes started (ms epoch), from the OS; a PID it cannot read is left out. About 1 s on Windows, so read only when listeners exist. */
+function processStarts(pids: number[]): Map<number, number> {
+  const starts = new Map<number, number>();
+  if (!pids.length) return starts;
+  if (process.platform === "win32") {
+    const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
+    const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
+    const out = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const [pid, at] = line.trim().split(/\s+/);
+      if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
+    }
+  } else {
+    const out = spawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
+    for (const line of out.split(/\r?\n/)) {
+      const m = /^\s*(\d+)\s+(.+)$/.exec(line);
+      if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
+    }
+  }
+  return starts;
+}
+/** F12: a port grant's listeners, told apart by the name's last release. Left running by that release (started before it):
+ *  stop it only if it is yours. Started after it, or with no release at all: by someone without the lock, ask first. */
+function grantListeners(port: number, pids: number[], released: { at: string; by: string } | undefined): { lines: string[]; stoppable: number[] } {
+  const starts = processStarts(pids);
+  const releasedAt = released ? Date.parse(released.at) : NaN;
+  const left = pids.filter((pid) => Number.isFinite(releasedAt) && (starts.get(pid) ?? -Infinity) < releasedAt);
+  const without = pids.filter((pid) => !left.includes(pid));
+  const lines = [
+    ...(left.length ? [`listening on ${port} now: ${left.join(", ")}, left running by ${released!.by}'s release: stop it only if it is yours to stop`] : []),
+    ...(without.length ? [`listening on ${port} now: ${without.join(", ")}, started by someone without the lock: ask on the board before you stop it`] : []),
+  ];
+  return { lines, stoppable: left };
+}
+/** The line that stops exactly these PIDs, per platform: by PID, never by name. */
+const stopLine = (pids: number[]): string =>
+  process.platform === "win32" ? pids.map((pid) => `taskkill /PID ${pid} /T /F`).join("; ") : `kill ${pids.join(" ")}`;
+/** For a `port:<n>` lock, the port and what listens on it now; null for any other name. */
+const portListeners = (name: string): { port: number; pids: number[] } | null => {
+  const m = LOCK_PORT.exec(name);
+  return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
+};
+/** One held lock as a line: name, holder, since, waiters, and for a port what listens on it. */
+const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>
+  `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
+
+/** The orchestrator's step after `open` of a task or plan run (idea 3): open the protocol's first phase before any
+ *  task, or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm).
+ *  The reading pointer sits before the colon, the command last (F6). */
+const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): string | null => {
+  if (kind !== "task" && kind !== "plan") return null;
+  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
+  if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
+  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord(`${group}/orchestrator`)}`;
+  const pointer = "(its protocol.md's phase table names them)";
+  return protocol
+    ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}`
+    : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
+};
+
+/** The first-phase line once more, on the orchestrator's first post of its task or plan run while no phase is open
+ *  (idea 3, C3, as d1 restated it #12346); null on any later post, with a phase open, or for any other author.
+ *  "First" is the run's own count of the orchestrator's posts, from stats: 1 once this post is in. */
+const firstTaskPostLine = async (p: Participant): Promise<string | null> => {
+  if (p.slice !== "orchestrator") return null;
+  const run = (await board.runs()).find((r) => r.id === p.run);
+  if (!run || (run.kind !== "task" && run.kind !== "plan") || run.protocol === PHASELESS || (await board.currentPhase(p.run))) return null;
+  const mine = (await board.stats({ repo: p.repo, run: p.run })).runs.find((r) => r.run === p.run)?.members.find((x) => x.member === p.name);
+  return mine?.posts === 1 ? firstPhaseLine(run.kind, run.group, run.protocol) : null;
+};
+
 /** A member's next step where it would be told to listen: the pause first, then the owed phase. */
 const nextStep = async (p: Participant): Promise<string> => {
   const paused = await pausedLine(p);
@@ -398,11 +514,14 @@ function readSlices(file: string): SliceSpec[] {
   }
   const list = Array.isArray(raw) ? raw : (raw as { slices?: unknown }).slices;
   if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, title, blockers}`);
-  return list.map((s: { id?: unknown; title?: unknown; role?: unknown; blockers?: unknown; link?: unknown; on?: unknown }) => {
+  return list.map((s: { id?: unknown; title?: unknown; role?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
     if (typeof s.id !== "string") fail(`${file}: a slice without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
     if ("transcript" in s) fail(`${file}: unknown field transcript in ${s.id}`);
+    // busyMax: the seat's bound on a non-shell call (idea 5), validated as slice add --busy-max is
+    if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) fail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
+      ...(s.busyMax !== undefined ? { busyMax: s.busyMax as number } : {}),
       id: String(s.id),
       title: String(s.title ?? s.id),
       ...(typeof s.role === "string" && s.role ? { role: s.role } : {}),
@@ -447,7 +566,7 @@ const seatCommands = (as: string): string[] => {
     `${cli} post "…" --about <D id> ${who}`,
     `${cli} agree "…" --about <D id> ${who}`,
     `${cli} endorse <seq> ${who}`,
-    `${cli} wait --mentions ${who}    # in the foreground, when waiting`,
+    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`,
   ];
 };
 
@@ -503,13 +622,16 @@ async function main(): Promise<void> {
       const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
       // the person watches the project's board on aiview's /board page
       const doc = registerBoard({ toolRoot: toolRoot(), cwd: process.cwd(), repo: run.repo });
+      // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
+      const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
+      const lines = (url: string | null) => [String(run.id), url, link, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link }, [String(run.id), link].join("\n"));
+        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, ...(next ? { next } : {}) }, lines(null));
         break;
       }
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link }, [String(run.id), doc.url, link].join("\n"));
+      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link, ...(next ? { next } : {}) }, lines(doc.url));
       break;
     }
     case "slice": {
@@ -519,10 +641,15 @@ async function main(): Promise<void> {
         const on = args.flag("--on");
         if (on !== undefined) subscriptionsArg(on);
         const role = args.flag("--role");
+        // --busy-max: the seat's bound on a non-shell call (a browser or MCP step), as a seat row's busyMax (idea 5)
+        const rawBusyMax = args.flag("--busy-max");
+        const busyMax = rawBusyMax === undefined ? undefined : Number(rawBusyMax);
+        if (busyMax !== undefined && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
         const added = await board.addSlice(run, {
           id,
           title: need("--title"),
           ...(role ? { role } : {}),
+          ...(busyMax !== undefined ? { busyMax } : {}),
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
           ...(on !== undefined ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}),
@@ -550,10 +677,15 @@ async function main(): Promise<void> {
       if (!name) fail(`phase: which phase?
 ${USAGE}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
-      const m = await board.phase(p, name, text);
-      // the orchestrator's next step (rule 10): its listener hears each member's done; the board says when all are in
+      // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
+      const watch = args.list("--watch");
+      const m = await board.phase(p, name, text, watch.length ? { watch } : undefined);
+      // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
       const cli = self().join(" ");
-      const next = `phase ${name} is open; listen for each member's done in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
+      const heard = watch.length
+        ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
+        : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
+      const next = `phase ${name} is open; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
       emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
@@ -566,15 +698,25 @@ ${USAGE}`);
     case "pause":
     case "resume": {
       const p = await caller();
-      const text = args.positional.join(" ");
-      const m = args.verb === "pause" ? await board.pause(p, text) : await board.resume(p, text);
+      // pause --person "<what they decide>": a pause waiting on the person (idea 2, B12)
+      const person = args.verb === "pause" ? args.flag("--person") : undefined;
+      const text = person ?? args.positional.join(" ");
       const cli = self().join(" ");
-      const next =
-        args.verb === "pause"
-          ? `every member of run ${m.run} is told to stop and wait; no stall, quiet or stale alert until the resume. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`
-          : `run ${m.run} resumed; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
-      emit({ seq: m.seq, run: m.run, paused: args.verb === "pause", next }, () => {
+      if (args.verb === "pause") {
+        const m = await board.pause(p, text, person !== undefined ? { person: true } : undefined);
+        const next = `every member of run ${m.run} is told to stop and wait${person !== undefined ? `, waiting on the person: ${text}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`;
+        emit({ seq: m.seq, run: m.run, paused: true, person: person !== undefined, next }, () => {
+          console.log(seqLine(m));
+          console.log(next);
+        });
+        break;
+      }
+      const m = await board.resume(p, text);
+      // what the pause held from the orchestrator, one line each, given once (idea 2, judgment 1)
+      const next = `run ${m.run} resumed${m.held.length ? `; ${m.held.length} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
+      emit({ seq: m.seq, run: m.run, paused: false, held: m.held, next }, () => {
         console.log(seqLine(m));
+        for (const line of m.held) console.log(line);
         console.log(next);
       });
       break;
@@ -585,9 +727,11 @@ ${USAGE}`);
       const name = args.positional[0] ?? fail(`done: which phase?\n${USAGE}`);
       const r = await board.done(p, name);
       // the member's next step (rule 10): wait for the next phase
-      const next = `wait for the next phase, in the foreground: ${self().join(" ")} wait --mentions --as ${shellWord(p.name)}`;
-      emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, next }, () => {
-        console.log(`${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
+      const next = `wait for the next phase, in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
+      emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
+        // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
+        const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
+        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
         console.log(next);
       });
       break;
@@ -654,12 +798,25 @@ ${USAGE}`);
         kind: args.verb === "agree" ? "agreement" : "msg",
       });
       const unmatched = await unmatchedLines(p, body);
-      await emitHeard(p, { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) }, () => {
+      // the orchestrator's first task post into a run with no phase open ends on the first-phase line, once (idea 3)
+      const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
+      const human = () => {
         console.log(seqLine(m));
         // posting is claiming (D7)
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
-      });
+      };
+      if (phaseNext) {
+        // its own last line: a listener line, when one is due, comes before it
+        const listen = !p.ended && !p.listening ? await nextStep(p) : null;
+        emit({ ...json, ...(listen ? { listen } : {}), next: phaseNext }, () => {
+          human();
+          if (listen) console.log(listen);
+          console.log(phaseNext);
+        });
+      }
+      else await emitHeard(p, json, human);
       break;
     }
     case "endorse": {
@@ -686,10 +843,10 @@ ${USAGE}`);
       if (by && (await answeredClosed(by))) break;
       const m = await board.read(seq, by);
       // the phase the message's run is in, first (the caller's run when one is known)
-      const phase = await phaseHeader(by?.run ?? m.run);
+      const { printed: phase, full: phaseFull } = await phaseHeaders(by?.run ?? m.run, by);
       // a member owing the open phase is told to do it, last
       const owes = by ? await owedLine(by) : null;
-      emit({ ...m, phase, ...(owes ? { next: owes } : {}) }, () => {
+      emit({ ...m, phase: phaseFull, ...(owes ? { next: owes } : {}) }, () => {
         if (phase) console.log(phase);
         console.log(fullText(m));
         if (owes) console.log(owes);
@@ -719,10 +876,10 @@ ${USAGE}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
       // the run's phase heads every delivery that carries something
-      const phase = d.full.length || d.lines.length ? await phaseHeader(me.run) : null;
+      const { printed: phase, full: phaseFull } = d.full.length || d.lines.length ? await phaseHeaders(me.run, me) : { printed: null, full: null };
       // a member owing the open phase is told to do it, last
       const owes = mentionsOnly ? null : await owedLine(me);
-      emit({ phase, ...d, ...(owes ? { next: owes } : {}) }, () => {
+      emit({ phase: phaseFull, ...d, ...(owes ? { next: owes } : {}) }, () => {
         if (phase) console.log(phase);
         printDelivery(d);
         if (owes) console.log(owes);
@@ -743,16 +900,25 @@ ${USAGE}`);
         emit(d, "superseded by a newer wait"); // a newer wait of this runner gets what arrives (D64)
         break;
       }
-      if (!d.full.length && !d.lines.length) {
-        emit(d, ""); // a timeout, or the runner ended: nothing to answer, nothing to re-arm
-        break;
-      }
       // the runner's next step, before the message: the exact command that re-arms this listener (D49)
       const again = [...self(), "wait"];
       if (mentionsOnly) again.push("--mentions");
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
       if (raw !== undefined) again.push("--timeout", raw);
       if (asJson) again.push("--json");
+      // every foreground re-arm holds 540000 under the shell tool's limit (B7), whatever the caller gave: an old 110000
+      // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
+      const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
+      if (!d.full.length && !d.lines.length) {
+        // a timeout: the line to run again (B7); the runner ended: nothing to re-arm
+        const ended = (await board.participant(p.name))?.ended ?? true;
+        if (ended) emit(d, "");
+        else {
+          const next = (await pausedLine(p)) ?? (p.slice === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
+          emit({ ...d, next }, next);
+        }
+        break;
+      }
       // a member owing the open phase does it before it waits again
       const owes = await owedLine(p);
       const pausedNow = await pausedLine(p);
@@ -761,16 +927,16 @@ ${USAGE}`);
         : listensInForeground(p)
         ? owes
           ? `${owes}
-only then wait again, in the foreground: ${again.join(" ")}`
-          : `answer on the thread if needed, then wait again, in the foreground: ${again.join(" ")}`
+only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
+          : `answer on the thread if needed, then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
         : p.slice === "orchestrator"
           ? `act on it, then start this listener again, in the background: ${again.join(" ")}`
-          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: ${again.join(" ")}`;
+          : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
 ${rearm}` : rearm;
       // the run's phase first, so a member always knows which phase it answers in
-      const phase = await phaseHeader(p.run);
-      emit({ phase, next, ...d }, () => {
+      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p);
+      emit({ phase: phaseFull, next, ...d }, () => {
         if (phase) console.log(phase);
         console.log(next);
         printDelivery(d);
@@ -785,7 +951,11 @@ ${rearm}` : rearm;
       // each run's title and phase above its members
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)] as const)));
-      emit({ repo, roster, runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })) }, () => {
+      // the locks this repository's members hold or wait on (idea 4)
+      const names = new Set(roster.map((r) => r.name));
+      const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
+      emit({ repo, roster, runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
+        for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown: number | null = null;
         for (const r of roster) {
           const run = runs.get(r.run);
@@ -926,6 +1096,56 @@ ${rearm}` : rearm;
       });
       break;
     }
+    case "lock": {
+      const p = await caller();
+      if (await refusedPaused(p, "lock")) break;
+      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${USAGE}`);
+      const r = await board.lock(p, name, args.flag("--note"));
+      const cli = self().join(" ");
+      const who = shellWord(p.name);
+      if (!r.granted) {
+        // held: who holds it, then how to wait for its unlocked event (exit 3, as a held claim)
+        process.exitCode = 3;
+        const h = r.holder;
+        const held = `held by ${h.nick} (${h.code}·${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
+        const next = `next: wait for its unlocked event, then lock again (${cli} lock ${shellWord(name)} --as ${who}); in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
+        emit({ name, granted: false, holder: h, next }, () => {
+          console.log(held);
+          console.log(next);
+        });
+        break;
+      }
+      // a port lock makes what listens on it yours to stop: its PIDs now, and the line that stops exactly them
+      const port = portListeners(name);
+      // F12: no listener reads plain; one left by the last release, or started without the lock, reads as such
+      const told = port && port.pids.length ? grantListeners(port.port, port.pids, r.released) : null;
+      const next =
+        told && told.stoppable.length
+          ? `next: to restart what listens on ${port!.port}, stop exactly these: ${stopLine(told.stoppable)}`
+          : `next: unlock it once you are done: ${cli} unlock ${shellWord(name)} --as ${who}`;
+      emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), ...(r.released ? { released: r.released } : {}), next }, () => {
+        console.log(`granted ${name}`);
+        for (const line of told?.lines ?? []) console.log(line);
+        console.log(next);
+      });
+      break;
+    }
+    case "unlock": {
+      const p = await caller();
+      const name = args.positional[0] ?? fail(`unlock: which resource?\n${USAGE}`);
+      const r = await board.unlock(p, name);
+      emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
+      break;
+    }
+    case "locks": {
+      const held = await board.locks();
+      const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
+      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })) }, () => {
+        if (!held.length) console.log("no lock held");
+        for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
+      });
+      break;
+    }
     case "status": {
       const runs = await board.runs();
       // each member's worktree, null for a seat or an orchestrator (D64)
@@ -939,9 +1159,12 @@ ${rearm}` : rearm;
           return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o) }, () => {
+      // the machine's held locks (idea 4): store-wide, so listed once above the runs
+      const held = await board.locks();
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
+        for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
