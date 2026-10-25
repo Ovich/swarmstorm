@@ -22,6 +22,9 @@ const EXPECTED: [string, number, number, number, number, number, number | null, 
   ["S3a-120", 3, 0, 5.1, 0, 0, 240, 0, "background"],
   ["S3a-600", 2, 0, 3.4, 0, 0, 720, 0, "background"],
   ["S3a-old", 2, 0, 3.4, 0, 0, 720, 0, "in-turn"],
+  ["E1", 2, 0, 3.4, 0, 0, 300, 0, "call"],
+  ["E1b-install", 0, 0, 0, 0, 0, null, 0, null],
+  ["E1b-until", 0, 0, 0, 0, 0, null, 0, null],
   ["S3b", 2, 0, 3.4, 0, 0, 900, 0, "call"],
   ["S4", 3, 0, 5.1, 0, 0, 60, 0, "ended"],
   ["S5a", 1, 0, 1.7, 0, 0, 30, 0, null],
@@ -192,4 +195,12 @@ test("idea 3, C6: a phase opened late raises no alert on the member at work; the
   assert.ok(r.alerts.every((a) => a.s >= 600), `nothing before the phase (${r.events})`);
   assert.equal(r.rule, "owing");
   assert.ok(r.detectS! <= OWE_WAIT_MS / 1000 + 1, `owing ${r.detectS} s after the phase opened`);
+});
+
+test("idea 5, E1/E1b: a seat's busyMax bounds its non-shell call (stalled · call at 300 s); its shell calls keep 15 min; a seat without it keeps 15 min", () => {
+  const e1 = rowOf("E1");
+  assert.equal(e1.rule, "call");
+  assert.ok(Math.abs(e1.detectS! - 300) <= 1, `E1 at ${e1.detectS} s`);
+  for (const id of ["E1b-install", "E1b-until"]) assert.equal(rowOf(id).alerts.length, 0, `${id}: ${rowOf(id).events}`);
+  assert.equal(rowOf("S3b").detectS, 900);
 });

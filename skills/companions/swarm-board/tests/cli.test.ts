@@ -1205,3 +1205,15 @@ test("idea 3's addition: open --protocol none ends on next: phaseless, with no p
   assert.doesNotMatch(run("post", "@w1 task T1", "--as", "none1/orchestrator").stdout, /^next:/m);
   assert.doesNotMatch(String(JSON.parse(run("post", "@w1 task T2", "--as", "none1/orchestrator", "--json").stdout).next), /^next:/);
 });
+
+test("idea 5: slice add --busy-max gives the seat its bound, shown in the roster; a bad one is refused", () => {
+  const id = openRun();
+  const bad = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "5min");
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /--busy-max takes a positive whole number of ms, got 5min/);
+  const ok = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "300000");
+  assert.equal(ok.status, 0, ok.stderr);
+  run("join", "--run", String(id), "--slice", "V2", "--doing", "verify");
+  assert.match(run("roster").stdout, /V2[^\n]*busy max: 300 s \(non-shell calls\)/);
+  assert.doesNotMatch(run("roster").stdout.split("\n").filter((l) => /review-tool\/S3/.test(l)).join("\n"), /busy max/, "the default is not shown");
+});

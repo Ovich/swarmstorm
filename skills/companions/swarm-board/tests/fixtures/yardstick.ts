@@ -41,6 +41,8 @@ export type Scenario = {
   stuckAt: number | null;
   /** A member whose link never finds its transcript: no activity is ever recorded. */
   blind?: boolean;
+  /** x's seat bound on a non-shell call (ms), as a verifier's seat row carries it (idea 5); absent: BUSY_MAX_MS. */
+  busyMax?: number;
   /** A second member, w: working steadily all through, or held in a board wait from second 2. */
   companion?: "works" | "waits";
   /** What the orchestrator does at second 1, delivered to x before any later wait (S11's owe rules). */
@@ -62,7 +64,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-yardstick-"));
   const board: Board = await openBoard(":memory:"); // in memory: some 40 000 ticks, no disk write each
   try {
-    const run = board.openRun({ repo: REPO, kind: "task", group: "yard", title: "Yardstick", stallMs: STALL_MS_DEFAULT, seats: (sc.companion ? ["x", "w"] : ["x"]).map((m) => ({ id: m, title: m, blockers: [] })) });
+    const run = board.openRun({ repo: REPO, kind: "task", group: "yard", title: "Yardstick", stallMs: STALL_MS_DEFAULT, seats: (sc.companion ? ["x", "w"] : ["x"]).map((m) => ({ id: m, title: m, blockers: [], ...(m === "x" && sc.busyMax ? { busyMax: sc.busyMax } : {}) })) });
     const x = board.join({ run: run.id, slice: "x", doing: "work", files: [] }).runner;
     const w = sc.companion ? board.join({ run: run.id, slice: "w", doing: "work", files: [] }).runner : null;
     if (w) board.deliver(w);
@@ -243,6 +245,10 @@ export const SCENARIOS: Scenario[] = (() => {
     { id: "S3a-120", what: "A6 foreground Bash moved to background at 120 s, silent", length: STUCK_LEN, stuckAt: 5, steps: ((a) => [work(0), open(5, a, "npm test"), movedToBackground(125, a, "a.out", 120_000)])(t()) },
     { id: "S3a-600", what: "A6 foreground Bash moved to background at 600 s, silent", length: STUCK_LEN, stuckAt: 5, steps: ((a) => [work(0), open(5, a, "npm test"), movedToBackground(605, a, "a.out", 600_000)])(t()) },
     { id: "S3a-old", what: "hung Bash call, a timeout result at 10 min, nothing after", length: STUCK_LEN, stuckAt: 5, steps: ((a) => [work(0), open(5, a, "npm test"), result(5 + 10 * MIN, a, () => "Error: timed out")])(t()) },
+    // idea 5: a verifier seat's busyMax 5 min bounds its non-shell calls; its shell calls keep their own timeout
+    { id: "E1", what: "seat busyMax 300 s: a hung MCP call", length: STUCK_LEN, stuckAt: 5, busyMax: 300_000, steps: ((a) => [work(0), mcp(5, a)])(t()) },
+    { id: "E1b-install", what: "seat busyMax 300 s: a foreground npm install of 7 min", length: 10 * MIN, stuckAt: null, busyMax: 300_000, steps: ((a) => [work(0), open(5, a, "npm install"), result(5 + 7 * MIN, a), ...steady(6 + 7 * MIN, 10 * MIN)])(t()) },
+    { id: "E1b-until", what: "seat busyMax 300 s: an until-sleep Bash of 9 min", length: 12 * MIN, stuckAt: null, busyMax: 300_000, steps: ((a) => [work(0), open(5, a, "until curl -s localhost:4413; do sleep 5; done"), result(5 + 9 * MIN, a), ...steady(6 + 9 * MIN, 12 * MIN)])(t()) },
     { id: "S3b", what: "hung non-Bash call (MCP), link alive", length: STUCK_LEN, stuckAt: 5, steps: ((a) => [work(0), mcp(5, a)])(t()) },
     // A5
     { id: "S4", what: "A5 turn ended owing a move, link alive", length: STUCK_LEN, stuckAt: 5, steps: [work(0), work(5, "I will report once the build is green")] },

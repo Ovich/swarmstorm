@@ -192,3 +192,15 @@ test("D9: a member waiting on a lock while owing the phase reads waiting on the 
   assert.ok(!board.deliver(oB).full.some((m) => m.meta && "rule" in m.meta && m.meta.rule === "owing" && m.meta.member === "b1"), "never owing");
   await held;
 });
+
+test("idea 5, F12: a grant after a release names that release: by whom and how; a first grant names none", () => {
+  const { a1, b1 } = setup();
+  const first = board.lock(a1, "port:4416");
+  assert.ok(first.granted && first.released === undefined);
+  board.unlock(a1, "port:4416");
+  const next = board.lock(b1, "port:4416");
+  assert.ok(next.granted);
+  if (!next.granted) return;
+  assert.deepEqual([next.released?.by, next.released?.how], ["ga/a1", "unlock"]);
+  assert.ok(next.released?.at);
+});
