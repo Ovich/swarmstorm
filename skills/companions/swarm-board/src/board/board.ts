@@ -199,8 +199,10 @@ export type PhaseMeta = { phase: string };
 export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing";
 /** A stalled event's data: its rule, the member's id, and for `owing` the phase it owes. */
 export type StalledMeta = { rule: StallRule; member: string; phase?: string };
-/** What an event carries as data, by its event: merged, phase or stalled. */
-export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta;
+/** A link-down liveness's data: the member, `<group>/<id>`, whose link is lost while its transcript grows. */
+export type LinkDownMeta = { linkDown: string };
+/** What an event carries as data, by its event: merged, phase, stalled or a link-down liveness. */
+export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta | LinkDownMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -1126,7 +1128,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const outputAt = a.bg_grew_at == null ? bgSince : Number(a.bg_grew_at);
       const capped = t - bgSince >= BUSY_MAX_MS;
       if (!capped && t - outputAt < stallMs) return { member, state: "busy", doing: `background ${target}`, since: bgSince };
-      const reason = capped ? `background ${target} ${minutes(BUSY_MAX_MS)} min${said}` : `background ${target} silent ${Math.round(stallMs / 1000)} s`;
+      const reason = capped ? `background ${target} ${minutes(BUSY_MAX_MS)} min${said}` : `background ${target} silent ${Math.round(stallMs / 1000)} s${said}`;
       return { member, state: "quiet", doing: `background ${target}`, since: capped ? bgSince : outputAt, reason, rule: "background" };
     }
     if (inTurn === true) return { member, state: "quiet", doing: last, since: progressed, reason: `in turn, no line for ${minutes(IN_TURN_MS)} min (its model may be hung)${said}`, rule: "in-turn" };
@@ -1710,7 +1712,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
           if (st.reason === "link down" && st.state === "working") {
             if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run, st.member).changes) === 1)
-              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name });
+              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name, meta: { linkDown: `${orch.plan}/${st.member}` } });
           } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run, st.member);
           // D11: stalled per member, to the orchestrator alone; never while paused
           const a = activityOf(run, st.member);

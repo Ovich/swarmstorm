@@ -117,7 +117,16 @@ export const EVENTS: Record<EventName, EventDef> = {
     next: (_m, me) => (me.slice === "orchestrator" ? "its agent is not running: dispatch it again, or close its slice" : null),
   },
   // a member's transcript cannot be read: the stall check is blind for it; mentions the orchestrator
-  liveness: { name: "liveness", toAuthor: true },
+  liveness: {
+    name: "liveness",
+    toAuthor: true,
+    // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
+    next: (m, me, cli) => {
+      const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
+      if (!member || me.slice !== "orchestrator") return null;
+      return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
+    },
+  },
   // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
   flag: {
     name: "flag",
