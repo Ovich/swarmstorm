@@ -45,12 +45,14 @@ export type Scenario = {
   companion?: "works" | "waits";
   /** What the orchestrator does at second 1, delivered to x before any later wait (S11's owe rules). */
   owe?: (board: Board, orch: Participant) => void;
+  /** The second `owe` runs at, 1 when not given (idea 3's C6: a phase opened late). */
+  oweAt?: number;
   /** The server's stat of a lost link's transcript: "mtime" (the note's rule 4), or "none" (A7b: not a file). */
   transcriptStat?: "mtime" | "none";
 };
 
 export type Alert = { s: number; event: string; rule: string | null; body: string; next: string | null };
-export type Row = { id: string; wakes: number; noAction: number; perMemberHour: number; falseAlerts: number; falseStateS: number; detectS: number | null; missed: number; rule: string | null; events: string; alerts: Alert[]; told: Alert[]; wakeAt: { s: number; events: string[] }[] };
+export type Row = { id: string; wakes: number; noAction: number; perMemberHour: number; falseAlerts: number; falseStateS: number; detectS: number | null; missed: number; rule: string | null; events: string; alerts: Alert[]; told: Alert[]; companionAlerts: number[]; wakeAt: { s: number; events: string[] }[] };
 
 export const iso = (base: number, s: number) => new Date(base + s * 1000).toISOString();
 export const usage = { input_tokens: 10, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
@@ -85,6 +87,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     const wakes: { s: number; events: string[] }[] = [];
     const alerts: Alert[] = [];
     const told: Alert[] = [];
+    /** The seconds an alert told of the companion w. */
+    const companionAlerts: number[] = [];
     let falseStateS = 0;
     const stuckFrom = sc.stuckAt;
     const isStuck = (s: number) => stuckFrom !== null && s >= stuckFrom;
@@ -94,7 +98,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     };
     for (let s = 0; s <= length; s++) {
       const at = new Date(base + s * 1000);
-      if (s === 1 && sc.owe) {
+      if (s === (sc.oweAt ?? 1) && sc.owe) {
         sc.owe(board, orch);
         board.deliver(x);
         if (w) board.deliver(w);
@@ -135,10 +139,12 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       const state = board.memberStates(run.id, at).find((m) => m.member === "x")?.state;
       if ((state === "quiet" || state === "gone") && !isStuck(s)) falseStateS++;
       // what reaches the orchestrator this second, about x: one wake when any of it is a liveness event
-      const fresh = board
+      const all = board
         .deliver(orch)
         .full.map((m) => ({ m, e: eventOf(m) }))
-        .filter(({ m, e }) => e !== null && WAKE_EVENTS.has(e) && m.mentions.includes(orch.name) && !m.body.includes("yard/w"));
+        .filter(({ m, e }) => e !== null && WAKE_EVENTS.has(e) && m.mentions.includes(orch.name));
+      for (const { m, e } of all) if (m.body.includes("yard/w") && ALERTS.has(e!)) companionAlerts.push(s);
+      const fresh = all.filter(({ m }) => !m.body.includes("yard/w"));
       for (const { m, e } of fresh) told.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       for (const { m, e } of fresh) if (ALERTS.has(e!)) alerts.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       if (fresh.length) wakes.push({ s, events: fresh.map(({ e }) => e as string) });
@@ -168,6 +174,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       events: wakes.map((wk) => `${wk.events.join("+")}@${wk.s}s`).join(" ") || "-",
       alerts,
       told,
+      companionAlerts,
       wakeAt: wakes,
     };
   } finally {
@@ -260,6 +267,8 @@ export const SCENARIOS: Scenario[] = (() => {
     { id: "S11-1b", what: "A10 re-armed wait owing the phase, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.phase(o, "p1", "@x your part"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     // d3's guard on F2 (#12027): the span ended by a real call, then the turn ended: told again at once, not 15 min later
     { id: "S11-guard", what: "owing span, then a real call ends it, then the turn ends", length: 20 * MIN, stuckAt: 5, companion: "waits", owe: (bd, o) => bd.phase(o, "p1", "@x @w your part"), steps: ((a) => [work(0), ...rearmedWait(5, 300), open(340, a, "npm run build"), result(341, a), work(345, "built, reporting next")])(id()) },
+    // idea 3's C6: the first phase opens at 10 min; w works all through, x waits after its report (re-armed)
+    { id: "C6", what: "a phase opened at 600 s: w working, x waiting after its report", length: 30 * MIN, stuckAt: 600, companion: "works", oweAt: 600, owe: (bd, o) => bd.phase(o, "build", "@x @w your part"), steps: [work(0), ...rearmedWait(5, 30 * MIN)] },
     { id: "S11-2", what: "re-armed wait owing a task, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.post(o, "@x task T1: do it"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     { id: "S11-3", what: "A10 re-armed wait after an FYI mention, owing nothing", length: STUCK_LEN, stuckAt: null, companion: "works", owe: (bd, o) => bd.post(o, "@x fyi, nothing to do"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     // A3, A3b: only the board's own listener and link pending, turn ended

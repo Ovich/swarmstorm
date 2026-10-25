@@ -39,6 +39,9 @@ const EXPECTED: [string, number, number, number, number, number, number | null, 
   ["S11-1a", 4, 1, 6.9, 0, 0, 61, 0, "owing"],
   ["S11-1b", 2, 0, 3.4, 0, 0, 601, 0, "owing"],
   ["S11-guard", 3, 1, 9, 0, 0, 61, 0, "owing"],
+  // C6's 7 s: x's re-armed waits all start on the wall clock within the first seconds, so its owing span reads 10 min
+  // old when the phase opens; on a real clock the span is the current wait's age, at most one re-arm (111 s) more
+  ["C6", 2, 0, 4, 0, 0, 601, 0, "owing"],
   ["S11-2", 0, 0, 0, 0, 0, null, 1, null],
   ["S11-3", 0, 0, 0, 0, 0, null, 0, null],
   ["S12", 3, 0, 5.1, 0, 0, 60, 0, "ended"],
@@ -59,7 +62,9 @@ test("the yardstick: M1-M4 per scenario", async () => {
   const head = "| id | wakes | no-action | wakes/member-h | M2 false alerts | M2b false-state s | M3 detect s | M4 missed | rule | wakes at |";
   const table = [head, "|---|---|---|---|---|---|---|---|---|---|", ...rows.map((r) => `| ${r.id} | ${r.wakes} | ${r.noAction} | ${r.perMemberHour} | ${r.falseAlerts} | ${r.falseStateS} | ${r.detectS ?? "-"} | ${r.missed} | ${r.rule ?? "-"} | ${r.events} |`)].join("\n");
   console.log(table);
-  assert.deepEqual(rows.map((r) => [r.id, r.wakes, r.noAction, r.perMemberHour, r.falseAlerts, r.falseStateS, r.detectS, r.missed, r.rule]), EXPECTED);
+  // C6's detection rides on the wall clock (its comment in EXPECTED): held as its bound, 601 s, not as a second
+  const detectOf = (r: Row) => (r.id === "C6" && r.detectS !== null && r.detectS <= 601 ? 601 : r.detectS);
+  assert.deepEqual(rows.map((r) => [r.id, r.wakes, r.noAction, r.perMemberHour, r.falseAlerts, r.falseStateS, detectOf(r), r.missed, r.rule]), EXPECTED);
 });
 
 const bound = (rid: string, maxS: number, rule: string) => {
@@ -179,4 +184,12 @@ test("v1-b (build 1.3): a link-down liveness tells the orchestrator to SendMessa
   assert.equal(live.length, 1);
   assert.match(live[0].body, /^liveness yard\/x: link lost, transcript still growing: restart its link$/);
   assert.match(live[0].next!, /^SendMessage yard\/x to restart its link, in the background: swarm link --run \d+ --as yard\/x$/);
+});
+
+test("idea 3, C6: a phase opened late raises no alert on the member at work; the waiting one is told owing within the rule's bound from the phase", () => {
+  const r = rowOf("C6");
+  assert.deepEqual(r.companionAlerts, [], "w works: never stalled or owing");
+  assert.ok(r.alerts.every((a) => a.s >= 600), `nothing before the phase (${r.events})`);
+  assert.equal(r.rule, "owing");
+  assert.ok(r.detectS! <= OWE_WAIT_MS / 1000 + 1, `owing ${r.detectS} s after the phase opened`);
 });

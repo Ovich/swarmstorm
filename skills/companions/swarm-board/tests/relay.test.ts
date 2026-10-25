@@ -118,8 +118,10 @@ test("open ends on the command that starts the member's link, join prints it bef
   const opened = r.cli(r.repo, "open", "--plan", "link-plan", "--title", "T", "--slices", slices).trimEnd().split(/\r?\n/);
   const run = Number(opened[0]);
   const linkLine = /^start your link now, in the background \(your harness's background task\): node (\S+) (link .*)$/;
-  assert.match(opened.at(-1)!, linkLine);
-  assert.ok(opened.at(-1)!.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.at(-1)!);
+  // idea 3: the link line, then the next step, last
+  assert.match(opened.at(-1)!, /^next: /);
+  assert.match(opened.at(-2)!, linkLine);
+  assert.ok(opened.at(-2)!.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.at(-2)!);
   const joined = r.cli(r.wtA, "join", "--run", String(run), "--slice", "S3", "--doing", "x").trimEnd().split(/\r?\n/);
   const [, entry, verb] = joined.at(-2)!.match(linkLine)!;
   assert.equal(verb, `link --run ${run} --as link-plan/S3`);

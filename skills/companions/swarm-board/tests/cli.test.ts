@@ -170,7 +170,8 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   const slices = path.join(toolRoot, "s.json");
   const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--slices", slices);
   assert.equal(text.status, 0, text.stderr);
-  assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\n$/, "the run id, then the link line alone");
+  // idea 3: the run id, the link line, then the next step, last
+  assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\nnext: no protocol[^\n]*\n$/, "the run id, the link line, the next step");
   const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
   try {
     assert.deepEqual(board.runs().map((x) => x.id).sort(), [out.run, Number(text.stdout.split("\n")[0])].sort());
@@ -215,7 +216,7 @@ test("--json on every verb parses", () => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
   const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--slices", slices, "--json").stdout);
-  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "plan", "repo", "run", "url"]);
+  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "next", "plan", "repo", "run", "url"]);
   const id = String(opened.run);
   const as = ["--as", "review-tool/S3"];
   const verbs: string[][] = [
@@ -1144,4 +1145,55 @@ test("a printed wait line ends on its bare command, and that command, run as cop
   assert.equal(words[0], "node");
   const copied = spawnSync(process.execPath, words.slice(1), { cwd: repo, env: env(), encoding: "utf8" });
   assert.equal(copied.status, 0, copied.stderr);
+});
+
+// ── idea 3: phases offered when a swarm opens (note #12311, C3 as #12346) ──────────────
+
+const seatsFile = (name: string, ids: string[]) => {
+  const f = path.join(toolRoot, `${name}.seats.json`);
+  fs.writeFileSync(f, JSON.stringify(ids.map((id) => ({ id, title: id, blockers: [] }))));
+  return f;
+};
+const PHASE_CMD = (group: string) => new RegExp(`: node \\S+ phase <name> "<its message>" --as ${group}\\/orchestrator$`);
+
+test("C1: open under a protocol ends on next: its first phase, the command last and whole, also within the last 6 lines; a plan run too", () => {
+  const r = run("open", "--kind", "task", "--group", "c1", "--title", "T", "--seats", seatsFile("c1", ["w1"]), "--protocol", "build-verify");
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.trimEnd().split("\n");
+  const last = lines.at(-1)!;
+  assert.match(last, /^next: open build-verify's first phase before any task \(its protocol\.md's phase table names them\): /);
+  assert.match(last, PHASE_CMD("c1"));
+  assert.ok(lines.slice(-6).includes(last));
+  const slices = path.join(toolRoot, "c1p.slices.json");
+  fs.writeFileSync(slices, SLICES);
+  const plan = run("open", "--plan", "c1p", "--title", "T", "--slices", slices, "--protocol", "build-verify");
+  assert.match(plan.stdout.trimEnd().split("\n").at(-1)!, /^next: open build-verify's first phase before any task/);
+});
+
+test("C2: open with no protocol ends on next: no protocol, workers on call, and the same phase line", () => {
+  const r = run("open", "--kind", "task", "--group", "c2", "--title", "T", "--seats", seatsFile("c2", ["w1"]));
+  const last = r.stdout.trimEnd().split("\n").at(-1)!;
+  assert.match(last, /^next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task \(its protocol\.md's phase table names them\): /);
+  assert.match(last, PHASE_CMD("c2"));
+});
+
+test("C3: the orchestrator's first post of a task run with no phase open ends on next:; its second does not; with a phase open, never; a brainstorm, never", () => {
+  run("open", "--kind", "task", "--group", "c3", "--title", "T", "--seats", seatsFile("c3", ["w1"]));
+  const first = run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout.trimEnd().split("\n");
+  assert.match(first.at(-1)!, /^next: no protocol/);
+  assert.doesNotMatch(run("post", "@w1 task T2", "--as", "c3/orchestrator").stdout, /^next:/m);
+  run("open", "--kind", "task", "--group", "c3b", "--title", "T", "--seats", seatsFile("c3b", ["w1"]));
+  run("phase", "build", "go", "--as", "c3b/orchestrator");
+  assert.doesNotMatch(run("post", "@w1 task T1", "--as", "c3b/orchestrator").stdout, /^next:/m);
+  const open = run("open", "--kind", "brainstorm", "--group", "c3c", "--title", "T", "--seats", seatsFile("c3c", ["a"]));
+  assert.doesNotMatch(open.stdout, /^next:/m);
+  assert.doesNotMatch(run("post", "@a an idea", "--as", "c3c/orchestrator").stdout, /^next:/m);
+});
+
+test("C4: --json carries the line as next, on open and on that first post", () => {
+  const opened = JSON.parse(run("open", "--kind", "task", "--group", "c4", "--title", "T", "--seats", seatsFile("c4", ["w1"]), "--protocol", "build-verify", "--json").stdout);
+  assert.match(opened.next, /^next: open build-verify's first phase/);
+  const text = run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"])).stdout.trimEnd().split("\n").at(-1)!;
+  const posted = JSON.parse(run("post", "@w1 task", "--as", "c4b/orchestrator", "--json").stdout);
+  assert.equal(posted.next, text, "the first post's next is open's last line");
 });
