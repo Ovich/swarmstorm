@@ -27,7 +27,7 @@ const USAGE = [
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --slices <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …]}]',
+  '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
   "  slice   <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
   "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>] [--busy-max <ms>]   # adds a slice or seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
   "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
@@ -514,11 +514,14 @@ function readSlices(file: string): SliceSpec[] {
   }
   const list = Array.isArray(raw) ? raw : (raw as { slices?: unknown }).slices;
   if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, title, blockers}`);
-  return list.map((s: { id?: unknown; title?: unknown; role?: unknown; blockers?: unknown; link?: unknown; on?: unknown }) => {
+  return list.map((s: { id?: unknown; title?: unknown; role?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
     if (typeof s.id !== "string") fail(`${file}: a slice without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
     if ("transcript" in s) fail(`${file}: unknown field transcript in ${s.id}`);
+    // busyMax: the seat's bound on a non-shell call (idea 5), validated as slice add --busy-max is
+    if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) fail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
+      ...(s.busyMax !== undefined ? { busyMax: s.busyMax as number } : {}),
       id: String(s.id),
       title: String(s.title ?? s.id),
       ...(typeof s.role === "string" && s.role ? { role: s.role } : {}),
