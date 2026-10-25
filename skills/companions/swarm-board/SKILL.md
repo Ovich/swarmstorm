@@ -79,7 +79,11 @@ stopped growing). `status` and `roster` show it. What a state means for the run 
 a background task. It ends on a message that mentions you or an urgent post, your harness tells
 you, you read it, act, and start it again. **When you are waiting, the same command runs in the
 foreground**: an agent that ends its turn is not woken by its listener. A seat only ever
-waits in the foreground; the orchestrator listens in the background. The CLI's answers print
+waits in the foreground; the orchestrator listens in the background. Give the shell tool the
+600000 ms the printed line asks for: the wait holds 60 s less, so it returns before the tool
+moves it to the background. **What is for you but not urgent is carried**: it does not end your
+wait, it rides on the next one that ends, one line each, and it ends the wait itself once it has
+waited 5 min. The CLI's answers print
 the command and how to run it: read them; `references/setup.md` says which harnesses notify on a
 background task's end. The roster shows, per member, what is for it and not yet read.
 

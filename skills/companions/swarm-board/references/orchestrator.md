@@ -27,8 +27,10 @@ except `open`, `slice`, `close` and `status`.
    - **`on`**, on any row: the events that wake that member's `wait --mentions` besides
      mentions and urgent posts, as the strategy assigns them (the skeptic `agreement`).
      `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events. A row without `on`
-     gets its kind's defaults: none for a member; for you, `merged, ended, stale` on a code run,
-     `agreement, endorsement, ended, stale` on a brainstorm. A member's `join --on` replaces
+     gets its kind's defaults: none for a member; for you, waking on `ended, stale` and
+     carrying `merged, done, joined, idle` on a code run, waking on `agreement, endorsement,
+     ended, stale` on a brainstorm (*Watching the thread* says what carried means). An explicit
+     `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
      its row's list; `subscribe` / `unsubscribe` change it later.
 
 2. **From the repository's checkout:**
@@ -66,9 +68,16 @@ The CLI calls a seat's row a `slice`.
 
 - **Listen in the background from the open**: `$S wait --mentions --as <group>/orchestrator`,
   started with the harness's background-task feature; you are not a subagent, its end reaches
-  you. The answers of `phase` and of your `wait` print this step: read them. Your subscriptions (a worker's `merged`
-  and `ended`, `stale`), every `done`, `idle`, `stalled` and `liveness` event and every mention
-  of you wake it. When it ends, read its output, act, and start it again at once, in the
+  you. The answers of `phase` and of your `wait` print this step: read them. **These wake it**:
+  every mention of you, `all-done`, `stalled`, `gone`, `recovered`, `liveness`, `urgent`, your
+  waking subscriptions (`ended`, `stale`), a repeated `idle`, and a member's `done` in five cases,
+  its case named in the body: the member is in the phase's `--watch`, it is done without a post
+  since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
+  done for a phase that is not current (`late done`). **These are carried**: `merged`, any other
+  `done`, `joined`, a first `idle` after `all-done`. A carried line does not end your wait; it
+  comes with the next wake, one line each, and wakes you itself after 5 min if nothing else did.
+  To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
+  the phase with `--watch <ids>`. When it ends, read its output, act, and start it again at once, in the
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of
   your own, which the board cannot end and which leaves you deaf. Empty, start it again. `close`
   makes it return.
@@ -96,8 +105,9 @@ The CLI calls a seat's row a `slice`.
     it by its posts and its doing, and mention it when it falls silent.
     Or its link was lost while its transcript still grows (`link lost, transcript still
     growing`): it is working, not `gone`; restart its link, as the line says.
-- **A `merged` event is a task to check**: re-run its done-when on the branch it merged into then,
-  not when the worker's report arrives; the report adds what it found.
+- **A `merged` event is a task to check**: it is carried, and usually arrives with the worker's
+  report; re-run its done-when at the sha it names, not at the branch's tip by then; the report
+  adds what it found.
 - **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
   you in full. With no background notification in the harness (`references/setup.md`), a
   foreground `$S wait --as <plan>/orchestrator --timeout <ms>` when nothing else is to do.
@@ -121,8 +131,14 @@ The CLI calls a seat's row a `slice`.
 
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
 stop and wait, claim and merge-lock are refused, and no stall, quiet or stale alert fires.
+A paused run is silent for you too: only `urgent` wakes you; everything else (`gone`,
+`liveness`, `recovered`, `done`, `all-done`, `merged`) is held, and the 5 min carry does not run.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
-in their wake. The answers print the next step.
+in their wake, and its answer hands you every held line, one each. The answers print the next step.
+
+**While the run waits on the person**, pause it: `$S pause --person "<what they decide>" --as
+<group>/orchestrator`. The members' paused line and the viewer then say `waiting on the person:
+<what>`; a protocol's human phase opens with it. Resume with their answer.
 
 **A mention reaches a `waiting` member at once**, and one with a listener when its listener ends;
 the roster's `unread` shows what it has not read yet. **You may always message a member
