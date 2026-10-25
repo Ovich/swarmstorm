@@ -717,3 +717,33 @@
   .board .stream { padding: 8px 10px; }
   .board .filters { overflow-x: auto; scrollbar-width: none; }
 }
+.board .filters .fend { margin-left: auto; display: flex; align-items: center; }
+
+/* the agents strip folds to a thin rail: marks and state dots */
+.board .side { position: relative; }
+.board .roster-toggle { position: absolute; top: 12px; right: 8px; z-index: 1; border: 0; background: transparent; color: var(--muted-foreground); cursor: pointer; font-size: 14px; line-height: 1; padding: 4px 6px; border-radius: var(--radius-sm); }
+.board .roster-toggle:hover { color: var(--foreground); background: var(--background); }
+.board .run-body.with-roster.roster-folded { grid-template-columns: 52px minmax(0, 1fr); }
+.board .side.folded { padding: 40px 0 12px; align-items: center; }
+.board .side.folded .roster-toggle { right: auto; left: 50%; transform: translateX(-50%); }
+.board .agent-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.board .rail-agent { position: relative; border: 0; background: transparent; padding: 4px; border-radius: var(--radius-sm); cursor: pointer; }
+.board .rail-agent:hover, .board .rail-agent[aria-pressed="true"] { background: var(--accent-soft); }
+.board .rail-agent.ended, .board .rail-agent.done { opacity: .55; }
+.board .rail-agent .state { position: absolute; right: 1px; bottom: 1px; }
+.board .rail-agent .state i { display: block; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--card); }
+.board .rail-agent .unread-dot { position: absolute; top: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+@media (max-width: 860px) { .board .run-body.with-roster.roster-folded { grid-template-columns: minmax(0, 1fr); } .board .side.folded { padding: 6px 40px 6px 10px; align-items: stretch; } .board .side.folded .roster-toggle { left: auto; right: 8px; top: 6px; transform: none; } .board .agent-rail { flex-direction: row; flex-wrap: wrap; } }
+
+/* the rail's hover card: the agent's full card beside the rail */
+.board .hovercard, .board .side .hovercard.card { position: fixed; z-index: 50; width: 280px; display: grid; gap: 4px; padding: 10px 12px 10px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: 0 12px 32px rgba(0,0,0,.35); pointer-events: none; animation: hovercard-in .12s ease-out; }
+.board .hovercard::before { inset: 10px auto 10px 4px; border-radius: 2px; }
+.board .hovercard .slice { color: var(--muted-foreground); font-size: 12px; }
+.board .hovercard .doing { font-size: 12.5px; white-space: normal; }
+@keyframes hovercard-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .board .hovercard { animation: none; } }
+/* the followed agent on the rail: ringed and marked, the others dimmed */
+.board .agent-rail:has(.rail-agent[aria-pressed="true"]) .rail-agent:not([aria-pressed="true"]) { opacity: .4; }
+.board .agent-rail:has(.rail-agent[aria-pressed="true"]) .rail-agent:not([aria-pressed="true"]):hover { opacity: .8; }
+.board .rail-agent[aria-pressed="true"] { opacity: 1; background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.board .rail-agent[aria-pressed="true"]::before { content: ""; position: absolute; left: -9px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px; background: var(--accent); }

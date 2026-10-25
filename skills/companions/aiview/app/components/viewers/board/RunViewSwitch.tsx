@@ -22,6 +22,24 @@ export function phaseLabels(phases: { name: string }[]): string[] {
   });
 }
 
+/** The run's Analytics pill: pressed shows the run's analytics, pressed again its conversation. */
+export function RunAnalyticsButton({ view, onView }: { view: RunView; onView: (view: RunView) => void }) {
+  return (
+    <button
+      className="abtn"
+      data-component="RunAnalyticsButton"
+      aria-pressed={view === "analytics"}
+      title="This run's analytics"
+      onClick={() => onView(view === "analytics" ? "conversation" : "analytics")}
+    >
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+        <path d="M2 14V9M6 14V4M10 14V7M14 14V2" />
+      </svg>
+      Analytics
+    </button>
+  );
+}
+
 export function RunViewSwitch({
   view,
   line,
@@ -49,6 +67,8 @@ export function RunViewSwitch({
     void navigator.clipboard?.writeText(json).then(() => setCopied(true));
   };
   const labels = phaseLabels(phases);
+  // the conversation's head holds the phases alone: none opened, no head
+  if (view === "conversation" && phases.length <= 1 && !phase) return null;
   return (
     <div className="runhead" data-component="RunViewSwitch" data-state={view === "analytics" && copied ? "analytics+copied" : view}>
       {phases.length > 1 ? (
@@ -89,19 +109,8 @@ export function RunViewSwitch({
             {copied ? "Copied" : "Copy as JSON"}
           </button>
         )}
-        {/* one pill, as the board's own Analytics: pressed shows the run's analytics, pressed again its conversation */}
-        <button
-          className="abtn"
-          data-component="RunAnalyticsButton"
-          aria-pressed={view === "analytics"}
-          title="This run's analytics"
-          onClick={() => onView(view === "analytics" ? "conversation" : "analytics")}
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
-            <path d="M2 14V9M6 14V4M10 14V7M14 14V2" />
-          </svg>
-          Analytics
-        </button>
+        {/* on the conversation, the pill sits at the filters' right end instead */}
+        {view === "analytics" && <RunAnalyticsButton view={view} onView={onView} />}
         {view === "analytics" && (
           <button className="abtn close" data-component="CloseAnalytics" aria-label="Close analytics" title="Back to the conversation" onClick={() => onView("conversation")}>
             ×

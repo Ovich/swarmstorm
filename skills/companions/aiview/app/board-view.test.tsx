@@ -479,7 +479,7 @@ test("the run's head shows its current phase, name and text; a run with no phase
   expect(phase.querySelector(".said")?.textContent).toBe("every name a run could carry, no judgment yet");
   cleanup();
   show([APP], BRAINSTORM.run, [LIVE]);
-  expect(document.querySelector('[data-component="RunViewSwitch"]')).not.toBeNull();
+  expect(document.querySelector('[data-component="RunViewSwitch"]')).toBeNull();
   expect(document.querySelector('[data-component="RunPhase"]')).toBeNull();
 });
 

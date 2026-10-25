@@ -275,3 +275,70 @@ export function AgentStrip({
     </section>
   );
 }
+
+/** The folded strip (a thin rail): each member's mark and state dot; hovered or focused, a card with what the
+ *  full strip shows of it, beside the rail; a click follows it. */
+export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotRunner[]; hue: number; follow: string | null; onFollow: (runner: string | null) => void }) {
+  const now = useNow();
+  const [hover, setHover] = useState<{ runner: string; top: number; left: number } | null>(null);
+  const show = (runner: string) => (e: { currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setHover({ runner, top: r.top, left: r.right + 8 });
+  };
+  const hovered = hover && agents.find((p) => p.runner === hover.runner);
+  return (
+    <div className="agent-rail" data-component="AgentRail" onMouseLeave={() => setHover(null)}>
+      {agents.map((p) => {
+        const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
+        const status = statusOf(p, activity, now);
+        return (
+          <button
+            key={p.runner}
+            className={["rail-agent", p.state, activity?.state === "gone" && "gone"].filter(Boolean).join(" ")}
+            style={{ "--h": hue, "--s": 60 } as CSSProperties}
+            aria-pressed={follow === p.runner}
+            aria-label={`${p.runner}: ${status.text}`}
+            onMouseEnter={show(p.runner)}
+            onFocus={show(p.runner)}
+            onBlur={() => setHover(null)}
+            onClick={() => onFollow(follow === p.runner ? null : p.runner)}
+          >
+            <AgentMark name={p.runner} />
+            <span className={`state ${status.className}`}><i /></span>
+            {!!p.unread && <span className="unread-dot" />}
+          </button>
+        );
+      })}
+      {hovered && hover && <AgentHoverCard p={hovered} hue={hue} now={now} top={hover.top} left={hover.left} />}
+    </div>
+  );
+}
+
+function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotRunner; hue: number; now: number; top: number; left: number }) {
+  const orch = p.slice === ORCHESTRATOR;
+  const ended = p.state === "ended" || p.state === "done";
+  const activity = ended ? null : activityOf(p);
+  const status = statusOf(p, activity, now);
+  return (
+    <div
+      className={["hovercard", "card", orch && "orch", p.state].filter(Boolean).join(" ")}
+      role="tooltip"
+      data-component="AgentHoverCard"
+      style={{ "--h": hue, "--s": 60, top: Math.min(top, window.innerHeight - 220), left } as CSSProperties}
+    >
+      <span className="top">
+        <AgentMark name={p.runner} />
+        <AgentLabel name={p.runner} role={false} />
+        <span className={`state ${status.className}`}>
+          <i />
+          {status.text}
+        </span>
+      </span>
+      <span className="slice">{orch ? "orchestrator" : p.title ? `${p.slice} · ${p.title}` : p.slice}</span>
+      {!!p.unread && <span className="unread">{p.unread} unread</span>}
+      {!ended && p.doing && <span className="doing">{p.doing}</span>}
+      {activity && <MemberAges activity={activity} now={now} />}
+      {activity && <ActivityLine activity={activity} />}
+    </div>
+  );
+}

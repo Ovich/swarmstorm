@@ -19,13 +19,13 @@ import {
 import { AcrossRunsView } from "./AcrossRunsView.tsx";
 import { ConversationFilters } from "./ConversationFilters.tsx";
 import { NicksContext } from "./chips.tsx";
-import { AgentStrip } from "./AgentStrip.tsx";
+import { AgentRail, AgentStrip } from "./AgentStrip.tsx";
 import { ArchivePanel } from "./ArchivePanel.tsx";
 import { ClaimsRow } from "./ClaimsRow.tsx";
 import { MergedFilesRow } from "./MergedFilesRow.tsx";
 import { RunAnalytics } from "./RunAnalytics.tsx";
 import { RunTabs } from "./RunTabs.tsx";
-import { RunViewSwitch } from "./RunViewSwitch.tsx";
+import { RunAnalyticsButton, RunViewSwitch } from "./RunViewSwitch.tsx";
 import { Conversation } from "./Conversation.tsx";
 import { TipLayer } from "./Tip.tsx";
 import "./board.css";
@@ -53,6 +53,22 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
   // the across-runs view and its scope, in the URL: a reload reopens them (D31)
   const [across, setAcross] = useState<AcrossScope | null>(() => readAcross(location.hash));
   // a picked run tab opens on its conversation; Analytics is in the URL (D31)
+  // the agents strip folded or open, remembered per viewer
+  const [rosterOpen, setRosterOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("aiview.board.roster") !== "folded";
+    } catch {
+      return true;
+    }
+  });
+  const setRoster = (open: boolean): void => {
+    setRosterOpen(open);
+    try {
+      localStorage.setItem("aiview.board.roster", open ? "open" : "folded");
+    } catch {
+      /* storage blocked: the choice lasts the page */
+    }
+  };
   const [runView, setRunView] = useState<RunView>(run !== null && run === analyticsInUrl ? "analytics" : "conversation");
   // a timeline mark clicked: the post to bring into view once the conversation shows
   const [postToShow, setPostToShow] = useState<number | null>(null);
@@ -201,14 +217,28 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             <>
               {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
               {/* the roster sits left of the conversation, under a run tab only: All has none */}
-              <div className={selectedRun && members.length > 0 ? "run-body with-roster" : "run-body"}>
+              <div className={selectedRun && members.length > 0 ? (rosterOpen ? "run-body with-roster" : "run-body with-roster roster-folded") : "run-body"}>
                 {selectedRun && members.length > 0 && (
-                  <aside className="side" data-component="RunRail">
-                    <AgentStrip agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
+                  <aside className={rosterOpen ? "side" : "side folded"} data-component="RunRail">
+                    <button
+                      className="roster-toggle"
+                      data-component="RosterToggle"
+                      aria-expanded={rosterOpen}
+                      aria-label={rosterOpen ? "Fold the agents" : "Show the agents"}
+                      title={rosterOpen ? "Fold the agents" : "Show the agents"}
+                      onClick={() => setRoster(!rosterOpen)}
+                    >
+                      {rosterOpen ? "«" : "»"}
+                    </button>
+                    {rosterOpen ? (
+                      <AgentStrip agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
+                    ) : (
+                      <AgentRail agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
+                    )}
                   </aside>
                 )}
                 <div className="run-main">
-                  <ConversationFilters items={items} narrow={narrowing} onNarrow={setNarrowing} />
+                  <ConversationFilters items={items} narrow={narrowing} onNarrow={setNarrowing} end={selectedRun ? <RunAnalyticsButton view="conversation" onView={(v) => showRunView(selectedRun.run, v)} /> : null} />
                   <Conversation items={shown} archived={archivedLine} fresh={NONE} />
                   {claims && <ClaimsRow rows={claims} />}
                   {mergedFiles && mergedFiles.length > 0 && <MergedFilesRow rows={mergedFiles} />}
