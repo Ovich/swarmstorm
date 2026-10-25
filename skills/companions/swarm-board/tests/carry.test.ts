@@ -66,7 +66,7 @@ test("B1: three merges, each followed by its report: 3 wakes, not 6; each report
   assert.equal(wakes, 3);
 });
 
-test("B2 (as built, F8): plain dones wake nothing; the straggler's done wakes carrying the earlier ones; all-done wakes", async () => {
+test("B2 (restated, #12261): the first three dones are carried; the straggler's done wakes carrying the earlier ones; all-done wakes", async () => {
   const ids = ["w1", "w2", "w3", "w4", "w5"];
   const { m, orch } = setup(ids);
   board.phase(orch, "p", "your part");

@@ -282,13 +282,13 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   const script = CLI.replace(/\\/g, "/");
   assert.equal(
     hint,
-    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting: node ${script} wait --mentions --as review-tool/S5 --timeout 5000 (give your shell tool a 600000 ms timeout)`,
+    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 5000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
   // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the line to run again
   const again = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50");
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(again.stdout, `nothing yet; wait again: node ${script} wait --mentions --as review-tool/S5 --timeout 50 (give your shell tool a 600000 ms timeout)\n`);
+  assert.equal(again.stdout, `nothing yet; wait again (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 50\n`);
 });
 
 const LISTEN = (runner: string): string =>
@@ -386,7 +386,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   assert.equal(await exited, 0);
-  assert.match(out, /^answer on the thread if needed[^\n]*wait --mentions --as review-tool\/S5 --timeout 15000 \(give your shell tool a 600000 ms timeout\)\n/);
+  assert.match(out, /^answer on the thread if needed[^\n]* \(give your shell tool a 600000 ms timeout\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 15000\n/);
   assert.match(out, /@S5 your turn/);
   assert.doesNotMatch(out, /joined/);
 });
@@ -636,7 +636,7 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   assert.doesNotMatch(r.stdout, /--slice/);
   // a seat waits in the foreground, never a background listener
   assert.equal(lines.at(-2), START_LINK("idea/architect", String(id)));
-  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener.* wait --mentions --as idea\/architect --timeout 540000 \(give your shell tool a 600000 ms timeout\)$/);
+  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is gone; give your shell tool a 600000 ms timeout\): node \S+ wait --mentions --as idea\/architect --timeout 540000$/);
   const json = JSON.parse(run("join", "--run", String(id), "--seat", "skeptic", "--doing", "doubting", "--json").stdout);
   assert.equal(json.as, "idea/skeptic");
   assert.equal(json.commands.length, 4);
@@ -959,7 +959,7 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("deliver", "--as", "idea/orchestrator");
   run("post", "@architect a question", "--as", "idea/orchestrator");
   const seat = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000").stdout;
-  assert.match(seat, /then wait again, in the foreground: node .* wait --mentions --as idea\/architect/);
+  assert.match(seat, /then wait again, in the foreground \(give your shell tool a 600000 ms timeout\): node .* wait --mentions --as idea\/architect/);
   assert.doesNotMatch(seat, /background/);
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
@@ -1051,7 +1051,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   const early = joinSeat(id, "architect");
   assert.equal(early.status, 0, early.stderr);
   assert.doesNotMatch(early.stdout, /is open and asks/);
-  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .* wait --mentions --as idea\/architect --timeout 540000 \(give your shell tool a 600000 ms timeout\)$/);
+  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/architect --timeout 540000$/);
 
   run("phase", "ping", "say", "hi", "--as", "idea/orchestrator");
   const owed = /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then: node \S+ done ping --as idea\/skeptic$/m;
@@ -1060,7 +1060,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.equal(late.status, 0, late.stderr);
   const lines = late.stdout.trimEnd().split("\n");
   assert.match(lines.at(-2)!, owed);
-  assert.match(lines.at(-1)!, /^only then wait, in the foreground .* wait --mentions --as idea\/skeptic --timeout 540000 \(give your shell tool a 600000 ms timeout\)$/);
+  assert.match(lines.at(-1)!, /^only then wait, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/skeptic --timeout 540000$/);
   assert.match(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, owed);
   const posted = run("post", "hello", "--as", "idea/skeptic");
   assert.match(posted.stdout, owed);
@@ -1069,13 +1069,13 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   // a member woken by the phase event is told to do it before it waits again
   const woken = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000");
   assert.match(woken.stdout, /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part now, then: node \S+ done ping --as idea\/architect$/m);
-  assert.match(woken.stdout, /^only then wait again, in the foreground: .* wait --mentions --as idea\/architect/m);
+  assert.match(woken.stdout, /^only then wait again, in the foreground.*: node .* wait --mentions --as idea\/architect/m);
 
   // after done: the wait step, nothing owed
   assert.equal(run("done", "ping", "--as", "idea/skeptic").status, 0);
   const after = run("post", "again", "--as", "idea/skeptic");
   assert.doesNotMatch(after.stdout, /is open and asks/);
-  assert.match(after.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .* wait --mentions --as idea\/skeptic --timeout 540000 \(give your shell tool a 600000 ms timeout\)$/);
+  assert.match(after.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*600000 ms timeout\): node \S+ wait --mentions --as idea\/skeptic --timeout 540000$/);
   assert.equal(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, undefined);
   // the orchestrator never owes a phase
   assert.doesNotMatch(run("deliver", "--as", "idea/orchestrator").stdout, /is open and asks/);
@@ -1117,8 +1117,8 @@ test("open --protocol names the run's protocol: status and the board snapshot ca
   assert.match(bad.stderr, /--protocol takes a name in lower case, digits and dashes/);
 });
 
-// F7 (test 2.1): B15 shortens the printed header; the JSON's `phase` field is data, and keeps the phase's text
-test("read --json gives the current phase's full header in its phase field, also after the member's first return", { todo: "F7: the short printed header leaks into --json" }, () => {
+// F7 (test 2.1, fixed in build 2.2): B15 shortens the printed header; the JSON's `phase` field is data, and keeps the phase's text
+test("read --json gives the current phase's full header in its phase field, also after the member's first return", () => {
   const id = openRun();
   const s3 = "review-tool/S3";
   run("join", "--run", String(id), "--slice", "S3", "--doing", "page");
@@ -1126,4 +1126,19 @@ test("read --json gives the current phase's full header in its phase field, also
   run("wait", "--mentions", "--as", s3, "--timeout", "3000");
   const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
   assert.equal(JSON.parse(run("read", seqOf(posted.stdout), "--as", s3, "--json").stdout).phase, "phase build: the first wave");
+});
+
+// B7, F6 (test 2.1, fixed in build 2.2): the tool-timeout sentence sits before the colon; what follows it runs as written
+test("a printed wait line ends on its bare command, and that command, run as copied, exits 0", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("deliver", "--as", "review-tool/S5");
+  const empty = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50").stdout.trimEnd();
+  assert.match(empty, /^nothing yet; wait again \(give your shell tool a 600000 ms timeout\): node /);
+  const command = empty.slice(empty.lastIndexOf(": ") + 2);
+  assert.doesNotMatch(command, /[()]/, "no prose after the command");
+  const words = command.split(" ");
+  assert.equal(words[0], "node");
+  const copied = spawnSync(process.execPath, words.slice(1), { cwd: repo, env: env(), encoding: "utf8" });
+  assert.equal(copied.status, 0, copied.stderr);
 });
