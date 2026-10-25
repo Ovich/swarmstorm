@@ -24,13 +24,13 @@ description: "Use whenever a document is produced for the user to read and react
 ```sh
 A="node <skill-dir>/aiview.mjs"
 $A status --json          # cwdProject: the project this working directory belongs to
-$A use <slug>             # only if cwdProject differs from the active project
+$A use <slug>             # only if cwdProject differs from the default project; it moves no tab
 F=$($A path 2026-08-24-topic.brainstorm.md)   # the absolute path, joined for this OS
 # write the document at $F
 $A open "$F" --tag <topic>
 ```
 
-- **`open` is the standard gesture**, on creation: it registers the file, starts a detached server if none runs, and prints the URL to tell the user.
+- **`open` is the standard gesture**, on creation: it registers the file, starts a detached server if none runs, and prints the URL. **Its last line says what the person now sees** (one tab shown or switched, updated in place, or no tab: give the link in chat); tell the person that and nothing more. Each tab keeps its own project: `references/projects.md`.
 - **A project is a folder of the data home, `docs/<slug>/`**; refiling is `move <ref> --project <slug>`, and `status --json` says which project claims a working directory.
 - **The date in the name is when the work started.**
 - **A location the user states explicitly wins.**
@@ -56,7 +56,7 @@ $A open "$F" --tag <topic>
 
 ## Pointing at a prototype
 
-**`show <file|#id> --component <Name>... [--variant <v>]` moves every open tab to the prototype and lights those components**, dimming the rest, until the next `show`, until `show --done` sends every tab back to what the person was reading, or until the person stops it themselves. `components <file|#id>` lists every name on the page and its variants, and `show` refuses any other, listing the ones it has. It prints the link that does the same in a tab opened later, and says how many tabs heard it. When to point and how to word the question: the `point-at` skill.
+**`show <file|#id> --component <Name>... [--variant <v>]` moves one tab to the prototype and lights those components** (the tab already on its project, else the last used), dimming the rest, until the next `show`, until `show --done` sends that tab back to what the person was reading, or until the person stops it themselves. `components <file|#id>` lists every name on the page and its variants, and `show` refuses any other, listing the ones it has. It prints the link that does the same in a tab opened later, and its last line says which tab showed it; with no tab it says so, returns at once, and the link goes in chat. When to point and how to word the question: the `point-at` skill.
 
 ## Contract for calling skills
 
