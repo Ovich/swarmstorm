@@ -469,6 +469,8 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   const items: Item[] = [];
   /** A rule-bearing stall's seq, to the member it names. */
   const stalledMembers = new Map<number, string>();
+  /** A member event's seq (liveness, gone, recovered), to the member `<group>/<id>` it tells of. */
+  const toldOf = new Map<number, string>();
   for (const e of [...snap.events].sort((a, b) => a.seq - b.seq)) {
     const run = runOf(snap, e);
     if (!run) continue;
@@ -481,6 +483,8 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     const item = itemOf(snap, e, run, ctx);
     const stalledMember = item.kind === "stalled" ? stalledMemberOf(e) : null;
     if (stalledMember) stalledMembers.set(e.seq, stalledMember);
+    const told = memberEventRunner(e, run);
+    if (told) toldOf.set(e.seq, told);
     const prev = items[items.length - 1];
     const joins = item.kind === "message" && prev?.kind === "message" && prev.from === item.from;
     items.push(joins ? { ...item, joined: true } : item);
@@ -504,7 +508,21 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     const l = livenessOf.get(`${groupOf.get(i.run)}/${member}`);
     return !!l && l.state !== "quiet" && l.state !== "gone" && !l.rule;
   };
+  // F9: a link-down row leaves once the member's link reads it again after the row; a gone row once a
+  // `recovered` of the member follows, or its liveness reads anything but gone
+  const linkBack = (i: Item, runner: string): boolean => {
+    const aliveAt = livenessOf.get(runner)?.aliveAt;
+    return typeof aliveAt === "number" && aliveAt > Date.parse(i.at);
+  };
+  const recoveredSince = (i: Item, runner: string): boolean => items.some((x) => x.seq > i.seq && x.kind === "recovered" && toldOf.get(x.seq) === runner);
+  const goneHolds = (i: Item, runner: string): boolean => {
+    const l = livenessOf.get(runner);
+    return !recoveredSince(i, runner) && (!l || l.state === "gone");
+  };
   return items.filter((i) => {
+    const runner = toldOf.get(i.seq);
+    if (i.kind === "liveness" && i.state === "link-down" && runner) return !linkBack(i, runner);
+    if (i.kind === "gone" && runner) return goneHolds(i, runner);
     if (i.kind !== "stalled") return true;
     const member = stalledMembers.get(i.seq);
     if (!member) return i === last;
@@ -524,12 +542,14 @@ export function pausedText(run: RunSummary): string | null {
 /** The board's events that tell of one member (stalled, liveness, gone, recovered): its runner in the event's data or
  *  at the head of its body (`gone <group>/<id>: …`), so following that member keeps them (V5). */
 const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "gone", "recovered"]);
-function isAboutMember(e: SnapshotEvent, run: RunSummary, runner: string): boolean {
-  if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return false;
-  if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}` === runner;
-  if (e.meta && "linkDown" in e.meta) return e.meta.linkDown === runner;
-  return e.body.startsWith(`${e.event} ${runner}:`) || e.body.startsWith(`${e.event} ${runner} `);
+/** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
+function memberEventRunner(e: SnapshotEvent, run: RunSummary): string | null {
+  if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;
+  if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}`;
+  if (e.meta && "linkDown" in e.meta) return e.meta.linkDown;
+  return new RegExp(`^${e.event} (\\S+?):? `).exec(e.body)?.[1] ?? null;
 }
+const isAboutMember = (e: SnapshotEvent, run: RunSummary, runner: string): boolean => memberEventRunner(e, run) === runner;
 
 // ── the conversation's filters (SL11) ───────────────────────────────────────────────
 

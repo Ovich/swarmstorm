@@ -215,7 +215,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             <RunAnalytics key={selectedRun.run} repo={snapshot.repo} summary={selectedRun} onView={(v) => showRunView(selectedRun.run, v)} onOpenPost={openPost} phases={phases} />
           ) : (
             <>
-              {selectedRun && <RunViewSwitch view="conversation" line={[summaryLine(selectedRun), pausedText(selectedRun)].filter(Boolean).join(" · ")} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
+              {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} pause={pausedText(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
               {/* the roster sits left of the conversation, under a run tab only: All has none */}
               <div className={selectedRun && members.length > 0 ? (rosterOpen ? "run-body with-roster" : "run-body with-roster roster-folded") : "run-body"}>
                 {selectedRun && members.length > 0 && (

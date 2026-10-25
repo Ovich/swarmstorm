@@ -47,6 +47,7 @@ export function RunViewSwitch({
   onView,
   phase = null,
   phases = [],
+  pause = null,
 }: {
   view: RunView;
   line: string;
@@ -55,6 +56,8 @@ export function RunViewSwitch({
   phase?: Phase | null;
   /** Every phase the run opened, in order: drawn as a strip, the last one current. Empty: the current phase alone. */
   phases?: { name: string; text: string }[];
+  /** The run's pause in words (`waiting on the person: …`, `paused: …`), null when it runs: shown on both views. */
+  pause?: string | null;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -67,10 +70,15 @@ export function RunViewSwitch({
     void navigator.clipboard?.writeText(json).then(() => setCopied(true));
   };
   const labels = phaseLabels(phases);
-  // the conversation's head holds the phases alone: none opened, no head
-  if (view === "conversation" && phases.length <= 1 && !phase) return null;
+  // the conversation's head holds the pause and the phases alone: neither, no head
+  if (view === "conversation" && phases.length <= 1 && !phase && !pause) return null;
   return (
     <div className="runhead" data-component="RunViewSwitch" data-state={view === "analytics" && copied ? "analytics+copied" : view}>
+      {pause && (
+        <span className="runpause" data-component="RunPause" title={`The run is paused: ${pause}`}>
+          {pause}
+        </span>
+      )}
       {phases.length > 1 ? (
         <span className="phases" data-component="PhaseStrip">
           {phases.length > PHASES_SHOWN && (

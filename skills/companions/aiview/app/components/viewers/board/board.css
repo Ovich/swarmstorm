@@ -550,6 +550,9 @@
 .board .runhead .runphase .said { color: var(--muted-foreground); }
 .board .runhead .runline { margin-left: auto; font-size: 12px; color: var(--muted-foreground); }
 .board .runhead .runphase + .runline { margin-left: 0; }
+/* a paused run says so first, amber: it waits (on the person, or on its orchestrator's resume) */
+.board .runhead .runpause { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border-radius: var(--radius-sm);
+  font-size: 12.5px; font-weight: 600; color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); }
 .board .runhead .seg { flex: none; }
 
 /* body: conversation | rail */
