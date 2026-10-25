@@ -6,7 +6,7 @@
 
 ![The Swarmstorm board in aiview: two runs as tabs, the build and verify phases, six agents with their state, and the conversation where they coordinate](assets/board.png)
 
-Swarmstorm is an open-source (MIT) set of agent skills for Claude Code, Codex and Cursor: a plugin in Claude Code, a clone in Codex and Cursor. It turns the coding agents you already pay for into a coordinated team, on your own subscription: no new service to sign up for, no API keys, nothing billed on top. Ask for a swarm, and you get back one branch built by parallel agents that agreed on their shared work before they wrote it.
+Swarmstorm is an open-source (MIT) set of agent skills for Claude Code, Codex and Cursor: a plugin in each. It turns the coding agents you already pay for into a coordinated team, on your own subscription: no new service to sign up for, no API keys, nothing billed on top. Ask for a swarm, and you get back one branch built by parallel agents that agreed on their shared work before they wrote it.
 
 [Install in two commands ↓](#install-in-claude-code-codex-or-cursor)
 
@@ -103,7 +103,20 @@ With Node 22.5 or later, install the plugin in Claude Code:
 
 Then ask for real work, for example *run a swarm on the CSV export and the missing API tests*. The agent proposes the swarm, starts it on your yes, and gives you a link to watch it live. One branch comes back for your pull request or merge, and your own branch is left as it is.
 
-In Codex or Cursor, clone the repository and make its skills discoverable: [Codex and Cursor](#reference). If your session asks before running shell commands, add [the allow rule](#the-allow-rule) first.
+In Codex, from a terminal:
+
+```
+codex plugin marketplace add Ovich/swarmstorm
+codex plugin add swarmstorm@swarmstorm
+```
+
+In Cursor, clone it into your local plugins folder, then run **Developer: Reload Window**:
+
+```
+git clone https://github.com/Ovich/swarmstorm ~/.cursor/plugins/local/swarmstorm
+```
+
+Start a new session afterwards, in all three. What differs between the harnesses is in [Codex and Cursor](#reference). If your session asks before running shell commands, add [the allow rule](#the-allow-rule) first.
 
 Star the repo, and send it to whoever on your team runs coding agents in parallel.
 
@@ -122,7 +135,12 @@ The path contains the plugin's version, so the rule needs rewriting after each u
 <details>
 <summary><b>Codex and Cursor</b></summary>
 
-All three harnesses need Node 22.5 or later. Codex and Cursor take a clone. Make every skill folder under `skills/` discoverable to your harness, both the two at the root and the ones a level down in their group, for example by symlinking each into the harness's skills directory. Neither harness reads the plugin's agent definitions, so the orchestrator's briefs name each member's role instead. Codex needs `agents.max_depth` at 2 or more in its config before the orchestrator can spawn workers. Cursor allows a single level of nesting, which means the orchestrator launches the members and they launch nothing.
+All three harnesses need Node 22.5 or later, and all three load the same skills from the same folders. Each reads its own manifest: `.claude-plugin/`, `.codex-plugin/`, `.cursor-plugin/`.
+
+- **Codex** installs the skills, not the agent definitions: a Codex plugin has no place for them, so the orchestrator's briefs name each member's role instead. Codex needs `agents.max_depth` at 2 or more in its config before the orchestrator can spawn workers. Update with `codex plugin marketplace upgrade swarmstorm`, then start a new session.
+- **Cursor** installs the skills and the agent definitions. It allows a single level of nesting, which means the orchestrator launches the members and they launch nothing. Update with `git -C ~/.cursor/plugins/local/swarmstorm pull`, then reload the window. The folder must be the clone itself: Cursor skips a symlink that points outside `~/.cursor/plugins/local`. On an Enterprise plan, an admin enables **Allow Local Plugin Imports** first; a team admin can instead add this repository to a team marketplace (**Dashboard → Plugins & MCPs → Add Marketplace → Import from Repo**).
+
+The allow rule above is Claude Code's. In Codex and Cursor, allow the same command in that harness's own approval settings, with the path of its install folder: `~/.codex/plugins/cache/swarmstorm/swarmstorm/<version>/` in Codex, `~/.cursor/plugins/local/swarmstorm/` in Cursor.
 
 </details>
 
