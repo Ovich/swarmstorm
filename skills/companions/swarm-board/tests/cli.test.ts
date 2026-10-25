@@ -282,7 +282,7 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   const script = CLI.replace(/\\/g, "/");
   assert.equal(
     hint,
-    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 5000`,
+    `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 540000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
   // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the
@@ -387,7 +387,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   assert.equal(await exited, 0);
-  assert.match(out, /^answer on the thread if needed[^\n]* \(give your shell tool a 600000 ms timeout\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 15000\n/);
+  assert.match(out, /^answer on the thread if needed[^\n]* \(give your shell tool a 600000 ms timeout\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 540000\n/);
   assert.match(out, /@S5 your turn/);
   assert.doesNotMatch(out, /joined/);
 });
