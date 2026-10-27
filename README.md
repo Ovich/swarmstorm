@@ -92,6 +92,42 @@ When agents can build anything quickly, the hard part moves upstream: deciding w
 
 **Swarmstorm puts the decisions where everyone can see and discuss them.** Prototypes, diagrams, plans and brainstorm boards are live documents in aiview, readable by anyone on the project and updated as the agents work. A team can argue a design over the prototype itself, settle a plan before a line is written, or run a swarm of role-playing agents to brainstorm options, debate a decision or draft a document. Decisions that keep coming back become rules in your AGENTS.md, so every agent on the repository follows them.
 
+## With great power comes great responsibility
+
+**A swarm's cost effectiveness and quality depend strongly on how its protocol is defined.**
+
+A protocol sets the seats, their roles, and the phases a run goes through. Swarmstorm ships five baseline protocols: build-verify, idea to outcome, brainstorm, debate and editorial. For each run, the orchestrator takes the closest baseline and adapts it to the work, and you adjust it before the run starts. A protocol you want to reuse is kept as a `protocol-<name>` skill in your project.
+
+If you happen to build a protocol that serves its purpose across many use cases, open a pull request. We're excited to see how you use swarms.
+
+**This README was written by a brainswarm.** Everything above this section came from one editorial run, with the seats working from a list of goals and the codebase. I reviewed at the checkpoints the protocol sets and never edited the text.
+
+| phase | what happens |
+|---|---|
+| research | the seats read the code and research search terms and competing projects |
+| strategy | the strategist writes the brief: reader, main message, outline |
+| propose, vote | seats write candidates for the opening and the close, and vote |
+| draft | the writer drafts the README from the winners |
+| polish, read, revise | the text is tightened, read by the reader seats, and rewritten; repeated after each human review until approved |
+| final check | every claim checked against the code one last time |
+
+| seat | job |
+|---|---|
+| judge | researched the search terms and competing projects, held each draft against the goals |
+| strategist | wrote the brief: reader, main message, outline, keywords |
+| product-1, 2, 3 | analysed what the product solves, each from its own angle |
+| writer | wrote and rewrote the text |
+| auditor | cut what didn't serve the reader |
+| checker | checked every claim against the code |
+| style | enforced the voice rules |
+| seo-reader, dev-reader, team-reader | read each version as a new visitor and gave a verdict |
+
+Cost was not the goal. Fourteen Opus seats is far more than a README needs. The run had two aims: a high-quality document, and a test of more complex coordination between agents.
+
+It met both. The README meets its goals, every claim is backed by the code, and the writer, given a persona and a list of Claude's usual writing patterns to avoid, no longer sounds like Claude.
+
+The full run is available for reference: [the dossier](docs/readme-run/dossier.md) and [the record](docs/readme-run/record.md).
+
 ## Install in Claude Code, Codex or Cursor
 
 With Node 22.5 or later, install the plugin in Claude Code:
