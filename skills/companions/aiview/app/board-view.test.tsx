@@ -53,9 +53,9 @@ test("the tab row: the Archive icon, then each open run with its code, title and
   expect(tabs().getAllByRole("button")[0].getAttribute("aria-label")).toBe("Archive");
   expect(tabs().queryByText("All")).toBeNull();
   // the run tabs, then the Analytics pill drawn beside the merge lock at the row's end (SL4)
-  // a brainstorm's slice rows are seats, never slices to merge: never "0/1"
-  expect(names.seat(1, -2)).toEqual(["RTSessions with refresh tokensplanlive · 2/7", "ALAudit logplanlive · 0/3", "NMNaming the kindsbrainstormlive · 1 seat"]);
-  expect(names.seat(-2)).toEqual(["All runs", "merge lock free"]);
+  // a brainstorm's seat rows are seats, never slices to merge: never "0/1"
+  expect(names.slice(1, -2)).toEqual(["RTSessions with refresh tokensplanlive · 2/7", "ALAudit logplanlive · 0/3", "NMNaming the kindsbrainstormlive · 1 seat"]);
+  expect(names.slice(-2)).toEqual(["All runs", "merge lock free"]);
   for (const r of CLOSED) expect(tabs().queryByText(r.title)).toBeNull();
   expect(pressed()).toBe(tabOf("Naming the kinds"));
 });
@@ -221,7 +221,7 @@ const swarmOf = (n: number): BoardSnapshot => {
     ...SEAT,
     member: `refresh-tokens/W${i + 1}`,
     seat: `W${i + 1}`,
-    title: `worker ${i + 1}`,
+    role: `worker ${i + 1}`,
     state: (i % 5 === 4 ? "ended" : "working") as typeof SEAT.state,
     liveness: i % 7 === 6 ? { state: "gone", doing: null, since: null, tokens: null, movedAt: null } : undefined,
   }));

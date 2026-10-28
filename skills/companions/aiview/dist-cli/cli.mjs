@@ -9099,8 +9099,8 @@ var init_wire = __esm({
     "use strict";
     RPC_METHODS = [
       "openRun",
-      "setSliceState",
-      "addSlice",
+      "setSeatState",
+      "addSeat",
       "closeRun",
       "phase",
       "currentPhase",
