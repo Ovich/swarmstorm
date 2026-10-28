@@ -25,7 +25,7 @@ level more chokes the communication.
 - **Find it**: holding a leadership role, `swarm status` for an open run in group `leadership`.
 - **None, and another active swarm holds a leadership role**: open it, `open --kind brainstorm
   --group leadership --title "Leadership"`, a seat per holding swarm, its roles in the seat's role;
-  the other orchestrator is mentioned on its own run with the join command. Already open: `slice
+  the other orchestrator is mentioned on its own run with the join command. Already open: `seat
   add` your seat, then `join`. One swarm alone opens nothing.
 - **Subscribe** to `agreement` and mentions on it; it wakes you beside your own run.
 - **Before a decision the role's file sends through the board**: post it as a proposal, in the

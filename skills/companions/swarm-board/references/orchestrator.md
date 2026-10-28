@@ -2,7 +2,7 @@
 
 You told the board the work, you watch the run, and you are the only one who interrupts.
 `$S` is the tool, as `SKILL.md` names it; every verb here takes `--as <group>/orchestrator`
-except `open`, `slice`, `close` and `status`.
+except `open`, `seat`, `close` and `status`.
 
 ## Open the run
 
@@ -35,13 +35,13 @@ except `open`, `slice`, `close` and `status`.
    - **`busyMax`** (ms), on any row: how long a **non-shell** call (a browser or other tool step)
      of that seat may stay open before `stalled · call` tells you; a shell call keeps its own
      timeout and the default 15 min. Set it on a verifier (`300000`), where a hung browser step
-     would hold the walk. `slice add <id> --busy-max <ms>` sets it on a seat added later.
+     would hold the walk. `seat add <id> --busy-max <ms>` sets it on a seat added later.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
    `--protocol none` for a run with no phases on purpose.
-   `--plan <slug>` stays an alias of `--kind plan --group <slug>`, `--slices` of `--seats`. It
+   `--plan <slug>` stays an alias of `--kind plan --group <slug>`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
    opens this run's tab), then the line that starts your link. `open`'s last line is the next
    step: the first phase, or why there is none. Give the link to the person, who
@@ -60,13 +60,11 @@ waits: in the foreground; a seat runs on the plugin's
 
 ## Seat states
 
-The CLI calls a seat's row a `slice`.
-
-- **`$S slice <seat> --run <run> --state running`** at its dispatch; `blocked` when it waits on a
+- **`$S seat <seat> --run <run> --state running`** at its dispatch; `blocked` when it waits on a
   person; `done` when the seat leaves the run.
 - **A worker stays for the whole run**, task after task. One whose context runs long is ended
   (`end`) and a fresh worker joins the same seat.
-- **A seat added mid-run**: `$S slice add <seat> --run <run> --title "<title>" [--link <url>]
+- **A seat added mid-run**: `$S seat add <seat> --run <run> [--link <url>]
   [--role <role>] [--on <events>]`. It lands after the last, `ready`; an id already in the run or
   a closed run is refused. Then dispatch it like the others.
 
@@ -158,7 +156,7 @@ seat between its waits, one that is `quiet`. Post it on the board too, so the th
 ## A gone member
 
 **Its state decides, never a guess.** `quiet` is alive and owes a move: *Interrupt*. `gone`:
-**`$S slice <seat> --run <run> --state done`** frees its claims and the merge lock if it held it;
+**`$S seat <seat> --run <run> --state done`** frees its claims and the merge lock if it held it;
 set the seat back to `running` and dispatch a fresh worker, which joins the same seat; repost its
 open task.
 

@@ -15,8 +15,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
 
 1. **Join, from your worktree, before anything else**, the install and a rebase included, so the
    roster shows you from the start:
-   `$S join --run <run> --slice <your seat> --doing "waiting for a task"` (`--slice` is the
-   board's word for a seat's row). Read the roster it prints: who is there, doing what, holding
+   `$S join --run <run> --seat <your seat> --doing "waiting for a task"`. Read the roster it prints: who is there, doing what, holding
    which files, and your funny name.
 2. **Start your link, then your listener, as your first two background tasks.** After the
    roster, `join` prints `start your link now, in the background …`: run that command, as
