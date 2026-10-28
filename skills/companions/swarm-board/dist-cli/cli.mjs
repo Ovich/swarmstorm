@@ -155,7 +155,7 @@ var init_kinds = __esm({
     run = (...events) => events.map((event) => ({ event, scope: "run" }));
     carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
     PROFILES = {
-      plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
+      plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } },
       brainstorm: {
         kind: "brainstorm",
         claims: false,
@@ -163,10 +163,10 @@ var init_kinds = __esm({
         worktree: false,
         member: "seat",
         wholeThread: true,
-        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale"), ...carried("done", "joined", "idle")] }
+        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
       },
       // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-      task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } }
+      task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } }
     };
   }
 });
@@ -227,6 +227,7 @@ function carries(m, me, subs) {
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
+  if (EVENTS[e].ambient && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
 var word, FOREGROUND_WAIT_MS, foregroundWait, EVENTS, NAMES, isEvent;
@@ -348,6 +349,13 @@ var init_events = __esm({
           if (me.name === writer) return `settle it: ${cli} post ${word(`@${holder} <what you change>`)} --about ${word(m.about)}`;
           return null;
         }
+      },
+      // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 gone`, `+ w2 back`; carried to every member, waking none
+      composition: { name: "composition", ambient: true },
+      // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
+      "all-joined": {
+        name: "all-joined",
+        next: (_m, me, cli) => me.seat === "orchestrator" ? `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${word(me.name)})` : null
       }
     };
     NAMES = Object.keys(EVENTS);
@@ -630,10 +638,19 @@ function claimsOf(deps) {
             if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.seat}`);
           }
         }
+        const agreed = /* @__PURE__ */ new Set();
+        const foldedWanted = new Set(rels.map(fold));
+        const live = new Set(db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo).map((o) => `${o.plan}/${o.seat}`));
+        for (const a of db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo)) {
+          if (!foldedWanted.has(fold(slashes(String(a.about))))) continue;
+          const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
+          for (const n of parties) if (n !== me.name && live.has(n) && !told.has(n)) agreed.add(n);
+        }
         const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => profileOf(String(r.kind)).claims).map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
+        if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
         if (iface.size) lines.push(`@swarm interface changed: ${[...iface].join(", ")}.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
@@ -646,7 +663,7 @@ function claimsOf(deps) {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
-        insertMessage(me, lines.join("\n"), null, "event", [.../* @__PURE__ */ new Set([...told, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
+        insertMessage(me, lines.join("\n"), null, "event", [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(
           me.id,
           me.run,
@@ -673,8 +690,8 @@ function distinctFlags(messages) {
   const seen = /* @__PURE__ */ new Set();
   return messages.filter((m) => {
     if (!isBoardFlag(m)) return false;
-    const [, path9 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
-    const key = JSON.stringify([Number(m.author), foldPath(String(path9)), holder]);
+    const [, path10 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
+    const key = JSON.stringify([Number(m.author), foldPath(String(path10)), holder]);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -877,7 +894,7 @@ function computeRun(db, r, now, silentAfterMs) {
     if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
     holdersByPath.set(key, entry2);
   }
-  const sharersOf = (path9) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path9)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
+  const sharersOf = (path10) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path10)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
   const byId = new Map(people.map((p) => [Number(p.id), p]));
   const membershipOf = (pid) => {
     const p = byId.get(pid);
@@ -889,10 +906,10 @@ function computeRun(db, r, now, silentAfterMs) {
     return x.from < y.to && y.from < x.to;
   };
   const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
-  const namesPath = (m, path9) => {
-    if (aboutNames(m.about, path9)) return true;
+  const namesPath = (m, path10) => {
+    if (aboutNames(m.about, path10)) return true;
     const body = foldPath(String(m.body));
-    return body.includes(foldPath(path9)) || body.includes(foldPath(path9.split("/").pop()));
+    return body.includes(foldPath(path10)) || body.includes(foldPath(path10.split("/").pop()));
   };
   const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
   const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
@@ -900,14 +917,14 @@ function computeRun(db, r, now, silentAfterMs) {
   let everyHolderTold = 0;
   let agreed = 0;
   let agreedBeforeMerge = 0;
-  for (const { path: path9, holders: everyHolder } of holdersByPath.values()) {
-    const sharers = sharersOf(path9);
+  for (const { path: path10, holders: everyHolder } of holdersByPath.values()) {
+    const sharers = sharersOf(path10);
     const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
     if (holders.length < 2) continue;
     const tellTimes = [];
     let told = true;
     for (let i = 1; i < holders.length; i++) {
-      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path9));
+      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path10));
       tellTimes.push(...tells.map((m) => ms(m.at)));
       const mentioned = (e) => tells.some((m) => {
         const named = JSON.parse(String(m.mentions));
@@ -916,8 +933,8 @@ function computeRun(db, r, now, silentAfterMs) {
       if (!holders.slice(0, i).every(mentioned)) told = false;
     }
     const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
-    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path9));
-    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path9)) : holders.includes(m.participant));
+    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path10));
+    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path10)) : holders.includes(m.participant));
     const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
     if (told) {
       everyHolderTold++;
@@ -927,13 +944,13 @@ function computeRun(db, r, now, silentAfterMs) {
       }
     }
     const met = mergedWith.map((m) => m.conflicts);
-    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path9))) ? true : met.some((c) => c === null) ? null : false;
+    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path10))) ? true : met.some((c) => c === null) ? null : false;
     const declaredInterface = holders.some(
-      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path9))
+      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path10))
     );
-    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path9));
+    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path10));
     perFile.push({
-      path: path9,
+      path: path10,
       holders: holders.map((h) => nameOf(byId.get(h))),
       interface: declaredInterface || claimedInterface,
       told,
@@ -1173,8 +1190,8 @@ function filesAcross(runs) {
       byPath.set(key, entry2);
     }
   }
-  return [...byPath.values()].map(({ path: path9, perRun }) => ({
-    path: path9,
+  return [...byPath.values()].map(({ path: path10, perRun }) => ({
+    path: path10,
     runs: perRun.map((x) => x.run),
     holders: new Set(perRun.flatMap((x) => x.holders)).size,
     agreements: perRun.filter((x) => x.agreed).length,
@@ -1241,10 +1258,10 @@ var init_stats = __esm({
     ms = (at) => Date.parse(String(at));
     iso = (t) => new Date(t).toISOString();
     firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
-    aboutNames = (about, path9) => {
+    aboutNames = (about, path10) => {
       if (about == null) return false;
       const a = foldPath(String(about).replace(/\\/g, "/"));
-      const f = foldPath(path9);
+      const f = foldPath(path10);
       return a === f || f.endsWith(`/${a}`);
     };
     MERGED_BODY = /^merged \S+/;
@@ -1835,12 +1852,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const ownPost = (m) => whole && m.run === me.run && m.kind !== "event";
     const messages = transaction(() => {
       const unseen = unseenRows(me);
-      const silentWhilePaused = me.seat === ORCHESTRATOR2 && runRow(me.run).paused != null;
+      const silentWhilePaused = runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
       const carried2 = (r) => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
-      const woken = (r) => silentWhilePaused ? eventOf(toMessage(r)) === "urgent" : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || carried2(r) && due.get(me.id, Number(r.seq)) != null;
+      const woken = (r) => silentWhilePaused ? eventOf(toMessage(r)) === "urgent" || me.seat !== ORCHESTRATOR2 && eventOf(toMessage(r)) === "pause" : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || carried2(r) && due.get(me.id, Number(r.seq)) != null;
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried2(r));
-      const rows = !mentionsOnly ? heard : !heard.some(woken) ? [] : heard.filter((r) => woken(r) || carried2(r) || whole && ownPost(toMessage(r)));
+      const rows = silentWhilePaused && fromWait ? heard.some(woken) ? heard.filter(woken) : [] : !mentionsOnly ? heard : !heard.some(woken) ? [] : heard.filter((r) => woken(r) || carried2(r) || whole && ownPost(toMessage(r)));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
       for (const r of rows) mark.run(me.id, Number(r.seq));
       const at = now();
@@ -1918,6 +1935,33 @@ async function openBoard(dbPath = SQLITE_PATH) {
       s.on ? JSON.stringify(s.on) : null,
       s.busyMax ?? null
     );
+  };
+  const compositionOf = (run2) => {
+    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run2);
+    const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run2);
+    const goneSet = new Set(db.prepare("SELECT member FROM liveness_warned WHERE run = ? AND cond = 'gone'").all(run2).map((x) => String(x.member)));
+    const plan = String(runRow(run2).plan);
+    const showRole = new Set(seats.map((s) => s.role == null ? "" : String(s.role))).size > 1;
+    const entry2 = (seat, s) => {
+      const p = people.find((x) => String(x.seat) === seat);
+      return {
+        seat,
+        member: p ? `${plan}/${seat}` : null,
+        nick: p ? nickOf(p) : null,
+        ...s?.role == null ? {} : { role: String(s.role) },
+        ...s?.area == null ? {} : { area: String(s.area) },
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "gone" : "joined"
+      };
+    };
+    const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
+    const lines = entries.map((e) => `${e.seat}${e.nick ? ` ${e.nick}` : ""}${showRole && e.role ? ` ${e.role}` : ""}${e.area ? ` (${e.area})` : ""}: ${e.state}`);
+    return { run: run2, entries, showRole, lines };
+  };
+  const postComposition = (author, seat, sign, tag) => {
+    const c = compositionOf(author.run);
+    const e = c.entries.find((x) => x.seat === seat);
+    const who = `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
+    insertMessage(author, `${sign} ${who}${tag ? ` ${tag}` : ""}`, null, "event", void 0, { event: EVENTS.composition.name });
   };
   const setSubs = (p, subs) => {
     db.prepare("UPDATE participants SET subs = ? WHERE id = ?").run(JSON.stringify(subs), p.id);
@@ -2204,7 +2248,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const ord = Number(db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM seats WHERE run = ?").get(run2).o) + 1;
         insertSeat(run2, spec, ord);
         const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR2);
-        insertMessage(participantById(Number(orchestrator.id)), `added ${spec.id}${spec.role ? ` (${spec.role})` : ""}`, null, "event");
+        postComposition(participantById(Number(orchestrator.id)), spec.id, "+", "added");
         return toRun(runRow(run2)).seats.find((x) => x.id === spec.id);
       });
     },
@@ -2332,13 +2376,16 @@ async function openBoard(dbPath = SQLITE_PATH) {
       if (files.length && !profile.claims) throw new Error(`join: a ${profile.kind} run has no claims`);
       const where = worktree && profile.worktree ? path2.resolve(worktree) : null;
       return transaction(() => {
+        let entry2 = "new";
         const id = transaction(() => {
-          const existing = db.prepare("SELECT id, nick FROM participants WHERE run = ? AND seat = ?").get(run2, seat);
+          const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run2, seat);
           const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run2, seat);
+          if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run2}: declare it first with \`seat add ${seat}\``);
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
           const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
           const fresh = () => unusedNick(String(r.repo));
           if (existing) {
+            entry2 = existing.ended_at == null ? "again" : "back";
             db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
               doing,
               JSON.stringify(files),
@@ -2357,8 +2404,20 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const member = participantById(id);
         claims.claimDeclared(member, files);
         insertMessage(member, `joined: ${doing}`, null, "event", void 0, { event: EVENTS.joined.name });
-        return { member, roster: board2.roster(member.repo) };
+        if (entry2 !== "again") postComposition(member, seat, "+", entry2 === "back" ? "back" : "");
+        if (entry2 === "new") {
+          const declared = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run2).n);
+          const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run2, ORCHESTRATOR2).n);
+          if (declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run2) === void 0) {
+            insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", void 0, { event: EVENTS["all-joined"].name });
+          }
+        }
+        return { member, roster: board2.roster(member.repo), composition: compositionOf(run2) };
       });
+    },
+    composition(run2) {
+      runRow(run2);
+      return compositionOf(run2);
     },
     participant(name) {
       const i = name.lastIndexOf("/");
@@ -2401,6 +2460,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       transaction(() => {
         const waiters = claims.lockWaitersFreedBy(fresh);
         const ended = { event: EVENTS.ended.name };
+        postComposition(fresh, fresh.seat, "-", "ended");
         if (waiters.length) insertMessage(fresh, `ended
 the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event", waiters, ended);
         else insertMessage(fresh, "ended", null, "event", void 0, ended);
@@ -2628,10 +2688,13 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         let moved = false;
         for (const st of others) {
           if (st.state !== "gone") {
-            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run2, st.member).changes) === 1)
+            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run2, st.member).changes) === 1) {
               insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+              postComposition(orch, st.member, "+", "back");
+            }
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run2, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            postComposition(orch, st.member, "-", "gone");
             const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run2, st.member);
             if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
           }
@@ -2717,7 +2780,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             const me = participantById(Number(row.id));
             if (!me.subscriptions.some((s) => s.carry)) continue;
             for (const m of unseenRows(me).map(toMessage)) {
-              if (!carries(m, me, me.subscriptions) || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
+              if (!carries(m, me, me.subscriptions) || EVENTS[eventOf(m)].ambient || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
               if (Number(markDue.run(me.id, m.seq).changes) === 1) moved = true;
             }
           }
@@ -2917,7 +2980,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
         }
       }
-      const sharedBy = (path9, id) => live2.some((c) => String(c.path) === path9 && Number(c.participant) !== id);
+      const sharedBy = (path10, id) => live2.some((c) => String(c.path) === path10 && Number(c.participant) !== id);
       const roster = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
@@ -3226,7 +3289,8 @@ var init_wire = __esm({
       "heldMergeLock",
       "stats",
       "repos",
-      "snapshot"
+      "snapshot",
+      "composition"
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByEntry = /* @__PURE__ */ new Map();
@@ -6865,7 +6929,7 @@ __export(server_exports, {
 import crypto4 from "node:crypto";
 import fs8 from "node:fs";
 import http from "node:http";
-import path7 from "node:path";
+import path8 from "node:path";
 async function startBoardServer(opts) {
   logStart(opts.dataRoot);
   await takeStartLock(opts.dataRoot);
@@ -6878,7 +6942,7 @@ async function startBoardServer(opts) {
 }
 function logStart(dataRoot) {
   fs8.mkdirSync(dataRoot, { recursive: true });
-  fs8.appendFileSync(serverLogFile(dataRoot), `serve: home ${path7.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs8.appendFileSync(serverLogFile(dataRoot), `serve: home ${path8.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function starterCommandLine() {
@@ -6937,7 +7001,7 @@ function releaseStartLock(dataRoot) {
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path7.join(opts.dataRoot, "swarm.sqlite"));
+  const board2 = await openBoard(path8.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const speakers = /* @__PURE__ */ new Set();
@@ -7200,7 +7264,7 @@ init_events();
 init_home();
 import { spawnSync as spawnSync3 } from "node:child_process";
 import fs9 from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 
 // src/client/remote.ts
 init_wire();
@@ -7208,6 +7272,7 @@ import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
 import fs6 from "node:fs";
 import net2 from "node:net";
+import path6 from "node:path";
 
 // src/link/link.ts
 init_wire();
@@ -7922,16 +7987,32 @@ function connectPipe(pipe) {
 }
 var linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
 var HARNESS_LINK_WAIT_MS = 1e4;
+var LINK_DOWN_WAIT_MS = 1e3;
+var linkDownMarker = (dataRoot, member) => path6.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 var inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
-async function openLinkPipe(dataRoot, member, harnessWaitMs) {
+async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
+  const marker = linkDownMarker(dataRoot, member);
+  const answered = (s) => {
+    try {
+      fs6.rmSync(marker, { force: true });
+    } catch {
+    }
+    return s;
+  };
   const there = await connectPipe(pipe);
-  if (there) return there;
+  if (there) return answered(there);
   if (harnessWaitMs != null) {
-    for (const until = Date.now() + harnessWaitMs; Date.now() < until; ) {
+    const wait = fs6.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause2(START_POLL_MS);
       const s = await connectPipe(pipe);
-      if (s) return s;
+      if (s) return answered(s);
+    }
+    try {
+      fs6.mkdirSync(path6.dirname(marker), { recursive: true });
+      fs6.writeFileSync(marker, String(Date.now()));
+    } catch {
     }
     return null;
   }
@@ -8149,9 +8230,9 @@ init_mentions();
 // src/cli/aiview-board.ts
 import { spawnSync } from "node:child_process";
 import fs7 from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 function aiviewLauncher(toolRoot2) {
-  const file = process.env.SWARM_AIVIEW ?? path6.join(toolRoot2, "..", "aiview", "aiview.mjs");
+  const file = process.env.SWARM_AIVIEW ?? path7.join(toolRoot2, "..", "aiview", "aiview.mjs");
   return fs7.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
@@ -8350,7 +8431,7 @@ ${USAGE}`);
 function repoOf(dir) {
   const common = git(dir, "rev-parse", "--git-common-dir");
   if (!common) fail(`not in a git repository: ${dir}`);
-  const abs = path8.resolve(dir, common);
+  const abs = path9.resolve(dir, common);
   try {
     return fs9.realpathSync.native(abs);
   } catch {
@@ -8359,7 +8440,7 @@ function repoOf(dir) {
 }
 function worktreeOf(dir) {
   const top = git(dir, "rev-parse", "--show-toplevel");
-  return top ? path8.resolve(top) : null;
+  return top ? path9.resolve(top) : null;
 }
 function changedIn(worktree) {
   const r = spawnSync3("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
@@ -8385,7 +8466,7 @@ var printReconciled = (unclaimed, flags) => {
   for (const line of unclaimedLines(unclaimed)) console.log(line);
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? path8.dirname(path8.resolve(process.argv[1]));
+var toolRoot = () => process.env.SWARM_ROOT ?? path9.dirname(path9.resolve(process.argv[1]));
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${USAGE}`);
 var runArg = () => {
@@ -8586,19 +8667,19 @@ var emitHeard = async (p, json, human) => {
   });
 };
 function resolveClaimPath(file) {
-  if (path8.isAbsolute(file)) return file;
-  const here = path8.resolve(file);
+  if (path9.isAbsolute(file)) return file;
+  const here = path9.resolve(file);
   if (fs9.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  const fromRoot = root ? path8.resolve(root, file) : null;
+  const fromRoot = root ? path9.resolve(root, file) : null;
   if (fromRoot && fs9.existsSync(fromRoot)) return fromRoot;
   if (args.has("--new")) return here;
   return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it`);
 }
 function repoRelative(abs) {
   const root = worktreeOf(process.cwd());
-  const rel = root ? path8.relative(root, abs) : abs;
-  return rel.split(path8.sep).join("/");
+  const rel = root ? path9.relative(root, abs) : abs;
+  return rel.split(path9.sep).join("/");
 }
 function aboutArg() {
   const about = args.flag("--about");
@@ -8611,16 +8692,16 @@ function parseFile(spec) {
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
 function declaredPath(file) {
-  if (path8.isAbsolute(file)) return file;
-  const here = path8.resolve(file);
+  if (path9.isAbsolute(file)) return file;
+  const here = path9.resolve(file);
   if (fs9.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  return root ? path8.resolve(root, file) : here;
+  return root ? path9.resolve(root, file) : here;
 }
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs9.readFileSync(path8.resolve(file), "utf8"));
+    raw = JSON.parse(fs9.readFileSync(path9.resolve(file), "utf8"));
   } catch (e) {
     return fail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9009,7 +9090,7 @@ ${rearm}` : rearm;
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf(path8.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf(path9.resolve(args.flag("--repo") ?? process.cwd()));
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -9079,7 +9160,7 @@ ${rearm}` : rearm;
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await board.merged(p, sha, files.map((f) => path8.resolve(f)), conflicts);
+      const sharers = await board.merged(p, sha, files.map((f) => path9.resolve(f)), conflicts);
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
         (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
@@ -9124,7 +9205,7 @@ ${rearm}` : rearm;
         }
       });
       const stats = await board.stats({
-        repo: repoOf(path8.resolve(args.flag("--repo") ?? process.cwd())),
+        repo: repoOf(path9.resolve(args.flag("--repo") ?? process.cwd())),
         ...run2 !== void 0 ? { run: run2 } : {},
         // a named run is read whatever its age: no default period (plan D40)
         ...all ? {} : since !== void 0 ? { since } : run2 !== void 0 ? {} : { since: "30d" },
