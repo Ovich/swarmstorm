@@ -26,7 +26,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it
-   again (in a harness session it returns empty before 180 s on purpose, a re-arm). Never end your turn to wait, never sleep. Something unclear: ask `@orchestrator` before
+   again (it holds 170 s and returns empty on purpose: a re-arm). Never end your turn to wait, never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
 4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **Before each edit,
    `$S claim <path>`**, and before a command that writes a file (a generator, a formatter, a move):
@@ -40,7 +40,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
    `superseded by a newer wait`: a foreground wait of yours took over, ignore it.
 6. **Merge, at the task's end**, and early when a file you marked *interface* changed in a way
    other tasks import. Nothing changed: no merge.
-   1. `$S merge-lock --onto <target>`. `held by …`: run `$S wait --mentions --timeout 540000` in
+   1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in
       the foreground for its merged event, then run `merge-lock` again. `… is checked out at …`
       (exit 5): git would refuse the push; do what the answer says.
    2. Commit, then `git rebase <target>`.
