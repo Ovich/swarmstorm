@@ -157,9 +157,7 @@ sw("deliver", "--as", "ra/s");
 // D3 / D5 / D17: composition and the lobby, on a fresh run of three declared seats
 const C = open("rc", ["a", "b", "c"]);
 const ja = join(C, "a", "rc");
-// PENDING until the CLI prints the composition at join (w1's board side returns it): remove the first branch then
-if (!/not joined|composition/i.test(ja.out)) record({ id: "D3 join answer lists every declared seat", status: "PENDING", detail: "the join answer has no composition yet" });
-else {
+{
   const lines = ja.out.split("\n").filter((l) => /not joined/i.test(l)).join("\n");
   check("D3 join answer lists every declared seat", /\bb\b/.test(lines) && /\bc\b/.test(lines), lines.replace(/\n/g, " | "));
 }

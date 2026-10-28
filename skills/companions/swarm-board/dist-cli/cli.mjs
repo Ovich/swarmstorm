@@ -8928,7 +8928,7 @@ ${USAGE}`);
       break;
     }
     case "join": {
-      const { member, roster } = await board.join({
+      const { member, roster, composition } = await board.join({
         run: runArg(),
         seat: joinedSeat(),
         doing: need("--doing"),
@@ -8943,8 +8943,9 @@ ${USAGE}`);
       const commands = shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const phase = await phaseHeader(member.run);
-      emit({ member: member.name, nick: member.nick, roster, phase, ...shared ? { as: member.name, commands } : {}, ...drawing ? { drawing } : {}, link, next }, () => {
+      emit({ member: member.name, nick: member.nick, roster, composition, phase, ...shared ? { as: member.name, commands } : {}, ...drawing ? { drawing } : {}, link, next }, () => {
         console.log(`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`);
+        for (const l of composition.lines) console.log(l);
         for (const r of roster) console.log(rosterLine(r));
         if (phase) console.log(phase);
         if (as) console.log(as);
@@ -9113,7 +9114,8 @@ ${rearm}` : rearm;
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
       const names = new Set(roster.map((r) => r.name));
       const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
-      emit({ repo, roster, runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
+      const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown = null;
         for (const r of roster) {
@@ -9121,6 +9123,7 @@ ${rearm}` : rearm;
           if (run2 && r.run !== shown) console.log(`run ${run2.id}  ${run2.title}${phaseSuffix(run2.phase, progress.get(run2.id) ?? null)}`);
           shown = r.run;
           console.log(rosterLine(r, true));
+          if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
         }
       });
       break;

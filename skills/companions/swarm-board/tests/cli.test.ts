@@ -1272,3 +1272,15 @@ test("the closing line tells the member its link and listener tasks end on their
   const w = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "1000");
   assert.match(w.stdout, /your link and listener background tasks end on their own now, and their end notices are not news/);
 });
+
+test("join prints the run's composition after the you-are line, --json carries it; roster prints it under the run (D3)", () => {
+  const id = openBrainstorm();
+  const j = joinSeat(id, "architect");
+  const lines = j.stdout.split("\n");
+  assert.match(lines[0], /^you are idea\/architect/);
+  assert.ok(lines.some((l) => /^skeptic[^\n]*not joined/.test(l)), j.stdout);
+  const json = JSON.parse(joinSeat(id, "skeptic", "--json").stdout);
+  assert.ok(Array.isArray(json.composition.entries) && json.composition.entries.length === 3, JSON.stringify(json.composition));
+  const roster = run("roster").stdout;
+  assert.match(roster, /^ {2}seat architect /m);
+});
