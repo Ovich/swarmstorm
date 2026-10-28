@@ -105,8 +105,8 @@ test("a second hello for the same member with supersede refuses the older connec
 test("every method answers over the wire what the Board answers in process; an unknown one names itself", async () => {
   const c = await welcomed();
   const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(c, "join", { run: run.id, slice: "S1", doing: "x", files: [] })).runner;
-  const s2 = (await value(c, "join", { run: run.id, slice: "S2", doing: "y", files: [] })).runner;
+  const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  const s2 = (await value(c, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
   await value(c, "post", s1, "hello @S2");
   // the same store opened in process reads what the wire answered
   const local = await openBoard(path.join(dir, "swarm.sqlite"));
@@ -152,7 +152,7 @@ test("every method answers over the wire what the Board answers in process; an u
 test("a resent call is answered from the cache: one post in the store, not two", async () => {
   const c = await welcomed();
   const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(c, "join", { run: run.id, slice: "S1", doing: "x", files: [] })).runner;
+  const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
   const frame: Frame = { type: "call", id: "post-once", method: "post", args: [s1, "only once"] };
   c.send(frame);
   const first = await c.next();
@@ -172,8 +172,8 @@ test("a resent call is answered from the cache: one post in the store, not two",
 test("a wait returns within 200 ms of a post on another connection; a cancelled wait clears waiting", async () => {
   const a = await welcomed();
   const run = await value(a, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(a, "join", { run: run.id, slice: "S1", doing: "x", files: [] })).runner;
-  const s2 = (await value(a, "join", { run: run.id, slice: "S2", doing: "y", files: [] })).runner;
+  const s1 = (await value(a, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  const s2 = (await value(a, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
   await value(a, "deliver", s1);
   await value(a, "deliver", s2);
   const b = await welcomed({ member: { name: s2.name, run: run.id } });
@@ -189,7 +189,7 @@ test("a wait returns within 200 ms of a post on another connection; a cancelled 
   await new Promise((r) => setTimeout(r, 100));
   const local = await openBoard(path.join(dir, "swarm.sqlite"));
   try {
-    const waiting = (): boolean => local.snapshot(REPO).roster.find((r) => r.runner === s2.name)!.state === "waiting";
+    const waiting = (): boolean => local.snapshot(REPO).roster.find((r) => r.member === s2.name)!.state === "waiting";
     assert.equal(waiting(), true);
     b.send({ type: "cancel", id: "w8" });
     await new Promise((r) => setTimeout(r, 50));
@@ -202,7 +202,7 @@ test("a wait returns within 200 ms of a post on another connection; a cancelled 
 test("closeRun over the wire refuses every member connection of that run", async () => {
   const a = await welcomed();
   const run = await value(a, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(a, "join", { run: run.id, slice: "S1", doing: "x", files: [] })).runner;
+  const s1 = (await value(a, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
   const link = await welcomed({ member: { name: s1.name, run: run.id } });
   await value(a, "closeRun", run.id);
   assert.deepEqual(await link.next(), { type: "refused", reason: "closed" });
@@ -280,8 +280,8 @@ const goneEvents = (snap: any): { body: string; mentions: string[] }[] => snap.e
 const linkedRun = async () => {
   const c = await welcomed();
   const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(c, "join", { run: run.id, slice: "S1", doing: "x", files: [] })).runner;
-  await value(c, "join", { run: run.id, slice: "S2", doing: "y", files: [] });
+  const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  await value(c, "join", { run: run.id, seat: "S2", doing: "y", files: [] });
   const link = await welcomed({ member: { name: s1.name, run: run.id } });
   return { c, run, s1, link };
 };
@@ -289,7 +289,7 @@ const linkedRun = async () => {
 test("an activity frame from a member's link updates its member_activity row and a token reading; the snapshot carries state and doing", async () => {
   const { c, run, link } = await linkedRun();
   link.send({ type: "activity", at: Date.now(), activity: activity({ tokens: 77, openTool: { name: "Bash", target: "npm test", since: Date.now() } }) });
-  const live = await within(c, 3000, (snap) => snap.roster.find((r: { runner: string; liveness?: { tokens: number | null } }) => r.runner === "g/S1" && r.liveness?.tokens === 77)?.liveness);
+  const live = await within(c, 3000, (snap) => snap.roster.find((r: { member: string; liveness?: { tokens: number | null } }) => r.member === "g/S1" && r.liveness?.tokens === 77)?.liveness);
   assert.deepEqual([live.state, live.doing], ["busy", "Bash npm test"]);
   const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
   try {
@@ -332,7 +332,7 @@ test("gone is posted within 35 s of a link lost and not back; never for an ended
 test("an upkeep or tick that throws is logged to stderr, and the server goes on", async () => {
   const { c, run, link } = await linkedRun();
   const broken = await value(c, "openRun", { repo: REPO, group: "b", title: "B", seats: SEATS });
-  await value(c, "join", { run: broken.id, slice: "S1", doing: "x", files: [] });
+  await value(c, "join", { run: broken.id, seat: "S1", doing: "x", files: [] });
   // the broken run's tick throws: pruning its old token reading is refused by a trigger
   const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
   try {

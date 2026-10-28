@@ -187,7 +187,7 @@ test("a wait whose process is killed leaves the member not waiting (D16)", async
   const waiting = () => {
     const db = new DatabaseSync(r.store, { readOnly: true });
     try {
-      return Number((db.prepare("SELECT waiting FROM participants WHERE slice = 'S5'").get() as { waiting: number }).waiting);
+      return Number((db.prepare("SELECT waiting FROM participants WHERE seat = 'S5'").get() as { waiting: number }).waiting);
     } finally {
       db.close();
     }

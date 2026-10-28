@@ -42,15 +42,15 @@ const git = (cwd: string, ...argv: string[]): void => {
 };
 
 const SLICES = JSON.stringify([
-  { id: "S3", title: "the page", blockers: [] },
-  { id: "S5", title: "the skill", blockers: [] },
+  { id: "S3", blockers: [] },
+  { id: "S5", blockers: [] },
 ]);
 
 /** A run with S3 in worktree a (holding src/a.ts) and S5 in worktree b; S3's funny name. */
 const running = (): string => {
   const slices = path.join(home, "slices.json");
   fs.writeFileSync(slices, SLICES);
-  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--slices", slices).split("\n")[0].trim(); // the run id, then the page's URL
+  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--seats", slices).split("\n")[0].trim(); // the run id, then the page's URL
   const s3 = JSON.parse(cli(wtA, "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside", "--json"));
   cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
   cli(wtA, "deliver");
@@ -258,7 +258,7 @@ test("merge-lock onto a branch checked out in a worktree names the worktree, say
 const crossRuns = async () => {
   const board = await openBoard(path.join(home, "cross.sqlite"));
   const REPO = "/repos/one/.git";
-  const seats = [{ id: "S3", title: "x", blockers: [] }];
+  const seats = [{ id: "S3", blockers: [] }];
   const a = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats });
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats });
   const mine = board.join({ run: a.id, seat: "S3", doing: "page", files: [] }).member;
@@ -380,7 +380,7 @@ test("the merged event names the branch from merge-lock --onto and stores whom i
 test("join declares a file the seat will create: claimed from the repository root, another member held on it", () => {
   const slices = path.join(home, "slices.json");
   fs.writeFileSync(slices, SLICES);
-  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--slices", slices).split("\n")[0].trim();
+  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--seats", slices).split("\n")[0].trim();
   cli(path.join(wtA, "src"), "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/fresh.ts:interface");
   cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
   assert.equal(swarm(wtB, "claim", "src/fresh.ts", "--new").status, 3);

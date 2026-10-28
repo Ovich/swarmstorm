@@ -25,9 +25,9 @@ const join = (seat: string, run = 68) => ({ verb: "join" as const, run, seat });
 
 test("locate finds the subagent whose Bash ran join, flags in any order, quoted or not, ended by ; && or the end", () => {
   const forms = [
-    `node swarm.mjs join --run 68 --slice S11 --doing "x"`,
+    `node swarm.mjs join --run 68 --seat S11 --doing "x"`,
     `$S join --seat 'S11' --run "68"; echo hi`,
-    `node /p/swarm.mjs join --doing y --slice=S11 --run=68&& git status`,
+    `node /p/swarm.mjs join --doing y --seat=S11 --run=68&& git status`,
     `swarm join --run 68 --seat S11`,
   ];
   forms.forEach((command, i) => {
@@ -47,10 +47,10 @@ test("locate finds the main transcript for open with that group", () => {
 });
 
 test("locate returns null for a mention in text, another session, another seat or run, and S1 when S11 is asked", () => {
-  writeSubagent(root, PROJECT, SESSION, "text", [prompt("run `swarm join --run 68 --slice S11` first"), textLine("I will run swarm join --run 68 --slice S11")], {});
-  writeSubagent(root, PROJECT, OTHER, "other", [bashCall("swarm join --run 68 --slice S11")], {});
-  writeSubagent(root, PROJECT, SESSION, "seat", [bashCall("swarm join --run 68 --slice S12")], {});
-  writeSubagent(root, PROJECT, SESSION, "run", [bashCall("swarm join --run 67 --slice S11")], {});
+  writeSubagent(root, PROJECT, SESSION, "text", [prompt("run `swarm join --run 68 --seat S11` first"), textLine("I will run swarm join --run 68 --seat S11")], {});
+  writeSubagent(root, PROJECT, OTHER, "other", [bashCall("swarm join --run 68 --seat S11")], {});
+  writeSubagent(root, PROJECT, SESSION, "seat", [bashCall("swarm join --run 68 --seat S12")], {});
+  writeSubagent(root, PROJECT, SESSION, "run", [bashCall("swarm join --run 67 --seat S11")], {});
   assert.equal(locate(join("S11"), env), null);
   const short = writeSubagent(root, PROJECT, SESSION, "short", [bashCall("swarm join --run 68 --seat S1")], {});
   assert.equal(locate(join("S11"), env), null);
@@ -58,9 +58,9 @@ test("locate returns null for a mention in text, another session, another seat o
 });
 
 test("two transcripts holding the same join: the newest not finished", () => {
-  const older = writeSubagent(root, PROJECT, SESSION, "old", [bashCall("swarm join --run 68 --slice S11")], {}, 1_700_000_000);
-  writeSubagent(root, PROJECT, SESSION, "done", [bashCall("swarm join --run 68 --slice S11")], { finished: true }, 1_700_000_200);
-  const newer = writeSubagent(root, PROJECT, SESSION, "new", [bashCall("swarm join --run 68 --slice S11")], {}, 1_700_000_100);
+  const older = writeSubagent(root, PROJECT, SESSION, "old", [bashCall("swarm join --run 68 --seat S11")], {}, 1_700_000_000);
+  writeSubagent(root, PROJECT, SESSION, "done", [bashCall("swarm join --run 68 --seat S11")], { finished: true }, 1_700_000_200);
+  const newer = writeSubagent(root, PROJECT, SESSION, "new", [bashCall("swarm join --run 68 --seat S11")], {}, 1_700_000_100);
   assert.equal(locate(join("S11"), env), newer);
   fs.utimesSync(older, 1_700_000_300, 1_700_000_300);
   assert.equal(locate(join("S11"), env), older);
@@ -114,7 +114,7 @@ test("finished follows meta.json; no meta.json at all: the locator reports null"
 });
 
 test("no CLAUDE_CODE_SESSION_ID: locate returns null without reading", () => {
-  writeMain(root, PROJECT, SESSION, [bashCall("swarm join --run 68 --slice S11")]);
+  writeMain(root, PROJECT, SESSION, [bashCall("swarm join --run 68 --seat S11")]);
   const readdir = fs.readdirSync;
   let reads = 0;
   (fs as { readdirSync: unknown }).readdirSync = (...a: unknown[]) => {

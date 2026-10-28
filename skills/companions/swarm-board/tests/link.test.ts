@@ -329,7 +329,7 @@ test("no server state file: the link gives up after its wait, naming the data ho
 
 const SESSION = "33333333-aaaa-bbbb-cccc-000000000003";
 const PROJECT = "C--repos-link";
-const JOIN_COMMAND = `node C:/x/swarm.mjs join --run ${RUN} --slice S1 --doing "start"`;
+const JOIN_COMMAND = `node C:/x/swarm.mjs join --run ${RUN} --seat S1 --doing "start"`;
 
 /** A fixture session root, and the environment a link of that session sees. */
 function sessionRoot() {

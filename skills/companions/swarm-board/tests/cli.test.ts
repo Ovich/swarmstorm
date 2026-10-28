@@ -632,7 +632,7 @@ test("join takes --seat alone; the removed --slice flag and a missing --seat exi
   const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
-  const old = run("join", "--run", String(id), "--seat", "S5", "--doing", "x");
+  const old = run("join", "--run", String(id), "--slice", "S5", "--doing", "x");
   assert.equal(old.status, 1);
   assert.match(old.stderr, /--seat is required/);
 });

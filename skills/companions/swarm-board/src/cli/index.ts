@@ -286,7 +286,7 @@ const waitCommand = (name: string, foreground = false): string => {
   // the command alone, so it runs as copied (F6); the tool-timeout sentence sits in the prose before the colon
   return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS}` : line;
 };
-const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member === "seat";
+const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";
 /** The line that starts a member's listener: the exact command, --as included (D61); `afterPhase`: it
  *  follows the owed-phase line, so a seat waits only once its part is in. */
 const listenNow = (p: Pick<Participant, "name" | "seat" | "kind">, afterPhase = false): string =>
