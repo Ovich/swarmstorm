@@ -117,7 +117,7 @@ test("in a harness session, on a closed run, no verb prints the link line: end p
     const r = spawnSync(process.execPath, [CLI, ...argv, "--as", h.member.name], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout + r.stderr, /start your link now/, argv.join(" "));
-    if (argv[0] === "end") assert.equal(r.stdout, `run ${h.run} closed: harness-plan/S3 ended; return your summary now\n`);
+    if (argv[0] === "end") assert.equal(r.stdout, `run ${h.run} closed: harness-plan/S3 ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)\n`);
   }
 });
 

@@ -230,13 +230,14 @@ function carries(m, me, subs) {
   if (EVENTS[e].ambient && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
-var word, FOREGROUND_WAIT_MS, foregroundWait, EVENTS, NAMES, isEvent;
+var word, FOREGROUND_WAIT_MS, FOREGROUND_NOTE, foregroundWait, EVENTS, NAMES, isEvent;
 var init_events = __esm({
   "src/board/events.ts"() {
     "use strict";
     init_kinds();
     word = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
-    FOREGROUND_WAIT_MS = 54e4;
+    FOREGROUND_WAIT_MS = 17e4;
+    FOREGROUND_NOTE = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
     foregroundWait = (cli, me) => `${cli} wait --mentions --as ${word(me.name)} --timeout ${FOREGROUND_WAIT_MS}`;
     EVENTS = {
       // a seat backs another member's agreement (D36)
@@ -274,7 +275,7 @@ var init_events = __esm({
           if (me.seat === "orchestrator" || m.from === me.name) return null;
           const pause3 = m.meta && "person" in m.meta ? m.meta : null;
           const why = pause3?.person ? `waiting on the person: ${pause3.text || "their decision"}; ` : "";
-          return `${why}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (give your shell tool a 600000 ms timeout): ${foregroundWait(cli, me)}`;
+          return `${why}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${foregroundWait(cli, me)}`;
         }
       },
       // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
@@ -8370,7 +8371,7 @@ var USAGE = [
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
   "  doing   [--as <member>] <text>",
-  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>]   # prints the seq; --file for a long body (tables, quotes), never through shell quoting",
+  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
   "  agree   [--as <member>] <terms> [--about <path|decision id>]  # prints the seq",
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
@@ -8505,13 +8506,13 @@ var rosterLine = (r, ages = false) => {
   return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
 var phaseHeader = async (run2, shownTo) => (await phaseHeaders(run2, shownTo)).printed;
-var phaseHeaders = async (run2, shownTo) => {
+var phaseHeaders = async (run2, shownTo, showPause = true) => {
   const shown = shownTo ? await board.showPhase(shownTo) : null;
   const ph = shown ? shown.phase : await board.currentPhase(run2);
   const r = (await board.runs()).find((x) => x.id === run2);
   const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
   const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo.name)].join(" ")})` : whole;
-  if (r?.paused == null) return { printed: short, full: whole };
+  if (r?.paused == null || !showPause) return { printed: short, full: whole };
   const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
   const withPause = (head) => [head, `PAUSED${why}`].filter(Boolean).join("  ");
   return { printed: withPause(short), full: withPause(whole) };
@@ -8535,11 +8536,10 @@ var printDelivery = (d) => {
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var self = () => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 var startLinkLine = (member) => `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
-var FOREGROUND_WAIT_MS2 = 54e4;
-var SHELL_TOOL_TIMEOUT = "give your shell tool a 600000 ms timeout";
+var SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
 var waitCommand = (name, foreground = false) => {
   const line = [...self(), "wait", "--mentions", "--as", shellWord(name)].join(" ");
-  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS2}` : line;
+  return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS}` : line;
 };
 var listensInForeground = (p) => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";
 var listenNow = (p, afterPhase = false) => listensInForeground(p) ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}` : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
@@ -8639,7 +8639,12 @@ var nextStep = async (p) => {
   return owed ? `${owed}
 ${listenNow(p, true)}` : listenNow(p);
 };
-var closedLine = (p) => `run ${p.run} closed: run end and return your summary: ${[...self(), "end", "--as", shellWord(p.name)].join(" ")}`;
+var heardStep = async (p) => {
+  if (p.ended || p.listening) return null;
+  if (!listensInForeground(p)) return nextStep(p);
+  return await pausedLine(p) ?? await owedLine(p);
+};
+var closedLine = (p) => `run ${p.run} closed: run end and return your summary: ${[...self(), "end", "--as", shellWord(p.name)].join(" ")}; your link and listener background tasks end on their own now, and their end notices are not news`;
 var answeredClosed = async (p) => {
   if ((await board.runs()).some((r) => r.id === p.run)) return false;
   const line = closedLine(p);
@@ -8661,7 +8666,7 @@ var unmatchedLines = async (p, body) => {
   });
 };
 var emitHeard = async (p, json, human) => {
-  const next = !p.ended && !p.listening ? await nextStep(p) : null;
+  const next = await heardStep(p);
   emit(next ? { ...json, next } : json, () => {
     if (typeof human === "string") console.log(human);
     else human();
@@ -8752,7 +8757,7 @@ var seatCommands = (as) => {
     `${cli} post "\u2026" --about <D id> ${who}`,
     `${cli} agree "\u2026" --about <D id> ${who}`,
     `${cli} endorse <seq> ${who}`,
-    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS2}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`
+    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`
   ];
 };
 var subscriptionsArg = (spec) => {
@@ -8972,9 +8977,12 @@ ${USAGE}`);
       if (await answeredClosed(p)) break;
       const file = args.flag("--file");
       const body = (file ? fs9.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const urgent = args.has("--urgent");
+      if (urgent && args.verb !== "post") fail("--urgent is for post");
+      if (urgent && p.seat !== "orchestrator") fail("--urgent is the orchestrator's: it wakes every waiter of the run, even in a pause; ask @orchestrator on the thread instead");
       const m = await board.post(p, body, {
         about: aboutArg(),
-        kind: args.verb === "agree" ? "agreement" : "msg"
+        kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg"
       });
       const unmatched = await unmatchedLines(p, body);
       const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
@@ -8985,7 +8993,7 @@ ${USAGE}`);
         for (const line of unmatched) console.log(line);
       };
       if (phaseNext) {
-        const listen2 = !p.ended && !p.listening ? await nextStep(p) : null;
+        const listen2 = await heardStep(p);
         emit({ ...json, ...listen2 ? { listen: listen2 } : {}, next: phaseNext }, () => {
           human();
           if (listen2) console.log(listen2);
@@ -9073,7 +9081,7 @@ ${USAGE}`);
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")));
       if (raw !== void 0) again.push("--timeout", raw);
       if (asJson) again.push("--json");
-      const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS2)].join(" ");
+      const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
       if (!d.full.length && !d.lines.length) {
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
@@ -9086,10 +9094,10 @@ ${USAGE}`);
       const owes = await owedLine(p);
       const pausedNow = await pausedLine(p);
       const rearm = pausedNow ? pausedNow : listensInForeground(p) ? owes ? `${owes}
-only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : `answer on the thread if needed, then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : p.seat === "orchestrator" ? `act on it, then start this listener again, in the background: ${again.join(" ")}` : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
+only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : `wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : p.seat === "orchestrator" ? `act on it, then start this listener again, in the background: ${again.join(" ")}` : `start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
 ${rearm}` : rearm;
-      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p);
+      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p, !pausedNow);
       emit({ phase: phaseFull, next, ...d }, () => {
         if (phase) console.log(phase);
         console.log(next);
@@ -9187,7 +9195,7 @@ ${rearm}` : rearm;
     case "end": {
       const p = await caller();
       if ((await board.runs()).every((r) => r.id !== p.run)) {
-        const line = `run ${p.run} closed: ${p.name} ended; return your summary now`;
+        const line = `run ${p.run} closed: ${p.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
         emit({ member: p.name, ended: true, closed: true, next: line }, line);
         break;
       }
