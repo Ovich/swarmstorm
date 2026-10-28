@@ -278,20 +278,44 @@ test("boardReposInText: { repos }, a pre-merge { url }'s ?repo=, nothing for any
 });
 
 test("migration: a project's swarm document gives its repositories to the project's board and leaves the index", () => {
-  const board = write("docs/swarm.swarm.json", JSON.stringify({ repos: ["/r/one/.git", "/r/two/.git"] }));
+  const [one, two, three] = ["one", "two", "three"].map((n) => {
+    fs.mkdirSync(path.join(tmp, "r", n, ".git"), { recursive: true });
+    return path.join(tmp, "r", n, ".git");
+  });
+  const board = write("docs/swarm.swarm.json",JSON.stringify({ repos: [one, two] }));
   const plan = write("docs/a.plan.md", "# A plan\n");
   const b = index.register(board, { project: "p" });
   index.register(plan, { project: "p" });
   assert.equal(b.kind, "swarm");
   index.close();
   index = openIndex(path.join(tmp, "test.sqlite"), root);
-  assert.deepEqual(index.boardRepos("p"), ["/r/one/.git", "/r/two/.git"]);
+  assert.deepEqual(index.boardRepos("p"), [one, two]);
   assert.deepEqual(index.all().map((d) => d.kind), ["plan"]);
   assert.ok(fs.existsSync(board), "the file stays on disk");
   // a second open finds nothing to migrate and keeps the list
   index.close();
   index = openIndex(path.join(tmp, "test.sqlite"), root);
-  assert.deepEqual(index.boardRepos("p"), ["/r/one/.git", "/r/two/.git"]);
-  assert.deepEqual(index.addBoardRepo("p", "/r/one/.git"), ["/r/one/.git", "/r/two/.git"]);
-  assert.deepEqual(index.addBoardRepo("p", "/r/three/.git"), ["/r/one/.git", "/r/two/.git", "/r/three/.git"]);
+  assert.deepEqual(index.boardRepos("p"), [one, two]);
+  assert.deepEqual(index.addBoardRepo("p", one), [one, two]);
+  assert.deepEqual(index.addBoardRepo("p", three), [one, two, three]);
+});
+
+test("project add registers the .git of its paths as board repos, and a project never registered falls back to them (D12)", () => {
+  const repo = path.join(tmp, "repo");
+  fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+  const plain = path.join(tmp, "plain");
+  fs.mkdirSync(plain);
+  const gitDir = path.join(repo, ".git").split("\\").join("/");
+  index.upsertProject("p", { addPaths: [repo, plain] });
+  assert.deepEqual(index.boardRepos("p"), [gitDir], "only a path that is a repository");
+  // a record made before the repository existed: the empty list falls back to the .git on disk
+  const early = path.join(tmp, "early");
+  index.upsertProject("q", { addPaths: [early] });
+  assert.deepEqual(index.boardRepos("q"), []);
+  fs.mkdirSync(path.join(early, ".git"), { recursive: true });
+  assert.deepEqual(index.boardRepos("q"), [path.join(early, ".git").split("\\").join("/")]);
+  // a repository the board already lists is kept, and not doubled by the fallback
+  index.addBoardRepo("p", path.join(tmp, "elsewhere", ".git"));
+  index.upsertProject("p", { addPaths: [repo] });
+  assert.equal(index.boardRepos("p").filter((r) => r === gitDir).length, 1);
 });

@@ -218,12 +218,15 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
   const projectCols = (db.prepare("PRAGMA table_info(projects)").all() as { name: string }[]).map((c) => c.name);
   if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
   // the project is its repository: one board; a repo written as its folder or its .git, or gone from disk, is read once
+  // D12: the `.git` of every path of the project that is a repository: the board's repos when none was registered yet
+  const gitDirsOf = (pathsJson: string): string[] =>
+    (JSON.parse(pathsJson) as string[]).map((p) => path.join(path.resolve(p), ".git")).filter((g) => fs.existsSync(g)).map((g) => g.split("\\").join("/"));
   const boardReposOf = (slug: string): string[] => {
-    const row = db.prepare("SELECT board_repos FROM projects WHERE slug = ?").get(slug) as { board_repos: string } | undefined;
+    const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug) as { board_repos: string; paths: string } | undefined;
     if (!row) return [];
     const seen = new Set<string>();
     const repos: string[] = [];
-    for (const r of JSON.parse(row.board_repos) as string[]) {
+    for (const r of [...(JSON.parse(row.board_repos) as string[]), ...(JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : [])]) {
       const folder = path.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
       if (seen.has(key) || !fs.existsSync(folder)) continue;
@@ -303,6 +306,8 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
       `INSERT INTO projects (slug, title, paths) VALUES (?, ?, ?)
        ON CONFLICT(slug) DO UPDATE SET title = excluded.title, paths = excluded.paths`,
     ).run(slug, title, JSON.stringify(paths));
+    // D12: runs opened under these paths before the project was declared show up now
+    for (const g of gitDirsOf(JSON.stringify(paths))) addRepo(slug, g);
     return parseProject(db.prepare("SELECT * FROM projects WHERE slug = ?").get(slug) as unknown as ProjectRow);
   };
 
