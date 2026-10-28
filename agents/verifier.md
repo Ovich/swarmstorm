@@ -26,7 +26,7 @@ You judge what was delivered, from one of two sources, the one your brief names:
 
 ## When your brief names a board run (a verifier seat)
 
-- **Join first**: load the `swarmstorm:swarm-board` skill, worker side, join as your brief says, and
+- **Join first**: load the `swarmstorm:swarm-board` skill and read its `references/worker.md`, join as your brief says, and
   start your link as the answer prints.
 - **You own your instance of the product**: on the ports your brief or message gives you, with
   your own data copy and browser profile. **Lock first** (`app:<your id>`, each `port:<n>`,

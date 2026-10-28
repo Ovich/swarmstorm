@@ -27,8 +27,8 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
 
 1. Create the branch, push it, and leave it checked out nowhere (detach the main checkout): a
    worker fast-forwards it from its own worktree.
-2. A seats file, one row per worker, `w1` … `w<n>`, titled `worker`, and under build-verify one
-   per verifier, `v1` … `v<m>`, titled `verifier · <focus>`, with `"busyMax": 300000` (a browser or
+2. A seats file, one row per worker, `w1` … `w<n>`, role `worker`, and under build-verify one
+   per verifier, `v1` … `v<m>`, role `verifier`, area `<focus>`, with `"busyMax": 300000` (a browser or
    other non-shell call hung 5 min is told to you) and its own port range in its brief; then `$S open --kind task
    --group <topic> --title "<what the swarm is for>" --seats <file>` with `--protocol <the
    charter's base>` when it runs one, or `--protocol none` for a swarm with no phases on purpose,
@@ -36,17 +36,17 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
    task post. Give the person the board's URL.
 3. **Every worker at once** on the plugin's `swarm-worker` agent (`subagent_type:
    "swarmstorm:swarm-worker"`), each with `isolation: "worktree"`, as the `orchestrate` skill
-   dispatches. The brief holds no task:
+   dispatches. The brief holds no task (`<S>` is the CLI as you run it, the `swarm-board` skill's `$S`, written out in full):
 
    ```markdown
-   You are worker `<wN>` of task swarm run `<run id>` on `<repository>`. Your worktree is based on `<branch>`; merge into `<branch>`. **Prepare**: `<the command, install included>`. Join now, then wait for the tasks posted to you.
+   You are worker `<wN>` of task swarm run `<run id>` on `<repository>`. Your worktree is based on `<branch>`; merge into `<branch>`. **Prepare**: `<the command, install included>`. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <wN> --doing "joining" --as <topic>/<wN>`, then wait for the tasks posted to you.
    ```
 
    Under build-verify, every verifier at once too, on the plugin's `verifier` agent
    (`subagent_type: "swarmstorm:verifier"`), no `isolation`:
 
    ```markdown
-   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: lock `app:<name>`>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Join now; each verify phase's message scopes your pass.
+   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: lock `app:<name>`>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <vN> --doing "joining" --as <topic>/<vN>`; each verify phase's message scopes your pass.
    ```
 
 ## Giving work
@@ -61,7 +61,8 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
 
 ## A report
 
-Read it; re-run its done-when yourself on the merged branch before you tell the person it is
+Read it and acknowledge it at once in one post to its worker (`@wN received`, or what to fix);
+a worker that hears nothing does not know the task is closed. Re-run its done-when yourself on the merged branch before you tell the person it is
 done. A finding is weighed as the `orchestrate` skill's *Findings* says. Tell the person, in a
 few lines, what landed.
 

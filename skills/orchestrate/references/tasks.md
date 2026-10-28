@@ -45,7 +45,7 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
   says what makes it inert.
 - **A fix task names the findings it fixes** (`FIX F1 + F4`), from the judged table.
 - **Cut to the seats the person chose**: more seats than the work cuts into naturally, split
-  further (by slice of the feature, by layer, code apart from its tests, a later phase's
+  further (by part of the feature, by layer, code apart from its tests, a later phase's
   independent part brought forward) until each seat has a task in the phase; fewer, merge tasks.
   A split that makes two tasks share a file names both in their files and lets the workers settle
   it on the board.
