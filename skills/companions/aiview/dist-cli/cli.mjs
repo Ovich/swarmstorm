@@ -192,12 +192,13 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
   if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
+  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path4.join(path4.resolve(p), ".git")).filter((g) => fs3.existsSync(g)).map((g) => g.split("\\").join("/"));
   const boardReposOf = (slug) => {
-    const row = db.prepare("SELECT board_repos FROM projects WHERE slug = ?").get(slug);
+    const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
     if (!row) return [];
     const seen = /* @__PURE__ */ new Set();
     const repos = [];
-    for (const r of JSON.parse(row.board_repos)) {
+    for (const r of [...JSON.parse(row.board_repos), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
       const folder = path4.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
       if (seen.has(key) || !fs3.existsSync(folder)) continue;
@@ -253,6 +254,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       `INSERT INTO projects (slug, title, paths) VALUES (?, ?, ?)
        ON CONFLICT(slug) DO UPDATE SET title = excluded.title, paths = excluded.paths`
     ).run(slug, title, JSON.stringify(paths));
+    for (const g of gitDirsOf(JSON.stringify(paths))) addRepo(slug, g);
     return parseProject(db.prepare("SELECT * FROM projects WHERE slug = ?").get(slug));
   };
   const upsertGroup = (slug, title) => {
@@ -9142,7 +9144,8 @@ var init_wire = __esm({
       "heldMergeLock",
       "stats",
       "repos",
-      "snapshot"
+      "snapshot",
+      "composition"
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByEntry = /* @__PURE__ */ new Map();
@@ -9200,17 +9203,21 @@ var init_link = __esm({
 var remote_exports = {};
 __export(remote_exports, {
   HARNESS_LINK_WAIT_MS: () => HARNESS_LINK_WAIT_MS,
+  LINK_DOWN_WAIT_MS: () => LINK_DOWN_WAIT_MS,
   bindingOf: () => bindingOf,
   connectBoard: () => connectBoard,
   connectServer: () => connectServer,
   ensureServer: () => ensureServer,
   inHarnessSession: () => inHarnessSession,
-  linkVerbArgs: () => linkVerbArgs
+  linkDownMarker: () => linkDownMarker,
+  linkVerbArgs: () => linkVerbArgs,
+  openLinkPipe: () => openLinkPipe
 });
 import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
 import fs8 from "node:fs";
 import net from "node:net";
+import path10 from "node:path";
 function isAlive2(pid) {
   try {
     process.kill(pid, 0);
@@ -9286,15 +9293,29 @@ function connectPipe(pipe) {
     s.once("error", () => resolve(null));
   });
 }
-async function openLinkPipe(dataRoot, member, harnessWaitMs) {
+async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
+  const marker = linkDownMarker(dataRoot, member);
+  const answered = (s) => {
+    try {
+      fs8.rmSync(marker, { force: true });
+    } catch {
+    }
+    return s;
+  };
   const there = await connectPipe(pipe);
-  if (there) return there;
+  if (there) return answered(there);
   if (harnessWaitMs != null) {
-    for (const until = Date.now() + harnessWaitMs; Date.now() < until; ) {
+    const wait = fs8.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause(START_POLL_MS);
       const s = await connectPipe(pipe);
-      if (s) return s;
+      if (s) return answered(s);
+    }
+    try {
+      fs8.mkdirSync(path10.dirname(marker), { recursive: true });
+      fs8.writeFileSync(marker, String(Date.now()));
+    } catch {
     }
     return null;
   }
@@ -9435,7 +9456,7 @@ async function connectBoard(opts) {
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
   return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
 }
-var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, inHarnessSession;
+var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
@@ -9449,6 +9470,8 @@ var init_remote = __esm({
     isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
     linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
     HARNESS_LINK_WAIT_MS = 1e4;
+    LINK_DOWN_WAIT_MS = 1e3;
+    linkDownMarker = (dataRoot, member) => path10.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
     inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
   }
 });
@@ -9541,7 +9564,7 @@ var init_reader = __esm({
 
 // src/server/board.ts
 import fs9 from "node:fs";
-import path10 from "node:path";
+import path11 from "node:path";
 function mountBoard(sse, opts = {}) {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
   const swarmEntry = opts.swarmEntry ?? DEFAULT_SWARM_ENTRY;
@@ -9570,7 +9593,7 @@ function mountBoard(sse, opts = {}) {
     );
     return opening;
   };
-  if (fs9.existsSync(path10.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
+  if (fs9.existsSync(path11.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
   });
   const json = (res, obj, status = 200) => {
     if (res.headersSent) return;
@@ -9650,7 +9673,7 @@ var init_board = __esm({
     init_reader();
     await init_db();
     init_home();
-    DEFAULT_SWARM_ENTRY = path10.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
+    DEFAULT_SWARM_ENTRY = path11.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
     SERVER_STATE_FILE = "swarm-server.json";
   }
 });
@@ -9717,10 +9740,10 @@ __export(server_exports, {
 import { spawn as spawn2 } from "node:child_process";
 import fs10 from "node:fs";
 import http from "node:http";
-import path11 from "node:path";
+import path12 from "node:path";
 function servedBuild(distDir) {
   try {
-    return /assets\/(index-[\w-]+\.js)/.exec(fs10.readFileSync(path11.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
+    return /assets\/(index-[\w-]+\.js)/.exec(fs10.readFileSync(path12.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
   } catch {
     return null;
   }
@@ -9735,13 +9758,13 @@ function openBrowser(url) {
 }
 function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry }) {
   const sse = createSseHub(heartbeatMs, () => {
-    const build = servedBuild(path11.join(toolRoot, "dist"));
+    const build = servedBuild(path12.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
   const board = mountBoard(sse, { dataRoot: boardDataRoot, swarmEntry });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(
-    (dir, name) => index.all().find((d) => path11.dirname(d.abs_path) === dir && path11.basename(d.abs_path) === name)
+    (dir, name) => index.all().find((d) => path12.dirname(d.abs_path) === dir && path12.basename(d.abs_path) === name)
   );
   watcher.on("changed", ({ id }) => {
     index.touch(id);
@@ -9756,16 +9779,16 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
-  const distDir = path11.join(toolRoot, "dist");
-  const useDist = fs10.existsSync(path11.join(distDir, "index.html"));
+  const distDir = path12.join(toolRoot, "dist");
+  const useDist = fs10.existsSync(path12.join(distDir, "index.html"));
   const serveStatic = (res, p) => {
     if (!useDist)
       return send(res, 404, `aiview UI not built. Run: npm install && npm run build  (in ${toolRoot})`, "text/plain");
-    const f = path11.resolve(distDir, "." + p.replaceAll("..", ""));
-    const indexHtml = path11.join(distDir, "index.html");
+    const f = path12.resolve(distDir, "." + p.replaceAll("..", ""));
+    const indexHtml = path12.join(distDir, "index.html");
     if (f !== indexHtml && f.startsWith(distDir) && fs10.existsSync(f) && fs10.statSync(f).isFile()) {
-      const hashed = f.startsWith(path11.join(distDir, "assets") + path11.sep);
-      const mime = MIME[path11.extname(f).toLowerCase()] ?? "application/octet-stream";
+      const hashed = f.startsWith(path12.join(distDir, "assets") + path12.sep);
+      const mime = MIME[path12.extname(f).toLowerCase()] ?? "application/octet-stream";
       return send(res, 200, fs10.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
     }
     return send(res, 200, fs10.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
@@ -9893,9 +9916,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     if (a) {
       const doc = index.get(Number(a[1]));
       if (!doc) return send(res, 404, "not found", "text/plain");
-      const dir = path11.dirname(doc.abs_path);
-      const asked = path11.resolve(dir, decodeURIComponent(a[2]));
-      if (asked !== dir && !asked.startsWith(dir + path11.sep)) return send(res, 403, "forbidden", "text/plain");
+      const dir = path12.dirname(doc.abs_path);
+      const asked = path12.resolve(dir, decodeURIComponent(a[2]));
+      if (asked !== dir && !asked.startsWith(dir + path12.sep)) return send(res, 403, "forbidden", "text/plain");
       let base;
       let f;
       try {
@@ -9904,9 +9927,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       } catch {
         return send(res, 404, "not found", "text/plain");
       }
-      if (f !== base && !f.startsWith(base + path11.sep)) return send(res, 403, "forbidden", "text/plain");
+      if (f !== base && !f.startsWith(base + path12.sep)) return send(res, 403, "forbidden", "text/plain");
       if (!fs10.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
-      return send(res, 200, fs10.readFileSync(f), MIME[path11.extname(f).toLowerCase()] ?? "application/octet-stream");
+      return send(res, 200, fs10.readFileSync(f), MIME[path12.extname(f).toLowerCase()] ?? "application/octet-stream");
     }
     const r = p.match(/^\/api\/raw\/(\d+)$/);
     if (r) {
@@ -9927,14 +9950,14 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       if (isPdf(doc.file_path))
         return json(res, { document: doc, format: "pdf", content: null, pending });
       if (isHtml(doc.file_path)) {
-        const dir = path11.dirname(doc.abs_path);
+        const dir = path12.dirname(doc.abs_path);
         const reader = (name) => {
           if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-          const f = path11.join(dir, name);
+          const f = path12.join(dir, name);
           return fs10.existsSync(f) && fs10.statSync(f).isFile() ? readDoc(f) : void 0;
         };
         const { html, sources, errors, warnings } = resolveBindings(readDoc(doc.abs_path), reader);
-        watcher.setSources(doc.id, sources.map((s) => path11.join(dir, s)));
+        watcher.setSources(doc.id, sources.map((s) => path12.join(dir, s)));
         return json(res, {
           document: doc,
           format: "html",
@@ -10021,7 +10044,7 @@ init_serverstate();
 init_collectionversion();
 import { spawn as spawn3, spawnSync } from "node:child_process";
 import fs11 from "node:fs";
-import path12 from "node:path";
+import path13 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/cli/args.ts
@@ -10494,8 +10517,8 @@ var emit = (json, human) => {
   else human();
 };
 function ensureDist() {
-  if (fs11.existsSync(path12.join(TOOL_ROOT, "dist", "index.html"))) return;
-  if (!fs11.existsSync(path12.join(TOOL_ROOT, "app", "index.html"))) return;
+  if (fs11.existsSync(path13.join(TOOL_ROOT, "dist", "index.html"))) return;
+  if (!fs11.existsSync(path13.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const r = spawnSync(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
@@ -10563,7 +10586,7 @@ function portOfInstalledServer() {
 function resolveRef(ref) {
   const index = openIndex();
   try {
-    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path12.resolve(ref));
+    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
   } finally {
     index.close();
   }
@@ -10616,7 +10639,7 @@ known: ${known.join(", ")}` : ""}`);
   }
   const dir = docsDirFor(slug);
   fs11.mkdirSync(dir, { recursive: true });
-  const full = path12.join(dir, path12.basename(name));
+  const full = path13.join(dir, path13.basename(name));
   emit({ path: full, dir, project: slug }, full);
 }
 function prototypeArg(usage) {
@@ -10625,7 +10648,7 @@ function prototypeArg(usage) {
     console.error(usage);
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path12.resolve(ref);
+  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
   if (!fs11.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
@@ -10640,7 +10663,7 @@ function cmdComponents() {
   const abs = prototypeArg("usage: aiview components <file|#id>");
   const r = listComponents(readDoc(abs));
   const vocabulary = pageVocabulary(abs);
-  emit({ file: path12.basename(abs), ...r, ...vocabulary }, () => {
+  emit({ file: path13.basename(abs), ...r, ...vocabulary }, () => {
     if (!r.offers.length) console.log("offers   nothing: no data-component in this file");
     for (const o of r.offers)
       console.log(
@@ -10653,10 +10676,10 @@ function cmdComponents() {
   });
 }
 function composed(abs) {
-  const dir = path12.dirname(abs);
+  const dir = path13.dirname(abs);
   const reader = (name) => {
     if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-    const f = path12.join(dir, name);
+    const f = path13.join(dir, name);
     return fs11.existsSync(f) && fs11.statSync(f).isFile() ? readDoc(f) : void 0;
   };
   return resolveBindings(readDoc(abs), reader);
@@ -10706,7 +10729,7 @@ function cmdShow() {
 function cmdCheck() {
   const abs = prototypeArg("usage: aiview check <file|#id>");
   const r = composed(abs);
-  emit({ file: path12.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
+  emit({ file: path13.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
     console.log(`${r.bound} bound from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}${r.sources.length ? `: ${r.sources.join(", ")}` : ""}`);
     for (const e of r.errors) console.log(`error    ${e.ref}: ${e.message}`);
     for (const w of r.warnings) console.log(`warning  ${w.ref}: ${w.message}`);
@@ -10720,13 +10743,13 @@ async function cmdMermaidCheck() {
     console.error("usage: aiview mermaid-check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path12.resolve(ref);
+  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
   if (!fs11.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const here = path12.dirname(fileURLToPath2(import.meta.url));
-  const bundle = [path12.join(here, "mermaid-check.mjs"), path12.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs11.existsSync(f));
+  const here = path13.dirname(fileURLToPath2(import.meta.url));
+  const bundle = [path13.join(here, "mermaid-check.mjs"), path13.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs11.existsSync(f));
   if (!bundle) {
     console.error(`aiview: the mermaid checker is not built. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -10742,7 +10765,7 @@ async function cmdMermaidCheck() {
   }));
   const failed = results.filter((r) => !r.ok).length;
   const warned = results.reduce((n, r) => n + r.warnings.length, 0);
-  emit({ file: path12.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
+  emit({ file: path13.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
     if (!results.length) return console.log("no mermaid block in this document");
     for (const r of results) {
       console.log(r.ok ? `ok     line ${r.line}  ${r.type}` : `FAIL   line ${r.line}  ${r.error}`);
@@ -10757,7 +10780,7 @@ function cmdInit() {
   adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
   emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
     console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
-    console.log(`documents  ${path12.join(DOCS_ROOT, "<project>")}`);
+    console.log(`documents  ${path13.join(DOCS_ROOT, "<project>")}`);
     console.log(`tool       ${TOOL_ROOT}      (the checkout: rebuildable, safe to delete)`);
   });
 }
@@ -10767,7 +10790,7 @@ function cmdAdd() {
     process.exit(1);
   }
   const index = openIndex();
-  const d = index.register(path12.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path13.resolve(args.positional[0]), registerOpts());
   index.close();
   emit(d, docLine(d));
 }
@@ -10823,7 +10846,7 @@ function cmdRemove() {
   const index = openIndex();
   const removed = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path12.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
@@ -10933,14 +10956,14 @@ known: ${known.join(", ")}` : ""}`);
   }
   const moved = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path12.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
     }
     const from = row.abs_path;
     const dir = docsDirFor(target ?? row.project);
-    const dest = path12.join(dir, path12.basename(from));
+    const dest = path13.join(dir, path13.basename(from));
     if (dest === from) {
       console.error(`already there: ${from}`);
       continue;
@@ -10981,7 +11004,7 @@ function cmdOpen() {
   }
   ensureDist();
   const index = openIndex();
-  const d = index.register(path12.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path13.resolve(args.positional[0]), registerOpts());
   setActive(index, d.project);
   index.close();
   const port = portOfInstalledServer();
@@ -11029,7 +11052,7 @@ async function cmdServe() {
     ensureDist();
     if (args.positional[0]) {
       const index2 = openIndex();
-      index2.register(path12.resolve(args.positional[0]), registerOpts());
+      index2.register(path13.resolve(args.positional[0]), registerOpts());
       index2.close();
     }
     const port = portOfInstalledServer();
@@ -11039,7 +11062,7 @@ async function cmdServe() {
   ensureDist();
   const { startServer: startServer2 } = await init_server().then(() => server_exports);
   const index = openIndex();
-  const startDoc = args.positional[0] ? index.register(path12.resolve(args.positional[0]), registerOpts()) : null;
+  const startDoc = args.positional[0] ? index.register(path13.resolve(args.positional[0]), registerOpts()) : null;
   startServer2(index, {
     port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321),
     open: args.has("--open"),
@@ -11114,7 +11137,7 @@ function cmdTracker() {
     console.error("usage: aiview tracker <check|sync> <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path12.resolve(ref);
+  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
   if (!fs11.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
@@ -11123,7 +11146,7 @@ function cmdTracker() {
   const body = raw.split(CRLF).join(LF);
   const tracker = findTracker(body);
   if (!tracker) {
-    console.error(`no tracker in ${path12.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
+    console.error(`no tracker in ${path13.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
     process.exit(1);
   }
   if (mode === "sync") {
@@ -11137,16 +11160,16 @@ function cmdTracker() {
     const after = findTracker(text);
     const left = after ? check(after) : [];
     emit(
-      { file: path12.basename(abs), changed, findings: left.length },
+      { file: path13.basename(abs), changed, findings: left.length },
       () => console.log(
-        changed ? `synced ${path12.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
+        changed ? `synced ${path13.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
       )
     );
     if (left.length) process.exit(1);
     return;
   }
   const findings = check(tracker);
-  emit({ file: path12.basename(abs), nodes: tracker.nodes.length, findings }, () => {
+  emit({ file: path13.basename(abs), nodes: tracker.nodes.length, findings }, () => {
     if (!findings.length) return console.log(`ok  ${tracker.nodes.length} steps, glyphs and classes agree`);
     for (const f of findings) console.log(`line ${f.line}  ${f.text}`);
     console.log(`${findings.length} finding(s) in ${tracker.nodes.length} steps`);
@@ -11159,7 +11182,7 @@ function cmdPlan() {
     console.error("usage: aiview plan check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path12.resolve(ref);
+  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
   if (!fs11.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
@@ -11168,7 +11191,7 @@ function cmdPlan() {
   const findings = check2(plan);
   emit(
     {
-      file: path12.basename(abs),
+      file: path13.basename(abs),
       approved: plan.approved,
       decisions: plan.decisions.length,
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),
