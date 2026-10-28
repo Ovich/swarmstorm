@@ -887,7 +887,9 @@ test("done: a member's done is counted, roster and status show n/m done, the las
   const id = Number(run("open", "--kind", "brainstorm", "--group", "idea", "--title", "An idea", "--seats", seats).stdout.split("\n")[0]);
   const [a, b] = (JSON.parse(SEATS) as { id: string }[]).map((s) => s.id);
   for (const s of [a, b]) assert.equal(run("join", "--run", String(id), "--seat", s, "--doing", "x").status, 0);
-  assert.equal(run("done", "diverge", "--as", `idea/${a}`).status, 1, "no phase open yet");
+  const none = run("done", "diverge", "--as", `idea/${a}`);
+  assert.equal(none.status, 0, "no phase open yet: nothing to mark, no error");
+  assert.match(none.stdout, /no phase is open: nothing to mark/);
   run("phase", "diverge", "every idea", "--as", "idea/orchestrator");
   run("deliver", "--as", "idea/orchestrator");
   const wrong = run("done", "converge", "--as", `idea/${a}`);

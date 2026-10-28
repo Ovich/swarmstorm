@@ -8392,7 +8392,7 @@ var USAGE = [
 var CODE_USAGE = [
   "usage: swarm <verb> [--json]        the code verbs; refused on a run whose kind has no claims",
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
-  "  release [--as <member>] <path>                                  # gives up a claim",
+  "  release [--as <member>] <path>...                                # gives up a claim",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
   "  merged  [--as <member>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict"
 ].join("\n");
@@ -8463,7 +8463,9 @@ function branchChangedIn(worktree, onto) {
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
 }
 var printReconciled = (unclaimed, flags) => {
-  for (const line of unclaimedLines(unclaimed)) console.log(line);
+  const lines = unclaimedLines(unclaimed);
+  for (const line of lines) console.log(line);
+  if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
 var toolRoot = () => process.env.SWARM_ROOT ?? path9.dirname(path9.resolve(process.argv[1]));
@@ -8666,7 +8668,7 @@ var emitHeard = async (p, json, human) => {
     if (next) console.log(next);
   });
 };
-function resolveClaimPath(file) {
+function resolveClaimPath(file, about = false) {
   if (path9.isAbsolute(file)) return file;
   const here = path9.resolve(file);
   if (fs9.existsSync(here)) return here;
@@ -8674,7 +8676,7 @@ function resolveClaimPath(file) {
   const fromRoot = root ? path9.resolve(root, file) : null;
   if (fromRoot && fs9.existsSync(fromRoot)) return fromRoot;
   if (args.has("--new")) return here;
-  return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it`);
+  return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
 }
 function repoRelative(abs) {
   const root = worktreeOf(process.cwd());
@@ -8684,7 +8686,7 @@ function repoRelative(abs) {
 function aboutArg() {
   const about = args.flag("--about");
   if (about === void 0 || !/[\\/]/.test(about)) return about;
-  return repoRelative(resolveClaimPath(about));
+  return repoRelative(resolveClaimPath(about, true));
 }
 function parseFile(spec) {
   const m = spec.match(/^(.*):(interface|inside)$/);
@@ -8904,7 +8906,14 @@ ${USAGE}`);
       if (await answeredClosed(p)) break;
       const name = args.positional[0] ?? fail(`done: which phase?
 ${USAGE}`);
-      const r = await board.done(p, name);
+      let r;
+      try {
+        r = await board.done(p, name);
+      } catch (e) {
+        if (!/no phase is open/.test(e.message)) throw e;
+        emit({ member: p.name, phase: name, done: null, none: true }, "no phase is open: nothing to mark");
+        break;
+      }
       const next = `wait for the next phase, in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
       emit({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
         const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
@@ -9125,10 +9134,14 @@ ${rearm}` : rearm;
     }
     case "release": {
       const p = await caller();
-      const file = args.positional[0] ?? fail("release: which path?");
-      const abs = resolveClaimPath(file);
-      await board.release(p, abs);
-      emit({ member: p.name, released: repoRelative(abs) }, `${p.name} released ${repoRelative(abs)}`);
+      if (!args.positional.length) fail("release: which path?");
+      const released = [];
+      for (const file of args.positional) {
+        const abs = resolveClaimPath(file);
+        await board.release(p, abs);
+        released.push(repoRelative(abs));
+      }
+      emit({ member: p.name, released: released.length === 1 ? released[0] : released }, released.map((r) => `${p.name} released ${r}`).join("\n"));
       break;
     }
     case "merge-lock": {
