@@ -1002,21 +1002,24 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const messages = transaction(() => {
       const unseen = unseenRows(me);
 
-      // idea 2: a paused run is silent for its orchestrator: nothing wakes it but urgent, and nothing is carried
-      const silentWhilePaused = me.seat === ORCHESTRATOR && runRow(me.run).paused != null;
+      // idea 2, D8: a paused run is silent for everyone in it: nothing wakes a member but urgent (and the pause itself,
+      // for a member other than the orchestrator), and nothing is carried; what came meanwhile stays for the resume
+      const silentWhilePaused = runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
       // idea 2: carried to the caller, riding on its next wake; one the tick marked due wakes by itself
       const carried = (r: Row): boolean => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
       // a wake (D59): a mention, an urgent post, or an event the caller subscribed to in its scope
       const woken = (r: Row): boolean =>
         silentWhilePaused
-          ? eventOf(toMessage(r)) === "urgent"
+          ? eventOf(toMessage(r)) === "urgent" || (me.seat !== ORCHESTRATOR && eventOf(toMessage(r)) === "pause")
           : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
       // of its own run, everything; of another run, only what wakes the caller (plan D2)
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried(r));
       // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone; a wake
       // brings every carried message with it (idea 2)
-      const rows = !mentionsOnly
+      const rows = silentWhilePaused && fromWait
+        ? heard.some(woken) ? heard.filter(woken) : []
+        : !mentionsOnly
         ? heard
         : !heard.some(woken)
           ? []

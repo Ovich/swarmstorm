@@ -397,6 +397,15 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.seat}`);
           }
         }
+        // D7: the other party of an agreement about a merged file hears of the merge, claim or not
+        const agreed = new Set<string>();
+        const foldedWanted = new Set(rels.map(fold));
+        const live = new Set((db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo) as Row[]).map((o) => `${o.plan}/${o.seat}`));
+        for (const a of db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo) as Row[]) {
+          if (!foldedWanted.has(fold(slashes(String(a.about))))) continue;
+          const parties = [participantById(Number(a.author)).name, ...(JSON.parse(String(a.mentions)) as string[])];
+          for (const n of parties) if (n !== me.name && live.has(n) && !told.has(n)) agreed.add(n);
+        }
         // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
           .filter((r) => profileOf(String(r.kind)).claims)
@@ -404,6 +413,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
+        if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
         if (iface.size) lines.push(`@swarm interface changed: ${[...iface].join(", ")}.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
@@ -420,7 +430,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
-        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
+        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
         // the merge, for the stats: its files and conflicts, null for unknown (D25)
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(
           me.id,
