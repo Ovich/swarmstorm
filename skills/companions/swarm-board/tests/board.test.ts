@@ -370,7 +370,7 @@ test("merged mentions every other holder of a shared path", () => {
 test("a member is given a funny name at join, unique on the repository; @Name mentions it (D43)", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: [{ id: "S1", blockers: [] }] });
-  const many = Array.from({ length: 30 }, (_, i) => board.join({ run: run.id, seat: `T${i}`, doing: "x", files: [] }).member);
+  const many = Array.from({ length: 30 }, (_, i) => { board.addSeat(run.id, { id: `T${i}`, blockers: [] }); return board.join({ run: run.id, seat: `T${i}`, doing: "x", files: [] }).member; });
   const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [] }).member;
   const nicks = [...many, far].map((p) => p.nick);
   assert.ok(nicks.every((n) => /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(n)), nicks.join(", "));
@@ -981,9 +981,9 @@ const SEATS = [
 test("join: --on over the seat row's on over the kind's defaults, per role", () => {
   const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   assert.deepEqual(board.join({ run: plan.id, seat: "S3", doing: "x", files: [] }).member.subscriptions, []);
-  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "merged", "done", "joined", "idle"]);
+  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "all-joined", "merged", "done", "joined", "idle"]);
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale", "done", "joined", "idle"]);
+  assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale", "all-joined", "done", "joined", "idle"]);
   assert.deepEqual(board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member.subscriptions, []);
   assert.deepEqual(board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member.subscriptions, [{ event: "agreement", scope: "run" }]);
   const on = [{ event: "merged" as const, scope: "any" as const }];
@@ -1066,7 +1066,7 @@ test("addSeat adds after the last, ready; refuses a duplicate, an unknown blocke
   assert.deepEqual([s.id, s.state, s.blockers], ["S7", "ready", ["S1"]]);
   assert.deepEqual(board.runs()[0].seats.map((x) => x.id), ["S1", "S3", "S5", "S7"]);
   assert.ok(board.snapshot(REPO).queues["review-tool"].some((q) => q.seat === "S7"));
-  assert.ok(board.snapshot(REPO).events.some((e) => /added S7/.test(e.body)));
+  assert.ok(board.snapshot(REPO).events.some((e) => /^\+ S7 added$/.test(e.body)));
   assert.equal(board.join({ run: run.id, seat: "S7", doing: "x", files: [] }).member.seat, "S7");
   assert.throws(() => board.addSeat(run.id, { id: "S7", blockers: [] }), /already in run/);
   assert.throws(() => board.addSeat(run.id, { id: "S8", blockers: ["S99"] }), /unknown blocker S99/);

@@ -4,7 +4,7 @@
 import type { Message, Participant } from "./board.ts";
 import { profileOf } from "./kinds.ts";
 
-export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach";
+export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
 /** `carry`: the event never ends a wait by itself; it rides on the next wake, or wakes once due (idea 2). */
@@ -14,6 +14,8 @@ export interface EventDef {
   name: EventName;
   /** always wakes, whatever the subscriptions (urgent) */
   always?: boolean;
+  /** the event rides on every member's next wake, never waking and never due by itself (composition, D4) */
+  ambient?: true;
   /** posted by the board in a member's name, it reaches that member too (stalled, liveness) */
   toAuthor?: boolean;
   /** the line a woken member runs next, or null; `cli` is the command prefix the CLI prints */
@@ -168,6 +170,13 @@ export const EVENTS: Record<EventName, EventDef> = {
       return null;
     },
   },
+  // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 gone`, `+ w2 back`; carried to every member, waking none
+  composition: { name: "composition", ambient: true },
+  // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
+  "all-joined": {
+    name: "all-joined",
+    next: (_m, me, cli) => (me.seat === "orchestrator" ? `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${word(me.name)})` : null),
+  },
 };
 
 const NAMES = Object.keys(EVENTS) as EventName[];
@@ -220,5 +229,6 @@ export function carries(m: Message, me: Participant, subs: Subscription[]): bool
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
+  if (EVENTS[e].ambient && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }

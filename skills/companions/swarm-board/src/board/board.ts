@@ -28,6 +28,10 @@ export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, Sh
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
 export type SeatState = "ready" | "running" | "done" | "blocked";
 export type Seat = SeatSpec & { state: SeatState };
+/** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
+export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "gone" };
+/** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
+export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
 export type Declared = { path: string; interface: boolean }; // repository-relative
 export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "event";
 /** A file written outside its writer's claim while another member holds it. */
@@ -338,7 +342,10 @@ export interface Board {
   join(input: { run: RunId; seat: string; doing: string; files: Declared[]; worktree?: string; on?: Subscription[] }): {
     member: Participant;
     roster: RosterEntry[];
+    composition: Composition;
   };
+  /** The run's composition now (D3): the orchestrator, then every declared seat in order. */
+  composition(run: RunId): Composition;
   participant(name: string): Participant | null; // "<plan>/<seat>" or "<plan>/orchestrator"
   /** Who is calling (D28): the one live member whose worktree holds `worktree`. */
   identify(who: { worktree?: string }): Participant | null;
@@ -1121,6 +1128,36 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     );
   };
 
+  /** The run's composition (D3, D6): the orchestrator first, then every declared seat in order. */
+  const compositionOf = (run: RunId): Composition => {
+    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run) as Row[];
+    const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run) as Row[];
+    const goneSet = new Set((db.prepare("SELECT member FROM liveness_warned WHERE run = ? AND cond = 'gone'").all(run) as Row[]).map((x) => String(x.member)));
+    const plan = String(runRow(run).plan);
+    const showRole = new Set(seats.map((s) => (s.role == null ? "" : String(s.role)))).size > 1;
+    const entry = (seat: string, s?: Row): CompositionEntry => {
+      const p = people.find((x) => String(x.seat) === seat);
+      return {
+        seat,
+        member: p ? `${plan}/${seat}` : null,
+        nick: p ? nickOf(p) : null,
+        ...(s?.role == null ? {} : { role: String(s.role) }),
+        ...(s?.area == null ? {} : { area: String(s.area) }),
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "gone" : "joined",
+      };
+    };
+    const entries = [entry(ORCHESTRATOR), ...seats.map((s) => entry(String(s.id), s))];
+    const lines = entries.map((e) => `${e.seat}${e.nick ? ` ${e.nick}` : ""}${showRole && e.role ? ` ${e.role}` : ""}${e.area ? ` (${e.area})` : ""}: ${e.state}`);
+    return { run, entries, showRole, lines };
+  };
+  /** A change of the run's composition, one carried line to every member (D4): `+ w4 worker (the app) added`, `- w2 gone`. */
+  const postComposition = (author: Participant, seat: string, sign: "+" | "-", tag: string): void => {
+    const c = compositionOf(author.run);
+    const e = c.entries.find((x) => x.seat === seat);
+    const who = `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
+    insertMessage(author, `${sign} ${who}${tag ? ` ${tag}` : ""}`, null, "event", undefined, { event: EVENTS.composition.name });
+  };
+
   const setSubs = (p: Participant, subs: Subscription[]): Subscription[] => {
     db.prepare("UPDATE participants SET subs = ? WHERE id = ?").run(JSON.stringify(subs), p.id);
     bump(p.repo);
@@ -1472,7 +1509,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const ord = Number((db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM seats WHERE run = ?").get(run) as Row).o) + 1;
         insertSeat(run, spec, ord);
         const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) as Row;
-        insertMessage(participantById(Number(orchestrator.id)), `added ${spec.id}${spec.role ? ` (${spec.role})` : ""}`, null, "event");
+        postComposition(participantById(Number(orchestrator.id)), spec.id, "+", "added");
         return toRun(runRow(run)).seats.find((x) => x.id === spec.id)!;
       });
     },
@@ -1624,14 +1661,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const where = worktree && profile.worktree ? path.resolve(worktree) : null;
       // one transaction: the page sees a join as one change
       return transaction(() => {
+      let entry = "new" as "new" | "back" | "again";
       const id = transaction(() => {
-        const existing = db.prepare("SELECT id, nick FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
+        const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         // --on, else the seat row's on, else the kind's defaults (D59)
         const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
+        // D17: a seat is declared before anyone sits in it
+        if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run}: declare it first with \`seat add ${seat}\``);
         const seatOn = seatRow?.on_events != null ? parseOn(JSON.parse(String(seatRow.on_events)) as string[]) : null;
         const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
         const fresh = (): string => unusedNick(String(r.repo));
         if (existing) {
+          entry = existing.ended_at == null ? "again" : "back";
           db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
             doing,
             JSON.stringify(files),
@@ -1656,8 +1697,23 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const member = participantById(id);
       claims.claimDeclared(member, files);
       insertMessage(member, `joined: ${doing}`, null, "event", undefined, { event: EVENTS.joined.name });
-      return { member, roster: board.roster(member.repo) };
+      // D4: every other member hears of a joiner (or a comeback) as one carried line
+      if (entry !== "again") postComposition(member, seat, "+", entry === "back" ? "back" : "");
+      // D5: the last declared seat to get a member tells the orchestrator once
+      if (entry === "new") {
+        const declared = Number((db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run) as Row).n);
+        const seated = Number((db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run, ORCHESTRATOR) as Row).n);
+        if (declared > 0 && seated >= declared && (db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run) === undefined)) {
+          insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", undefined, { event: EVENTS["all-joined"].name });
+        }
+      }
+      return { member, roster: board.roster(member.repo), composition: compositionOf(run) };
       });
+    },
+
+    composition(run) {
+      runRow(run);
+      return compositionOf(run);
     },
 
     participant(name) {
@@ -1712,6 +1768,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // a held lock released by the end frees whoever was refused it (D65)
         const waiters = claims.lockWaitersFreedBy(fresh);
         const ended = { event: EVENTS.ended.name };
+        postComposition(fresh, fresh.seat, "-", "ended");
         if (waiters.length) insertMessage(fresh, `ended\nthe merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event", waiters, ended);
         else insertMessage(fresh, "ended", null, "event", undefined, ended);
         // idea 4: the named locks it held are released, their waiters woken
@@ -1979,9 +2036,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           if (st.state !== "gone") {
             // idea 1, rule 4: a member told gone that reads non-gone again: one recovered to the orchestrator
             if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run, st.member).changes) === 1)
-              insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+              {
+                insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+                postComposition(orch, st.member, "+", "back");
+              }
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            postComposition(orch, st.member, "-", "gone");
             // idea 4: a gone member's named locks are released, their waiters woken (a listener it left may still live)
             const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
             if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
@@ -2090,7 +2151,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             const me = participantById(Number(row.id));
             if (!me.subscriptions.some((s) => s.carry)) continue;
             for (const m of unseenRows(me).map(toMessage)) {
-              if (!carries(m, me, me.subscriptions) || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
+              if (!carries(m, me, me.subscriptions) || EVENTS[eventOf(m)!].ambient || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
               if (Number(markDue.run(me.id, m.seq).changes) === 1) moved = true;
             }
           }

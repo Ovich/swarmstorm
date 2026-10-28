@@ -25,7 +25,7 @@ const run = (...events: Subscription["event"][]): Subscription[] => events.map((
 const carried = (...events: Subscription["event"][]): Subscription[] => events.map((event) => ({ event, scope: "run", carry: true }));
 
 export const PROFILES: Record<Kind, KindProfile> = {
-  plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
+  plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } },
   brainstorm: {
     kind: "brainstorm",
     claims: false,
@@ -33,10 +33,10 @@ export const PROFILES: Record<Kind, KindProfile> = {
     worktree: false,
     member: "seat",
     wholeThread: true,
-    defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale"), ...carried("done", "joined", "idle")] },
+    defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] },
   },
   // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-  task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
+  task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } },
 };
 
 /** The profile of `kind`; throws on an unknown kind, listing the known ones. */
