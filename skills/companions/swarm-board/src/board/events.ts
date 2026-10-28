@@ -78,7 +78,7 @@ export const EVENTS: Record<EventName, EventDef> = {
     name: "phase",
     next: (m, me, cli) => {
       const name = m.meta && "phase" in m.meta ? m.meta.phase : null;
-      if (!name || me.slice === "orchestrator" || m.from === me.name) return null;
+      if (!name || me.seat === "orchestrator" || m.from === me.name) return null;
       return `when your part of ${name} is posted: ${cli} done ${word(name)} --as ${word(me.name)}`;
     },
   },
@@ -86,7 +86,7 @@ export const EVENTS: Record<EventName, EventDef> = {
   pause: {
     name: "pause",
     next: (m, me, cli) => {
-      if (me.slice === "orchestrator" || m.from === me.name) return null;
+      if (me.seat === "orchestrator" || m.from === me.name) return null;
       // idea 2 (B12): a pause waiting on the person says so, as the CLI's paused line does
       const pause = m.meta && "person" in m.meta ? m.meta : null;
       const why = pause?.person ? `waiting on the person: ${pause.text || "their decision"}; ` : "";
@@ -96,7 +96,7 @@ export const EVENTS: Record<EventName, EventDef> = {
   // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
   resume: {
     name: "resume",
-    next: (m, me) => (me.slice === "orchestrator" || m.from === me.name ? null : "the run resumed: continue where you stopped, as the resume's message says"),
+    next: (m, me) => (me.seat === "orchestrator" || m.from === me.name ? null : "the run resumed: continue where you stopped, as the resume's message says"),
   },
   // a member finished the current phase (`done <name>`); mentions the orchestrator
   done: { name: "done" },
@@ -104,21 +104,21 @@ export const EVENTS: Record<EventName, EventDef> = {
   "all-done": {
     name: "all-done",
     next: (m, me, cli) =>
-      me.slice === "orchestrator" ? `open the next phase: ${cli} phase <name> "<text>" --as ${word(me.name)}; after the last, ${cli} close --run ${m.run}` : null,
+      me.seat === "orchestrator" ? `open the next phase: ${cli} phase <name> "<text>" --as ${word(me.name)}; after the last, ${cli} close --run ${m.run}` : null,
   },
   // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
   idle: {
     name: "idle",
     toAuthor: true,
     next: (_m, me, cli) =>
-      me.slice === "orchestrator" ? `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${word(me.name)}), else wait again` : null,
+      me.seat === "orchestrator" ? `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${word(me.name)}), else wait again` : null,
   },
   // `stalled <member>`: one member quiet past the run's threshold, to the orchestrator alone, again every
   // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken
   stalled: {
     name: "stalled",
     toAuthor: true,
-    next: (m, me, cli) => (me.slice === "orchestrator" ? stalledMove(m, me, cli) : null),
+    next: (m, me, cli) => (me.seat === "orchestrator" ? stalledMove(m, me, cli) : null),
   },
   // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
   recovered: { name: "recovered", toAuthor: true },
@@ -137,14 +137,14 @@ export const EVENTS: Record<EventName, EventDef> = {
     toAuthor: true,
     next: (m, me) => {
       const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
-      return member && me.slice === "orchestrator" ? `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"` : null;
+      return member && me.seat === "orchestrator" ? `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"` : null;
     },
   },
   // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
   gone: {
     name: "gone",
     toAuthor: true,
-    next: (_m, me) => (me.slice === "orchestrator" ? "its agent is not running: dispatch it again, or close its slice" : null),
+    next: (_m, me) => (me.seat === "orchestrator" ? "its agent is not running: dispatch it again, or close its seat" : null),
   },
   // a member's transcript cannot be read: the stall check is blind for it; mentions the orchestrator
   liveness: {
@@ -153,7 +153,7 @@ export const EVENTS: Record<EventName, EventDef> = {
     // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
     next: (m, me, cli) => {
       const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
-      if (!member || me.slice !== "orchestrator") return null;
+      if (!member || me.seat !== "orchestrator") return null;
       return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
     },
   },

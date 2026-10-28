@@ -1,5 +1,5 @@
 // A run before the records read from the board's events (D45): its members' `merged` events give its merges, their
-// times exact, so its first merge, slice times and agreements before the merge fill, and each member's spans are
+// times exact, so its first merge, seat times and agreements before the merge fill, and each member's spans are
 // estimated from its join, its merges and its end. Lock waits, races and conflicts stay null. Read through Board.stats.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -18,14 +18,14 @@ async function oldRun(board: Board): Promise<{ run: RunId; names: string[] }> {
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
   clockTo(1), board.checkEdit(a, "src/x.ts");
   clockTo(2), share(board, b, a, "src/x.ts");
-  clockTo(3), board.post(a, `@${b.name} ${a.slice} changes the top`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(3), board.post(a, `@${b.name} ${a.seat} changes the top`, { about: "src/x.ts", kind: "agreement" });
   clockTo(4), board.lockMerge(a, "main");
   clockTo(5), board.merged(a, "aaa111", ["src/x.ts"]);
   clockTo(6), board.end(a);
   clockTo(7), board.checkEdit(b, "src/z.ts");
   clockTo(8), share(board, c, b, "src/z.ts");
   clockTo(9), board.lockMerge(b, "main"), board.merged(b, "bbb222", ["src/z.ts"]);
-  clockTo(10), board.post(c, `@${b.name} ${c.slice} keeps the rest`, { about: "src/z.ts", kind: "agreement" });
+  clockTo(10), board.post(c, `@${b.name} ${c.seat} keeps the rest`, { about: "src/z.ts", kind: "agreement" });
   clockTo(11), board.end(b);
   clockTo(12), board.end(c);
   clockTo(20), board.closeRun(run);
@@ -57,7 +57,7 @@ function assertReadFromEvents(board: Board, run: RunId, [a, b, c]: string[]): vo
   assert.ok(p.shared.perFile.every((f) => f.conflict === null));
 }
 
-test("a run before the records reads its merges, first merge, slice times, agreements before the merge and estimated spans from its `merged` events (D45, SL10)", async () => {
+test("a run before the records reads its merges, first merge, seat times, agreements before the merge and estimated spans from its `merged` events (D45, SL10)", async () => {
   const { run, names } = await oldRun(s.board);
   assertReadFromEvents(s.board, run, names);
 });

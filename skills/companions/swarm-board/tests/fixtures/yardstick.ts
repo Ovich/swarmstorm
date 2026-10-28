@@ -65,8 +65,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
   const board: Board = await openBoard(":memory:"); // in memory: some 40 000 ticks, no disk write each
   try {
     const run = board.openRun({ repo: REPO, kind: "task", group: "yard", title: "Yardstick", stallMs: STALL_MS_DEFAULT, seats: (sc.companion ? ["x", "w"] : ["x"]).map((m) => ({ id: m, title: m, blockers: [], ...(m === "x" && sc.busyMax ? { busyMax: sc.busyMax } : {}) })) });
-    const x = board.join({ run: run.id, slice: "x", doing: "work", files: [] }).runner;
-    const w = sc.companion ? board.join({ run: run.id, slice: "w", doing: "work", files: [] }).runner : null;
+    const x = board.join({ run: run.id, seat: "x", doing: "work", files: [] }).member;
+    const w = sc.companion ? board.join({ run: run.id, seat: "w", doing: "work", files: [] }).member : null;
     if (w) board.deliver(w);
     const orch = board.participant("yard/orchestrator")!;
     board.deliver(x);

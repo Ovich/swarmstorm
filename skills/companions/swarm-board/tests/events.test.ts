@@ -5,7 +5,7 @@ import type { Message, Participant } from "../src/board/board.ts";
 import { EVENTS, eventOf, formatSubscriptions, parseSubscriptions, wakes } from "../src/board/events.ts";
 
 const me: Participant = {
-  id: 1, run: 7, repo: "/r/.git", kind: "brainstorm", plan: "idea", slice: "skeptic", name: "idea/skeptic", nick: "Zesty Moose",
+  id: 1, run: 7, repo: "/r/.git", kind: "brainstorm", plan: "idea", seat: "skeptic", name: "idea/skeptic", nick: "Zesty Moose",
   ended: false, worktree: null, listening: true, subscriptions: [],
 };
 const msg = (over: Partial<Message> = {}): Message => ({
@@ -47,7 +47,7 @@ test("wakes: a mention, urgent, a subscribed event in its scope; not another run
   assert.ok(!wakes(msg({ kind: "agreement", from: "idea/skeptic" }), me, run)); // one's own
 });
 
-test("the agreement row gives a seat its back-it line, and nothing to a plan runner", () => {
+test("the agreement row gives a seat its back-it line, and nothing to a plan member", () => {
   const a = msg({ kind: "agreement" });
   assert.equal(EVENTS.agreement.next!(a, me, "node swarm.mjs"), "back it: node swarm.mjs endorse 5 --as idea/skeptic");
   assert.equal(EVENTS.agreement.next!(a, { ...me, kind: "plan" }, "node swarm.mjs"), null);

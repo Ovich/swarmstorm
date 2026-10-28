@@ -15,7 +15,7 @@ export type Mark = { at: string; what: "agreement" | "race" | "flag" | "conflict
 export type MemberStats = {
   member: string;
   nick: string;
-  slice: string;
+  seat: string;
   joined: string;
   ended: string | null;
   intervals: Interval[];
@@ -103,7 +103,7 @@ export type Totals = {
   notRecorded: number | null;
   members: number | null;
   silentMembers: number | null;
-  /** `timesEstimatedRuns`: the plan runs whose slice times are estimated (D44), counted so the page never counts (D35);
+  /** `timesEstimatedRuns`: the plan runs whose seat times are estimated (D44), counted so the page never counts (D35);
    *  `merged` is exact for every run. */
   slices: { merged: number | null; of: number | null; p50Ms: number | null; p90Ms: number | null; timesEstimatedRuns: number };
   lockWait: { merges: number | null; p50Ms: number | null; p90Ms: number | null; bins: number[] /* < 1m, 1–2m, 2–5m, 5–10m, 10m + */ };
@@ -293,7 +293,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   const people = db.prepare("SELECT * FROM participants WHERE run = ? ORDER BY id").all(id) as Row[];
   const ids = people.map((p) => Number(p.id));
   const marks = ids.map(() => "?").join(", ") || "NULL";
-  const nameOf = (p: Row): string => `${r.plan}/${p.slice}`;
+  const nameOf = (p: Row): string => `${r.plan}/${p.seat}`;
   const messages = db.prepare(`SELECT * FROM messages WHERE run = ? OR (run IS NULL AND author IN (${marks})) ORDER BY seq`).all(id, ...ids) as Row[];
   const merges = recorded ? (db.prepare("SELECT * FROM merges WHERE run = ? ORDER BY rowid").all(id) as Row[]) : [];
   const claimLog = db.prepare(`SELECT path, participant, kind FROM claim_log WHERE participant IN (${marks}) ORDER BY rowid`).all(...ids) as Row[];
@@ -301,7 +301,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   const shares = db
     .prepare(`SELECT path, participant, other FROM shares WHERE participant IN (${marks}) AND other IN (${marks})`)
     .all(...ids, ...ids) as Row[];
-  const orchestrators = new Set(people.filter((p) => String(p.slice) === ORCHESTRATOR).map((p) => Number(p.id)));
+  const orchestrators = new Set(people.filter((p) => String(p.seat) === ORCHESTRATOR).map((p) => Number(p.id)));
 
   const conflictedOf = (m: Row): string[] | null => (m.conflicts == null ? null : (JSON.parse(String(m.conflicts)) as string[]));
   // the run's merges: recorded, or read from its `merged` events before the records (D45)
@@ -314,7 +314,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   const grants = recorded
     ? (db
         .prepare(
-          `SELECT t.participant, t.asked_at, t.granted_at, p.slice, r.plan FROM lock_requests t
+          `SELECT t.participant, t.asked_at, t.granted_at, p.seat, r.plan FROM lock_requests t
              LEFT JOIN participants p ON p.id = t.participant LEFT JOIN runs r ON r.id = p.run
            WHERE t.repo = ? AND t.granted_at IS NOT NULL ORDER BY t.granted_at`,
         )
@@ -359,7 +359,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
         if (Number(g.participant) === pid || !(ms(g.asked_at) > t.asked) || !(at > t.asked && at < until)) continue;
         lost++;
         waitedMs = Math.max(waitedMs ?? 0, at - t.asked);
-        const winner = g.slice == null ? "a member" : `${g.plan}/${g.slice}`;
+        const winner = g.seat == null ? "a member" : `${g.plan}/${g.seat}`;
         memberMarks.push({ at: iso(at), what: "race", note: `the merge lock went to ${winner}, who asked later` });
       }
     }
@@ -383,8 +383,8 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
     memberMarks.sort((a, b) => ms(a.at) - ms(b.at));
     return {
       member: nameOf(p),
-      nick: p.nick == null ? String(p.slice) : String(p.nick),
-      slice: String(p.slice),
+      nick: p.nick == null ? String(p.seat) : String(p.nick),
+      seat: String(p.seat),
       joined: String(p.joined_at),
       ended: p.ended_at == null ? null : String(p.ended_at),
       intervals: recorded ? timeline(joined, over, calls.map((c) => ms(c.at)), turns, silentAfterMs) : estimatedTimeline(joined, over, mergeTimesOf(pid)),
@@ -431,14 +431,14 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   if (kind !== "plan") return base;
 
   const sliceMembers = people.filter((p) => !orchestrators.has(Number(p.id)));
-  // a slice's time: its join to its first merge, else to its end (board D9); before the records, the merge read from
+  // a seat's time: its join to its first merge, else to its end (board D9); before the records, the merge read from
   // its `merged` event (D45)
   const timesMs = sliceMembers.flatMap((p) => {
     const mergedAt = mergeTimesOf(Number(p.id));
     const end = mergedAt.length ? Math.min(...mergedAt) : p.ended_at == null ? null : ms(p.ended_at);
     return end === null ? [] : [end - ms(p.joined_at)];
   });
-  const sliceCount = Number((db.prepare("SELECT COUNT(*) AS n FROM slices WHERE run = ?").get(id) as Row).n);
+  const sliceCount = Number((db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(id) as Row).n);
   const addedMidRun = messages.filter((m) => m.kind === "event" && orchestrators.has(Number(m.author)) && /^added \S+: /.test(String(m.body))).length;
 
   // shared files: a path two members of the run held at the same time (D39), its holders in the order they took it;
@@ -558,10 +558,10 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
 
 /** The skeptic's participant ids (D30): the seat with id `skeptic`, else the first seat whose row subscribes to `agreement`. */
 function skepticOf(db: DatabaseSync, run: RunId, seats: Row[]): Set<number> {
-  const seated = (slice: string): Set<number> => new Set(seats.filter((p) => String(p.slice) === slice).map((p) => Number(p.id)));
+  const seated = (seat: string): Set<number> => new Set(seats.filter((p) => String(p.seat) === seat).map((p) => Number(p.id)));
   const named = seated(SKEPTIC);
   if (named.size) return named;
-  const rows = db.prepare("SELECT id, on_events FROM slices WHERE run = ? AND on_events IS NOT NULL ORDER BY ord").all(run) as Row[];
+  const rows = db.prepare("SELECT id, on_events FROM seats WHERE run = ? AND on_events IS NOT NULL ORDER BY ord").all(run) as Row[];
   const subscribesToAgreement = (row: Row): boolean =>
     (JSON.parse(String(row.on_events)) as string[]).flatMap((e) => e.split(",")).some((e) => e.trim().replace(/^(any|main):/, "") === "agreement");
   const subscribed = rows.find(subscribesToAgreement);
@@ -714,7 +714,7 @@ function totalsOf(runs: RunStats[]): Totals {
   const recorded = runs.filter((r) => r.recorded);
   const recordedPlans = recorded.flatMap((r) => (r.plan ? [r.plan] : []));
   const silentOf = (r: RunStats): number => r.members.filter((m) => m.intervals.some((i) => i.what === "silent")).length;
-  // slice times count estimated ones too (D44)
+  // seat times count estimated ones too (D44)
   const times = plans.flatMap((p) => p.slices.timesMs);
   const waits = recordedPlans.flatMap((p) => p.lock.waitsMs);
   const bins = [...WAIT_BINS_MS, Infinity].map((upper, i) => waits.filter((w) => w >= (WAIT_BINS_MS[i - 1] ?? 0) && w < upper).length);
@@ -779,7 +779,7 @@ function brainstormTotalsOf(runs: RunStats[]): Totals["brainstorm"] {
   const n = sumKnown(debated.map((d) => d.debate.claimsWithSource.n));
   const of = sumKnown(debated.map((d) => d.debate.claimsWithSource.of));
   // the seats (the orchestrator is none) with a silent interval, over the runs whose intervals are recorded
-  const silentSeatsOf = (r: RunStats): number => r.members.filter((m) => m.slice !== ORCHESTRATOR && m.intervals.some((i) => i.what === "silent")).length;
+  const silentSeatsOf = (r: RunStats): number => r.members.filter((m) => m.seat !== ORCHESTRATOR && m.intervals.some((i) => i.what === "silent")).length;
   const brainstorms = runs.filter((r) => r.kind === "brainstorm");
   return {
     notRecorded: brainstorms.length ? brainstorms.filter((r) => !r.recorded).length : null,

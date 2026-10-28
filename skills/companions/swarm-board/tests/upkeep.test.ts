@@ -143,7 +143,7 @@ test("a verb after a silent ten minutes posts the quiet event", async () => {
 
 test("a pending wait posts the stale event of an all-silent run", async () => {
   const waiting = openRunCli("alpha");
-  assert.equal(cli("join", "--run", String(waiting), "--slice", "S3", "--doing", "x").status, 0);
+  assert.equal(cli("join", "--run", String(waiting), "--seat", "S3", "--doing", "x").status, 0);
   const silent = openRunCli("beta");
   // what the run already holds for it (the liveness warning of its join) taken first: the wait stays pending
   cli("deliver", "--as", "alpha/S3");

@@ -9,8 +9,8 @@ import type { Board } from "./board/board.ts";
  *  memberStates, upkeepIfDue, prune and flagStale, which only the server's own process runs. */
 export const RPC_METHODS = [
   "openRun",
-  "setSliceState",
-  "addSlice",
+  "setSeatState",
+  "addSeat",
   "closeRun",
   "phase",
   "currentPhase",

@@ -32,7 +32,7 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 const setup = (ids = ["w1", "w2", "w3"], kind: "task" | "brainstorm" = "task") => {
   links = new Map();
   const run = board.openRun({ repo: REPO, kind, group: "g", title: "G", seats: ids.map((id) => ({ id, title: id, blockers: [] })) });
-  const m = Object.fromEntries(ids.map((id) => [id, board.join({ run: run.id, slice: id, doing: "x", files: [] }).runner])) as Record<string, Participant>;
+  const m = Object.fromEntries(ids.map((id) => [id, board.join({ run: run.id, seat: id, doing: "x", files: [] }).member])) as Record<string, Participant>;
   const orch = board.participant("g/orchestrator")!;
   for (const p of [...Object.values(m), orch]) board.deliver(p);
   return { run, m, orch };

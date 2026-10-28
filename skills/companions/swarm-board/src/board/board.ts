@@ -1,7 +1,7 @@
 // The board — with claims.ts (D35), the only module that sees SQL. Runs, the plan's slices,
 // participants, the thread of each repository, who has had what, who is calling,
 // and waking a `wait`; claims and the merge lock live in claims.ts, behind this Board. Callers hold the typed Board openBoard() returns; the schema,
-// runner names, mention parsing, path normalisation, refusal wording and the waking
+// member names, mention parsing, path normalisation, refusal wording and the waking
 // mechanism stay in here.
 import fs from "node:fs";
 import path from "node:path";
@@ -25,14 +25,12 @@ export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog"
 export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 /** `busyMax`: the seat's bound (ms) for a non-shell call, past which it is `stalled · call` (idea 5); absent: BUSY_MAX_MS. */
-export type SeatSpec = { id: string; title: string; role?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
-/** Kept: the plan's own word (D41). */
-export type SliceSpec = SeatSpec;
-export type SliceState = "ready" | "running" | "done" | "blocked";
-export type Slice = SliceSpec & { state: SliceState };
+export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
+export type SeatState = "ready" | "running" | "done" | "blocked";
+export type Seat = SeatSpec & { state: SeatState };
 export type Declared = { path: string; interface: boolean }; // repository-relative
 export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "event";
-/** A file written outside its writer's claim while another runner holds it. */
+/** A file written outside its writer's claim while another member holds it. */
 export type Flag = { path: string; holder: string; seq: number };
 
 /** The phase a run's orchestrator opened last (`phase <name> <text>`). */
@@ -69,7 +67,7 @@ export interface Run {
   title: string;
   link: string | null; // the plan document's URL, opaque (D44)
   state: "open" | "closed";
-  slices: Slice[];
+  seats: Seat[];
   /** The current phase; null until the orchestrator opens one. */
   phase: Phase | null;
   /** Set by `pause`, the orchestrator's reason ("" when it gave none); null when the run is not paused. */
@@ -86,8 +84,8 @@ export interface Participant {
   repo: string;
   kind: Kind;
   plan: string;
-  slice: string; // "orchestrator" for a run's orchestrator
-  name: string; // "<plan>/<slice>"
+  seat: string; // "orchestrator" for a run's orchestrator
+  name: string; // "<plan>/<seat>"
   nick: string; // the funny name given at join (D43), and to an orchestrator at open (plan D17)
   ended: boolean;
   worktree: string | null; // registered at join; null for the orchestrator
@@ -97,10 +95,10 @@ export interface Participant {
   subscriptions: Subscription[];
 }
 
-/** A merged path and another runner that holds it, or held it during the merger's run (D63). */
+/** A merged path and another member that holds it, or held it during the merger's run (D63). */
 export interface Sharer {
   path: string;
-  runner: string; // "<plan>/<slice>"
+  member: string; // "<plan>/<seat>"
 }
 
 export interface RosterEntry {
@@ -108,7 +106,7 @@ export interface RosterEntry {
   nick: string;
   run: RunId;
   plan: string;
-  slice: string;
+  seat: string;
   doing: string;
   files: Declared[];
   stale: boolean; // no tool call for ten minutes (D31)
@@ -133,7 +131,7 @@ export interface Message {
   body: string;
   about: string | null;
   kind: MessageKind;
-  mentions: string[]; // "<plan>/<slice>" or "<plan>/*"
+  mentions: string[]; // "<plan>/<seat>" or "<plan>/*"
   at: string;
   /** The author's run: a run is a label on the item, not a place (plan D1, D13). */
   run: RunId;
@@ -141,7 +139,7 @@ export interface Message {
   endorses: number | null;
   /** The board event it is, as posted (D59); null on a plain post and on rows from before. */
   event: EventName | null;
-  /** On delivery only, to a holder of `about` when a runner that did not hold it posted about it:
+  /** On delivery only, to a holder of `about` when a member that did not hold it posted about it:
    *  the agreement that answers it (D62). */
   answer?: string;
   /** A merged event's recipients, or a phase event's name, as data (D11); null elsewhere and on rows from before. */
@@ -150,13 +148,13 @@ export interface Message {
   claimed?: { path: string; sharedWith: string[] };
 }
 
-/** Mentions in full, the rest one line each. `superseded`: a newer `wait` of the same runner
+/** Mentions in full, the rest one line each. `superseded`: a newer `wait` of the same member
  *  started, so this one returned empty (D64). */
 export type Delivery = { full: Message[]; lines: string[]; superseded?: true };
 
 /** What the page draws (D39). */
 export type RunSummary = {
-  run: number; kind: Kind; plan: string; group: string; code: string; title: string; link: string | null; open: boolean; runners: number; done: number; of: number;
+  run: number; kind: Kind; plan: string; group: string; code: string; title: string; link: string | null; open: boolean; members: number; done: number; of: number;
   /** The run's current phase, null until one is opened; absent from a reader before it. */
   phase?: Phase | null;
   /** The current phase's done count, null before the first phase. */
@@ -169,24 +167,25 @@ export type RunSummary = {
   paused?: { text: string; person: boolean } | null;
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
-export type RunnerState = "working" | "waiting" | "merging" | "watching" | "ended" | "done";
-export type SnapshotRunner = {
+export type SnapshotMemberState = "working" | "waiting" | "merging" | "watching" | "ended" | "done";
+export type SnapshotMember = {
   /** The run the member sat in: a group can hold several runs, its members are told apart by this; absent from a reader before it. */
   run?: number;
-  runner: string;
+  member: string;
   nick: string;
   plan: string;
-  slice: string;
-  title: string;
+  seat: string;
+  role?: string;
+  area?: string;
   doing: string;
-  state: RunnerState;
+  state: SnapshotMemberState;
   stale: boolean;
-  files: (Declared & { shared: boolean })[]; // shared: another live runner holds it too (D40)
+  files: (Declared & { shared: boolean })[]; // shared: another live member holds it too (D40)
   joined: string;
-  /** When the runner ended, stored at `end`; null while it has not (D66). */
+  /** When the member ended, stored at `end`; null while it has not (D66). */
   ended: string | null;
   calls: number;
-  /** A background `wait --mentions` is pending: the runner hears the board while it works (D49). */
+  /** A background `wait --mentions` is pending: the member hears the board while it works (D49). */
   listening: boolean;
   /** Its subscriptions, as `formatSubscriptions` writes each (D59). */
   on: string[];
@@ -239,13 +238,13 @@ export type SnapshotEvent = {
   mentions?: string[];
   meta?: MessageMeta | null;
 };
-export type QueueSlice = { slice: string; title: string; link: string | null; state: string; blockers: string[]; runner: string | null };
-/** A held file and every runner holding it, in claim order (D40): the FileMap's rows. */
+export type QueueSeat = { seat: string; role?: string; area?: string; link: string | null; state: string; blockers: string[]; member: string | null };
+/** A held file and every member holding it, in claim order (D40): the FileMap's rows. */
 export type SnapshotFile = { path: string; holders: string[]; interface: boolean };
-/** The edit goes through; `notice` names the other holders the first time only, per runner and path. */
-export type EditAllowed = { allowed: true; sharedWith: { runner: string; doing: string }[]; notice: string | null };
+/** The edit goes through; `notice` names the other holders the first time only, per member and path. */
+export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
 export type EditHeld = { allowed: false; refusal: string };
-export type LockTurn = { runner: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
+export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
 export type BoardSnapshot = {
   repo: string;
   name: string;
@@ -253,22 +252,22 @@ export type BoardSnapshot = {
   lock: { holder: string; since: string } | null;
   /** The repository's merge-lock turns, newest first (at most 50): asked, granted, merged, refusals counted. */
   lockHistory: LockTurn[];
-  roster: SnapshotRunner[];
+  roster: SnapshotMember[];
   events: SnapshotEvent[];
-  queues: Record<string, QueueSlice[]>;
+  queues: Record<string, QueueSeat[]>;
   files: SnapshotFile[];
-  flags: { path: string; runner: string }[];
+  flags: { path: string; member: string }[];
 };
 
 export interface Board {
   /** `kind` defaults to plan; throws on an unknown kind. The group is stored as the plan (D44). */
   /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall threshold, default 60000. */
   openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null }): Run;
-  /** `done` also releases the slice runner's claims and lock: the orchestrator's way to free a stale runner. */
-  setSliceState(run: RunId, slice: string, state: SliceState): void;
+  /** `done` also releases the seat member's claims and lock: the orchestrator's way to free a stale member. */
+  setSeatState(run: RunId, seat: string, state: SeatState): void;
   /** A seat added mid-run (D60): after the last, `ready`; refused on an id already in the run, an
    *  unknown blocker or a closed run. Posts an event with the run. */
-  addSlice(run: RunId, spec: SeatSpec): Slice;
+  addSeat(run: RunId, spec: SeatSpec): Seat;
   /** Also archives the run: read-only from then on, `run <n> is closed` (D19). Posts the `closed` event with the run, before it closes (D67). */
   closeRun(run: RunId): void;
   /** The orchestrator opens phase `name` with `text`, the current one ending with it: a `phase` event in its run,
@@ -307,7 +306,7 @@ export interface Board {
   /** The run's current phase when `p` owes it: a member (not the orchestrator), not ended, that has not run
    *  `done` for it; null otherwise, and before the first phase. */
   owedPhase(p: Participant): Phase | null;
-  /** A member's link sent its activity (`member`: its seat or slice id, or `orchestrator`): its row in
+  /** A member's link sent its activity (`member`: its seat or seat id, or `orchestrator`): its row in
    *  member_activity and a token reading. Ignored for a closed run or a member not live in it. */
   recordActivity(run: RunId, member: string, a: MemberActivity, at: Date): void;
   /** Every live member's state at `at` (D9, D31), through the presence the server's tick last gave. */
@@ -336,22 +335,22 @@ export interface Board {
   /** `worktree` is ignored when the run's kind has none; `files` are refused when it has no claims.
    *  Declared files become claims where free (*interface* or *inside*); a held one stays declared only. */
   /** `on`, else the seat row's `on`, else the kind's defaults for a member (D59). */
-  join(input: { run: RunId; slice: string; doing: string; files: Declared[]; worktree?: string; on?: Subscription[] }): {
-    runner: Participant;
+  join(input: { run: RunId; seat: string; doing: string; files: Declared[]; worktree?: string; on?: Subscription[] }): {
+    member: Participant;
     roster: RosterEntry[];
   };
-  participant(name: string): Participant | null; // "<plan>/<slice>" or "<plan>/orchestrator"
-  /** Who is calling (D28): the one live runner whose worktree holds `worktree`. */
+  participant(name: string): Participant | null; // "<plan>/<seat>" or "<plan>/orchestrator"
+  /** Who is calling (D28): the one live member whose worktree holds `worktree`. */
   identify(who: { worktree?: string }): Participant | null;
   setDoing(p: Participant, doing: string): void;
   /** Adds to the member's subscriptions; returns them after (D59). */
   subscribe(p: Participant, subs: Subscription[]): Subscription[];
   unsubscribe(p: Participant, subs: Subscription[]): Subscription[];
-  /** Ends the runner and releases its claims and any merge lock it holds; its doing becomes
+  /** Ends the member and releases its claims and any merge lock it holds; its doing becomes
    *  "merged and ended" when it merged since it joined, else "ended" (D66). */
   end(p: Participant): void;
   roster(repo: string): RosterEntry[];
-  /** Members of the repository's open runs who have ended, as `<plan>/<slice>`: a mention of one reaches nobody. */
+  /** Members of the repository's open runs who have ended, as `<plan>/<seat>`: a mention of one reaches nobody. */
   endedMembers(repo: string): string[];
   /** The repository-relative paths `p` holds a claim on now. */
   heldBy(p: Participant): string[];
@@ -360,7 +359,7 @@ export interface Board {
   post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind }): Message;
   /** An agreement backed; throws on a message that is not an agreement, or on one's own. */
   endorse(p: Participant, seq: number): Message;
-  /** `by`: the runner reading, when known, counted as a call of its own (D66). */
+  /** `by`: the member reading, when known, counted as a call of its own (D66). */
   read(seq: number, by?: Participant): Message;
   /** Every post of `p`'s run since its phase `name` was last opened (its current phase when omitted), events left
    *  out: the whole discussion a member reads before it decides or adds to it. Empty before the first phase. */
@@ -368,7 +367,7 @@ export interface Board {
   deliver(p: Participant): Delivery; // own run's items + what wakes p from any run (plan D2); undelivered since last time; marks them delivered; stamps the last call
   /** The first delivery, or empty on timeout or once `p` has ended (D49). `mentionsOnly`: only a
    *  message that mentions `p`, is urgent, or is an event `p` subscribed to (D59) ends it, and only those are marked delivered; the rest
-   *  stays for the next `deliver`. A runner has one live wait (D64): a newer `wait` of `p`, from
+   *  stays for the next `deliver`. A member has one live wait (D64): a newer `wait` of `p`, from
    *  any process, makes this one return at once, empty, with `superseded`. */
   /** `signal`: aborting it ends the wait at once, empty, its waiting cleared (swarm-relay D16). */
   wait(p: Participant, opts?: { timeoutMs?: number; mentionsOnly?: boolean; signal?: AbortSignal }): Promise<Delivery>;
@@ -389,7 +388,7 @@ export interface Board {
   lockMerge(p: Participant, onto?: string, reflogMark?: number): { granted: true } | { granted: false; holder: string };
   /** Releases the lock; tells whoever holds or declared one of `files` to rebase onto `sha`,
    *  every plan on the repository when one of them is an interface (D26). Returns, for each
-   *  merged path, every other runner that holds it, or held it during `p`'s run (D63); once `conflicts` are known,
+   *  merged path, every other member that holds it, or held it during `p`'s run (D63); once `conflicts` are known,
    *  of a conflicted path only (D5). Records the merge with its conflicts, absent recorded as unknown (D25). */
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** The merge lock `p` holds, its grant time, branch and reflog mark, for the CLI to replay the rebase since (D33, D36); null when it holds none. */
@@ -417,7 +416,7 @@ export interface Board {
 /** A phase's name: one word. */
 const PHASE_NAME = /^[\w.-]+$/;
 
-const SLICE_STATES = new Set<SliceState>(["ready", "running", "done", "blocked"]);
+const SEAT_STATES = new Set<SeatState>(["ready", "running", "done", "blocked"]);
 /** The events a member receives though it is their author: the board posts them in its name. */
 const TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
 const ORCHESTRATOR = "orchestrator";
@@ -444,7 +443,7 @@ const CASELESS = process.platform === "win32";
 
 type Row = Record<string, unknown>;
 
-/** One line for a message a runner was not named in. */
+/** One line for a message a member was not named in. */
 export function messageLine(m: Message): string {
   const first = m.body.split(/\r?\n/)[0];
   const text = first.length > LINE_WIDTH ? `${first.slice(0, LINE_WIDTH - 1)}…` : first;
@@ -470,6 +469,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const recordsAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'call_log'").get() === undefined;
   // the shares record starts with the store that first creates it, the same way (D39)
   const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === undefined;
+  // D16: a store from before the seat vocabulary: table `slices` is `seats`, `participants.slice` is `seat`, a seat has no title
+  const hasTable = (name: string): boolean => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
+  const columnsOf = (table: string): string[] => (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((c) => String(c.name));
+  if (hasTable("slices") && !hasTable("seats")) db.exec("ALTER TABLE slices RENAME TO seats");
+  if (hasTable("seats") && columnsOf("seats").includes("title")) db.exec("ALTER TABLE seats DROP COLUMN title");
+  if (hasTable("participants") && columnsOf("participants").includes("slice")) db.exec("ALTER TABLE participants RENAME COLUMN slice TO seat");
   db.exec(`
     PRAGMA journal_mode = DELETE;
     -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
@@ -484,10 +489,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       opened_at TEXT NOT NULL,
       closed_at TEXT
     );
-    CREATE TABLE IF NOT EXISTS slices (
+    CREATE TABLE IF NOT EXISTS seats (
       run INTEGER NOT NULL,
       id TEXT NOT NULL,
-      title TEXT NOT NULL,
+      role TEXT,
+      area TEXT,
       blockers TEXT NOT NULL DEFAULT '[]',
       state TEXT NOT NULL DEFAULT 'ready',
       ord INTEGER NOT NULL,
@@ -496,7 +502,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     CREATE TABLE IF NOT EXISTS participants (
       id INTEGER PRIMARY KEY,
       run INTEGER NOT NULL,
-      slice TEXT NOT NULL,
+      seat TEXT NOT NULL,
       worktree TEXT,
       doing TEXT NOT NULL DEFAULT '',
       files TEXT NOT NULL DEFAULT '[]',
@@ -504,7 +510,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       joined_at TEXT NOT NULL,
       ended_at TEXT,
       last_call TEXT,
-      UNIQUE (run, slice)
+      UNIQUE (run, seat)
     );
     CREATE TABLE IF NOT EXISTS messages (
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -551,7 +557,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       seq INTEGER NOT NULL,
       PRIMARY KEY (repo, path, participant, other)
     );
-    -- a holder of a shared path already told of another holder (D41): once per runner and path
+    -- a holder of a shared path already told of another holder (D41): once per member and path
     CREATE TABLE IF NOT EXISTS notices (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -564,7 +570,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       participant INTEGER NOT NULL,
       at TEXT NOT NULL
     );
-    -- a runner refused the merge lock since its holder took it: mentioned when it is released (D65)
+    -- a member refused the merge lock since its holder took it: mentioned when it is released (D65)
     CREATE TABLE IF NOT EXISTS lock_waiters (
       repo TEXT NOT NULL,
       participant INTEGER NOT NULL,
@@ -664,9 +670,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("participants", "nick", "nick TEXT");
   // moved by every `wait` start: a pending wait whose number is no longer this one is superseded (D64)
   upkeep("participants", "wait_gen", "wait_gen INTEGER NOT NULL DEFAULT 0");
-  // 1 once the runner has called `merged` since it joined: what `end` writes as its doing (D66)
+  // 1 once the member has called `merged` since it joined: what `end` writes as its doing (D66)
   upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
-  // 1: written by the board itself in a runner's name (a flag, a merge notice), never a runner's own word
+  // 1: written by the board itself in a member's name (a flag, a merge notice), never a member's own word
   upkeep("messages", "by_board", "by_board INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "link", "link TEXT");
   // a board event's data beside its text: a merged event's recipients (D11)
@@ -675,7 +681,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("merge_locks", "onto", "onto TEXT");
   // the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
-  upkeep("slices", "link", "link TEXT");
+  upkeep("seats", "link", "link TEXT");
+  upkeep("seats", "role", "role TEXT");
+  upkeep("seats", "area", "area TEXT");
   // what kind of work a run is (D25); a run from before is a plan run
   upkeep("runs", "kind", "kind TEXT NOT NULL DEFAULT 'plan'");
   // a message's run (D31, plan D13): its author's run; null on an old main row, read as its author's run
@@ -694,9 +702,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // a member's subscriptions, JSON (D59)
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   // the seats file's `on`, JSON (D59)
-  upkeep("slices", "on_events", "on_events TEXT");
+  upkeep("seats", "on_events", "on_events TEXT");
   // idea 5: a seat's bound for a non-shell call, and whether the member's open call is a shell one
-  upkeep("slices", "busy_max", "busy_max INTEGER");
+  upkeep("seats", "busy_max", "busy_max INTEGER");
   upkeep("member_activity", "open_shell", "open_shell INTEGER NOT NULL DEFAULT 0");
   // the run's current phase, set by `phase`: its name and its text; null until one is opened
   upkeep("runs", "phase", "phase TEXT");
@@ -814,18 +822,19 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     title: String(r.title),
     link: r.link == null ? null : String(r.link),
     state: r.state === "closed" ? "closed" : "open",
-    slices: (db.prepare("SELECT * FROM slices WHERE run = ? ORDER BY ord").all(Number(r.id)) as Row[]).map((s) => ({
+    seats: (db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(Number(r.id)) as Row[]).map((s) => ({
       id: String(s.id),
-      title: String(s.title),
+      ...(s.role == null ? {} : { role: String(s.role) }),
+      ...(s.area == null ? {} : { area: String(s.area) }),
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
-      state: String(s.state) as SliceState,
+      state: String(s.state) as SeatState,
       ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
 
-  /** A store from before D43 has members with no funny name: their slice stands in (an orchestrator's before plan D17 too). */
-  const nickOf = (r: Row): string => (r.nick == null ? String(r.slice) : String(r.nick));
+  /** A store from before D43 has members with no funny name: their seat stands in (an orchestrator's before plan D17 too). */
+  const nickOf = (r: Row): string => (r.nick == null ? String(r.seat) : String(r.nick));
 
   /** A subscription stored scoped `main` (before plan D1) reads as `any`. */
   /** A funny name no active member of the repository carries (D43, plan D17), kept for the run. */
@@ -849,8 +858,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     repo: String(r.repo),
     kind: profileOf(String(r.kind ?? "plan")).kind,
     plan: String(r.plan),
-    slice: String(r.slice),
-    name: `${r.plan}/${r.slice}`,
+    seat: String(r.seat),
+    name: `${r.plan}/${r.seat}`,
     nick: nickOf(r),
     ended: r.ended_at != null,
     worktree: r.worktree == null ? null : String(r.worktree),
@@ -884,12 +893,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const openPlans = (repo: string): string[] =>
     (db.prepare("SELECT DISTINCT plan FROM runs WHERE repo = ? AND state = 'open'").all(repo) as Row[]).map((r) => String(r.plan));
 
-  /** The repository's active runners: their funny names, as a mention writes them, to their names (D43). */
+  /** The repository's active members: their funny names, as a mention writes them, to their names (D43). */
   const activeNames = (repo: string): Map<string, string> => {
     const rows = db
-      .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL AND p.slice != '${ORCHESTRATOR}'`)
+      .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL AND p.seat != '${ORCHESTRATOR}'`)
       .all(repo) as Row[];
-    return new Map(rows.map((r) => [nameHandle(nickOf(r)), `${r.plan}/${r.slice}`]));
+    return new Map(rows.map((r) => [nameHandle(nickOf(r)), `${r.plan}/${r.seat}`]));
   };
 
   /** `named` overrides mention parsing: the board's own notices name their targets. */
@@ -922,7 +931,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const live = (p: Participant): Participant => {
     const fresh = participantById(p.id);
-    if (fresh.ended) throw new Error(`runner ${p.name} has ended`);
+    if (fresh.ended) throw new Error(`member ${p.name} has ended`);
     return fresh;
   };
 
@@ -979,7 +988,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     }).length;
   };
 
-  /** `fromWait`: a wait's own look, not a call of the runner's.
+  /** `fromWait`: a wait's own look, not a call of the member's.
    *  `mentionsOnly`: only what mentions `p` or is urgent is taken and marked; the rest stays. */
   const deliverTo = (p: Participant, fromWait: boolean, mentionsOnly = false): Delivery => {
     const me = participantById(p.id);
@@ -994,7 +1003,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const unseen = unseenRows(me);
 
       // idea 2: a paused run is silent for its orchestrator: nothing wakes it but urgent, and nothing is carried
-      const silentWhilePaused = me.slice === ORCHESTRATOR && runRow(me.run).paused != null;
+      const silentWhilePaused = me.seat === ORCHESTRATOR && runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
       // idea 2: carried to the caller, riding on its next wake; one the tick marked due wakes by itself
       const carried = (r: Row): boolean => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
@@ -1014,7 +1023,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           : heard.filter((r) => woken(r) || carried(r) || (whole && ownPost(toMessage(r))));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
       for (const r of rows) mark.run(me.id, Number(r.seq));
-      // a delivery is a call to the board: the runner's last call (D31)
+      // a delivery is a call to the board: the member's last call (D31)
       const at = now();
       db.prepare("UPDATE participants SET last_call = ? WHERE id = ?").run(at, me.id);
       // a wait's look is a sign of life by the stale rule, so the timeline logs it too (board D12, D37); a wait looks
@@ -1026,7 +1035,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         }
       }
       if (!fromWait) {
-        // a call after a wait that never returned (killed): the runner is no longer waiting
+        // a call after a wait that never returned (killed): the member is no longer waiting
         const r = db.prepare("UPDATE participants SET waiting = 0 WHERE id = ? AND waiting = 1").run(me.id);
         if (Number(r.changes) > 0) bump(me.repo);
       }
@@ -1069,9 +1078,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       title: String(r.title),
       link: r.link == null ? null : String(r.link),
       open,
-      runners: open ? count(`SELECT COUNT(*) AS n FROM participants WHERE run = ? AND slice != '${ORCHESTRATOR}' AND ended_at IS NULL`) : 0,
-      done: count("SELECT COUNT(*) AS n FROM slices WHERE run = ? AND state = 'done'"),
-      of: count("SELECT COUNT(*) AS n FROM slices WHERE run = ?"),
+      members: open ? count(`SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != '${ORCHESTRATOR}' AND ended_at IS NULL`) : 0,
+      done: count("SELECT COUNT(*) AS n FROM seats WHERE run = ? AND state = 'done'"),
+      of: count("SELECT COUNT(*) AS n FROM seats WHERE run = ?"),
       phase: phaseOf(r),
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
       stallMs: Number(r.stall_ms ?? STALL_MS_DEFAULT),
@@ -1093,13 +1102,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     new Map((db.prepare("SELECT repo, version FROM changes").all() as Row[]).map((r) => [String(r.repo), Number(r.version)]));
 
 
-  const insertSlice = (run: RunId, s: SeatSpec, ord: number): void => {
+  const insertSeat = (run: RunId, s: SeatSpec, ord: number): void => {
     if (s.on) parseOn(s.on); // an unknown event name is refused at open, not at join
     if (s.busyMax != null && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) throw new Error(`seat ${s.id}: busyMax is a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
-    db.prepare("INSERT INTO slices (run, id, title, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
+    db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
       run,
       s.id,
-      s.title,
+      s.role ?? null,
+      s.area ?? null,
       JSON.stringify(s.blockers ?? []),
       s.link ?? null,
       ord,
@@ -1124,7 +1134,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   /** The waits this process holds, by participant id, and since when (ms epoch): the waiting of D35. */
   const heldWaits = new Map<number, number>();
   const orchestratorIn = (run: RunId): Participant =>
-    participantById(Number((db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(run, ORCHESTRATOR) as Row).id));
+    participantById(Number((db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) as Row).id));
   const activityOf = (run: RunId, member: string): Row | undefined =>
     db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run, member) as Row | undefined;
   /** A participant row's state at `t`: gone, waiting (its open call is the board wait), busy, working, else quiet. */
@@ -1137,14 +1147,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       Date.parse(String(p.joined_at)),
       run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)),
     );
-  /** Idea 5: the seat's bound for a non-shell call (ms), from its row or `slice add --busy-max`; null when it has none. */
-  const seatBusyMaxOf = (run: RunId, slice: string): number | null => {
-    const s = db.prepare("SELECT busy_max FROM slices WHERE run = ? AND id = ?").get(run, slice) as Row | undefined;
+  /** Idea 5: the seat's bound for a non-shell call (ms), from its row or `seat add --busy-max`; null when it has none. */
+  const seatBusyMaxOf = (run: RunId, seat: string): number | null => {
+    const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
     return s?.busy_max == null ? null : Number(s.busy_max);
   };
   /** `withHolder`: a lock wait names its holder's state, read with this false so a holder's own wait does not recurse. */
   const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
-    const member = String(p.slice);
+    const member = String(p.seat);
     const a = activityOf(Number(run.id), member);
     // D35: waiting is the board's own fact, a wait this server holds for the member, whatever command ran it
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
@@ -1212,7 +1222,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const minutes = (ms: number): number => Math.round(ms / 60000);
   /** The phase `p` owes now: the run's open phase it has not run `done` for; null for the orchestrator or none open. */
   const owedNameOf = (p: Row, run: Row): string | null => {
-    if (String(p.slice) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
+    if (String(p.seat) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
     const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run.id), Number(p.id), String(run.phase));
     return done ? null : String(run.phase);
   };
@@ -1226,9 +1236,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (phase == null || a.owe_since == null) return null;
     const since = Number(a.owe_since);
     if (t - since >= OWE_WAIT_MS) return { phase, since };
-    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND slice != ?").all(Number(run.id), Number(p.id), ORCHESTRATOR) as Row[];
+    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND seat != ?").all(Number(run.id), Number(p.id), ORCHESTRATOR) as Row[];
     const settled = others.every((o) => {
-      const oa = activityOf(Number(run.id), String(o.slice));
+      const oa = activityOf(Number(run.id), String(o.seat));
       const waits = heldWaits.has(Number(o.id)) && (oa == null || Number(oa.open_wait) === 1);
       return waits || owedNameOf(o, run) == null;
     });
@@ -1250,7 +1260,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // F2 (d3's guard): a span that opens or ends is a real move, so the stalled told before it is cleared; only
       // the blink inside one span keeps it
       const spanChanged = was !== oweSince;
-      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt, Number(run.id), String(p.slice));
+      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt, Number(run.id), String(p.seat));
     };
     const held = heldWaits.get(Number(p.id));
     const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
@@ -1270,7 +1280,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (!r) return new Map();
     const presence = presenceOf.get(run) ?? noPresence;
     const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run) as Row[];
-    return new Map(live.map((p) => [String(p.slice), stateOf(p, r, t, presence)]));
+    return new Map(live.map((p) => [String(p.seat), stateOf(p, r, t, presence)]));
   };
 
   // ── named locks (idea 4): store-wide, a port being the machine's ─────────────
@@ -1281,7 +1291,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const h = memberRowOf(Number(lock.participant));
     const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run)) as Row;
     const st = stateOf(h, run, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
-    return { member: `${h.plan}/${h.slice}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: st.state, doing: st.doing };
+    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: st.state, doing: st.doing };
   };
   /** The lock participant `id` waits on, as its state's `doing`: `lock <name>, held by <Name> (<state>)`; null when it waits on none. */
   const lockWaitOf = (id: number, t: number): string | null => {
@@ -1303,10 +1313,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const name = String(l.name);
       db.prepare("DELETE FROM locks WHERE name = ?").run(name);
       // idea 5 (F12): the name's last release, so a later grant can tell a listener left by its holder from a new one
-      db.prepare("INSERT OR REPLACE INTO lock_releases (name, at, by, how) VALUES (?, ?, ?, ?)").run(name, now(), `${holder.plan}/${holder.slice}`, how);
+      db.prepare("INSERT OR REPLACE INTO lock_releases (name, at, by, how) VALUES (?, ?, ?, ?)").run(name, now(), `${holder.plan}/${holder.seat}`, how);
       db.prepare("DELETE FROM liveness_warned WHERE cond = ?").run(`lock ${name}`);
       const waiters = (db.prepare("SELECT p.id FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE w.name = ? AND p.ended_at IS NULL ORDER BY w.since").all(name) as Row[]).map((w) => memberRowOf(Number(w.id)));
-      const names = waiters.map((w) => `${w.plan}/${w.slice}`);
+      const names = waiters.map((w) => `${w.plan}/${w.seat}`);
       freed.push(...names);
       const byRepo = new Map<string, Row[]>();
       for (const w of waiters) byRepo.set(String(w.repo), [...(byRepo.get(String(w.repo)) ?? []), w]);
@@ -1315,7 +1325,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const holderRunOpen = (runRow(Number(holder.run)).state as string) === "open";
         const authorRow = repo === String(holder.repo) && holderRunOpen ? holder : inRepo[0];
         if (!authorRow) continue;
-        const named = inRepo.map((w) => `${w.plan}/${w.slice}`);
+        const named = inRepo.map((w) => `${w.plan}/${w.seat}`);
         insertMessage(participantById(Number(authorRow.id)), `unlocked ${name}${why}${named.length ? `: ${named.map((n) => `@${n}`).join(" ")}` : ""}`, null, "event", named, {
           event: EVENTS.unlocked.name,
           meta: { unlocked: name },
@@ -1329,7 +1339,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (!st) return undefined;
     const a = activityOf(run, st.member);
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row;
-    const p = db.prepare("SELECT * FROM participants WHERE run = ? AND slice = ?").get(run, st.member) as Row;
+    const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run, st.member) as Row;
     const link = (presenceOf.get(run) ?? noPresence)(st.member);
     const { member: _, ...state } = st;
     return {
@@ -1348,9 +1358,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const doneWakeCase = (p: Participant, name: string, progress: PhaseProgress): string | null => {
     const r = runRow(p.run);
     const watch = r.phase_watch == null ? [] : (JSON.parse(String(r.phase_watch)) as string[]);
-    if (watch.includes(p.slice)) return "watched";
+    if (watch.includes(p.seat)) return "watched";
     const opened = Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(p.run, EVENTS.phase.name) as Row).seq ?? 0);
-    const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
+    const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
     if (orch) {
       const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), opened) as Row[]).find(
         (m) => (JSON.parse(String(m.mentions)) as string[]).includes(p.name),
@@ -1361,10 +1371,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       }
     }
     if (progress.of - progress.done === 1) {
-      const owing = (db.prepare("SELECT id, slice FROM participants WHERE run = ? AND slice != ? AND ended_at IS NULL").all(p.run, ORCHESTRATOR) as Row[]).find(
-        (o) => !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.slice}`),
+      const owing = (db.prepare("SELECT id, seat FROM participants WHERE run = ? AND seat != ? AND ended_at IS NULL").all(p.run, ORCHESTRATOR) as Row[]).find(
+        (o) => !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.seat}`),
       );
-      if (owing) return `all but ${String(owing.slice)}`;
+      if (owing) return `all but ${String(owing.seat)}`;
     }
     return null;
   };
@@ -1373,16 +1383,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (phase == null) return null;
     const rows = db
       .prepare(
-        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.slice, p.ended_at, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
-           EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.slice AND w.cond = 'gone') AS gone
-         FROM participants p WHERE p.run = ? AND p.slice != '${ORCHESTRATOR}'`,
+        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+           EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
+         FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}'`,
       )
       .all(phase, run) as Row[];
     // D41: a member gone (as the last tick told it) and not done holds no phase; it counts again once back
     const live = rows.filter((r) => Number(r.done) === 1 || r.ended_at == null);
     const gone = live.filter((r) => Number(r.done) !== 1 && Number(r.gone) === 1);
     const counted = live.filter((r) => !gone.includes(r));
-    return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.slice}`) };
+    return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.seat}`) };
   };
   /** `all-done` to the orchestrator, once per run and phase whoever reaches it first: the last `done`, or the tick
    *  that finds the last member not done gone (D41). */
@@ -1414,9 +1424,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
           .run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null);
         const run = Number(r.lastInsertRowid);
-        seats.forEach((s, i) => insertSlice(run, s, i));
+        seats.forEach((s, i) => insertSeat(run, s, i));
         // a funny name as a member gets at join (plan D17)
-        const orchestrator = db.prepare("INSERT INTO participants (run, slice, since_seq, joined_at, subs, nick) VALUES (?, ?, ?, ?, ?, ?)").run(
+        const orchestrator = db.prepare("INSERT INTO participants (run, seat, since_seq, joined_at, subs, nick) VALUES (?, ?, ?, ?, ?, ?)").run(
           run,
           ORCHESTRATOR,
           lastSeq(),
@@ -1434,33 +1444,33 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return toRun(runRow(id));
     },
 
-    setSliceState(run, slice, state) {
+    setSeatState(run, seat, state) {
       runRow(run);
-      if (!SLICE_STATES.has(state)) throw new Error(`unknown slice state ${state}`);
+      if (!SEAT_STATES.has(state)) throw new Error(`unknown seat state ${state}`);
       transaction(() => {
-        const r = db.prepare("UPDATE slices SET state = ? WHERE run = ? AND id = ?").run(state, run, slice);
-        if (Number(r.changes) === 0) throw new Error(`unknown slice ${slice} in run ${run}`);
+        const r = db.prepare("UPDATE seats SET state = ? WHERE run = ? AND id = ?").run(state, run, seat);
+        if (Number(r.changes) === 0) throw new Error(`unknown seat ${seat} in run ${run}`);
         bump(String(runRow(run).repo));
         if (state !== "done") return;
-        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(run, slice) as Row | undefined;
+        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         if (p) claims.releaseAll(Number(p.id));
       });
     },
 
-    addSlice(run, spec) {
+    addSeat(run, spec) {
       const r = runRow(run);
       if (r.state !== "open") throw new Error(`run ${run} is closed`);
-      if (spec.id === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a slice`);
+      if (spec.id === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a seat`);
       return transaction(() => {
-        const ids = (db.prepare("SELECT id FROM slices WHERE run = ?").all(run) as Row[]).map((x) => String(x.id));
-        if (ids.includes(spec.id)) throw new Error(`slice ${spec.id} is already in run ${run}`);
+        const ids = (db.prepare("SELECT id FROM seats WHERE run = ?").all(run) as Row[]).map((x) => String(x.id));
+        if (ids.includes(spec.id)) throw new Error(`seat ${spec.id} is already in run ${run}`);
         const unknown = (spec.blockers ?? []).filter((b) => !ids.includes(b));
         if (unknown.length) throw new Error(`unknown blocker ${unknown.join(", ")} in run ${run}`);
-        const ord = Number((db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM slices WHERE run = ?").get(run) as Row).o) + 1;
-        insertSlice(run, spec, ord);
-        const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(run, ORCHESTRATOR) as Row;
-        insertMessage(participantById(Number(orchestrator.id)), `added ${spec.id}: ${spec.title}`, null, "event");
-        return toRun(runRow(run)).slices.find((x) => x.id === spec.id)!;
+        const ord = Number((db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM seats WHERE run = ?").get(run) as Row).o) + 1;
+        insertSeat(run, spec, ord);
+        const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) as Row;
+        insertMessage(participantById(Number(orchestrator.id)), `added ${spec.id}${spec.role ? ` (${spec.role})` : ""}`, null, "event");
+        return toRun(runRow(run)).seats.find((x) => x.id === spec.id)!;
       });
     },
 
@@ -1468,7 +1478,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       runRow(run);
       transaction(() => {
         // stored with the run it closes, before it closes; a member subscribed to any:closed wakes (D67)
-        const author = (db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ?").get(run, ORCHESTRATOR) ??
+        const author = (db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) ??
           db.prepare("SELECT id FROM participants WHERE run = ? ORDER BY id LIMIT 1").get(run)) as Row | undefined;
         if (author) insertMessage(participantById(Number(author.id)), `run ${run} closed`, null, "event", undefined, { event: EVENTS.closed.name });
         // idea 4: every named lock its members hold is released while the run can still post
@@ -1527,7 +1537,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             // a member authoring a kept message stays, so the message still reads its author
             if (!db.prepare("SELECT 1 FROM messages WHERE author = ? LIMIT 1").get(id)) db.prepare("DELETE FROM participants WHERE id = ?").run(id);
           }
-          db.prepare("DELETE FROM slices WHERE run = ?").run(run);
+          db.prepare("DELETE FROM seats WHERE run = ?").run(run);
           db.prepare("DELETE FROM merges WHERE run = ?").run(run);
           for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run);
           // the row stays, stamped: its id is never handed to a new run (D61)
@@ -1571,7 +1581,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return transaction(() => {
         // an orchestrator silent STALE_MS: one quiet event in its run, until it calls again (D15)
         const quiet = db
-          .prepare("SELECT p.id, p.last_call, p.joined_at FROM participants p JOIN runs r ON r.id = p.run WHERE r.state = 'open' AND r.paused IS NULL AND p.slice = ? AND p.ended_at IS NULL AND p.quiet_flagged = 0")
+          .prepare("SELECT p.id, p.last_call, p.joined_at FROM participants p JOIN runs r ON r.id = p.run WHERE r.state = 'open' AND r.paused IS NULL AND p.seat = ? AND p.ended_at IS NULL AND p.quiet_flagged = 0")
           .all(ORCHESTRATOR) as Row[];
         for (const o of quiet) {
           const silentSince = Date.parse(String(o.last_call ?? o.joined_at));
@@ -1583,9 +1593,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const flagged: RunId[] = [];
         for (const r of db.prepare("SELECT id, plan FROM runs WHERE state = 'open' AND paused IS NULL AND stale_flagged = 0 ORDER BY id").all() as Row[]) {
           const id = Number(r.id);
-          const members = db.prepare("SELECT id, slice, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL").all(id) as Row[];
+          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL").all(id) as Row[];
           if (!members.length || members.some((m) => Date.parse(String(m.last_call ?? m.joined_at)) >= silentBefore)) continue;
-          const author = members.find((m) => String(m.slice) === ORCHESTRATOR) ?? members[0];
+          const author = members.find((m) => String(m.seat) === ORCHESTRATOR) ?? members[0];
           const group = String(r.plan);
           insertMessage(participantById(Number(author.id)), `run ${id} (${group}) is stale: every member silent; close it or dispatch again`, null, "event", [`${group}/${ORCHESTRATOR}`], {
             event: EVENTS.stale.name,
@@ -1601,10 +1611,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return (db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all() as Row[]).map(toRun);
     },
 
-    join({ run, slice, doing, files, worktree, on }) {
+    join({ run, seat, doing, files, worktree, on }) {
       const r = runRow(run);
       if (r.state !== "open") throw new Error(`run ${run} is closed`);
-      if (slice === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a slice`);
+      if (seat === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
       if (files.length && !profile.claims) throw new Error(`join: a ${profile.kind} run has no claims`);
       // a kind with no worktree records none, whatever the caller passed (D21)
@@ -1612,9 +1622,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // one transaction: the page sees a join as one change
       return transaction(() => {
       const id = transaction(() => {
-        const existing = db.prepare("SELECT id, nick FROM participants WHERE run = ? AND slice = ?").get(run, slice) as Row | undefined;
+        const existing = db.prepare("SELECT id, nick FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         // --on, else the seat row's on, else the kind's defaults (D59)
-        const seatRow = db.prepare("SELECT on_events FROM slices WHERE run = ? AND id = ?").get(run, slice) as Row | undefined;
+        const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
         const seatOn = seatRow?.on_events != null ? parseOn(JSON.parse(String(seatRow.on_events)) as string[]) : null;
         const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
         const fresh = (): string => unusedNick(String(r.repo));
@@ -1633,17 +1643,17 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // the member's to read: its cursor starts just before the earliest one, else at now
         const earliest = db
           .prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?")
-          .get(run, `%"${String(r.plan)}/${slice}"%`) as Row | undefined;
+          .get(run, `%"${String(r.plan)}/${seat}"%`) as Row | undefined;
         const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
         const ins = db
-          .prepare("INSERT INTO participants (run, slice, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(run, slice, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
+          .prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(run, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
         return Number(ins.lastInsertRowid);
       });
-      const runner = participantById(id);
-      claims.claimDeclared(runner, files);
-      insertMessage(runner, `joined: ${doing}`, null, "event", undefined, { event: EVENTS.joined.name });
-      return { runner, roster: board.roster(runner.repo) };
+      const member = participantById(id);
+      claims.claimDeclared(member, files);
+      insertMessage(member, `joined: ${doing}`, null, "event", undefined, { event: EVENTS.joined.name });
+      return { member, roster: board.roster(member.repo) };
       });
     },
 
@@ -1651,11 +1661,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const i = name.lastIndexOf("/");
       if (i <= 0) return null;
       const plan = name.slice(0, i);
-      const slice = name.slice(i + 1);
-      // the latest run of that plan holding that slice, an open one first
+      const seat = name.slice(i + 1);
+      // the latest run of that plan holding that seat, an open one first
       const r = db
-        .prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.slice = ? ORDER BY (r.state = 'open') DESC, r.id DESC LIMIT 1`)
-        .get(plan, slice) as Row | undefined;
+        .prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.state = 'open') DESC, r.id DESC LIMIT 1`)
+        .get(plan, seat) as Row | undefined;
       return r ? toParticipant(r) : null;
     },
 
@@ -1669,7 +1679,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         },
       );
       if (!rows.length) return null;
-      // the deepest worktree holding it; several runners on that one worktree is no answer
+      // the deepest worktree holding it; several members on that one worktree is no answer
       const deepest = Math.max(...rows.map((r) => String(r.worktree).length));
       const best = rows.filter((r) => String(r.worktree).length === deepest);
       return best.length === 1 ? toParticipant(best[0]) : null;
@@ -1703,7 +1713,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         else insertMessage(fresh, "ended", null, "event", undefined, ended);
         // idea 4: the named locks it held are released, their waiters woken
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
-        // the card's last word: what the runner's run came to, not its last doing (D66)
+        // the card's last word: what the member's run came to, not its last doing (D66)
         db.prepare("UPDATE participants SET ended_at = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), fresh.id);
         claims.releaseAll(fresh.id);
       });
@@ -1711,7 +1721,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     phase(p, name, text, opts = {}) {
       const fresh = live(p);
-      if (fresh.slice !== ORCHESTRATOR) throw new Error(`phase: only the orchestrator opens a phase; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
+      if (fresh.seat !== ORCHESTRATOR) throw new Error(`phase: only the orchestrator opens a phase; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
       if (!PHASE_NAME.test(name)) throw new Error(`phase: a phase name is one word, got ${JSON.stringify(name)}`);
       const said = text.trim();
       if (!said) throw new Error(`phase ${name}: what does it ask?`);
@@ -1786,15 +1796,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const h = memberRowOf(Number(l.participant));
         const waiters = (db.prepare("SELECT participant FROM named_lock_waiters WHERE name = ? ORDER BY since").all(String(l.name)) as Row[]).map((w) => {
           const r = memberRowOf(Number(w.participant));
-          return `${r.plan}/${r.slice}`;
+          return `${r.plan}/${r.seat}`;
         });
-        return { name: String(l.name), member: `${h.plan}/${h.slice}`, run: Number(h.run), since: String(l.since), note: l.note == null ? null : String(l.note), waiters };
+        return { name: String(l.name), member: `${h.plan}/${h.seat}`, run: Number(h.run), since: String(l.since), note: l.note == null ? null : String(l.note), waiters };
       });
     },
 
     pause(p, text = "", opts = {}) {
       const fresh = live(p);
-      if (fresh.slice !== ORCHESTRATOR) throw new Error(`pause: only the orchestrator pauses its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
+      if (fresh.seat !== ORCHESTRATOR) throw new Error(`pause: only the orchestrator pauses its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
       const r = runRow(fresh.run);
       if (r.state !== "open") throw new Error(`run ${fresh.run} is closed`);
       if (r.paused != null) throw new Error(`run ${fresh.run} is already paused`);
@@ -1809,7 +1819,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     resume(p, text = "") {
       const fresh = live(p);
-      if (fresh.slice !== ORCHESTRATOR) throw new Error(`resume: only the orchestrator resumes its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
+      if (fresh.seat !== ORCHESTRATOR) throw new Error(`resume: only the orchestrator resumes its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
       const r = runRow(fresh.run);
       if (r.state !== "open") throw new Error(`run ${fresh.run} is closed`);
       if (r.paused == null) throw new Error(`run ${fresh.run} is not paused`);
@@ -1836,7 +1846,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     done(p, name) {
       const fresh = live(p);
-      if (fresh.slice === ORCHESTRATOR) throw new Error("done: the orchestrator opens phases; a member runs done");
+      if (fresh.seat === ORCHESTRATOR) throw new Error("done: the orchestrator opens phases; a member runs done");
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
       const orch = `${fresh.plan}/${ORCHESTRATOR}`;
@@ -1882,8 +1892,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     },
 
     owedPhase(p) {
-      const row = db.prepare("SELECT id, run, slice, ended_at FROM participants WHERE id = ?").get(p.id) as Row | undefined;
-      if (!row || row.ended_at != null || String(row.slice) === ORCHESTRATOR) return null;
+      const row = db.prepare("SELECT id, run, seat, ended_at FROM participants WHERE id = ?").get(p.id) as Row | undefined;
+      if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR) return null;
       const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(row.run)) as Row | undefined;
       const current = r && r.state === "open" ? phaseOf(r) : null;
       if (!current) return null;
@@ -1894,7 +1904,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     recordActivity(run, member, act, at) {
       const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
       if (!r || r.state !== "open") return;
-      if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, member)) return;
+      if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member)) return;
       transaction(() => {
         const o = act.openTool;
         db.prepare(
@@ -1921,7 +1931,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // whose lock the member does not hold; to the orchestrator alone, once per distinct command per member
         const kill = act.breach ?? null;
         if (kill) {
-          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, member) as Row;
+          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member) as Row;
           const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
           const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
           const command = kill.command.slice(0, 120);
@@ -1951,7 +1961,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       transaction(() => {
         db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run, new Date(t - READINGS_KEPT_MS).toISOString());
         for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run) as Row[]) {
-          const a = activityOf(run, String(p.slice));
+          const a = activityOf(run, String(p.seat));
           if (a) keepOwingSpan(r, p, a, t);
         }
         const states = statesOf(run, t);
@@ -1970,7 +1980,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
             // idea 4: a gone member's named locks are released, their waiters woken (a listener it left may still live)
-            const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
+            const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
             if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
           }
           // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
@@ -1982,7 +1992,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           const a = activityOf(run, st.member);
           if (!a) {
             // D33: no link activity 30 s after the join: named once to the orchestrator
-            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND slice = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
+            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
             if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
               const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run, st.member);
               if (Number(warned.changes) === 1)
@@ -2045,7 +2055,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const present = others.filter((st) => st.state !== "gone");
         // swarm-relay D44: not while a seat of the run has yet to join (a run filling up is not idle)
         const joined = new Set(others.map((st) => st.member));
-        const toJoin = (db.prepare("SELECT id FROM slices WHERE run = ? AND state != 'done'").all(run) as Row[]).some((s) => !joined.has(String(s.id)));
+        const toJoin = (db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run) as Row[]).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
           // the last post is kept: a member stirring for a moment does not buy a second idle within IDLE_MS (D44)
@@ -2089,7 +2099,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     endedMembers(repo) {
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NOT NULL`).all(repo) as Row[];
-      return [...new Set(rows.map((r) => `${r.plan}/${r.slice}`))];
+      return [...new Set(rows.map((r) => `${r.plan}/${r.seat}`))];
     },
 
     heldBy(p) {
@@ -2108,21 +2118,21 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         return statesByRun.get(run)!.get(member);
       };
       return rows.map((r) => ({
-        name: `${r.plan}/${r.slice}`,
+        name: `${r.plan}/${r.seat}`,
         nick: nickOf(r),
         run: Number(r.run),
         plan: String(r.plan),
-        slice: String(r.slice),
+        seat: String(r.seat),
         doing: String(r.doing),
         files: JSON.parse(String(r.files)) as Declared[],
         stale: Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
         subscriptions: subsOf(r),
         worktree: r.worktree == null ? null : String(r.worktree),
-        state: stateIn(Number(r.run), String(r.slice))?.state ?? "working",
-        activity: stateIn(Number(r.run), String(r.slice))?.doing ?? null,
-        ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.slice)), t)),
+        state: stateIn(Number(r.run), String(r.seat))?.state ?? "working",
+        activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
+        ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
-        busyMax: seatBusyMaxOf(Number(r.run), String(r.slice)),
+        busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
       }));
     },
 
@@ -2179,8 +2189,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
       const column = mentionsOnly ? "listening" : "waiting";
-      // a runner inside a `wait` shows `waiting` on the page; inside a `wait --mentions`, `listening`
-      // beside its state. One live wait per runner (D64): this one takes the next number and the page's state, and any
+      // a member inside a `wait` shows `waiting` on the page; inside a `wait --mentions`, `listening`
+      // beside its state. One live wait per member (D64): this one takes the next number and the page's state, and any
       // older pending wait, here or in another process, sees the number move and returns superseded
       const gen = transaction(() => {
         const me = participantById(p.id);
@@ -2217,7 +2227,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const check = (): void => {
           if (settled) return;
           try {
-            // `end`, from this process or another, releases a pending wait of that runner
+            // `end`, from this process or another, releases a pending wait of that member
             if (participantById(p.id).ended) return finish({ full: [], lines: [] });
             // the look and the superseded test in one transaction: a superseded wait takes nothing
             const d = transaction(() => (current() ? deliverTo(p, true, mentionsOnly) : null));
@@ -2288,7 +2298,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo) as Row | undefined;
       const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
 
-      const sliceRows = db.prepare(`SELECT * FROM slices WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds) as Row[];
+      const sliceRows = db.prepare(`SELECT * FROM seats WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds) as Row[];
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds) as Row[];
       const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
@@ -2302,21 +2312,21 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const claimsOf = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
       // every live claim on the repository, in claim order: the FileMap's rows, and which paths are shared (D40)
       const live = (
-        db.prepare("SELECT c.path, c.kind, c.participant, p.slice, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
+        db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
       ).filter((c) => isLive(Number(c.participant)));
       const files = new Map<string, SnapshotFile>();
       for (const c of live) {
         const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
-        f.holders.push(`${c.plan}/${c.slice}`);
+        f.holders.push(`${c.plan}/${c.seat}`);
         f.interface ||= c.kind === "interface";
         files.set(f.path, f);
       }
-      // a file a live runner declared at join but could not claim, held by another: it holds it too (D62);
+      // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
       // one it claimed and released since does not come back
       const everClaimed = db.prepare("SELECT 1 FROM claim_log WHERE repo = ? AND path = ? AND participant = ?");
       for (const r of people) {
-        if (String(r.slice) === ORCHESTRATOR || !isLive(Number(r.id))) continue;
-        const name = `${r.plan}/${r.slice}`;
+        if (String(r.seat) === ORCHESTRATOR || !isLive(Number(r.id))) continue;
+        const name = `${r.plan}/${r.seat}`;
         for (const d of JSON.parse(String(r.files)) as Declared[]) {
           const f = files.get(relPath(repo, d.path) ?? d.path);
           if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
@@ -2324,13 +2334,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       }
       const sharedBy = (path: string, id: number): boolean => live.some((c) => String(c.path) === path && Number(c.participant) !== id);
 
-      const roster: SnapshotRunner[] = people.map((r) => {
+      const roster: SnapshotMember[] = people.map((r) => {
         const id = Number(r.id);
-        const slice = String(r.slice);
-        const orchestrator = slice === ORCHESTRATOR;
-        const s = sliceOf.get(`${r.run}/${slice}`);
+        const seat = String(r.seat);
+        const orchestrator = seat === ORCHESTRATOR;
+        const s = sliceOf.get(`${r.run}/${seat}`);
         const ended = r.ended_at != null;
-        const state: RunnerState = orchestrator
+        const state: SnapshotMemberState = orchestrator
           ? runOpen.get(Number(r.run))
             ? "watching"
             : "done"
@@ -2345,11 +2355,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
                   : "working";
         return {
           run: Number(r.run),
-          runner: `${r.plan}/${slice}`,
+          member: `${r.plan}/${seat}`,
           nick: nickOf(r),
           plan: String(r.plan),
-          slice,
-          title: orchestrator ? "" : String(s?.title ?? slice),
+          seat,
+          ...(orchestrator || s?.role == null ? {} : { role: String(s.role) }),
+          ...(orchestrator || s?.area == null ? {} : { area: String(s.area) }),
           doing: String(r.doing),
           state,
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
@@ -2360,7 +2371,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           listening: !ended && Number(r.listening) === 1,
           on: subsOf(r).map((x) => formatSubscriptions([x])),
           lastCall: String(r.last_call ?? r.joined_at),
-          liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), slice), t),
+          liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
           unread: ended ? 0 : unreadOf(id),
         };
       });
@@ -2384,30 +2395,31 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         };
       });
 
-      const nameOf = new Map(people.map((r) => [`${r.run}/${r.slice}`, `${r.plan}/${r.slice}`]));
-      const queues: Record<string, QueueSlice[]> = {};
+      const nameOf = new Map(people.map((r) => [`${r.run}/${r.seat}`, `${r.plan}/${r.seat}`]));
+      const queues: Record<string, QueueSeat[]> = {};
       for (const run of runRows) {
         // a later run of the same plan on the repository replaces the earlier one
         queues[String(run.plan)] = sliceRows
           .filter((s) => Number(s.run) === Number(run.id))
           .map((s) => ({
-            slice: String(s.id),
-            title: String(s.title),
+            seat: String(s.id),
+            ...(s.role == null ? {} : { role: String(s.role) }),
+            ...(s.area == null ? {} : { area: String(s.area) }),
             link: s.link == null ? null : String(s.link),
             state: String(s.state),
             blockers: JSON.parse(String(s.blockers)) as string[],
-            runner: nameOf.get(`${run.id}/${s.id}`) ?? null,
+            member: nameOf.get(`${run.id}/${s.id}`) ?? null,
           }));
       }
 
       const flags = (
-        db.prepare("SELECT f.path, p.slice, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo) as Row[]
-      ).map((f) => ({ path: String(f.path), runner: `${f.plan}/${f.slice}` }));
+        db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo) as Row[]
+      ).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
 
       const lockHistory = (
-        db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.slice, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo) as Row[]
+        db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo) as Row[]
       ).map((t) => ({
-        runner: `${t.plan}/${t.slice}`,
+        member: `${t.plan}/${t.seat}`,
         askedAt: String(t.asked_at),
         grantedAt: t.granted_at == null ? null : String(t.granted_at),
         mergedAt: t.merged_at == null ? null : String(t.merged_at),
@@ -2478,7 +2490,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       db.close();
     },
   };
-  // Every verb a runner calls is one call to the board, counted here and nowhere else (D66):
+  // Every verb a member calls is one call to the board, counted here and nowhere else (D66):
   // what the card's call count shows, and the last sign of life "stale" is measured from.
   // `reconcileWrites` is part of `merge-lock` and `end`, not a call.
   /** The verbs that are a member's progress (swarm-relay D36). */
@@ -2498,7 +2510,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     bump(participantById(p.id).repo);
   };
   // the verb and its count in one transaction: the page sees one change, and a refused call
-  // (an ended runner, an unknown path) counts none
+  // (an ended member, an unknown path) counts none
   const counted = <A extends unknown[], R>(name: string, verb: (p: Participant, ...rest: A) => R) =>
     (p: Participant, ...rest: A): R =>
       transaction(() => {

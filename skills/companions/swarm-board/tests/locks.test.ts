@@ -33,11 +33,11 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 /** Two task runs in two repositories on one store: A (members a1, a2) and B (b1). */
 const setup = () => {
   links = new Map();
-  const runA = board.openRun({ repo: "/repos/a/.git", kind: "task", group: "ga", title: "A", seats: [{ id: "a1", title: "a1", blockers: [] }, { id: "a2", title: "a2", blockers: [] }] });
-  const runB = board.openRun({ repo: "/repos/b/.git", kind: "task", group: "gb", title: "B", seats: [{ id: "b1", title: "b1", blockers: [] }] });
-  const a1 = board.join({ run: runA.id, slice: "a1", doing: "x", files: [] }).runner;
-  const a2 = board.join({ run: runA.id, slice: "a2", doing: "x", files: [] }).runner;
-  const b1 = board.join({ run: runB.id, slice: "b1", doing: "x", files: [] }).runner;
+  const runA = board.openRun({ repo: "/repos/a/.git", kind: "task", group: "ga", title: "A", seats: [{ id: "a1", blockers: [] }, { id: "a2", blockers: [] }] });
+  const runB = board.openRun({ repo: "/repos/b/.git", kind: "task", group: "gb", title: "B", seats: [{ id: "b1", blockers: [] }] });
+  const a1 = board.join({ run: runA.id, seat: "a1", doing: "x", files: [] }).member;
+  const a2 = board.join({ run: runA.id, seat: "a2", doing: "x", files: [] }).member;
+  const b1 = board.join({ run: runB.id, seat: "b1", doing: "x", files: [] }).member;
   const oA = board.participant("ga/orchestrator")!;
   const oB = board.participant("gb/orchestrator")!;
   for (const p of [a1, a2, b1, oA, oB]) board.deliver(p);
@@ -97,8 +97,8 @@ test("D3: a lock is released by end, by gone and by close, each telling its wait
     assert.ok(!board.locks().some((l) => l.name === name), `${name} free`);
   }
   // close: a fresh holder in a new run
-  const runC = board.openRun({ repo: "/repos/c/.git", kind: "task", group: "gc", title: "C", seats: [{ id: "c1", title: "c1", blockers: [] }] });
-  const c1 = board.join({ run: runC.id, slice: "c1", doing: "x", files: [] }).runner;
+  const runC = board.openRun({ repo: "/repos/c/.git", kind: "task", group: "gc", title: "C", seats: [{ id: "c1", blockers: [] }] });
+  const c1 = board.join({ run: runC.id, seat: "c1", doing: "x", files: [] }).member;
   board.lock(c1, "db:main");
   board.lock(b1, "db:main");
   board.deliver(b1);

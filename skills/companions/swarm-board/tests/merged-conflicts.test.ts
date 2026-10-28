@@ -1,6 +1,6 @@
 // What a merge's rebase met, known without the member saying so (US4; plan D3, D5, D13, D33, D36, D41):
 // `merge-lock` keeps where the worktree's reflog stands at the grant, `merged` replays the last rebase past
-// it. Two runners of one run, each in a worktree of one real repository; the answers are read from the
+// it. Two members of one run, each in a worktree of one real repository; the answers are read from the
 // CLI alone: `merged`'s output, and `swarm stats --run <id> --json`.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -148,8 +148,8 @@ test("a merger with no worktree records unknown (D33)", () => {
   const plain = path.join(r.home, "plain");
   fs.mkdirSync(plain);
   assert.notEqual(spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: plain }).status, 0, "setup: the folder is no worktree");
-  r.cli(r.repo, "slice", "add", "S7", "--run", String(id), "--title", "the docs");
-  r.cli(plain, "join", "--run", String(id), "--slice", "S7", "--doing", "the docs");
+  r.cli(r.repo, "seat", "add", "S7", "--run", String(id), "--title", "the docs");
+  r.cli(plain, "join", "--run", String(id), "--seat", "S7", "--doing", "the docs");
   r.cli(plain, "merge-lock", "--onto", "main", "--as", "review-tool/S7");
   const out = r.cli(plain, "merged", "abc123", "--files", path.join(r.repo, "src", "a.ts"), "--as", "review-tool/S7");
   assert.match(out, /^merged abc123: lock released$/m);
@@ -167,7 +167,7 @@ test("`merged`'s output, human and `--json`, carries no new field or line (D25)"
   openTwoRunners(json);
   const sha2 = conflictAfterGrant(json, "src/a.ts");
   assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", sha2, "--files", "src/a.ts", "--json")), {
-    runner: "review-tool/S5",
+    member: "review-tool/S5",
     sha: sha2,
     files: ["src/a.ts"],
     tell: [TELL_S3("src/a.ts")],

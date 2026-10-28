@@ -35,10 +35,10 @@ export interface Claims {
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** join's declared files, claimed where free */
   claimDeclared(p: Participant, files: Declared[]): void;
-  /** end, closeRun, slice done */
+  /** end, closeRun, seat done */
   releaseAll(participant: number): void;
   clearFlags(): void;
-  /** At `p`'s end: when `p` holds the merge lock, the runners refused it, cleared (D65); else none. */
+  /** At `p`'s end: when `p` holds the merge lock, the members refused it, cleared (D65); else none. */
   lockWaitersFreedBy(p: Participant): string[];
   /** The path `m` asks `me` about, when `me` held it before `m` and its author did not (D62). */
   askedAbout(me: Participant, author: number, m: Message): string | null;
@@ -92,7 +92,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       bump(p.repo);
       return true;
     });
-  /** Claims `rel` for `p` unless another live runner holds it: `held` is the other holders,
+  /** Claims `rel` for `p` unless another live member holds it: `held` is the other holders,
    *  `taken` says whether the claim was made or widened here. */
   const take = (p: Participant, rel: string, kind: "interface" | "inside"): { held: ClaimRow[]; taken: boolean } =>
     transaction(() => {
@@ -124,7 +124,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     const share = db.prepare("INSERT OR IGNORE INTO shares (repo, path, participant, other, seq) VALUES (?, ?, ?, ?, ?)");
     for (const o of people) share.run(me.repo, rel, me.id, o.id, lastSeq());
   };
-  /** The other holders `me` is told of, once per runner and path (D40). */
+  /** The other holders `me` is told of, once per member and path (D40). */
   const noticeOf = (me: Participant, rel: string, people: Participant[]): string | null => {
     const told = db.prepare("INSERT OR IGNORE INTO notices (repo, path, participant, other) VALUES (?, ?, ?, ?)");
     const fresh = people.filter((o) => Number(told.run(me.repo, rel, me.id, o.id).changes) > 0);
@@ -138,7 +138,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     clearFlags();
     if (owner && claims + locks > 0) bump(String(owner.repo));
   };
-  /** The live runners refused the lock since its holder took it, as mentions name them; the record is cleared (D65). */
+  /** The live members refused the lock since its holder took it, as mentions name them; the record is cleared (D65). */
   const takeLockWaiters = (repo: string): string[] => {
     const rows = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo) as Row[];
     db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(repo);
@@ -155,7 +155,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       )
       .get(p.id) as Row | undefined;
   /** The turn granted at `at`: the open one stamped when it waited, else a new one asked and granted at once.
-   *  `anew`: a new grant, so a turn granted before and lost since (a slice set done) is over. */
+   *  `anew`: a new grant, so a turn granted before and lost since (a seat set done) is over. */
   const grantTurn = (p: Participant, at: string, anew: boolean): void => {
     const turn = openTurn(p);
     if (turn && turn.granted_at == null) db.prepare("UPDATE lock_requests SET granted_at = ? WHERE rowid = ?").run(at, Number(turn.id));
@@ -245,7 +245,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         const people = others.map((c) => participantById(c.participant));
         if (!all.some((c) => c.participant === me.id)) {
-          // the first edit of a file another runner holds: held until the runner has said what it changes (D41)
+          // the first edit of a file another member holds: held until the member has said what it changes (D41)
           if (!hasPostedAbout(me, rel, others)) {
             // the refused request: a post that settles it claims it (D7)
             db.prepare(
@@ -266,7 +266,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         hold(me, rel, kind); // a new holder, or an `inside` claim widened to an interface
         db.prepare("DELETE FROM claim_requests WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, rel, me.id);
         recordShares(me, rel, people);
-        const sharedWith = people.map((o) => ({ runner: o.name, doing: doingOf(o.id) }));
+        const sharedWith = people.map((o) => ({ member: o.name, doing: doingOf(o.id) }));
         return { allowed: true, sharedWith, notice: noticeOf(me, rel, people) };
       });
     },
@@ -387,17 +387,17 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         // declarers, the merger's own declarations counting toward *interface*
         const everyone = db
-          .prepare("SELECT p.id, p.slice, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL")
+          .prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL")
           .all(me.repo) as Row[];
         for (const o of everyone) {
           for (const f of declared(Number(o.id))) {
             const rel = relPath(me.repo, f.path);
             if (!rel || !wanted.has(rel)) continue;
             if (f.interface) iface.add(rel);
-            if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.slice}`);
+            if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.seat}`);
           }
         }
-        // an interface change is announced to every runner on the repository (D26), never to a kind without claims (D70)
+        // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
           .filter((r) => profileOf(String(r.kind)).claims)
           .map((r) => String(r.plan));
@@ -417,9 +417,9 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             .all(me.repo, rel, me.run) as Row[];
           for (const r of held) ids.add(Number(r.participant));
           ids.delete(me.id);
-          for (const id of ids) sharers.push({ path: rel, runner: participantById(id).name });
+          for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
-        const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.runner))] };
+        const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
         insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
         // the merge, for the stats: its files and conflicts, null for unknown (D25)
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(

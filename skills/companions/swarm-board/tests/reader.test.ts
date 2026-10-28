@@ -19,8 +19,8 @@ process.argv[1] = CLI;
 
 const REPO = "/repos/one/.git";
 const SLICES = [
-  { id: "S1", title: "the board", blockers: [] },
-  { id: "S3", title: "the page", blockers: ["S1"] },
+  { id: "S1", blockers: [] },
+  { id: "S3", blockers: ["S1"] },
 ];
 
 let dir: string;
@@ -45,7 +45,7 @@ afterEach(async () => {
 
 const aRunWithARunner = async () => {
   const run = await writer.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
-  const s1 = (await writer.join({ run: run.id, slice: "S1", doing: "the schema", files: [] })).runner;
+  const s1 = (await writer.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
   return { run, s1 };
 };
 

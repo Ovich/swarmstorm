@@ -10,8 +10,8 @@ import { EVENTS } from "../src/board/events.ts";
 
 const REPO = "/repos/one/.git";
 const SEATS = [
-  { id: "architect", title: "the architect", blockers: [] },
-  { id: "skeptic", title: "the skeptic", blockers: [] },
+  { id: "architect", blockers: [] },
+  { id: "skeptic", blockers: [] },
 ];
 
 let dir: string;
@@ -38,8 +38,8 @@ const twoRuns = () => {
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
   const other = board.openRun({ repo: REPO, kind: "brainstorm", group: "other", title: "O", seats: SEATS });
   const orchestrator = board.participant("idea/orchestrator")!;
-  const skeptic = board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner;
-  const elsewhere = board.join({ run: other.id, slice: "skeptic", doing: "x", files: [] }).runner;
+  const skeptic = board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member;
+  const elsewhere = board.join({ run: other.id, seat: "skeptic", doing: "x", files: [] }).member;
   board.deliver(skeptic);
   board.deliver(elsewhere);
   return { idea, other, orchestrator, skeptic, elsewhere };
@@ -88,7 +88,7 @@ test("a woken seat is told to run done; the orchestrator gets no line; end is a 
 
 test("done is stored once per run, member and phase; the last member's done posts one all-done to the orchestrator; a phase opened again clears its marks", () => {
   const { idea, orchestrator, skeptic } = twoRuns();
-  const architect = board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner;
+  const architect = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
   board.deliver(orchestrator);
   assert.throws(() => board.done(skeptic, "diverge"), /no phase is open/);
   board.phase(orchestrator, "diverge", "every idea");
@@ -126,17 +126,17 @@ test("a phase event is not a post in the stats", () => {
 });
 
 test("the run keeps its current phase, plan runs too: runs(), currentPhase and the snapshot's summary", () => {
-  const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: [{ id: "S1", title: "s", blockers: [] }] });
+  const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: [{ id: "S1", blockers: [] }] });
   const orchestrator = board.participant("review-tool/orchestrator")!;
   assert.equal(board.currentPhase(plan.id), null);
   assert.equal(board.snapshot(REPO).runs.find((r) => r.run === plan.id)!.phase, null);
-  const runner = board.join({ run: plan.id, slice: "S1", doing: "x", files: [] }).runner;
-  board.deliver(runner);
+  const member = board.join({ run: plan.id, seat: "S1", doing: "x", files: [] }).member;
+  board.deliver(member);
   board.phase(orchestrator, "build", "the first wave");
   assert.deepEqual(board.currentPhase(plan.id), { name: "build", text: "the first wave" });
   assert.deepEqual(board.runs().find((r) => r.id === plan.id)!.phase, { name: "build", text: "the first wave" });
   assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === plan.id)!.phase, { name: "build", text: "the first wave" });
-  assert.equal(board.deliver(runner).full.at(-1)!.event, "phase"); // it mentions every member of the run
+  assert.equal(board.deliver(member).full.at(-1)!.event, "phase"); // it mentions every member of the run
   board.phase(orchestrator, "end", "merged and verified");
   assert.deepEqual(board.currentPhase(plan.id), { name: "end", text: "merged and verified" });
 });

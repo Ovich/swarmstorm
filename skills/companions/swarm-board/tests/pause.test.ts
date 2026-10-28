@@ -38,12 +38,12 @@ const setup = () => {
     title: "I",
     stallMs: 5000,
     seats: [
-      { id: "a", title: "A", blockers: [] },
-      { id: "b", title: "B", blockers: [] },
+      { id: "a", blockers: [] },
+      { id: "b", blockers: [] },
     ],
   });
-  const a = board.join({ run: run.id, slice: "a", doing: "x", files: [] }).runner;
-  const b = board.join({ run: run.id, slice: "b", doing: "x", files: [] }).runner;
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   board.deliver(a);
   board.deliver(b);
   return { run, a, b, orchestrator: board.participant("idea/orchestrator")! };

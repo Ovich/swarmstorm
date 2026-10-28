@@ -41,8 +41,8 @@ const count = (sql: string, ...params: (string | number)[]): number => Number((r
 
 const runWithMembers = (group: string) => {
   const run = board.openRun({ repo: REPO, group, title: group, seats: SEATS });
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "one", files: [] }).runner;
-  const s2 = board.join({ run: run.id, slice: "S2", doing: "two", files: [] }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "one", files: [] }).member;
+  const s2 = board.join({ run: run.id, seat: "S2", doing: "two", files: [] }).member;
   return { run, s1, s2 };
 };
 
@@ -87,7 +87,7 @@ test("prune removes a run closed past the retention with its seats, messages and
   assert.equal(removed.runs, 1);
   // the row stays, stamped, so its id is never handed out again (D61)
   assert.equal(count("SELECT COUNT(*) AS n FROM runs WHERE id = ? AND pruned_at IS NOT NULL", old.run.id), 1);
-  assert.equal(count("SELECT COUNT(*) AS n FROM slices WHERE run = ?", old.run.id), 0);
+  assert.equal(count("SELECT COUNT(*) AS n FROM seats WHERE run = ?", old.run.id), 0);
   assert.equal(count("SELECT COUNT(*) AS n FROM participants WHERE run = ?", old.run.id), 0);
   assert.equal(count("SELECT COUNT(*) AS n FROM messages WHERE run = ?", old.run.id), 0);
   assert.equal(count("SELECT COUNT(*) AS n FROM deliveries WHERE seq = ?", said.seq), 0);
@@ -110,7 +110,7 @@ test("a pruned run's id is never given to a new run, and the page lists it nowhe
 
 test("open posts the opened event with the run, naming kind, group and title: a member of another run subscribed to any:opened wakes (D69)", async () => {
   const { run: first } = runWithMembers("alpha");
-  const watcher = board.join({ run: first.id, slice: "S1", doing: "watching", files: [], on: [{ event: "opened", scope: "any" }] }).runner;
+  const watcher = board.join({ run: first.id, seat: "S1", doing: "watching", files: [], on: [{ event: "opened", scope: "any" }] }).member;
   board.deliver(watcher);
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "beta", title: "Beta topic", seats: SEATS });
   const opened = board.snapshot(REPO).events.filter((e) => e.kind === "event" && e.body.startsWith(`run ${run.id} opened`));
@@ -125,7 +125,7 @@ test("open posts the opened event with the run, naming kind, group and title: a 
 test("close posts the closed event with the run it closes: a member of another run subscribed to any:closed wakes (D67)", async () => {
   const { run } = runWithMembers("alpha");
   const other = board.openRun({ repo: REPO, group: "beta", title: "beta", seats: SEATS });
-  const watcher = board.join({ run: other.id, slice: "S1", doing: "watching", files: [], on: [{ event: "closed", scope: "any" }] }).runner;
+  const watcher = board.join({ run: other.id, seat: "S1", doing: "watching", files: [], on: [{ event: "closed", scope: "any" }] }).member;
   board.deliver(watcher);
   board.closeRun(run.id);
   const closed = board.snapshot(REPO).events.filter((e) => e.kind === "event" && e.body === `run ${run.id} closed`);
@@ -211,11 +211,11 @@ test("a run whose every member is silent is flagged once with the run, by its or
   const toOrchestrator = board.deliver(board.participant("quiet/orchestrator")!);
   assert.ok(!toOrchestrator.full.some((m) => m.body.includes("is stale")));
   assert.ok(!toOrchestrator.lines.some((l) => l.includes("is stale")));
-  // a runner of the run hears it, as a line
+  // a member of the run hears it, as a line
   assert.ok(board.deliver(s1).lines.some((l) => l.includes("is stale")));
 });
 
-test("a silent orchestrator is posted quiet once, with its run; its next call posts back; a silent runner gets none (D15)", () => {
+test("a silent orchestrator is posted quiet once, with its run; its next call posts back; a silent member gets none (D15)", () => {
   const { run } = runWithMembers("hush");
   const orchestrator = board.participant("hush/orchestrator")!;
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
@@ -237,7 +237,7 @@ test("a silent orchestrator is posted quiet once, with its run; its next call po
   assert.equal(back[0].from, orchestrator.name);
   board.deliver(orchestrator);
   assert.equal(backEvents().length, 1, "back once");
-  // no runner is ever posted quiet, silent as they were
+  // no member is ever posted quiet, silent as they were
   assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "quiet" || e.event === "back").every((e) => e.from === orchestrator.name));
 });
 

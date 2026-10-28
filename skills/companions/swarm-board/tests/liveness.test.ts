@@ -60,9 +60,9 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 /** A brainstorm with two seats, a and b, joined, threshold 5 s; what was already for them had. */
 const setup = () => {
   links = new Map();
-  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", stallMs: 5000, seats: [{ id: "a", title: "A", blockers: [] }, { id: "b", title: "B", blockers: [] }] });
-  const a = board.join({ run: run.id, slice: "a", doing: "x", files: [] }).runner;
-  const b = board.join({ run: run.id, slice: "b", doing: "x", files: [] }).runner;
+  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", stallMs: 5000, seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   const orchestrator = board.participant("idea/orchestrator")!;
   for (const p of [a, b, orchestrator]) board.deliver(p);
   return { run, a, b, orchestrator };
@@ -84,7 +84,7 @@ test("an activity updates the member's member_activity row and adds a token read
   } finally {
     db.close();
   }
-  const live = board.snapshot(REPO).roster.find((r) => r.runner === "idea/a")!.liveness!;
+  const live = board.snapshot(REPO).roster.find((r) => r.member === "idea/a")!.liveness!;
   assert.deepEqual([live.state, live.doing, live.tokens, live.movedAt], ["working", "Read src/y.ts", 50, new Date(base + 1000).toISOString()]);
   // an ended member's activity is not recorded
   board.end(board.participant("idea/b")!);
@@ -309,7 +309,7 @@ test("the snapshot's liveness and the roster carry progressAt and aliveAt (D38)"
   board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
   const before = Date.now();
   board.livenessTick(run.id, new Date(), presence);
-  const live = () => board.snapshot(REPO).roster.find((r) => r.runner === "idea/a")!.liveness!;
+  const live = () => board.snapshot(REPO).roster.find((r) => r.member === "idea/a")!.liveness!;
   const rostered = () => board.roster(REPO).find((r) => r.name === "idea/a")!;
   assert.equal(live().progressAt, base);
   assert.ok(live().aliveAt! >= before, "a link up is alive now");
@@ -324,7 +324,7 @@ test("the snapshot's liveness and the roster carry progressAt and aliveAt (D38)"
 test("no idle while a seat of the run has yet to join: a run filling up is not idle (D44)", async () => {
   links = new Map();
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "fill", title: "F", stallMs: 5000, seats: ["a", "b", "c"].map((id) => ({ id, title: id, blockers: [] })) });
-  const a = board.join({ run: run.id, slice: "a", doing: "x", files: [] }).runner;
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   board.deliver(a);
   const held = board.wait(a, { mentionsOnly: true, timeoutMs: 300 });
   const base = Date.now();

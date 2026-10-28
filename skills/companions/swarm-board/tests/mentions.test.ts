@@ -28,7 +28,7 @@ test("a two-letter seat id loses to a run code; a two-letter token naming no run
   assert.deepEqual(parseMentions("@QA you", "review-tool", PLANS), ["review-tool/QA"]);
 });
 
-test("a funny name names its runner, whatever its run", () => {
+test("a funny name names its member, whatever its run", () => {
   assert.deepEqual(parseMentions("@SleepyOtter hi", PLANS[0], PLANS, NAMES), ["review-tool/S3"]);
 });
 

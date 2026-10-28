@@ -22,7 +22,7 @@ function fullPlanRun(board: Board, group = "app"): { run: RunId; seqs: number[] 
   const { run, m: [a, b] } = planRun(board, group, ["S1", "S2"], { S1: [{ path: "src/x.ts", interface: true }] });
   clockTo(1), share(board, b, a, "src/x.ts");
   clockTo(2);
-  const agreed = board.post(a, `@${b.name} ${b.slice} changes the top, ${a.slice} the rest`, { about: "src/x.ts", kind: "agreement" });
+  const agreed = board.post(a, `@${b.name} ${b.seat} changes the top, ${a.seat} the rest`, { about: "src/x.ts", kind: "agreement" });
   clockTo(3), board.checkEdit(a, "src/y.ts");
   clockTo(4), board.reconcileWrites(b, ["src/y.ts"]);
   clockTo(5), board.lockMerge(a, "main");
@@ -96,7 +96,7 @@ test("a run before the records reads `recorded: false`, its lock-wait and confli
   clockTo(1);
   await recordsBeginAt(s.file, at(1));
   clockTo(2), share(board, b, a, "src/x.ts");
-  clockTo(3), board.post(a, `@${b.name} ${b.slice} changes the top`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(3), board.post(a, `@${b.name} ${b.seat} changes the top`, { about: "src/x.ts", kind: "agreement" });
   clockTo(4), board.checkEdit(a, "src/y.ts");
   clockTo(5), board.reconcileWrites(b, ["src/y.ts"]);
   clockTo(6), board.lockMerge(a, "main");
@@ -185,7 +185,7 @@ test("a closed run's flags are the board's flag messages, read after release: th
     const { run, m: [a, b] } = planRun(board, group, ["S1", "S2"]);
     board.checkEdit(a, "src/y.ts");
     const [flag] = board.reconcileWrites(b, ["src/y.ts"]);
-    board.post(a, `@${b.name} the page reads 'flag: <runner> wrote <path> outside its claim; <holder> holds it'`, { about: "src/view.ts" });
+    board.post(a, `@${b.name} the page reads 'flag: <member> wrote <path> outside its claim; <holder> holds it'`, { about: "src/view.ts" });
     board.closeRun(run);
     return { run, a: a.name, b: b.name, flagSeq: flag.seq };
   };
@@ -195,7 +195,7 @@ test("a closed run's flags are the board's flag messages, read after release: th
     return {
       recorded: r.recorded,
       plan: r.plan!.flags,
-      members: r.members.filter((m) => m.slice !== "orchestrator").map((m) => [m.member, m.flags, m.marks.filter((x) => x.what === "flag").length]),
+      members: r.members.filter((m) => m.seat !== "orchestrator").map((m) => [m.member, m.flags, m.marks.filter((x) => x.what === "flag").length]),
       total: out.totals.flags,
       without: out.totals.runsWithoutFlag,
       series: out.totals.series.flags,
@@ -270,7 +270,7 @@ test("before shares-since a path claimed by two members is shared, estimated, it
   clockTo(2), board.end(a);
   clockTo(3), board.checkEdit(b, "src/x.ts");
   clockTo(4), board.post(b, `@${a.name} I change one function in src/x.ts`, { about: "src/x.ts" });
-  clockTo(5), board.post(b, `@${a.name} ${b.slice} owns the bottom`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(5), board.post(b, `@${a.name} ${b.seat} owns the bottom`, { about: "src/x.ts", kind: "agreement" });
   clockTo(6), board.checkEdit(b, "src/y.ts");
   clockTo(10), board.closeRun(run);
   await recordsBeginAt(s.file, at(11));

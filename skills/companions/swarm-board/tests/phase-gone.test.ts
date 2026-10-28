@@ -32,7 +32,7 @@ const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.eve
 const setup = (seats = ["a", "b", "c", "d"]) => {
   links = new Map();
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", stallMs: 5000, seats: seats.map((id) => ({ id, title: id, blockers: [] })) });
-  const members = Object.fromEntries(seats.map((id) => [id, board.join({ run: run.id, slice: id, doing: "x", files: [] }).runner]));
+  const members = Object.fromEntries(seats.map((id) => [id, board.join({ run: run.id, seat: id, doing: "x", files: [] }).member]));
   const orchestrator = board.participant("idea/orchestrator")!;
   board.phase(orchestrator, "diverge", "every idea");
   // what was already for them had: a wait blocks until something new

@@ -114,8 +114,8 @@ export function openTwoRunners(r: Repo, plan = "review-tool", title = "T"): numb
   const slices = path.join(r.home, `slices-${plan}.json`);
   fs.writeFileSync(slices, SLICES);
   const id = Number(r.cli(r.repo, "open", "--plan", plan, "--title", title, "--slices", slices).split("\n")[0].trim());
-  r.cli(r.wtA, "join", "--run", String(id), "--slice", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
-  r.cli(r.wtB, "join", "--run", String(id), "--slice", "S5", "--doing", "the skill");
+  r.cli(r.wtA, "join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
+  r.cli(r.wtB, "join", "--run", String(id), "--seat", "S5", "--doing", "the skill");
   r.cli(r.wtA, "deliver");
   r.cli(r.wtB, "deliver");
   return id;

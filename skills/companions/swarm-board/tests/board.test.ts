@@ -7,9 +7,9 @@ import { openBoard, type Board } from "../src/board/board.ts";
 
 const REPO = "/repos/one/.git";
 const SLICES = [
-  { id: "S1", title: "the board", blockers: [] },
-  { id: "S3", title: "the page", blockers: ["S1"] },
-  { id: "S5", title: "the skill", blockers: [] },
+  { id: "S1", role: "the board", blockers: [] },
+  { id: "S3", role: "the page", blockers: ["S1"] },
+  { id: "S5", role: "the skill", blockers: [] },
 ];
 
 let dir: string;
@@ -34,8 +34,8 @@ afterEach(() => {
 
 const twoRunners = () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
-  const s3 = board.join({ run: run.id, slice: "S3", doing: "page", files: [] }).runner;
-  const s5 = board.join({ run: run.id, slice: "S5", doing: "skill", files: [] }).runner;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "page", files: [] }).member;
+  const s5 = board.join({ run: run.id, seat: "S5", doing: "skill", files: [] }).member;
   board.deliver(s3); // the join events
   board.deliver(s5);
   return { run, s3, s5, orchestrator: board.participant("review-tool/orchestrator")! };
@@ -45,25 +45,25 @@ test("opens a run and lists its slices", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
   assert.equal(run.state, "open");
   assert.deepEqual(
-    run.slices.map((s) => [s.id, s.state, s.blockers]),
+    run.seats.map((s) => [s.id, s.state, s.blockers]),
     [
       ["S1", "ready", []],
       ["S3", "ready", ["S1"]],
       ["S5", "ready", []],
     ],
   );
-  board.setSliceState(run.id, "S1", "running");
-  assert.equal(board.runs()[0].slices[0].state, "running");
+  board.setSeatState(run.id, "S1", "running");
+  assert.equal(board.runs()[0].seats[0].state, "running");
 });
 
 test("join returns every participant of the repository, both plans", () => {
   const a = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const other = board.openRun({ repo: "/repos/two/.git", group: "elsewhere", title: "C", seats: SLICES });
-  board.join({ run: a.id, slice: "S3", doing: "page", files: [{ path: "src/x.ts", interface: true }] });
-  board.join({ run: other.id, slice: "S1", doing: "far away", files: [] });
-  const { runner, roster } = board.join({ run: b.id, slice: "S1", doing: "board", files: [] });
-  assert.equal(runner.name, "swarm/S1");
+  board.join({ run: a.id, seat: "S3", doing: "page", files: [{ path: "src/x.ts", interface: true }] });
+  board.join({ run: other.id, seat: "S1", doing: "far away", files: [] });
+  const { member, roster } = board.join({ run: b.id, seat: "S1", doing: "board", files: [] });
+  assert.equal(member.name, "swarm/S1");
   assert.deepEqual(roster.map((r) => r.name).sort(), ["review-tool/S3", "review-tool/orchestrator", "swarm/S1", "swarm/orchestrator"]);
   const s3 = roster.find((r) => r.name === "review-tool/S3")!;
   assert.equal(s3.doing, "page");
@@ -81,7 +81,7 @@ test("a mention is delivered in full, the rest as one line", () => {
   assert.match(d.lines[0], new RegExp(`^#${other.seq} review-tool/S3: progress: half way$`));
 });
 
-test("a runner never receives its own message", () => {
+test("a member never receives its own message", () => {
   const { s3 } = twoRunners();
   board.post(s3, "@S3 note to self");
   const d = board.deliver(s3);
@@ -100,7 +100,7 @@ test("deliver marks delivered, a second deliver is empty", () => {
 test("@swarm reaches its run only, @<plan>/S1 and @<CODE>·S3 cross; @all names nobody (D3)", () => {
   const { s3, s5 } = twoRunners();
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const far = board.join({ run: b.id, slice: "S1", doing: "board", files: [] }).runner;
+  const far = board.join({ run: b.id, seat: "S1", doing: "board", files: [] }).member;
   board.deliver(far);
   board.deliver(s3);
   board.deliver(s5);
@@ -187,7 +187,7 @@ test("without mentionsOnly, a wait still ends on any delivery", async () => {
   assert.equal(d.lines.length, 1);
 });
 
-test("a newer wait of a runner, from another process, supersedes the older: it returns empty at once; the newer gets the message", async () => {
+test("a newer wait of a member, from another process, supersedes the older: it returns empty at once; the newer gets the message", async () => {
   const { s3, s5 } = twoRunners();
   const other = await another(); // the foreground wait, in a second process
   const older = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
@@ -208,7 +208,7 @@ test("a newer wait of a runner, from another process, supersedes the older: it r
 test("a superseded wait leaves the newer one's state: listening while a mentions wait is pending, waiting for a plain one", async () => {
   const { s5 } = twoRunners();
   const watcher = await another();
-  const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.runner === s5.name)!;
+  const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
   const listener = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   const foreground = watcher.wait(watcher.participant(s5.name)!, { timeoutMs: 400 });
   assert.equal((await listener).superseded, true);
@@ -223,9 +223,9 @@ test("a superseded wait leaves the newer one's state: listening while a mentions
   assert.equal(s5Of().listening, false);
 });
 
-test("end releases a pending wait of that runner, empty, at once", async () => {
+test("end releases a pending wait of that member, empty, at once", async () => {
   const { s5 } = twoRunners();
-  const other = await another(); // end from a second connection, as the runner's next call would
+  const other = await another(); // end from a second connection, as the member's next call would
   const waiting = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   await new Promise((r) => setTimeout(r, 100));
   const t0 = Date.now();
@@ -235,7 +235,7 @@ test("end releases a pending wait of that runner, empty, at once", async () => {
   assert.ok(Date.now() - t0 < 1000, `released after ${Date.now() - t0} ms`);
 });
 
-test("post by an ended runner throws", () => {
+test("post by an ended member throws", () => {
   const { s3 } = twoRunners();
   board.end(s3);
   assert.throws(() => board.post(s3, "late"), /review-tool\/S3 has ended/);
@@ -249,7 +249,7 @@ test("an agreement is a message of kind agreement", () => {
   assert.equal(board.deliver(s5).full[0].kind, "agreement");
 });
 
-// ── claims, reconcile, the merge lock (Slice 2) ──────────────────────────────────
+// ── claims, reconcile, the merge lock (Seat 2) ──────────────────────────────────
 
 const CHECKOUT = path.resolve("/repos/one");
 const wt = (name: string): string => path.resolve(`/worktrees/${name}`);
@@ -257,8 +257,8 @@ const wt = (name: string): string => path.resolve(`/worktrees/${name}`);
 /** S3 holds src/a.ts (declared), S5 holds src/b.ts; each in its own worktree. */
 const claimed = () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
-  const s3 = board.join({ run: run.id, slice: "S3", doing: "the page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).runner;
-  const s5 = board.join({ run: run.id, slice: "S5", doing: "the skill", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s5") }).runner;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "the page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).member;
+  const s5 = board.join({ run: run.id, seat: "S5", doing: "the skill", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s5") }).member;
   board.deliver(s3);
   board.deliver(s5);
   return { run, s3, s5 };
@@ -285,7 +285,7 @@ test("a post about the path mentioning the holder opens it; both then hold it", 
   board.post(s5, "@S3 I add isExpired() at the end", { about: "src/a.ts" });
   assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), {
     allowed: true,
-    sharedWith: [{ runner: "review-tool/S3", doing: "the page" }],
+    sharedWith: [{ member: "review-tool/S3", doing: "the page" }],
     notice: "src/a.ts is also held by review-tool/S3: the page",
   });
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S3", "review-tool/S5"]);
@@ -301,7 +301,7 @@ test("a body naming the file opens it as an about does", () => {
 
 test("a post about the path mentioning no holder does not open it", () => {
   const { run, s5 } = claimed();
-  board.join({ run: run.id, slice: "S1", doing: "board", files: [], worktree: wt("s1") });
+  board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") });
   board.post(s5, "I add isExpired() at the end", { about: "src/a.ts" });
   board.post(s5, "@S1 I add isExpired() at the end", { about: "src/a.ts" }); // S1 does not hold it
   board.post(s5, "@S3 about something else", { about: "src/b.ts" });
@@ -312,7 +312,7 @@ test("a path held by two opens only once every holder is mentioned, in one post 
   const { run, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
   board.checkEdit(s5, "src/a.ts");
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "board", files: [], worktree: wt("s1") }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
   board.post(s1, "@S3 one line in a.ts", { about: "src/a.ts" });
   const v = board.checkEdit(s1, "src/a.ts");
   assert.equal(v.allowed, false);
@@ -321,7 +321,7 @@ test("a path held by two opens only once every holder is mentioned, in one post 
   assert.equal(board.checkEdit(s1, "src/a.ts").allowed, true);
 });
 
-test("the notice is given once per runner and path", () => {
+test("the notice is given once per member and path", () => {
   const { s3, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
   assert.deepEqual(
@@ -340,20 +340,20 @@ test("release drops one holder of a shared path", () => {
   board.checkEdit(s5, "src/a.ts");
   board.release(s3, "src/a.ts");
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S5"]);
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "board", files: [], worktree: wt("s1") }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
   const v = board.checkEdit(s1, "src/a.ts");
   assert.match((v as { refusal: string }).refusal, /^src\/a\.ts is also held by review-tool\/S5 \(/);
 });
 
-test("a file declared at join while another runner holds it shows under both holders (D62)", () => {
+test("a file declared at join while another member holds it shows under both holders (D62)", () => {
   const { run } = claimed();
-  board.join({ run: run.id, slice: "S1", doing: "board", files: [{ path: "src/a.ts", interface: true }], worktree: wt("s1") });
+  board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/a.ts", interface: true }], worktree: wt("s1") });
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S3", "review-tool/S1"]);
 });
 
 test("merged mentions every other holder of a shared path", () => {
   const { run, s3, s5 } = claimed();
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "board", files: [], worktree: wt("s1") }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
   for (const p of [s1, s5]) {
     board.post(p, "@S3 @S1 my part of a.ts", { about: "src/a.ts" });
     assert.equal(board.checkEdit(p, "src/a.ts").allowed, true);
@@ -367,22 +367,22 @@ test("merged mentions every other holder of a shared path", () => {
   assert.equal(board.deliver(s1).full[0].seq, m.seq);
 });
 
-test("a runner is given a funny name at join, unique on the repository; @Name mentions it (D43)", () => {
+test("a member is given a funny name at join, unique on the repository; @Name mentions it (D43)", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
-  const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: [{ id: "S1", title: "x", blockers: [] }] });
-  const many = Array.from({ length: 30 }, (_, i) => board.join({ run: run.id, slice: `T${i}`, doing: "x", files: [] }).runner);
-  const far = board.join({ run: other.id, slice: "S1", doing: "y", files: [] }).runner;
+  const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: [{ id: "S1", blockers: [] }] });
+  const many = Array.from({ length: 30 }, (_, i) => board.join({ run: run.id, seat: `T${i}`, doing: "x", files: [] }).member);
+  const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [] }).member;
   const nicks = [...many, far].map((p) => p.nick);
   assert.ok(nicks.every((n) => /^[A-Z][a-z]+ [A-Z][a-z]+$/.test(n)), nicks.join(", "));
-  assert.equal(new Set(nicks).size, nicks.length, "unique among the repository's active runners");
-  // the orchestrator is given one at open too (D17), unique with the runners'
+  assert.equal(new Set(nicks).size, nicks.length, "unique among the repository's active members");
+  // the orchestrator is given one at open too (D17), unique with the members'
   const orch = board.participant("review-tool/orchestrator")!.nick;
   assert.match(orch, /^[A-Z][a-z]+ [A-Z][a-z]+$/);
   assert.ok(!nicks.includes(orch));
-  // kept for the run: a second join of the slice keeps it
-  assert.equal(board.join({ run: run.id, slice: "T0", doing: "again", files: [] }).runner.nick, many[0].nick);
+  // kept for the run: a second join of the seat keeps it
+  assert.equal(board.join({ run: run.id, seat: "T0", doing: "again", files: [] }).member.nick, many[0].nick);
   assert.equal(board.roster(REPO).find((r) => r.name === far.name)!.nick, far.nick);
-  // @SleepyOtter is a mention of that runner, across plans
+  // @SleepyOtter is a mention of that member, across plans
   const m = board.post(many[1], `@${far.nick.replace(" ", "")} your schema`);
   assert.deepEqual(m.mentions, [far.name]);
 });
@@ -390,13 +390,13 @@ test("a runner is given a funny name at join, unique on the repository; @Name me
 test("holds the first edit across two runs on one repository", () => {
   claimed();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const s1 = board.join({ run: other.id, slice: "S1", doing: "board", files: [], worktree: wt("swarm-s1") }).runner;
+  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [], worktree: wt("swarm-s1") }).member;
   const v = board.checkEdit(s1, path.join(wt("swarm-s1"), "src/b.ts"));
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5 \(\w+ \w+: the skill\)/);
   // a run on another repository holds nothing here
   const far = board.openRun({ repo: "/repos/two/.git", group: "far", title: "C", seats: SLICES });
-  const f1 = board.join({ run: far.id, slice: "S1", doing: "x", files: [], worktree: wt("far") }).runner;
+  const f1 = board.join({ run: far.id, seat: "S1", doing: "x", files: [], worktree: wt("far") }).member;
   assert.deepEqual(board.checkEdit(f1, path.join(wt("far"), "src/b.ts")), FREE);
 });
 
@@ -425,9 +425,9 @@ test("end releases the claims", () => {
   assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
 });
 
-test("slice done releases a stale runner's claims", () => {
+test("seat done releases a stale member's claims", () => {
   const { run, s5 } = claimed();
-  board.setSliceState(run.id, "S3", "done");
+  board.setSeatState(run.id, "S3", "done");
   assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
 });
 
@@ -453,7 +453,7 @@ test("flags a held file written outside the claim, mentioning both", () => {
   assert.equal(board.checkEdit(s5, "src/a.ts").allowed, false);
 });
 
-test("grants the lock to one runner at a time", () => {
+test("grants the lock to one member at a time", () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(board.lockMerge(s3), { granted: true });
   assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
@@ -462,7 +462,7 @@ test("grants the lock to one runner at a time", () => {
   assert.deepEqual(board.lockMerge(s5), { granted: true });
 });
 
-test("a runner refused the lock hears its release by merged in a mentions-only wait (D65)", async () => {
+test("a member refused the lock hears its release by merged in a mentions-only wait (D65)", async () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(board.lockMerge(s3), { granted: true });
   assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
@@ -479,7 +479,7 @@ test("a runner refused the lock hears its release by merged in a mentions-only w
   assert.equal(board.deliver(s5).full.length, 0);
 });
 
-test("a runner refused the lock hears its release by the holder's end (D65)", async () => {
+test("a member refused the lock hears its release by the holder's end (D65)", async () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(board.lockMerge(s3), { granted: true });
   assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
@@ -493,7 +493,7 @@ test("a runner refused the lock hears its release by the holder's end (D65)", as
 
 test("a refusal recorded under one holder is not carried to the next (D65)", () => {
   const { run, s3, s5 } = claimed();
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "board", files: [], worktree: wt("s1") }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
   board.deliver(s3);
   board.deliver(s5);
   board.deliver(s1);
@@ -509,7 +509,7 @@ test("a refusal recorded under one holder is not carried to the next (D65)", () 
 test("merged releases the lock and mentions holders and declarers", () => {
   const { run, s3, s5 } = claimed();
   // S1 declares src/b.ts, which S5 holds: a declarer, not a holder
-  const s1 = board.join({ run: run.id, slice: "S1", doing: "board", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s1") }).runner;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s1") }).member;
   board.deliver(s3);
   board.deliver(s5);
   board.deliver(s1);
@@ -533,10 +533,10 @@ test("merged releases the lock and mentions holders and declarers", () => {
 
 test("an interface file in a merge is announced to @swarm, and reaches the other run's members", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, slice: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).runner;
-  const s5 = board.join({ run: run.id, slice: "S5", doing: "x", files: [], worktree: wt("s5") }).runner;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).member;
+  const s5 = board.join({ run: run.id, seat: "S5", doing: "x", files: [], worktree: wt("s5") }).member;
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const far = board.join({ run: other.id, slice: "S1", doing: "y", files: [], worktree: wt("far") }).runner;
+  const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [], worktree: wt("far") }).member;
   for (const p of [s3, s5, far]) board.deliver(p);
   board.lockMerge(s3);
   board.merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
@@ -550,9 +550,9 @@ test("an interface file in a merge is announced to @swarm, and reaches the other
 
 test("a plan merge of an interface file never mentions a brainstorm seat subscribed to nothing, and stays in its run (D70)", async () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, slice: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).runner;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).member;
   const debate = board.openRun({ repo: REPO, kind: "brainstorm", group: "topic", title: "T", seats: SLICES });
-  const seat = board.join({ run: debate.id, slice: "S1", doing: "arguing", files: [], on: [] }).runner;
+  const seat = board.join({ run: debate.id, seat: "S1", doing: "arguing", files: [], on: [] }).member;
   board.deliver(seat);
   board.lockMerge(s3);
   board.merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
@@ -564,7 +564,7 @@ test("a plan merge of an interface file never mentions a brainstorm seat subscri
   assert.equal(board.deliver(seat).full.length, 0);
 });
 
-test("identify resolves the live runner from its worktree, a subdirectory included (D28)", () => {
+test("identify resolves the live member from its worktree, a subdirectory included (D28)", () => {
   const { s3, s5 } = claimed();
   assert.equal(board.identify({ worktree: path.join(wt("s3"), "src") })?.name, s3.name);
   assert.equal(board.identify({ worktree: wt("s5") })?.name, s5.name);
@@ -573,18 +573,18 @@ test("identify resolves the live runner from its worktree, a subdirectory includ
   assert.equal(board.identify({ worktree: wt("s5") }), null);
 });
 
-test("unknown run, runner and seq are named", () => {
-  assert.throws(() => board.join({ run: 42, slice: "S1", doing: "x", files: [] }), /unknown run 42/);
+test("unknown run, member and seq are named", () => {
+  assert.throws(() => board.join({ run: 42, seat: "S1", doing: "x", files: [] }), /unknown run 42/);
   assert.equal(board.participant("nobody/S9"), null);
   assert.throws(() => board.read(99), /unknown message #99/);
 });
 
-// ── the page's view: repos, snapshot, onChange (Slice 3, D39) ─────────────────────
+// ── the page's view: repos, snapshot, onChange (Seat 3, D39) ─────────────────────
 
 test("a snapshot shows two plans on one repository", () => {
   const { s3 } = claimed();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const s1 = board.join({ run: other.id, slice: "S1", doing: "board", files: [{ path: "src/api.ts", interface: true }], worktree: wt("swarm-s1") }).runner;
+  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [{ path: "src/api.ts", interface: true }], worktree: wt("swarm-s1") }).member;
   board.post(s3, "@swarm/S1 one thread", { about: "src/a.ts" });
   board.lockMerge(s1);
 
@@ -592,7 +592,7 @@ test("a snapshot shows two plans on one repository", () => {
   assert.equal(snap.repo, REPO);
   assert.equal(snap.name, "one");
   assert.deepEqual(
-    snap.runs.map((r) => [r.plan, r.code, r.title, r.open, r.runners, r.done, r.of]),
+    snap.runs.map((r) => [r.plan, r.code, r.title, r.open, r.members, r.done, r.of]),
     [
       ["review-tool", "RT", "Review tool", true, 2, 0, 3],
       ["swarm", "SW", "B", true, 1, 0, 3],
@@ -600,18 +600,18 @@ test("a snapshot shows two plans on one repository", () => {
   );
   assert.deepEqual(Object.keys(snap.queues).sort(), ["review-tool", "swarm"]);
   assert.deepEqual(
-    snap.queues["review-tool"].map((q) => [q.slice, q.title, q.state, q.blockers, q.runner]),
+    snap.queues["review-tool"].map((q) => [q.seat, q.role, q.state, q.blockers, q.member]),
     [
       ["S1", "the board", "ready", [], null],
       ["S3", "the page", "ready", ["S1"], "review-tool/S3"],
       ["S5", "the skill", "ready", [], "review-tool/S5"],
     ],
   );
-  const by = Object.fromEntries(snap.roster.map((r) => [r.runner, r]));
+  const by = Object.fromEntries(snap.roster.map((r) => [r.member, r]));
   assert.deepEqual(Object.keys(by).sort(), ["review-tool/S3", "review-tool/S5", "review-tool/orchestrator", "swarm/S1", "swarm/orchestrator"]);
   assert.equal(by["review-tool/orchestrator"].state, "watching");
   assert.equal(by["review-tool/S3"].state, "working");
-  assert.equal(by["review-tool/S3"].title, "the page");
+  assert.equal(by["review-tool/S3"].role, "the page");
   assert.equal(by["review-tool/S3"].doing, "the page");
   assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", interface: false, shared: false }]);
   assert.equal(by["swarm/S1"].state, "merging");
@@ -624,15 +624,15 @@ test("a snapshot shows two plans on one repository", () => {
   assert.throws(() => board.snapshot("/repos/none/.git"), /no repository \/repos\/none\/\.git/);
 });
 
-test("a runner's state: ended, done, waiting", async () => {
+test("a member's state: ended, done, waiting", async () => {
   const { run, s3, s5 } = claimed();
   const waiting = board.wait(s5, { timeoutMs: 400 });
   const watcher = await another();
-  assert.equal(watcher.snapshot(REPO).roster.find((r) => r.runner === s5.name)!.state, "waiting");
+  assert.equal(watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "waiting");
   await waiting;
   board.end(s5);
-  board.setSliceState(run.id, "S3", "done");
-  const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.runner, r.state]));
+  board.setSeatState(run.id, "S3", "done");
+  const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r.state]));
   assert.equal(by[s5.name], "ended");
   assert.equal(by[s3.name], "done");
 });
@@ -640,7 +640,7 @@ test("a runner's state: ended, done, waiting", async () => {
 test("a pending mentions-only wait is listening, the state still working; a plain wait is waiting", async () => {
   const { s5 } = twoRunners();
   const watcher = await another();
-  const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.runner === s5.name)!;
+  const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
   assert.equal(s5Of().listening, false);
   const listening = board.wait(s5, { timeoutMs: 300, mentionsOnly: true });
   assert.deepEqual([s5Of().state, s5Of().listening], ["working", true]);
@@ -659,7 +659,7 @@ test("a closed run stays in repos() within the retention, however many closed af
   let repos = board.repos();
   assert.deepEqual(repos.map((r) => r.repo), ["/repos/two/.git", REPO], "a repository with an open run first");
   assert.deepEqual(repos[1].runs.map((r) => [r.plan, r.open]), [["old", false]]);
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.runner === "old/orchestrator")!.state, "done");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "old/orchestrator")!.state, "done");
   // ten later closed runs no longer push it out; the open one stays first
   for (let i = 0; i < 10; i++) board.closeRun(board.openRun({ repo: "/repos/three/.git", group: `p${i}`, title: "x", seats: SLICES }).id);
   repos = board.repos();
@@ -681,12 +681,12 @@ test("each write fires onChange once with its repository", async () => {
   };
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   await settle("open a run");
-  const s3 = board.join({ run: run.id, slice: "S3", doing: "page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).runner;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).member;
   await settle("join");
   board.post(s3, "hello");
   await settle("post");
-  board.setSliceState(run.id, "S3", "running");
-  await settle("slice state");
+  board.setSeatState(run.id, "S3", "running");
+  await settle("seat state");
   board.checkEdit(s3, "src/new.ts");
   await settle("claim widened");
   board.release(s3, "src/new.ts");
@@ -702,9 +702,9 @@ test("each write fires onChange once with its repository", async () => {
   off();
 });
 
-test("calls counts every board call of a runner, one each, a wait's looks none (D66)", async () => {
+test("calls counts every board call of a member, one each, a wait's looks none (D66)", async () => {
   const { s3, s5 } = claimed();
-  const calls = () => board.snapshot(REPO).roster.find((r) => r.runner === s3.name)!.calls;
+  const calls = () => board.snapshot(REPO).roster.find((r) => r.member === s3.name)!.calls;
   const step = (what: string, call: () => unknown): void => {
     const before = calls();
     call();
@@ -725,14 +725,14 @@ test("calls counts every board call of a runner, one each, a wait's looks none (
   await board.wait(s3, { timeoutMs: 1300 }); // more than one look: the poll runs every second
   assert.equal(calls(), before + 1, "wait");
   step("end", () => board.end(s3));
-  // a read with no runner, and a refused call, count none
+  // a read with no member, and a refused call, count none
   const after = calls();
   board.read(seq);
   assert.throws(() => board.post(s3, "too late"));
   assert.equal(calls(), after);
 });
 
-test("an ended runner's doing says how it ended, and its end time is kept (D66)", () => {
+test("an ended member's doing says how it ended, and its end time is kept (D66)", () => {
   const { s3, s5 } = claimed();
   board.setDoing(s3, "writing src/cli.js");
   board.setDoing(s5, "writing src/b.ts");
@@ -740,31 +740,31 @@ test("an ended runner's doing says how it ended, and its end time is kept (D66)"
   board.merged(s3, "abc123", []);
   board.end(s3);
   board.end(s5);
-  const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.runner, r]));
+  const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r]));
   assert.equal(by[s3.name].doing, "merged and ended");
   assert.equal(by[s5.name].doing, "ended");
   for (const r of [by[s3.name], by[s5.name]]) {
-    assert.ok(r.ended && Date.parse(r.ended) >= Date.parse(r.joined), `${r.runner} ended ${r.ended}`);
+    assert.ok(r.ended && Date.parse(r.ended) >= Date.parse(r.joined), `${r.member} ended ${r.ended}`);
   }
 });
 
-test("a runner joined again starts unmerged and live (D66)", () => {
+test("a member joined again starts unmerged and live (D66)", () => {
   const { run, s3 } = claimed();
   board.lockMerge(s3);
   board.merged(s3, "abc123", []);
   board.end(s3);
-  const again = board.join({ run: run.id, slice: "S3", doing: "a second pass", files: [], worktree: wt("s3") }).runner;
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.runner === again.name)!.ended, null);
+  const again = board.join({ run: run.id, seat: "S3", doing: "a second pass", files: [], worktree: wt("s3") }).member;
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === again.name)!.ended, null);
   board.end(again);
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.runner === again.name)!.doing, "ended");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === again.name)!.doing, "ended");
 });
 
 test("a flag appears and clears with its claim", () => {
   const { s3, s5 } = claimed();
   board.reconcileWrites(s5, ["src/a.ts", "src/free.ts"]);
   assert.deepEqual(board.snapshot(REPO).flags, [
-    { path: "src/a.ts", runner: "review-tool/S5" },
-    { path: "src/free.ts", runner: "review-tool/S5" },
+    { path: "src/a.ts", member: "review-tool/S5" },
+    { path: "src/free.ts", member: "review-tool/S5" },
   ]);
   board.release(s3, "src/a.ts"); // the holder's claim goes, and with it the flag
   board.release(s5, "src/free.ts");
@@ -778,13 +778,13 @@ test("a run and its slices carry their links, opaque, to the snapshot (D44)", ()
     title: "R",
     link: "http://localhost:4321/d/12",
     seats: [
-      { id: "S1", title: "the board", blockers: [], link: "http://localhost:4321/d/13" },
-      { id: "S3", title: "the page", blockers: ["S1"] },
+      { id: "S1", blockers: [], link: "http://localhost:4321/d/13" },
+      { id: "S3", blockers: ["S1"] },
     ],
   });
   const snap = board.snapshot(REPO);
   assert.equal(snap.runs[0].link, "http://localhost:4321/d/12");
-  assert.deepEqual(snap.queues["review-tool"].map((q) => [q.slice, q.link]), [["S1", "http://localhost:4321/d/13"], ["S3", null]]);
+  assert.deepEqual(snap.queues["review-tool"].map((q) => [q.seat, q.link]), [["S1", "http://localhost:4321/d/13"], ["S3", null]]);
   assert.equal(board.runs()[0].link, "http://localhost:4321/d/12");
 });
 
@@ -798,8 +798,8 @@ test("a store from before shared claims is rebuilt keyed by holder, its claims k
   const old = await openBoard(file);
   opened.push(old);
   const run = old.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES }); // participant 1, the orchestrator
-  const s3 = old.join({ run: run.id, slice: "S3", doing: "the page", files: [] }).runner; // participant 2
-  const s5 = old.join({ run: run.id, slice: "S5", doing: "the skill", files: [] }).runner;
+  const s3 = old.join({ run: run.id, seat: "S3", doing: "the page", files: [] }).member; // participant 2
+  const s5 = old.join({ run: run.id, seat: "S5", doing: "the skill", files: [] }).member;
   assert.equal(s3.id, 2);
   assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["review-tool/S3"], interface: true }]);
   old.post(s5, "@S3 one helper", { about: "src/a.ts" });
@@ -812,8 +812,8 @@ test("a store from before shared claims is rebuilt keyed by holder, its claims k
 const twoRuns = () => {
   const { run, s3, s5 } = twoRunners();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const far = board.join({ run: other.id, slice: "S1", doing: "board", files: [] }).runner;
-  const near = board.join({ run: other.id, slice: "S3", doing: "page", files: [] }).runner;
+  const far = board.join({ run: other.id, seat: "S1", doing: "board", files: [] }).member;
+  const near = board.join({ run: other.id, seat: "S3", doing: "page", files: [] }).member;
   for (const p of [s3, s5, far, near]) board.deliver(p);
   return { run, other, s3, s5, far, near };
 };
@@ -867,7 +867,7 @@ test("@<CODE> across runs reaches every member of that run, and no one of the se
   assert.deepEqual(board.deliver(s5).full, []); // its own run's talk, a line
 });
 
-test("an event keeps its author's run; the snapshot's events carry run, its runners lastCall (D13, D21)", () => {
+test("an event keeps its author's run; the snapshot's events carry run, its members lastCall (D13, D21)", () => {
   const { run, s3, s5, far } = twoRuns();
   board.setDoing(s3, "the header");
   const got = board.deliver(s5);
@@ -878,7 +878,7 @@ test("an event keeps its author's run; the snapshot's events carry run, its runn
   const doing = snap.events.find((e) => e.body === "doing: the header")!;
   assert.equal(doing.run, run.id);
   assert.ok(snap.events.every((e) => typeof e.run === "number"));
-  for (const r of snap.roster) assert.ok(!Number.isNaN(Date.parse(r.lastCall)), r.runner);
+  for (const r of snap.roster) assert.ok(!Number.isNaN(Date.parse(r.lastCall)), r.member);
   assert.deepEqual(snap.runs.map((r) => [r.kind, r.group]), [["plan", "review-tool"], ["plan", "swarm"]]);
 });
 
@@ -919,12 +919,12 @@ test("an agreement about a path held by members of two runs keeps its author's r
 
 // A brainstorm run (D3, D21, D22): seats with no worktree and no claims.
 test("a brainstorm run refuses files, worktrees and every code verb, writing nothing", () => {
-  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "ideas", title: "Ideas", seats: [{ id: "critic", title: "the critic", role: "critic", blockers: [] }] });
+  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "ideas", title: "Ideas", seats: [{ id: "critic", role: "critic", blockers: [] }] });
   assert.equal(run.kind, "brainstorm");
   const before = JSON.stringify(board.snapshot(REPO));
-  assert.throws(() => board.join({ run: run.id, slice: "critic", doing: "x", files: [{ path: "src/a.ts", interface: false }] }), /join: a brainstorm run has no claims/);
+  assert.throws(() => board.join({ run: run.id, seat: "critic", doing: "x", files: [{ path: "src/a.ts", interface: false }] }), /join: a brainstorm run has no claims/);
   assert.equal(JSON.stringify(board.snapshot(REPO)), before);
-  const seat = board.join({ run: run.id, slice: "critic", doing: "reading", files: [], worktree: dir }).runner;
+  const seat = board.join({ run: run.id, seat: "critic", doing: "reading", files: [], worktree: dir }).member;
   assert.equal(seat.worktree, null);
   assert.equal(seat.kind, "brainstorm");
   const unchanged = JSON.stringify(board.snapshot(REPO));
@@ -947,12 +947,12 @@ test("a store from before channels opens: a row with run null reads as its autho
   const db = new DatabaseSync(file);
   db.exec(`
     CREATE TABLE runs (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, plan TEXT NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'open', opened_at TEXT NOT NULL, closed_at TEXT, link TEXT);
-    CREATE TABLE participants (id INTEGER PRIMARY KEY, run INTEGER NOT NULL, slice TEXT NOT NULL, worktree TEXT, doing TEXT NOT NULL DEFAULT '', files TEXT NOT NULL DEFAULT '[]', since_seq INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL, ended_at TEXT, last_call TEXT, nick TEXT, UNIQUE (run, slice));
+    CREATE TABLE participants (id INTEGER PRIMARY KEY, run INTEGER NOT NULL, seat TEXT NOT NULL, worktree TEXT, doing TEXT NOT NULL DEFAULT '', files TEXT NOT NULL DEFAULT '[]', since_seq INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL, ended_at TEXT, last_call TEXT, nick TEXT, UNIQUE (run, seat));
     CREATE TABLE messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, author INTEGER NOT NULL, body TEXT NOT NULL, about TEXT, kind TEXT NOT NULL DEFAULT 'msg', mentions TEXT NOT NULL DEFAULT '[]', at TEXT NOT NULL, by_board INTEGER NOT NULL DEFAULT 0);
     INSERT INTO runs (id, repo, plan, title, opened_at) VALUES (1, '${REPO}', 'old', 'Old', '2026-10-01T00:00:00Z');
-    INSERT INTO participants (id, run, slice, joined_at) VALUES (1, 1, 'orchestrator', '2026-10-01T00:00:00Z');
-    INSERT INTO participants (id, run, slice, joined_at, nick) VALUES (2, 1, 'S3', '2026-10-01T00:00:00Z', 'Sleepy Otter');
-    INSERT INTO participants (id, run, slice, joined_at, nick) VALUES (3, 1, 'S5', '2026-10-01T00:00:00Z', 'Hasty Crane');
+    INSERT INTO participants (id, run, seat, joined_at) VALUES (1, 1, 'orchestrator', '2026-10-01T00:00:00Z');
+    INSERT INTO participants (id, run, seat, joined_at, nick) VALUES (2, 1, 'S3', '2026-10-01T00:00:00Z', 'Sleepy Otter');
+    INSERT INTO participants (id, run, seat, joined_at, nick) VALUES (3, 1, 'S5', '2026-10-01T00:00:00Z', 'Hasty Crane');
     INSERT INTO messages (repo, author, body, mentions, at) VALUES ('${REPO}', 2, '@S5 before', '["old/S5"]', '2026-10-01T00:00:01Z');
   `);
   db.close();
@@ -974,34 +974,34 @@ test("a store from before channels opens: a row with run null reads as its autho
 
 // D59: subscriptions and the wake rule; D60: a seat added mid-run
 const SEATS = [
-  { id: "architect", title: "the architect", blockers: [] },
-  { id: "skeptic", title: "the skeptic", blockers: [], on: ["agreement"] },
+  { id: "architect", blockers: [] },
+  { id: "skeptic", blockers: [], on: ["agreement"] },
 ];
 
 test("join: --on over the seat row's on over the kind's defaults, per role", () => {
   const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
-  assert.deepEqual(board.join({ run: plan.id, slice: "S3", doing: "x", files: [] }).runner.subscriptions, []);
+  assert.deepEqual(board.join({ run: plan.id, seat: "S3", doing: "x", files: [] }).member.subscriptions, []);
   assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "merged", "done", "joined", "idle"]);
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
   assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale", "done", "joined", "idle"]);
-  assert.deepEqual(board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner.subscriptions, []);
-  assert.deepEqual(board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner.subscriptions, [{ event: "agreement", scope: "run" }]);
+  assert.deepEqual(board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member.subscriptions, []);
+  assert.deepEqual(board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member.subscriptions, [{ event: "agreement", scope: "run" }]);
   const on = [{ event: "merged" as const, scope: "any" as const }];
-  assert.deepEqual(board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [], on }).runner.subscriptions, on);
-  assert.deepEqual(board.roster(REPO).find((r) => r.slice === "skeptic")!.subscriptions, on);
-  assert.deepEqual(board.snapshot(REPO).roster.find((r) => r.slice === "skeptic")!.on, ["any:merged"]);
+  assert.deepEqual(board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [], on }).member.subscriptions, on);
+  assert.deepEqual(board.roster(REPO).find((r) => r.seat === "skeptic")!.subscriptions, on);
+  assert.deepEqual(board.snapshot(REPO).roster.find((r) => r.seat === "skeptic")!.on, ["any:merged"]);
 });
 
 test("a seats row naming an unknown event is refused at open", () => {
   assert.throws(
-    () => board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: [{ id: "x", title: "x", blockers: [], on: ["agreed"] }] }),
+    () => board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: [{ id: "x", blockers: [], on: ["agreed"] }] }),
     /unknown event agreed/,
   );
 });
 
 test("subscribe and unsubscribe return the member's set", () => {
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  const a = board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner;
+  const a = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
   assert.equal(board.subscribe(a, [{ event: "agreement", scope: "run" }, { event: "merged", scope: "any" }]).length, 2);
   assert.equal(board.subscribe(a, [{ event: "agreement", scope: "run" }]).length, 2);
   assert.deepEqual(board.unsubscribe(a, [{ event: "agreement", scope: "run" }]), [{ event: "merged", scope: "any" }]);
@@ -1021,8 +1021,8 @@ test("the board's events store their name; an agreement maps by kind, with no na
 
 test("a subscribed seat's wait --mentions ends on another seat's agreement, with no mention", async () => {
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  const architect = board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner;
-  const skeptic = board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner;
+  const architect = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
+  const skeptic = board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member;
   const waiting = (await another()).wait(skeptic, { mentionsOnly: true, timeoutMs: 5000 });
   const a = (await another()).post(architect, "D1 holds", { kind: "agreement", about: "D1" });
   const d = await waiting;
@@ -1031,8 +1031,8 @@ test("a subscribed seat's wait --mentions ends on another seat's agreement, with
 
 test("an unsubscribed seat's wait --mentions stays waiting on another seat's agreement", async () => {
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  const architect = board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner;
-  const skeptic = board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner;
+  const architect = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
+  const skeptic = board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member;
   const idle = (await another()).wait(architect, { mentionsOnly: true, timeoutMs: 1500 });
   (await another()).post(skeptic, "D1 holds", { kind: "agreement", about: "D1" });
   assert.deepEqual(await idle, { full: [], lines: [] });
@@ -1040,10 +1040,10 @@ test("an unsubscribed seat's wait --mentions stays waiting on another seat's agr
 
 test("an agreement in another run does not wake a run-scoped seat; any:agreement wakes on one; urgent and mentions always", async () => {
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
-  const skeptic = board.join({ run: idea.id, slice: "skeptic", doing: "x", files: [] }).runner;
-  const architect = board.join({ run: idea.id, slice: "architect", doing: "x", files: [] }).runner;
+  const skeptic = board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member;
+  const architect = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
   const idea2 = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea2", title: "J", seats: SEATS });
-  const elsewhere = board.join({ run: idea2.id, slice: "architect", doing: "x", files: [] }).runner;
+  const elsewhere = board.join({ run: idea2.id, seat: "architect", doing: "x", files: [] }).member;
   board.post(elsewhere, "D9 in the other run", { kind: "agreement", about: "D9" });
   assert.deepEqual(await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 1200 }), { full: [], lines: [] });
   board.subscribe(skeptic, [{ event: "agreement", scope: "any" }]);
@@ -1060,16 +1060,16 @@ test("an agreement in another run does not wake a run-scoped seat; any:agreement
   assert.deepEqual((await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 3000 })).full.map((x) => x.seq), [q.seq]);
 });
 
-test("addSlice adds after the last, ready; refuses a duplicate, an unknown blocker, a closed run; the snapshot lists it", () => {
+test("addSeat adds after the last, ready; refuses a duplicate, an unknown blocker, a closed run; the snapshot lists it", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
-  const s = board.addSlice(run.id, { id: "S7", title: "the late one", blockers: ["S1"] });
+  const s = board.addSeat(run.id, { id: "S7", blockers: ["S1"] });
   assert.deepEqual([s.id, s.state, s.blockers], ["S7", "ready", ["S1"]]);
-  assert.deepEqual(board.runs()[0].slices.map((x) => x.id), ["S1", "S3", "S5", "S7"]);
-  assert.ok(board.snapshot(REPO).queues["review-tool"].some((q) => q.slice === "S7"));
+  assert.deepEqual(board.runs()[0].seats.map((x) => x.id), ["S1", "S3", "S5", "S7"]);
+  assert.ok(board.snapshot(REPO).queues["review-tool"].some((q) => q.seat === "S7"));
   assert.ok(board.snapshot(REPO).events.some((e) => /added S7/.test(e.body)));
-  assert.equal(board.join({ run: run.id, slice: "S7", doing: "x", files: [] }).runner.slice, "S7");
-  assert.throws(() => board.addSlice(run.id, { id: "S7", title: "again", blockers: [] }), /already in run/);
-  assert.throws(() => board.addSlice(run.id, { id: "S8", title: "x", blockers: ["S99"] }), /unknown blocker S99/);
+  assert.equal(board.join({ run: run.id, seat: "S7", doing: "x", files: [] }).member.seat, "S7");
+  assert.throws(() => board.addSeat(run.id, { id: "S7", blockers: [] }), /already in run/);
+  assert.throws(() => board.addSeat(run.id, { id: "S8", blockers: ["S99"] }), /unknown blocker S99/);
   board.closeRun(run.id);
-  assert.throws(() => board.addSlice(run.id, { id: "S9", title: "x", blockers: [] }), /is closed/);
+  assert.throws(() => board.addSeat(run.id, { id: "S9", blockers: [] }), /is closed/);
 });

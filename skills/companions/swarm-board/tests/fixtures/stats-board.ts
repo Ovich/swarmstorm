@@ -42,17 +42,17 @@ export async function scratchBoard(prefix: string): Promise<ScratchBoard> {
 const seats = (ids: string[], on: Record<string, string[]> = {}): SeatSpec[] =>
   ids.map((id) => ({ id, title: id, blockers: [], ...(on[id] ? { on: on[id] } : {}) }));
 
-/** A plan run of `group` with one member per slice, joined now, in order. */
+/** A plan run of `group` with one member per seat, joined now, in order. */
 export function planRun(board: Board, group: string, slices: string[], files: Record<string, { path: string; interface: boolean }[]> = {}): { run: RunId; m: Participant[] } {
   const run = board.openRun({ repo: REPO, group, title: group, seats: seats(slices) }).id;
-  const m = slices.map((slice) => board.join({ run, slice, doing: slice, files: files[slice] ?? [] }).runner);
+  const m = slices.map((seat) => board.join({ run, seat, doing: seat, files: files[seat] ?? [] }).member);
   return { run, m };
 }
 
 /** A brainstorm run of `group` with one seat per id, joined now, in order; `on`: a seat row's subscriptions. */
 export function brainstormRun(board: Board, group: string, ids: string[], on: Record<string, string[]> = {}): { run: RunId; m: Participant[] } {
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group, title: group, seats: seats(ids, on) }).id;
-  const m = ids.map((slice) => board.join({ run, slice, doing: slice, files: [] }).runner);
+  const m = ids.map((seat) => board.join({ run, seat, doing: seat, files: [] }).member);
   return { run, m };
 }
 

@@ -9,9 +9,9 @@ import { openBoard, type Board } from "../src/board/board.ts";
 
 const REPO = "/repos/one/.git";
 const SEATS = [
-  { id: "writer", title: "the writer", blockers: [] },
-  { id: "checker", title: "the checker", blockers: [] },
-  { id: "judge", title: "the judge", blockers: [] },
+  { id: "writer", blockers: [] },
+  { id: "checker", blockers: [] },
+  { id: "judge", blockers: [] },
 ];
 
 let dir: string;
@@ -37,7 +37,7 @@ afterEach(() => {
 const seats = () => {
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "letter", title: "L", seats: SEATS });
   const orchestrator = board.participant("letter/orchestrator")!;
-  const [writer, checker, judge] = SEATS.map((s) => board.join({ run: run.id, slice: s.id, doing: "x", files: [] }).runner);
+  const [writer, checker, judge] = SEATS.map((s) => board.join({ run: run.id, seat: s.id, doing: "x", files: [] }).member);
   for (const p of [orchestrator, writer, checker, judge]) board.deliver(p);
   return { run, orchestrator, writer, checker, judge };
 };
@@ -79,9 +79,9 @@ test("in a seat's run, posts that wake no one stay until a wake, then come with 
   assert.deepEqual(d.full.map((m) => m.body), ["@orchestrator no strike", "@writer your turn"]);
 });
 
-test("a plan run keeps its delivery: another runner's post is one line", () => {
-  const plan = board.openRun({ repo: REPO, group: "build", title: "B", seats: [{ id: "S1", title: "a", blockers: [] }, { id: "S2", title: "b", blockers: [] }] });
-  const [s1, s2] = ["S1", "S2"].map((id) => board.join({ run: plan.id, slice: id, doing: "x", files: [] }).runner);
+test("a plan run keeps its delivery: another member's post is one line", () => {
+  const plan = board.openRun({ repo: REPO, group: "build", title: "B", seats: [{ id: "S1", blockers: [] }, { id: "S2", blockers: [] }] });
+  const [s1, s2] = ["S1", "S2"].map((id) => board.join({ run: plan.id, seat: id, doing: "x", files: [] }).member);
   board.deliver(s1);
   board.deliver(s2);
   board.post(s1, "@orchestrator the parser is in");

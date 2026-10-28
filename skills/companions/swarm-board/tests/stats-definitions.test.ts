@@ -18,7 +18,7 @@ const memberOf = (r: RunStats, name: string): MemberStats => r.members.find((m) 
 test("before shares-since, two members claiming a path one after the other are not shared; members at once, they are (D44, D46 point 1, SL11)", async () => {
   const { board } = s;
   const run = board.openRun({ repo: REPO, group: "app", title: "app", seats: ["S1", "S2", "S3"].map((id) => ({ id, title: id, blockers: [] })) }).id;
-  const join = (slice: string) => board.join({ run, slice, doing: slice, files: [] }).runner;
+  const join = (seat: string) => board.join({ run, seat, doing: seat, files: [] }).member;
   const a = join("S1");
   clockTo(1), board.checkEdit(a, "dist/out.js");
   clockTo(2), board.checkEdit(a, "src/x.ts");
@@ -52,11 +52,11 @@ test("an untold file with an agreement reads `told: false` and is not counted ag
   clockTo(3), board.checkEdit(a, "src/x.ts");
   clockTo(3), share(board, b, a, "src/x.ts");
   clockTo(3), share(board, c, [a, b], "src/x.ts");
-  clockTo(3), board.post(a, `@${b.name} ${b.slice} owns the top of x`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(3), board.post(a, `@${b.name} ${b.seat} owns the top of x`, { about: "src/x.ts", kind: "agreement" });
   // src/y.ts: told and agreed
   clockTo(4), board.checkEdit(a, "src/y.ts");
   clockTo(5), share(board, b, a, "src/y.ts");
-  clockTo(6), board.post(a, `@${b.name} ${b.slice} owns the top of y`, { about: "src/y.ts", kind: "agreement" });
+  clockTo(6), board.post(a, `@${b.name} ${b.seat} owns the top of y`, { about: "src/y.ts", kind: "agreement" });
   const shared = runOf(run).plan!.shared;
   assert.deepEqual(
     shared.perFile.map((f) => [f.path, f.told, f.agreement !== null]),
@@ -73,7 +73,7 @@ test("an agreement posted before the tell reads a negative `agreedAfterMs`, neve
   const { run, m: [a, b] } = planRun(board, "app", ["S1", "S2"]);
   clockTo(1), board.checkEdit(a, "src/x.ts");
   clockTo(2), board.checkEdit(b, "src/x.ts");
-  clockTo(3), board.post(a, `@${b.name} ${b.slice} owns the top`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(3), board.post(a, `@${b.name} ${b.seat} owns the top`, { about: "src/x.ts", kind: "agreement" });
   clockTo(5), board.post(b, `@${a.name} I change one function in src/x.ts`, { about: "src/x.ts" });
   const [file] = runOf(run).plan!.shared.perFile;
   assert.equal(file.agreedAfterMs, -2 * 60_000);

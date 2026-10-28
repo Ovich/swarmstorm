@@ -67,8 +67,8 @@ test("a refused verb counts no call, and a member whose only calls are refused f
     board.deliver(b);
   }
   const roster = board.snapshot(REPO).roster;
-  assert.equal(roster.find((x) => x.runner === a.name)!.calls, 0);
-  assert.equal(roster.find((x) => x.runner === b.name)!.calls, 3);
+  assert.equal(roster.find((x) => x.member === a.name)!.calls, 0);
+  assert.equal(roster.find((x) => x.member === b.name)!.calls, 3);
   clockTo(16);
   const r = runOf(run);
   assert.deepEqual(spans(memberOf(r, a.name)), [["silent", at(0), at(16), true]]);
@@ -101,7 +101,7 @@ test("`end` closes a lock turn left without a merge (D37, SL2)", () => {
   clockTo(1), board.lockMerge(a, "main");
   clockTo(3), board.end(a);
   clockTo(5);
-  const again = board.join({ run, slice: "S1", doing: "again", files: [] }).runner;
+  const again = board.join({ run, seat: "S1", doing: "again", files: [] }).member;
   clockTo(7), board.lockMerge(again, "main");
   clockTo(8), board.merged(again, "aaa111", []);
   clockTo(9), board.end(again);
@@ -141,11 +141,11 @@ test("the funnel is nested: an agreement given on a file whose holders were not 
   clockTo(3), board.checkEdit(a, "src/x.ts");
   clockTo(4), share(board, b, a, "src/x.ts");
   clockTo(5), share(board, c, [a, b], "src/x.ts");
-  clockTo(6), board.post(a, `@${b.name} ${b.slice} changes the top of x, ${a.slice} the rest`, { about: "src/x.ts", kind: "agreement" });
+  clockTo(6), board.post(a, `@${b.name} ${b.seat} changes the top of x, ${a.seat} the rest`, { about: "src/x.ts", kind: "agreement" });
   // src/y.ts: told and agreed
   clockTo(7), board.checkEdit(a, "src/y.ts");
   clockTo(8), share(board, b, a, "src/y.ts");
-  clockTo(9), board.post(a, `@${b.name} ${b.slice} changes the top of y, ${a.slice} the rest`, { about: "src/y.ts", kind: "agreement" });
+  clockTo(9), board.post(a, `@${b.name} ${b.seat} changes the top of y, ${a.seat} the rest`, { about: "src/y.ts", kind: "agreement" });
   const shared = runOf(run).plan!.shared;
   assert.deepEqual(
     { files: shared.files, everyHolderTold: shared.everyHolderTold, agreed: shared.agreed, agreedBeforeMerge: shared.agreedBeforeMerge },
@@ -227,7 +227,7 @@ test("`MemberStats` carries `waitingMs`, `agreementsMade`, `endorsed`, `objectio
   clockTo(2), board.lockMerge(b, "main");
   clockTo(5), board.merged(a, "aaa111", []);
   board.lockMerge(b, "main");
-  clockTo(6), board.post(b, `@${a.name} ${b.slice} takes the config`, { about: "src/config.ts", kind: "agreement" });
+  clockTo(6), board.post(b, `@${a.name} ${b.seat} takes the config`, { about: "src/config.ts", kind: "agreement" });
   clockTo(7), board.merged(b, "bbb222", []);
   clockTo(8), board.closeRun(plan.run);
   const debate = brainstormRun(board, "debate", ["skeptic", "a", "b"]);

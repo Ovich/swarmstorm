@@ -1,5 +1,5 @@
 // Claims by the CLI (D58): `swarm claim` before an edit, and `swarm end` reconciling what the
-// runner wrote without one. Two runners of one run, each in a worktree of its own.
+// member wrote without one. Two members of one run, each in a worktree of its own.
 import { test, beforeEach, afterEach } from "node:test";
 import { stopServerOf } from "./fixtures/server.ts";
 import assert from "node:assert/strict";
@@ -24,7 +24,7 @@ const cli = (cwd: string, ...argv: string[]): string => {
   assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stderr}`);
   return r.stdout;
 };
-/** The claim's own answer: the listener line a runner with no listener gets last (D61), checked
+/** The claim's own answer: the listener line a member with no listener gets last (D61), checked
  *  present and taken off; `answerJson` does the same with `next`, its --json form. */
 const LISTENER = /^start your listener now, in the background \(your harness's background task\): node \S+ wait --mentions --as \S+\n$/m;
 const answer = (stdout: string): string => {
@@ -51,8 +51,8 @@ const running = (): string => {
   const slices = path.join(home, "slices.json");
   fs.writeFileSync(slices, SLICES);
   const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--slices", slices).split("\n")[0].trim(); // the run id, then the page's URL
-  const s3 = JSON.parse(cli(wtA, "join", "--run", id, "--slice", "S3", "--doing", "the page", "--files", "src/a.ts:inside", "--json"));
-  cli(wtB, "join", "--run", id, "--slice", "S5", "--doing", "the skill");
+  const s3 = JSON.parse(cli(wtA, "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside", "--json"));
+  cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
   cli(wtA, "deliver");
   cli(wtB, "deliver");
   return s3.nick;
@@ -88,7 +88,7 @@ afterEach(() => {
   }
 });
 
-test("claim on a free path claims it, exit 0; another runner is then held on it", () => {
+test("claim on a free path claims it, exit 0; another member is then held on it", () => {
   running();
   const r = swarm(wtA, "claim", "src/new.ts", "--new");
   assert.deepEqual([r.status, answer(r.stdout), r.stderr], [0, "claimed src/new.ts\n", ""]);
@@ -120,10 +120,10 @@ test("claim on a shared path after a post: claimed, the other holder named once,
   cli(wtB, "post", "@S3 I add isExpired() at the end", "--about", "src/a.ts");
   const first = swarm(wtB, "claim", "src/a.ts");
   assert.deepEqual([first.status, answer(first.stdout)], [0, `claimed src/a.ts, also held by review-tool/S3 · ${nick}: the page\n`]);
-  assert.equal(answer(cli(wtB, "claim", "src/a.ts")), "claimed src/a.ts\n", "the notice, once per runner and path");
+  assert.equal(answer(cli(wtB, "claim", "src/a.ts")), "claimed src/a.ts\n", "the notice, once per member and path");
   assert.deepEqual(answerJson(cli(wtB, "claim", "src/a.ts", "--json")), {
     allowed: true,
-    sharedWith: [{ runner: "review-tool/S3", doing: "the page" }],
+    sharedWith: [{ member: "review-tool/S3", doing: "the page" }],
     notice: null,
   });
 });
@@ -201,11 +201,11 @@ test("merge-lock reconciles the branch's commits against --onto: a never-claimed
   const out = cli(wtB, "merge-lock", "--onto", "main").split("\n");
   assert.deepEqual(out.filter((l) => l.startsWith("reconciled ")), ["reconciled src/new.ts: written without a claim"]);
   assert.ok(out.some((l) => l.startsWith("granted: ")), out.join("\n"));
-  // claimed: another runner is now held on it
+  // claimed: another member is now held on it
   assert.equal(swarm(wtA, "claim", "src/new.ts", "--new").status, 3);
 });
 
-test("merge-lock flags a committed file another runner holds, mentioning both, and still grants the lock (D59)", () => {
+test("merge-lock flags a committed file another member holds, mentioning both, and still grants the lock (D59)", () => {
   running();
   fs.writeFileSync(path.join(wtB, "src", "a.ts"), "// S3's\n");
   commit(wtB, "a");
@@ -261,8 +261,8 @@ const crossRuns = async () => {
   const seats = [{ id: "S3", title: "x", blockers: [] }];
   const a = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats });
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats });
-  const mine = board.join({ run: a.id, slice: "S3", doing: "page", files: [] }).runner;
-  const theirs = board.join({ run: b.id, slice: "S3", doing: "schema", files: [{ path: "src/x.ts", interface: true }] }).runner;
+  const mine = board.join({ run: a.id, seat: "S3", doing: "page", files: [] }).member;
+  const theirs = board.join({ run: b.id, seat: "S3", doing: "schema", files: [{ path: "src/x.ts", interface: true }] }).member;
   board.deliver(mine);
   board.deliver(theirs);
   return { board, mine, theirs };
@@ -377,12 +377,12 @@ test("the merged event names the branch from merge-lock --onto and stores whom i
   }
 });
 
-test("join declares a file the slice will create: claimed from the repository root, another runner held on it", () => {
+test("join declares a file the seat will create: claimed from the repository root, another member held on it", () => {
   const slices = path.join(home, "slices.json");
   fs.writeFileSync(slices, SLICES);
   const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--slices", slices).split("\n")[0].trim();
-  cli(path.join(wtA, "src"), "join", "--run", id, "--slice", "S3", "--doing", "the page", "--files", "src/fresh.ts:interface");
-  cli(wtB, "join", "--run", id, "--slice", "S5", "--doing", "the skill");
+  cli(path.join(wtA, "src"), "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/fresh.ts:interface");
+  cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
   assert.equal(swarm(wtB, "claim", "src/fresh.ts", "--new").status, 3);
 });
 
@@ -403,16 +403,16 @@ test("a mention of a member who has ended says so", () => {
   assert.match(out, /^@review-tool\/S5 has ended: the post stays on the thread, but they will not read it$/m);
 });
 
-test("a plan runs in phases: the orchestrator opens one, each runner's done counts, all-done told", () => {
+test("a plan runs in phases: the orchestrator opens one, each member's done counts, all-done told", () => {
   running();
-  cli(repo, "phase", "build", "every runner: your slice, then done build", "--as", "review-tool/orchestrator");
+  cli(repo, "phase", "build", "every member: your seat, then done build", "--as", "review-tool/orchestrator");
   cli(wtA, "done", "build");
   cli(wtB, "done", "build");
   const told = cli(repo, "deliver", "--as", "review-tool/orchestrator");
   assert.match(told, /all.done/i, told);
 });
 
-test("a paused run refuses claim and merge-lock with exit 4, tells the runner to wait; resume lets it claim again", () => {
+test("a paused run refuses claim and merge-lock with exit 4, tells the member to wait; resume lets it claim again", () => {
   running();
   cli(repo, "pause", "hold on", "--as", "review-tool/orchestrator");
   const refused = swarm(wtA, "claim", "src/b.ts");

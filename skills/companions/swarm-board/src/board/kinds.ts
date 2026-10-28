@@ -12,7 +12,7 @@ export interface KindProfile {
   /** join records the worktree; end and merge-lock read git */
   worktree: boolean;
   /** what join and the help call a member */
-  member: "runner" | "seat";
+  member: "worker" | "seat";
   /** every member's post is everyone's: delivered in full, never as one line, and a wake brings the run's whole
    *  unread thread, so no member writes past a point another made */
   wholeThread: boolean;
@@ -25,7 +25,7 @@ const run = (...events: Subscription["event"][]): Subscription[] => events.map((
 const carried = (...events: Subscription["event"][]): Subscription[] => events.map((event) => ({ event, scope: "run", carry: true }));
 
 export const PROFILES: Record<Kind, KindProfile> = {
-  plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "runner", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
+  plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
   brainstorm: {
     kind: "brainstorm",
     claims: false,
@@ -36,7 +36,7 @@ export const PROFILES: Record<Kind, KindProfile> = {
     defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale"), ...carried("done", "joined", "idle")] },
   },
   // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-  task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "runner", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
+  task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale"), ...carried("merged", "done", "joined", "idle")] } },
 };
 
 /** The profile of `kind`; throws on an unknown kind, listing the known ones. */
