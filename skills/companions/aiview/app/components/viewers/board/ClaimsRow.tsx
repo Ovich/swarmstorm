@@ -1,8 +1,8 @@
 // The files held, one row at the bottom of the page (D7): collapsed by default, its count and
-// how many are shared by two runners or more; opened, one file per line with its holders, a shared one
+// how many are shared by two members or more; opened, one file per line with its holders, a shared one
 // ending on a faint "shared". A viewer's opening it is remembered in their browser.
 import { useState } from "react";
-import { RunnerName } from "./chips.tsx";
+import { MemberName } from "./chips.tsx";
 
 export const CLAIMS_EXPANDED_KEY = "swarm.filemap.expanded";
 
@@ -47,7 +47,7 @@ export function ClaimsRow({ rows }: { rows: ClaimRow[] }) {
               <span className="path">{r.path}</span>
               <span className="holders">
                 {r.holders.map((h) => (
-                  <RunnerName key={h} name={h} />
+                  <MemberName key={h} name={h} />
                 ))}
                 {r.shared && <span className="shared">shared</span>}
               </span>

@@ -16,7 +16,7 @@
 /* PlanCode: two letters, the KindChip recipe on a hairline */
 .board .code { display: inline-flex; align-items: center; border: 1px solid var(--border); border-radius: 5px; padding: 0 4px; font-weight: 600; font-size: 9.5px; line-height: 1.5; color: var(--muted-foreground); background: var(--background); }
 
-/* RunnerTag: the KindChip recipe, light tone, a hue per runner */
+/* MemberTag: the KindChip recipe, light tone, a hue per member */
 .board .who { --h: 250; --s: 60; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; border: 1px solid; border-radius: 5px; padding: 0 5px;
   font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; line-height: 1.6;
   background: light-dark(hsl(var(--h) calc(var(--s) * 1%) 94%), hsl(var(--h) calc(var(--s) * .6%) 17%));
@@ -24,7 +24,7 @@
   border-color: light-dark(hsl(var(--h) calc(var(--s) * .8%) 82%), hsl(var(--h) calc(var(--s) * .55%) 28%)); }
 .board .who .pc { opacity: .65; font-weight: 500; }
 
-/* RunnerName: the funny name, then the tag (D43) */
+/* MemberName: the funny name, then the tag (D43) */
 .board .rname { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
 .board .rname .nick { font-size: 11.5px; font-weight: 500; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; }
 .board .rname .dot { color: var(--faint-foreground); }
@@ -70,14 +70,14 @@
 .board .state.stale { color: var(--faint-foreground); }
 .board .state.stale i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--faint-foreground); animation: none; }
 @keyframes board-pulse { 50% { opacity: .35; } }
-.board .card .slice { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .card .seat { display: block; font-size: 12.5px; font-weight: 600; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board .card .doing { display: block; font-size: 12px; color: var(--muted-foreground); line-height: 1.4; margin-top: 3px; min-height: 2.8em; }
 .board .files { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .board .file { font-size: 10.5px; line-height: 1.6; background: var(--surface-2); border-radius: 4px; padding: 0 5px; color: var(--muted-foreground); }
 .board .file.iface { color: var(--foreground); box-shadow: inset 0 -1.5px 0 var(--accent); }
 .board .file .shared { font-family: var(--font-sans); color: var(--faint-foreground); }
 .board .card.done, .board .card.ended { box-shadow: none; background: var(--surface); }
-.board .card.done .slice, .board .card.ended .slice { color: var(--muted-foreground); }
+.board .card.done .seat, .board .card.ended .seat { color: var(--muted-foreground); }
 .board .card.waiting { background: var(--surface); }
 @keyframes board-rise { from { transform: translateY(4px); opacity: 0; } }
 
@@ -230,7 +230,7 @@
 .board .agent-strip .row { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; min-height: 28px; padding: 3px 6px 3px 10px; border-radius: var(--radius-sm); text-align: left; content-visibility: auto; contain-intrinsic-size: auto 28px; }
 .board .agent-strip .row::before { content: ""; position: absolute; inset: 5px auto 5px 0; width: 3px; border-radius: 2px; background: light-dark(hsl(var(--h) calc(var(--s) * 1%) 58%), hsl(var(--h) calc(var(--s) * .7%) 56%)); }
 .board .agent-strip .row:hover { background: var(--surface-2); }
-.board .agent-strip .row .rslice { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .agent-strip .row .rseat { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board .agent-strip .row .state { margin-left: 0; white-space: nowrap; }
 .board .agent-strip .row.ended, .board .agent-strip .row.done, .board .agent-strip .row.gone { opacity: .55; }
 .board .agent-strip.following .row { opacity: .45; }
@@ -567,7 +567,7 @@
 .board .side .card:hover { background: var(--background); box-shadow: none; }
 .board .side .card[aria-pressed="true"] { background: var(--accent-soft); box-shadow: none; }
 .board .side .card.done, .board .side .card.ended { background: transparent; }
-.board .side .card .slice { font-weight: 500; }
+.board .side .card .seat { font-weight: 500; }
 .board .side .cards { gap: 2px; }
 .board .side .claims-row { border-top: 0; padding: 6px 0 0; max-height: none; overflow: visible; }
 .board .side .claims-toggle { color: var(--foreground); font-size: 12px; font-weight: 600; padding: 8px 0 6px; }
@@ -743,7 +743,7 @@
 /* the rail's hover card: the agent's full card beside the rail */
 .board .hovercard, .board .side .hovercard.card { position: fixed; z-index: 50; width: 280px; display: grid; gap: 4px; padding: 10px 12px 10px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); box-shadow: 0 12px 32px rgba(0,0,0,.35); pointer-events: none; animation: hovercard-in .12s ease-out; }
 .board .hovercard::before { inset: 10px auto 10px 4px; border-radius: 2px; }
-.board .hovercard .slice { color: var(--muted-foreground); font-size: 12px; }
+.board .hovercard .seat { color: var(--muted-foreground); font-size: 12px; }
 .board .hovercard .doing { font-size: 12.5px; white-space: normal; }
 @keyframes hovercard-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .board .hovercard { animation: none; } }

@@ -3,7 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotRunner } from "../../swarm-board/src/client/reader.ts";
+import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
 import { conversation, narrow, type Narrow } from "./lib/board/view.ts";
 import { Conversation } from "./components/viewers/board/Conversation.tsx";
 import { ConversationFilters } from "./components/viewers/board/ConversationFilters.tsx";
@@ -15,9 +15,9 @@ vi.mock("mermaid", () => ({
 afterEach(cleanup);
 
 const AT = "2026-10-14T10:00:00Z";
-const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, runners: 2, done: 0, of: 2 };
-const member = (slice: string, nick: string): SnapshotRunner => ({
-  runner: `alpha/${slice}`, nick, plan: "alpha", slice, title: slice, doing: "", state: "working", stale: false,
+const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
+const member = (seat: string, nick: string): SnapshotMember => ({
+  member: `alpha/${seat}`, nick, plan: "alpha", seat, title: seat, doing: "", state: "working", stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });
 let seq = 0;
@@ -31,7 +31,7 @@ const SNAP: BoardSnapshot = {
     post("alpha/S2", "a word on b", { about: "src/b.ts" }),
     post("alpha/S1", "a call in a", { about: "lib/a.ts" }),
     post("alpha/S2", "S1 the top of a", { kind: "agreement", about: "lib/a.ts" }),
-    post("alpha/orchestrator", "phase build: the slices", { kind: "event", event: "phase", mentions: ["alpha/*"], meta: { phase: "build" } }),
+    post("alpha/orchestrator", "phase build: the seats", { kind: "event", event: "phase", mentions: ["alpha/*"], meta: { phase: "build" } }),
     post("alpha/S1", "plain talk"),
     post("alpha/S1", "merged abc: rebase your branch onto it.", { kind: "event", event: "merged" }),
   ],
@@ -128,7 +128,7 @@ test("Escape, × and a click outside close the File menu", () => {
 
 test("a phase separator stays under every kind chip and a file", () => {
   render(<Harness />);
-  const separator = () => screen.queryByRole("separator", { name: "Phase build: the slices" });
+  const separator = () => screen.queryByRole("separator", { name: "Phase build: the seats" });
   expect(separator()).not.toBeNull();
   for (const name of [/^Messages/, /^Agreements/, /^Flags/]) {
     fireEvent.click(chip(name));

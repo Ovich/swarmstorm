@@ -1,6 +1,6 @@
 import type { RunStats, Totals } from "../../../../../swarm-board/src/client/reader.ts";
 import { figure, formatDuration, plural } from "../../../lib/board/analytics.ts";
-import { RunnerTag } from "./chips.tsx";
+import { MemberTag } from "./chips.tsx";
 
 const BINS = ["< 1m", "1–2m", "2–5m", "5–10m", "10m +"];
 /** The bins past five minutes are drawn amber. */
@@ -47,7 +47,7 @@ export function MergeLockPanel({ lockWait, runs }: { lockWait: Totals["lockWait"
           <div className="label">Lost the race for the lock</div>
           {lost.map((x) => (
             <div key={`${x.run}-${x.member}`}>
-              <RunnerTag name={x.member} />
+              <MemberTag name={x.member} />
               {x.nick && <span className="nick">{x.nick}</span>}
               <span className="lost">
                 {x.lost} lost · {figure(x.waitedMs, formatDuration)} waited

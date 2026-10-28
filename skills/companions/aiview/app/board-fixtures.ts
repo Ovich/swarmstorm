@@ -1,6 +1,6 @@
 // The prototype's "live" variant (2026-10-07-swarm-board.prototype.html) as the Board would return
 // it: two plans and a brainstorm open on one repository, two closed runs, a second repository.
-import type { BoardSnapshot, RepoSummary, RunSummary, SnapshotEvent, SnapshotRunner } from "../../swarm-board/src/client/reader.ts";
+import type { BoardSnapshot, RepoSummary, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
 
 const at = (hm: string): string => {
   const [h, m] = hm.split(":").map(Number);
@@ -40,25 +40,25 @@ const nickOf = (name: string): string => {
   return nick;
 };
 
-const runner = (
+const member = (
   name: string,
-  title: string,
+  role: string,
   doing: string,
-  state: SnapshotRunner["state"],
+  state: SnapshotMember["state"],
   files: [string, boolean?][],
   joined: string,
   calls: number,
   ended: string | null = null,
   on: string[] = [],
   lastCall: string = ended ?? joined,
-): SnapshotRunner => {
+): SnapshotMember => {
   const i = name.lastIndexOf("/");
   return {
-    runner: name,
+    member: name,
     nick: nickOf(name),
     plan: name.slice(0, i),
-    slice: name.slice(i + 1),
-    title,
+    seat: name.slice(i + 1),
+    role,
     doing,
     state,
     stale: false,
@@ -108,28 +108,28 @@ const AL_SLICES: [string, string, string, string[]][] = [
 /** The audit-log plan and its first slice carry their documents' links (D44); the rest none. */
 export const AL_LINK = "http://localhost:4321/d/41";
 export const AL_S1_LINK = "http://localhost:4321/d/42";
-const queue = (plan: string, slices: [string, string, string, string[]][]) =>
-  slices.map(([slice, title, state, blockers]) => ({
-    slice,
-    title,
-    link: plan === AL && slice === "S1" ? AL_S1_LINK : null,
+const queue = (plan: string, seats: [string, string, string, string[]][]) =>
+  seats.map(([seat, role, state, blockers]) => ({
+    seat,
+    role,
+    link: plan === AL && seat === "S1" ? AL_S1_LINK : null,
     state,
     blockers,
-    runner: state === "running" ? `${plan}/${slice}` : null,
+    member: state === "running" ? `${plan}/${seat}` : null,
   }));
 
 export const RUNS: RunSummary[] = [
-  { run: 1, kind: "plan", plan: RT, group: RT, code: "RT", title: "Sessions with refresh tokens", link: null, open: true, runners: 4, done: 2, of: 7 },
-  { run: 2, kind: "plan", plan: AL, group: AL, code: "AL", title: "Audit log", link: AL_LINK, open: true, runners: 2, done: 0, of: 3 },
+  { run: 1, kind: "plan", plan: RT, group: RT, code: "RT", title: "Sessions with refresh tokens", link: null, open: true, members: 4, done: 2, of: 7 },
+  { run: 2, kind: "plan", plan: AL, group: AL, code: "AL", title: "Audit log", link: AL_LINK, open: true, members: 2, done: 0, of: 3 },
 ];
 
 /** A brainstorm open beside the plans: its seats hold no file (D3). */
-export const BRAINSTORM: RunSummary = { run: 3, kind: "brainstorm", plan: NM, group: NM, code: "NM", title: "Naming the kinds", link: null, open: true, runners: 1, done: 0, of: 1 };
+export const BRAINSTORM: RunSummary = { run: 3, kind: "brainstorm", plan: NM, group: NM, code: "NM", title: "Naming the kinds", link: null, open: true, members: 1, done: 0, of: 1 };
 
 /** Runs of swarmstorm-app closed earlier: the Board lists them with the open ones (D34, D46). */
 export const CLOSED: RunSummary[] = [
-  { run: 4, kind: "plan", plan: LP, group: LP, code: "LP", title: "The login page", link: null, open: false, runners: 0, done: 4, of: 4 },
-  { run: 5, kind: "brainstorm", plan: TT, group: TT, code: "TT", title: "Theme tokens", link: null, open: false, runners: 0, done: 2, of: 2 },
+  { run: 4, kind: "plan", plan: LP, group: LP, code: "LP", title: "The login page", link: null, open: false, members: 0, done: 4, of: 4 },
+  { run: 5, kind: "brainstorm", plan: TT, group: TT, code: "TT", title: "Theme tokens", link: null, open: false, members: 0, done: 2, of: 2 },
 ];
 
 export const LIVE: BoardSnapshot = {
@@ -139,15 +139,15 @@ export const LIVE: BoardSnapshot = {
   lock: null,
   lockHistory: [],
   roster: [
-    runner(`${RT}/S3`, "The Session interface carries the refresh token", "Adding refreshToken to Session, then its two readers", "working", [["src/auth/session.ts", true], ["src/auth/session.test.ts"]], "14:02", 31),
-    runner(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "watching", [], "14:00", 0),
-    runner(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "watching", [], "14:05", 0),
-    runner(`${RT}/S4`, "The refresh endpoint", "Writing POST /auth/refresh against the token store", "working", [["src/routes/auth.ts"], ["src/routes/refresh.test.ts"]], "14:02", 24),
-    runner(`${RT}/S5`, "The client retries once on 401", "Running the client tests", "working", [["web/http/client.ts"], ["web/http/client.test.ts"]], "14:10", 12),
-    runner(`${AL}/S1`, "The audit table and its writer", "Writing the migration for audit_entries", "working", [["src/audit/audit.ts", true], ["migrations/0042_audit.sql"]], "14:06", 15),
-    runner(`${AL}/S2`, "Every auth route writes an audit entry", "Adding audit() to the login and logout handlers", "working", [["src/routes/login.ts"]], "14:06", 11),
-    runner(`${RT}/S2`, "The token store", "merged and ended", "ended", [], "14:01", 9, "14:09"),
-    runner(`${NM}/critic`, "The critic", "Reading the names proposed", "working", [], "14:04", 3, null, ["agreement"]),
+    member(`${RT}/S3`, "The Session interface carries the refresh token", "Adding refreshToken to Session, then its two readers", "working", [["src/auth/session.ts", true], ["src/auth/session.test.ts"]], "14:02", 31),
+    member(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "watching", [], "14:00", 0),
+    member(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "watching", [], "14:05", 0),
+    member(`${RT}/S4`, "The refresh endpoint", "Writing POST /auth/refresh against the token store", "working", [["src/routes/auth.ts"], ["src/routes/refresh.test.ts"]], "14:02", 24),
+    member(`${RT}/S5`, "The client retries once on 401", "Running the client tests", "working", [["web/http/client.ts"], ["web/http/client.test.ts"]], "14:10", 12),
+    member(`${AL}/S1`, "The audit table and its writer", "Writing the migration for audit_entries", "working", [["src/audit/audit.ts", true], ["migrations/0042_audit.sql"]], "14:06", 15),
+    member(`${AL}/S2`, "Every auth route writes an audit entry", "Adding audit() to the login and logout handlers", "working", [["src/routes/login.ts"]], "14:06", 11),
+    member(`${RT}/S2`, "The token store", "merged and ended", "ended", [], "14:01", 9, "14:09"),
+    member(`${NM}/critic`, "The critic", "Reading the names proposed", "working", [], "14:04", 3, null, ["agreement"]),
   ],
   events: [
     ev("13:18", "msg", `${LP}/S4`, "@orchestrator merged 9f0c1d2"),
@@ -172,7 +172,7 @@ export const LIVE: BoardSnapshot = {
   flags: [],
 };
 // the claims, as the Board derives them: one holder each here
-LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.runner], interface: f.interface })));
+LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.member], interface: f.interface })));
 
 /** The same repository with only the brainstorm and the closed runs: no claims, no merge lock (D3). */
 export const BRAINSTORM_ONLY: BoardSnapshot = {
@@ -206,10 +206,10 @@ export const OTHER = "/repos/swarmstorm-site/.git";
 export const SITE: BoardSnapshot = {
   repo: OTHER,
   name: "swarmstorm-site",
-  runs: [{ run: 7, kind: "plan", plan: "landing", group: "landing", code: "LA", title: "The landing page", link: null, open: true, runners: 1, done: 0, of: 2 }],
+  runs: [{ run: 7, kind: "plan", plan: "landing", group: "landing", code: "LA", title: "The landing page", link: null, open: true, members: 1, done: 0, of: 2 }],
   lock: null,
   lockHistory: [],
-  roster: [runner("landing/S1", "The hero", "Writing the hero", "working", [["site/hero.tsx"]], "14:03", 4)],
+  roster: [member("landing/S1", "The hero", "Writing the hero", "working", [["site/hero.tsx"]], "14:03", 4)],
   events: [named("14:03", "landing/orchestrator", "opened", "run 7 opened: plan landing, The landing page")],
   queues: {},
   files: [{ path: "site/hero.tsx", holders: ["landing/S1"], interface: false }],

@@ -1,6 +1,6 @@
 // The seam from aiview's side (D3, swarm-relay D23): aiview reads the swarm board through swarm's
 // BoardReader, a client of the board server, imported by relative path, so aiview's typecheck and
-// test runner prove the cross-folder import. The board is seeded through a test server.
+// test member prove the cross-folder import. The board is seeded through a test server.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,7 +17,7 @@ test("aiview reads a run through the reader", async () => {
     const { writer } = board;
     const repo = "/repos/one/.git";
     const run = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats: [{ id: "S1", title: "the board", blockers: [] }] });
-    const s1 = (await writer.join({ run: run.id, slice: "S1", doing: "the schema", files: [] })).runner;
+    const s1 = (await writer.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
     await writer.post(s1, "@orchestrator the schema is in");
 
     const [summary] = await reader.repos();
@@ -45,8 +45,8 @@ test("`BoardReader.stats` deep-equals `Board.stats` for a run, the across scopes
       { id: "S2", title: "the page", blockers: [] },
     ];
     const plan = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats });
-    const s1 = (await writer.join({ run: plan.id, slice: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).runner;
-    const s2 = (await writer.join({ run: plan.id, slice: "S2", doing: "the page", files: [] })).runner;
+    const s1 = (await writer.join({ run: plan.id, seat: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).member;
+    const s2 = (await writer.join({ run: plan.id, seat: "S2", doing: "the page", files: [] })).member;
     await writer.checkEdit(s2, "src/a.ts");
     await writer.post(s2, `@${s1.name} I add a helper to src/a.ts`, { about: "src/a.ts" });
     mock.timers.tick(60_000);
@@ -67,8 +67,8 @@ test("`BoardReader.stats` deep-equals `Board.stats` for a run, the across scopes
         { id: "builder", title: "the builder", role: "builder", blockers: [] },
       ],
     });
-    const skeptic = (await writer.join({ run: idea.id, slice: "skeptic", doing: "doubting", files: [] })).runner;
-    const builder = (await writer.join({ run: idea.id, slice: "builder", doing: "building", files: [] })).runner;
+    const skeptic = (await writer.join({ run: idea.id, seat: "skeptic", doing: "doubting", files: [] })).member;
+    const builder = (await writer.join({ run: idea.id, seat: "builder", doing: "building", files: [] })).member;
     await writer.post(builder, "a cache in front, see src/a.ts:12", { about: "D1" });
     const agreed = await writer.post(builder, "a cache with a one-minute TTL", { about: "D1", kind: "agreement" });
     await writer.endorse(skeptic, agreed.seq);

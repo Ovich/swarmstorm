@@ -1,7 +1,7 @@
 import type { BoardSnapshot } from "../../../../../swarm-board/src/client/reader.ts";
 import { useEffect, useRef, useState } from "react";
 import { formatDuration } from "../../../lib/board/analytics.ts";
-import { RunnerTag } from "./chips.tsx";
+import { MemberTag } from "./chips.tsx";
 
 /** What the lock is, on hover and keyboard focus (D22), read by TipLayer. */
 const LOCK_TIP =
@@ -33,7 +33,7 @@ function LockHistory({ history }: { history: BoardSnapshot["lockHistory"] }) {
         <table>
           <thead>
             <tr>
-              <th>runner</th>
+              <th>member</th>
               <th>asked</th>
               <th>waited</th>
               <th>held</th>
@@ -43,13 +43,13 @@ function LockHistory({ history }: { history: BoardSnapshot["lockHistory"] }) {
           <tbody>
             {history.map((t, i) => (
               <tr
-                key={`${t.runner}-${t.askedAt}-${i}`}
+                key={`${t.member}-${t.askedAt}-${i}`}
                 className={
                   t.grantedAt ? (t.mergedAt ? "merged" : "holding") : "waiting"
                 }
               >
                 <td>
-                  <RunnerTag name={t.runner} />
+                  <MemberTag name={t.member} />
                 </td>
                 <td>{clock(t.askedAt)}</td>
                 <td>
@@ -110,7 +110,7 @@ export function MergeLock({
         {lock ? (
           <>
             <span className="t">merge lock</span>{" "}
-            <RunnerTag name={lock.holder} />
+            <MemberTag name={lock.holder} />
           </>
         ) : (
           <span className="t">merge lock free</span>

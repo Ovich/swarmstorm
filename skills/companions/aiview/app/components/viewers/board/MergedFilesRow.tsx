@@ -2,7 +2,7 @@
 // its count; opened, one path per line with who merged it. Reuses the claims row's classes.
 import { useState } from "react";
 import type { MergedFileRow } from "../../../lib/board/view.ts";
-import { RunnerName } from "./chips.tsx";
+import { MemberName } from "./chips.tsx";
 
 export function MergedFilesRow({ rows }: { rows: MergedFileRow[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -21,7 +21,7 @@ export function MergedFilesRow({ rows }: { rows: MergedFileRow[] }) {
               <span className="path">{r.path}</span>
               <span className="holders">
                 {r.mergers.map((m) => (
-                  <RunnerName key={m} name={m} />
+                  <MemberName key={m} name={m} />
                 ))}
               </span>
             </li>

@@ -62,8 +62,8 @@ before(async () => {
     const planRun = async (title: string, opened: number, closed: number): Promise<number> => {
       at(opened);
       const run = await board.openRun({ repo, group: title.toLowerCase().replace(/ /g, "-"), title, seats });
-      const s1 = (await board.join({ run: run.id, slice: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).runner;
-      const s2 = (await board.join({ run: run.id, slice: "S2", doing: "the page", files: [] })).runner;
+      const s1 = (await board.join({ run: run.id, seat: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).member;
+      const s2 = (await board.join({ run: run.id, seat: "S2", doing: "the page", files: [] })).member;
       await board.deliver(s1);
       await board.deliver(s2);
       await board.checkEdit(s2, "src/a.ts");
@@ -93,8 +93,8 @@ before(async () => {
         { id: "builder", title: "the builder", role: "builder", blockers: [] },
       ],
     });
-    const skeptic = (await board.join({ run: idea.id, slice: "skeptic", doing: "doubting", files: [] })).runner;
-    const builder = (await board.join({ run: idea.id, slice: "builder", doing: "building", files: [] })).runner;
+    const skeptic = (await board.join({ run: idea.id, seat: "skeptic", doing: "doubting", files: [] })).member;
+    const builder = (await board.join({ run: idea.id, seat: "builder", doing: "building", files: [] })).member;
     await board.post(builder, "a cache in front, see src/a.ts:12", { about: "D1" });
     await board.post(skeptic, "how stale can it get?", { about: "D1" });
     const agreed = await board.post(builder, "a cache with a one-minute TTL", { about: "D1", kind: "agreement" });

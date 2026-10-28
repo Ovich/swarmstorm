@@ -1,6 +1,6 @@
 import type { MemberStats } from "../../../../../swarm-board/src/client/reader.ts";
 import { figure } from "../../../lib/board/analytics.ts";
-import { RunnerTag } from "./chips.tsx";
+import { MemberTag } from "./chips.tsx";
 
 /** A count shown faint at 0, in `tone` past it, "not recorded" when unknown. */
 const countCell = (n: number | null, tone = ""): { className: string; text: string } => ({
@@ -38,7 +38,7 @@ export function SeatsTable({ members }: { members: MemberStats[] }) {
               return (
                 <tr key={m.member}>
                   <td>
-                    <RunnerTag name={m.member} /> <span className="nick">{m.nick}</span>
+                    <MemberTag name={m.member} /> <span className="nick">{m.nick}</span>
                   </td>
                   {cells.map((c, i) => (
                     <td key={i} className={c.className}>

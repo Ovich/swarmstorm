@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotRunner } from "../../swarm-board/src/client/reader.ts";
+import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
 import { conversation, TIPS } from "./lib/board/view.ts";
 import { Conversation } from "./components/viewers/board/Conversation.tsx";
 import { TipLayer } from "./components/viewers/board/Tip.tsx";
@@ -20,9 +20,9 @@ afterEach(cleanup);
 vi.stubGlobal("matchMedia", () => ({ matches: false }));
 
 const AT = "2026-10-14T10:00:00Z";
-const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, runners: 2, done: 0, of: 2 };
-const member = (slice: string, nick: string): SnapshotRunner => ({
-  runner: `alpha/${slice}`, nick, plan: "alpha", slice, title: slice, doing: "", state: "working", stale: false,
+const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
+const member = (seat: string, nick: string): SnapshotMember => ({
+  member: `alpha/${seat}`, nick, plan: "alpha", seat, title: seat, doing: "", state: "working", stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });
 let seq = 0;
@@ -135,12 +135,12 @@ test("a message carrying a mermaid fence shows it as a diagram in the conversati
   expect(screen.getByText("the flow")).toBeTruthy();
 });
 
-test("a member reads its mark, then its nick and role, code·slice on hover; the agreement word names the other member by code and nick", () => {
+test("a member reads its mark, then its nick and role, code·seat on hover; the agreement word names the other member by code and nick", () => {
   const { li } = show();
   const agreed = li(/S1 the top/);
   expect(agreed.querySelector('[data-component="AgentMark"]')?.textContent).toBe("S2");
   expect(agreed.querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("AL·S2");
-  expect(agreed.querySelector('[data-component="RunnerTag"]')).toBeNull();
+  expect(agreed.querySelector('[data-component="MemberTag"]')).toBeNull();
   expect(screen.getByText("✔ agreed with AL·S1 Sleepy Otter")).toBeTruthy();
 });
 

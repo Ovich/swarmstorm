@@ -17,7 +17,7 @@ function BrainstormTiles({ stats, run }: { stats: Stats; run: RunStats }) {
   // each seat's own count of claims without a source, "USER 2, DOCS 1"
   const whose = run.members
     .filter((m) => m.unsourced)
-    .map((m) => `${m.slice.toUpperCase()} ${m.unsourced}`)
+    .map((m) => `${m.seat.toUpperCase()} ${m.unsourced}`)
     .join(", ");
   return (
     <div className="kpis six">
@@ -47,7 +47,7 @@ function BrainstormTiles({ stats, run }: { stats: Stats; run: RunStats }) {
  *  its questions, a lane per seat, the seats in numbers. No claims, no merge lock. */
 export function BrainstormRunAnalytics({ stats, run, onOpenPost }: { stats: Stats; run: RunStats; onOpenPost: (seq: number) => void }) {
   const to = run.closedAt ?? new Date().toISOString();
-  const seats = run.members.filter((m) => m.slice !== ORCHESTRATOR);
+  const seats = run.members.filter((m) => m.seat !== ORCHESTRATOR);
   const lanes = seats.map((m) => ({ member: m.member, nick: m.nick, spans: [], posts: m.postTimes, marks: m.marks }));
   return (
     <>

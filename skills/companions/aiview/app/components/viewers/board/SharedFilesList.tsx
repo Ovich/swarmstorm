@@ -1,6 +1,6 @@
 import type { SharedFile } from "../../../../../swarm-board/src/client/reader.ts";
 import { ESTIMATED_TIP, agreementText, countedWithoutAgreement } from "../../../lib/board/analytics.ts";
-import { RunnerTag } from "./chips.tsx";
+import { MemberTag } from "./chips.tsx";
 
 /** What a file's merge met: a conflict, none, or unknown (git older than 2.38, board D13); a run before
  *  the records says nothing, its tile and column already reading not recorded once (D45). */
@@ -50,7 +50,7 @@ export function SharedFilesList({ perFile, recorded, estimated }: { perFile: Sha
                   <td>
                     <span className="holders">
                       {f.holders.map((h) => (
-                        <RunnerTag key={h} name={h} />
+                        <MemberTag key={h} name={h} />
                       ))}
                     </span>
                   </td>

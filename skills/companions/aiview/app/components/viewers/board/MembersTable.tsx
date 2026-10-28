@@ -1,6 +1,6 @@
 import type { Interval, MemberStats } from "../../../../../swarm-board/src/client/reader.ts";
 import { ESTIMATED_EVENTS_TIP, figure, formatDuration } from "../../../lib/board/analytics.ts";
-import { RunnerTag } from "./chips.tsx";
+import { MemberTag } from "./chips.tsx";
 
 /** The Time bar's order: working, silent, waiting, merging (prototype #677). */
 const ORDER: Interval["what"][] = ["working", "silent", "waiting", "merging"];
@@ -62,7 +62,7 @@ export function MembersTable({
                   }}
                 >
                   <td>
-                    <RunnerTag name={m.member} /> <span className="nick">{m.nick}</span>
+                    <MemberTag name={m.member} /> <span className="nick">{m.nick}</span>
                   </td>
                   <td className={m.estimated ? "inferred" : undefined} data-tip={m.estimated ? ESTIMATED_EVENTS_TIP : undefined}>
                     {recorded || m.estimated ? (

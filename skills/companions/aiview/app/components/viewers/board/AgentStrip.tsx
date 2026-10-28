@@ -1,8 +1,8 @@
 // A picked run's members, a closed run's as they ended, a column left of the conversation, the orchestrator first (D7, D20):
-// each card its member (code, then nick), its status, the slice, what it does. A card clicked
+// each card its member (code, then nick), its status, the seat, what it does. A card clicked
 // follows the member and narrows the conversation; clicked again, released.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
-import type { Liveness, SnapshotRunner } from "../../../../../swarm-board/src/client/reader.ts";
+import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
 import { hhmm, ORCHESTRATOR } from "../../../lib/board/view.ts";
 import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 
@@ -16,7 +16,7 @@ const isStalled = (activity: MemberActivity): boolean =>
   !!activity.rule || (activity.state === "quiet" && /\blink alive\b/.test(activity.reason ?? ""));
 
 /** The member's activity, or null when the reader sends none it knows (a server before swarm-relay#D20): the card draws as before. */
-function activityOf(p: SnapshotRunner): MemberActivity | null {
+function activityOf(p: SnapshotMember): MemberActivity | null {
   const l = p.liveness;
   return l && ACTIVITY_STATES.has(l.state) ? l : null;
 }
@@ -32,7 +32,7 @@ function ageSince(at: number, now: number): string {
 }
 
 /** What the card's right side says: ended, the member's activity state (busy and quiet with how long), or as before it. */
-function statusOf(p: SnapshotRunner, activity: MemberActivity | null, now: number): { text: string; className: string } {
+function statusOf(p: SnapshotMember, activity: MemberActivity | null, now: number): { text: string; className: string } {
   if (p.state === "ended" || p.state === "done") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
   if (activity) {
     const label = isStalled(activity) ? "stalled" : activity.state;
@@ -40,7 +40,7 @@ function statusOf(p: SnapshotRunner, activity: MemberActivity | null, now: numbe
     return { text: timed ? `${label} · ${minutesSince(activity.since!, now)}` : label, className: label };
   }
   if (p.stale) return { text: `quiet ${Math.max(1, Math.round((now - Date.parse(p.lastCall)) / 60000))} min`, className: "quiet" };
-  const doing = p.listening && p.slice !== ORCHESTRATOR ? "listening" : p.state;
+  const doing = p.listening && p.seat !== ORCHESTRATOR ? "listening" : p.state;
   return { text: `${doing} · ${hhmm(p.joined)}`, className: p.state };
 }
 
@@ -101,8 +101,8 @@ function useNow(): number {
   return now;
 }
 
-function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotRunner; hue: number; followed: boolean; onFollow: () => void; now: number }) {
-  const orch = p.slice === ORCHESTRATOR;
+function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue: number; followed: boolean; onFollow: () => void; now: number }) {
+  const orch = p.seat === ORCHESTRATOR;
   const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
   const status = statusOf(p, activity, now);
   const ended = p.state === "ended" || p.state === "done";
@@ -119,14 +119,14 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotRunner; hue
       data-component="AgentCard"
     >
       <span className="top">
-        <AgentMark name={p.runner} />
-        <AgentLabel name={p.runner} role={false} />
+        <AgentMark name={p.member} />
+        <AgentLabel name={p.member} role={false} />
         <span className={`state ${status.className}`}>
           <i />
           {status.text}
         </span>
       </span>
-      <span className="slice">{orch ? "orchestrator" : p.title ? `${p.slice} · ${p.title}` : p.slice}</span>
+      <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       {!!p.unread && <span className="unread" data-component="UnreadCount">{p.unread} unread</span>}
       {showsDoing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
@@ -147,7 +147,7 @@ const BUCKETS = [
 ] as const;
 type Bucket = (typeof BUCKETS)[number]["id"];
 
-function bucketOf(p: SnapshotRunner): Bucket {
+function bucketOf(p: SnapshotMember): Bucket {
   if (p.state === "ended" || p.state === "done") return "ended";
   const a = activityOf(p);
   if (a) return a.state === "quiet" || a.state === "gone" || isStalled(a) ? "attention" : a.state === "waiting" ? "waiting" : "active";
@@ -155,8 +155,8 @@ function bucketOf(p: SnapshotRunner): Bucket {
   return p.listening ? "waiting" : "active";
 }
 
-/** One member on one line: its stripe, name, slice and state; clicked, followed and drawn as its card. */
-function AgentRow({ p, hue, onFollow, now }: { p: SnapshotRunner; hue: number; onFollow: () => void; now: number }) {
+/** One member on one line: its stripe, name, seat and state; clicked, followed and drawn as its card. */
+function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; onFollow: () => void; now: number }) {
   const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
   const status = statusOf(p, activity, now);
   return (
@@ -169,12 +169,12 @@ function AgentRow({ p, hue, onFollow, now }: { p: SnapshotRunner; hue: number; o
       data-component="AgentRow"
     >
       <span className="rname">
-        <AgentMark name={p.runner} />
-        <AgentLabel name={p.runner} role={false} />
+        <AgentMark name={p.member} />
+        <AgentLabel name={p.member} role={false} />
       </span>
-      <span className="rslice">
+      <span className="rseat">
         {!!p.unread && <span className="unread" data-component="UnreadCount">{p.unread} unread</span>}
-        {p.title || p.slice}
+        {p.role || p.seat}
       </span>
       <span className={`state ${status.className}`}>
         <i />
@@ -184,8 +184,8 @@ function AgentRow({ p, hue, onFollow, now }: { p: SnapshotRunner; hue: number; o
   );
 }
 
-const matches = (p: SnapshotRunner, nick: string | undefined, q: string): boolean =>
-  !q || [p.runner, p.slice, p.title, p.doing, nick].some((t) => t?.toLowerCase().includes(q));
+const matches = (p: SnapshotMember, nick: string | undefined, q: string): boolean =>
+  !q || [p.member, p.seat, p.role, p.doing, nick].some((t) => t?.toLowerCase().includes(q));
 
 /** A picked run's members, a column left of the conversation, the orchestrator first. A card or row clicked follows its
  *  member and narrows the conversation; clicked again, released. Past CARDS_UP_TO members: a search, a chip per state,
@@ -196,11 +196,11 @@ export function AgentStrip({
   follow,
   onFollow,
 }: {
-  agents: SnapshotRunner[];
+  agents: SnapshotMember[];
   /** The run's hue (D19): every member's stripe takes it. */
   hue: number;
   follow: string | null;
-  onFollow: (runner: string | null) => void;
+  onFollow: (member: string | null) => void;
 }) {
   const now = useNow();
   const nicks = useContext(NicksContext);
@@ -208,8 +208,8 @@ export function AgentStrip({
   const [only, setOnly] = useState<Bucket | null>(null);
   const [openEnded, setOpenEnded] = useState(false);
   if (agents.length === 0) return null;
-  const toggle = (p: SnapshotRunner) => () => onFollow(follow === p.runner ? null : p.runner);
-  const card = (p: SnapshotRunner) => <AgentCard key={p.runner} p={p} hue={hue} followed={follow === p.runner} onFollow={toggle(p)} now={now} />;
+  const toggle = (p: SnapshotMember) => () => onFollow(follow === p.member ? null : p.member);
+  const card = (p: SnapshotMember) => <AgentCard key={p.member} p={p} hue={hue} followed={follow === p.member} onFollow={toggle(p)} now={now} />;
   const many = agents.length > CARDS_UP_TO;
   const cls = ["agent-strip", follow && "following", many && "many"].filter(Boolean).join(" ");
   const head = (
@@ -225,14 +225,14 @@ export function AgentStrip({
       </section>
     );
   }
-  const orch = agents.filter((p) => p.slice === ORCHESTRATOR);
-  const rest = agents.filter((p) => p.slice !== ORCHESTRATOR);
+  const orch = agents.filter((p) => p.seat === ORCHESTRATOR);
+  const rest = agents.filter((p) => p.seat !== ORCHESTRATOR);
   const q = query.trim().toLowerCase();
-  const byBucket = new Map<Bucket, SnapshotRunner[]>(BUCKETS.map((b) => [b.id, []]));
+  const byBucket = new Map<Bucket, SnapshotMember[]>(BUCKETS.map((b) => [b.id, []]));
   for (const p of rest) byBucket.get(bucketOf(p))!.push(p);
   // under Needs attention, the stalled and quiet before the gone: they can still be steered
   byBucket.get("attention")!.sort((a, b) => Number(activityOf(a)?.state === "gone") - Number(activityOf(b)?.state === "gone"));
-  const shown = (b: Bucket): SnapshotRunner[] => (only && only !== b ? [] : byBucket.get(b)!.filter((p) => matches(p, nicks.get(p.runner), q)));
+  const shown = (b: Bucket): SnapshotMember[] => (only && only !== b ? [] : byBucket.get(b)!.filter((p) => matches(p, nicks.get(p.member), q)));
   const groups = BUCKETS.map((b) => ({ ...b, list: shown(b.id) })).filter((g) => g.list.length > 0);
   return (
     <section className={cls} data-component="AgentStrip" aria-label="Agents">
@@ -271,7 +271,7 @@ export function AgentStrip({
                   {g.label} <span className="n">{g.list.length}</span>
                 </div>
               )}
-              {!folded && g.list.map((p) => (follow === p.runner ? card(p) : <AgentRow key={p.runner} p={p} hue={hue} onFollow={toggle(p)} now={now} />))}
+              {!folded && g.list.map((p) => (follow === p.member ? card(p) : <AgentRow key={p.member} p={p} hue={hue} onFollow={toggle(p)} now={now} />))}
             </div>
           );
         })}
@@ -283,14 +283,14 @@ export function AgentStrip({
 
 /** The folded strip (a thin rail): each member's mark and state dot; hovered or focused, a card with what the
  *  full strip shows of it, beside the rail; a click follows it. */
-export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotRunner[]; hue: number; follow: string | null; onFollow: (runner: string | null) => void }) {
+export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotMember[]; hue: number; follow: string | null; onFollow: (member: string | null) => void }) {
   const now = useNow();
-  const [hover, setHover] = useState<{ runner: string; top: number; left: number } | null>(null);
-  const show = (runner: string) => (e: { currentTarget: HTMLElement }) => {
+  const [hover, setHover] = useState<{ member: string; top: number; left: number } | null>(null);
+  const show = (member: string) => (e: { currentTarget: HTMLElement }) => {
     const r = e.currentTarget.getBoundingClientRect();
-    setHover({ runner, top: r.top, left: r.right + 8 });
+    setHover({ member, top: r.top, left: r.right + 8 });
   };
-  const hovered = hover && agents.find((p) => p.runner === hover.runner);
+  const hovered = hover && agents.find((p) => p.member === hover.member);
   return (
     <div className="agent-rail" data-component="AgentRail" onMouseLeave={() => setHover(null)}>
       {agents.map((p) => {
@@ -298,17 +298,17 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotR
         const status = statusOf(p, activity, now);
         return (
           <button
-            key={p.runner}
+            key={p.member}
             className={["rail-agent", p.state, activity?.state === "gone" && "gone"].filter(Boolean).join(" ")}
             style={{ "--h": hue, "--s": 60 } as CSSProperties}
-            aria-pressed={follow === p.runner}
-            aria-label={`${p.runner}: ${status.text}`}
-            onMouseEnter={show(p.runner)}
-            onFocus={show(p.runner)}
+            aria-pressed={follow === p.member}
+            aria-label={`${p.member}: ${status.text}`}
+            onMouseEnter={show(p.member)}
+            onFocus={show(p.member)}
             onBlur={() => setHover(null)}
-            onClick={() => onFollow(follow === p.runner ? null : p.runner)}
+            onClick={() => onFollow(follow === p.member ? null : p.member)}
           >
-            <AgentMark name={p.runner} />
+            <AgentMark name={p.member} />
             <span className={`state ${status.className}`}><i /></span>
             {!!p.unread && <span className="unread-dot" />}
           </button>
@@ -319,8 +319,8 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotR
   );
 }
 
-function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotRunner; hue: number; now: number; top: number; left: number }) {
-  const orch = p.slice === ORCHESTRATOR;
+function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: number; now: number; top: number; left: number }) {
+  const orch = p.seat === ORCHESTRATOR;
   const ended = p.state === "ended" || p.state === "done";
   const activity = ended ? null : activityOf(p);
   const status = statusOf(p, activity, now);
@@ -332,14 +332,14 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotRunner; hue: nu
       style={{ "--h": hue, "--s": 60, top: Math.min(top, window.innerHeight - 220), left } as CSSProperties}
     >
       <span className="top">
-        <AgentMark name={p.runner} />
-        <AgentLabel name={p.runner} role={false} />
+        <AgentMark name={p.member} />
+        <AgentLabel name={p.member} role={false} />
         <span className={`state ${status.className}`}>
           <i />
           {status.text}
         </span>
       </span>
-      <span className="slice">{orch ? "orchestrator" : p.title ? `${p.slice} · ${p.title}` : p.slice}</span>
+      <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       {!!p.unread && <span className="unread">{p.unread} unread</span>}
       {!ended && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}

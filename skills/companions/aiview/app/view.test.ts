@@ -1,22 +1,22 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
-import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotRunner } from "../../swarm-board/src/client/reader.ts";
+import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
 import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, pausedText, runTabs, type Item } from "./lib/board/view.ts";
 import { PHASE, PHASED } from "./board-fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
 const run = (id: number, group: string, code: string, open = true): RunSummary => ({
-  run: id, kind: "plan", plan: group, group, code, title: `${group} title`, link: null, open, runners: 0, done: 1, of: 3,
+  run: id, kind: "plan", plan: group, group, code, title: `${group} title`, link: null, open, members: 0, done: 1, of: 3,
 });
-const member = (group: string, slice: string, nick: string, state: SnapshotRunner["state"] = "working"): SnapshotRunner => ({
-  runner: `${group}/${slice}`, nick, plan: group, slice, title: slice, doing: "", state, stale: false,
+const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({
+  member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state, stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });
 let seq = 0;
 const item = (runId: number, from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({
   seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: runId, channel: runId, ...over,
 });
-const board = (runs: RunSummary[], roster: SnapshotRunner[] = [], events: SnapshotEvent[] = [], files: BoardSnapshot["files"] = []): BoardSnapshot => ({
+const board = (runs: RunSummary[], roster: SnapshotMember[] = [], events: SnapshotEvent[] = [], files: BoardSnapshot["files"] = []): BoardSnapshot => ({
   repo: "/r/.git", name: "r", runs, lock: null, lockHistory: [], roster, events, queues: {}, files, flags: [],
 });
 
@@ -197,7 +197,7 @@ describe("archive (D18)", () => {
     item(4, "delta/orchestrator", "run 4 closed", { kind: "event", event: "closed", at: "2026-10-14T11:00:00Z" }),
   ]);
 
-  test("every closed run, newest first, with its closing time, slices and orchestrator", () => {
+  test("every closed run, newest first, with its closing time, seats and orchestrator", () => {
     const a = archive(snap, "");
     expect(a.map((r) => r.run)).toEqual([4, 3]);
     expect(a[1]).toMatchObject({ code: "GA", closed: "2026-10-14T09:00:00Z", done: 1, of: 3, orchestrator: "Wise Crow", outcome: null });
@@ -213,8 +213,8 @@ describe("archive (D18)", () => {
 
 describe("agents (D7, D20)", () => {
   test("a run's members, orchestrator first; a closed run's too", () => {
-    expect(agents(board(RUNS, ROSTER), 1).map((m) => m.runner)).toEqual(["alpha/orchestrator", "alpha/S1"]);
-    expect(agents(board(RUNS, ROSTER), 3).map((m) => m.runner)).toEqual(["gamma/orchestrator"]);
+    expect(agents(board(RUNS, ROSTER), 1).map((m) => m.member)).toEqual(["alpha/orchestrator", "alpha/S1"]);
+    expect(agents(board(RUNS, ROSTER), 3).map((m) => m.member)).toEqual(["gamma/orchestrator"]);
     expect(agents(board(RUNS, ROSTER), 9)).toEqual([]);
   });
 
@@ -412,11 +412,11 @@ test("idea 2, B12: the run header says waiting on the person for a pause --perso
 
 describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is back", () => {
   const AT_MS = Date.parse(AT);
-  const withLiveness = (liveness: object) => ROSTER.map((r) => (r.runner === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotRunner[];
+  const withLiveness = (liveness: object) => ROSTER.map((r) => (r.member === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotMember[];
   const down = () => item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
   const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
   const back = () => item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
-  const kinds = (roster: SnapshotRunner[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
+  const kinds = (roster: SnapshotMember[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
 
   test("a link-down row stays while the member's link has not been heard since; it leaves once it has", () => {
     expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS - 1000 }), [down()])).toEqual(["liveness"]);

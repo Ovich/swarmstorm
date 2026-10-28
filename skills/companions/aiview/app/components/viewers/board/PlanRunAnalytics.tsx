@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { MemberStats, RunStats, Stats } from "../../../../../swarm-board/src/client/reader.ts";
 import { agreementText, countedWithoutAgreement, formatDuration, plural, runLength } from "../../../lib/board/analytics.ts";
-import { basename, splitRunner } from "../../../lib/board/view.ts";
+import { basename, splitMember } from "../../../lib/board/view.ts";
 import { KpiTile } from "./KpiTile.tsx";
 import { MembersTable } from "./MembersTable.tsx";
 import { RunTimeline, type LegendKey, type LockTurn } from "./RunTimeline.tsx";
@@ -11,18 +11,18 @@ const LEGEND: LegendKey[] = ["working", "waiting", "merging", "silent", "agreeme
 
 /** A figure written into a line, or no line when the figure is unknown. */
 const line = (n: number | null | undefined, write: (n: number) => string): string | null => (n === null || n === undefined ? null : write(n));
-const sliceOf = (m: MemberStats): string => splitRunner(m.member).slice;
+const seatOf = (m: MemberStats): string => splitMember(m.member).seat;
 
 /** "SL6, 14m, came back": a silent member and its first silent span, read from its intervals (plan D34). */
 function silentLine(members: MemberStats[], silentMembers: number | null): string | null {
   const silent = members.filter((m) => m.intervals.some((i) => i.what === "silent"));
   if (!silentMembers || silent.length === 0) return null;
-  if (silent.length > 1) return silent.map(sliceOf).join(", ");
+  if (silent.length > 1) return silent.map(seatOf).join(", ");
   const m = silent[0];
   const at = m.intervals.findIndex((i) => i.what === "silent");
   const span = m.intervals[at];
   const back = m.intervals.slice(at + 1).some((i) => i.what !== "silent");
-  return [sliceOf(m), formatDuration(Date.parse(span.to) - Date.parse(span.from)), ...(back ? ["came back"] : [])].join(", ");
+  return [seatOf(m), formatDuration(Date.parse(span.to) - Date.parse(span.from)), ...(back ? ["came back"] : [])].join(", ");
 }
 
 /** "SL4 wrote view.ts": the one flag's writer and file, from its mark. */
@@ -31,7 +31,7 @@ function flagLine(members: MemberStats[], flags: number | null): string | null {
   const by = members.find((m) => m.marks.some((x) => x.what === "flag"));
   const mark = by?.marks.find((x) => x.what === "flag");
   if (!by || !mark) return null;
-  return mark.path ? `${sliceOf(by)} wrote ${basename(mark.path)}` : sliceOf(by);
+  return mark.path ? `${seatOf(by)} wrote ${basename(mark.path)}` : seatOf(by);
 }
 
 function PlanTiles({ stats, run }: { stats: Stats; run: RunStats }) {

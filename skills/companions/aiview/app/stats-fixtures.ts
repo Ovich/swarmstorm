@@ -15,7 +15,7 @@ export const SILENT_AFTER_MS = 10 * MIN;
 const member = (member: string, nick: string, joined: string, over: Partial<MemberStats> = {}): MemberStats => ({
   member,
   nick,
-  slice: member.slice(member.lastIndexOf("/") + 1),
+  seat: member.slice(member.lastIndexOf("/") + 1),
   joined: at(joined),
   ended: null,
   intervals: [],

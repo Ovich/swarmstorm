@@ -1,28 +1,28 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { planCode } from "../../../../../swarm-board/src/client/reader.ts";
 import { SEQ_REF } from "../../../lib/board/post.ts";
-import { runHue, runnerLabel } from "../../../lib/board/view.ts";
+import { runHue, memberLabel } from "../../../lib/board/view.ts";
 
 /** A member's chip, "RT·S3": the KindChip recipe at its light tone, in its run's hue (D19). */
-export function RunnerTag({ name, plan = true }: { name: string; plan?: boolean }) {
-  const { code, slice } = runnerLabel(name);
+export function MemberTag({ name, plan = true }: { name: string; plan?: boolean }) {
+  const { code, seat } = memberLabel(name);
   const h = runHue(code);
   const s = 60;
   return (
-    <span className="who" style={{ "--h": h, "--s": s } as CSSProperties} data-component="RunnerTag">
+    <span className="who" style={{ "--h": h, "--s": s } as CSSProperties} data-component="MemberTag">
       {plan && <span className="pc">{code}·</span>}
-      {slice}
+      {seat}
     </span>
   );
 }
 
-/** An agent's mark: a rounded square in its run's hue, its slice in two or three letters
+/** An agent's mark: a rounded square in its run's hue, its seat in two or three letters
  *  ("S9", "W13", "OR"); the orchestrator's outlined. */
 export function AgentMark({ name }: { name: string }) {
-  const { code, slice } = runnerLabel(name);
-  const orch = slice === "orchestrator";
-  const m = slice.match(/^([a-z])[a-z-]*?(\d+)$/i);
-  const text = orch ? "OR" : m ? `${m[1]}${m[2]}`.toUpperCase() : slice.slice(0, 2).toUpperCase();
+  const { code, seat } = memberLabel(name);
+  const orch = seat === "orchestrator";
+  const m = seat.match(/^([a-z])[a-z-]*?(\d+)$/i);
+  const text = orch ? "OR" : m ? `${m[1]}${m[2]}`.toUpperCase() : seat.slice(0, 2).toUpperCase();
   return (
     <span className={orch ? "mark orch" : "mark"} style={{ "--h": runHue(code) } as CSSProperties} aria-hidden="true" data-component="AgentMark">
       {text}
@@ -30,17 +30,17 @@ export function AgentMark({ name }: { name: string }) {
   );
 }
 
-/** Each runner's funny name by `<plan>/<slice>` (D43), provided by App from the snapshot. */
+/** Each member's funny name by `<plan>/<seat>` (D43), provided by App from the snapshot. */
 export const NicksContext = createContext<ReadonlyMap<string, string>>(new Map());
 
 /** A member wherever the page shows one: its tag, then its funny name, "RT·S3 Sleepy Otter" (D10).
  *  A member with no name is its tag alone. */
-export function RunnerName({ name, plan = true }: { name: string; plan?: boolean }) {
+export function MemberName({ name, plan = true }: { name: string; plan?: boolean }) {
   const nick = useContext(NicksContext).get(name);
-  if (!nick) return <RunnerTag name={name} plan={plan} />;
+  if (!nick) return <MemberTag name={name} plan={plan} />;
   return (
-    <span className="rname" data-component="RunnerName">
-      <RunnerTag name={name} plan={plan} />
+    <span className="rname" data-component="MemberName">
+      <MemberTag name={name} plan={plan} />
       <span className="nick">{nick}</span>
     </span>
   );
@@ -51,11 +51,11 @@ export function RunnerName({ name, plan = true }: { name: string; plan?: boolean
  *  "RT·S3" is the tooltip. With no name, the role alone. */
 export function AgentLabel({ name, role = true }: { name: string; role?: boolean }) {
   const nick = useContext(NicksContext).get(name);
-  const { code, slice } = runnerLabel(name);
+  const { code, seat } = memberLabel(name);
   return (
-    <span className="alabel" data-component="AgentLabel" title={`${code}·${slice}`}>
-      {nick ? <span className="nick">{nick}</span> : <span className="nick">{slice}</span>}
-      {nick && role && <span className="role">{slice}</span>}
+    <span className="alabel" data-component="AgentLabel" title={`${code}·${seat}`}>
+      {nick ? <span className="nick">{nick}</span> : <span className="nick">{seat}</span>}
+      {nick && role && <span className="role">{seat}</span>}
     </span>
   );
 }

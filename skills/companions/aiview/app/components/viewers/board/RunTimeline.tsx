@@ -1,8 +1,8 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import type { Interval, Mark } from "../../../../../swarm-board/src/client/reader.ts";
 import { ESTIMATED_EVENTS_TIP, formatDuration } from "../../../lib/board/analytics.ts";
-import { hhmm, splitRunner } from "../../../lib/board/view.ts";
-import { RunnerTag } from "./chips.tsx";
+import { hhmm, splitMember } from "../../../lib/board/view.ts";
+import { MemberTag } from "./chips.tsx";
 
 /** One member's row: its spans (none for a seat), its post times and its marks. */
 export type Lane = { member: string; nick: string; spans: Interval[]; posts: string[]; marks: Mark[] };
@@ -109,7 +109,7 @@ export function RunTimeline({
   const ticks = ticksOf(start, end, clock);
 
   const markOf = (lane: Lane, m: Mark, i: number): ReactNode => {
-    const id = splitRunner(lane.member).slice;
+    const id = splitMember(lane.member).seat;
     const tip = [`${when(m.at)} · ${id}`, m.note, ...(m.what === "objected" ? [OBJECTED_RULE] : []), ...(clock && m.seq !== undefined ? ["click: open the post"] : [])].join(" · ");
     return (
       <span
@@ -167,18 +167,18 @@ export function RunTimeline({
                 <div className="lane">
                   {shown("merging") &&
                     band.map((b, i) => (
-                      <span key={i} className="seg s-merging" style={place(b.from, b.to)} data-tip={`${splitRunner(b.member).slice} held the lock · ${span(b.from, b.to)}`} />
+                      <span key={i} className="seg s-merging" style={place(b.from, b.to)} data-tip={`${splitMember(b.member).seat} held the lock · ${span(b.from, b.to)}`} />
                     ))}
                 </div>
               </div>
             )}
             {lanes.map((lane) => {
-              const id = splitRunner(lane.member).slice;
+              const id = splitMember(lane.member).seat;
               const cls = ["row", focus === lane.member ? "hl" : focus ? "dim" : ""].join(" ").trim();
               return (
                 <div key={lane.member} className={cls} data-lane={lane.member} onClick={onFocus ? () => onFocus(focus === lane.member ? null : lane.member) : undefined}>
                   <div className="name">
-                    <RunnerTag name={lane.member} />
+                    <MemberTag name={lane.member} />
                     <span className="nick">{lane.nick}</span>
                   </div>
                   <div className="lane">

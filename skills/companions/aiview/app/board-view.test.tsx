@@ -54,8 +54,8 @@ test("the tab row: the Archive icon, then each open run with its code, title and
   expect(tabs().queryByText("All")).toBeNull();
   // the run tabs, then the Analytics pill drawn beside the merge lock at the row's end (SL4)
   // a brainstorm's slice rows are seats, never slices to merge: never "0/1"
-  expect(names.slice(1, -2)).toEqual(["RTSessions with refresh tokensplanlive · 2/7", "ALAudit logplanlive · 0/3", "NMNaming the kindsbrainstormlive · 1 seat"]);
-  expect(names.slice(-2)).toEqual(["All runs", "merge lock free"]);
+  expect(names.seat(1, -2)).toEqual(["RTSessions with refresh tokensplanlive · 2/7", "ALAudit logplanlive · 0/3", "NMNaming the kindsbrainstormlive · 1 seat"]);
+  expect(names.seat(-2)).toEqual(["All runs", "merge lock free"]);
   for (const r of CLOSED) expect(tabs().queryByText(r.title)).toBeNull();
   expect(pressed()).toBe(tabOf("Naming the kinds"));
 });
@@ -181,23 +181,23 @@ test("a click outside closes the archive; one inside does not", () => {
 
 test("under a closed run, its members as they ended, a card still followed", () => {
   const was = LIVE.roster.find((r) => r.state === "ended")!;
-  const member = (slice: string, state: "done" | "ended") => ({ ...was, runner: `login-page/${slice}`, nick: `LP ${slice}`, plan: "login-page", slice, state });
+  const member = (seat: string, state: "done" | "ended") => ({ ...was, member: `login-page/${seat}`, nick: `LP ${seat}`, plan: "login-page", seat, state });
   show([APP], 4, [{ ...LIVE, roster: [...LIVE.roster, member("S1", "ended"), member("orchestrator", "done")] }]);
   const cards = within(strip()!).getAllByRole("button");
-  expect(cards.map((c) => c.querySelector(".slice")?.textContent)).toEqual(["orchestrator", `S1 · ${was.title}`]);
+  expect(cards.map((c) => c.querySelector(".seat")?.textContent)).toEqual(["orchestrator", `S1 · ${was.role}`]);
   expect(cards.every((c) => c.textContent?.includes("ended"))).toBe(true);
   fireEvent.click(cards[1]);
   expect(cards[1].getAttribute("aria-pressed")).toBe("true");
 });
 
-test("under a picked run, its members, orchestrator first, each its mark then its nick, the code·slice its tooltip", () => {
+test("under a picked run, its members, orchestrator first, each its mark then its nick, the code·seat its tooltip", () => {
   show([APP], 1);
   const cards = within(strip()!).getAllByRole("button");
   expect(cards[0].querySelector('[data-component="AgentMark"]')?.textContent).toBe("OR");
   expect(cards[0].querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("RT·orchestrator");
   expect(cards[0].textContent).toContain(NICKS["refresh-tokens/orchestrator"]);
   expect(cards[0].classList.contains("orch")).toBe(true);
-  expect(cards.every((c) => c.querySelector('[data-component="RunnerTag"]') === null)).toBe(true);
+  expect(cards.every((c) => c.querySelector('[data-component="MemberTag"]') === null)).toBe(true);
   expect(cards.some((c) => c.textContent?.includes("Sleepy Otter"))).toBe(true);
 });
 
@@ -214,13 +214,13 @@ test("a card followed narrows the conversation to its member; clicked again, rel
 
 // ── a swarm of hundreds ──────────────────────────────────────────────────────────
 
-const SEAT = LIVE.roster.find((r) => r.runner === "refresh-tokens/S4")!;
+const SEAT = LIVE.roster.find((r) => r.member === "refresh-tokens/S4")!;
 /** The refresh-tokens run with n more members: every fifth ended, every seventh gone. */
 const swarmOf = (n: number): BoardSnapshot => {
   const extra = Array.from({ length: n }, (_, i) => ({
     ...SEAT,
-    runner: `refresh-tokens/W${i + 1}`,
-    slice: `W${i + 1}`,
+    member: `refresh-tokens/W${i + 1}`,
+    seat: `W${i + 1}`,
     title: `worker ${i + 1}`,
     state: (i % 5 === 4 ? "ended" : "working") as typeof SEAT.state,
     liveness: i % 7 === 6 ? { state: "gone", doing: null, since: null, tokens: null, movedAt: null } : undefined,
@@ -254,10 +254,10 @@ test("a large swarm: the search and a state chip narrow the rows; a row clicked 
   show([APP], 1, [swarmOf(200)]);
   fireEvent.change(within(strip()!).getByRole("searchbox"), { target: { value: "worker 13" } });
   const rows = strip()!.querySelectorAll('[data-component="AgentRow"]');
-  const slices = Array.from(rows).map((r) => r.querySelector(".rslice")!.textContent!);
+  const slices = Array.from(rows).map((r) => r.querySelector(".rseat")!.textContent!);
   expect(slices).toHaveLength(11);
   expect(slices.every((t) => t.includes("worker 13"))).toBe(true);
-  fireEvent.click(Array.from(rows).find((r) => r.querySelector(".rslice")!.textContent === "worker 13")!);
+  fireEvent.click(Array.from(rows).find((r) => r.querySelector(".rseat")!.textContent === "worker 13")!);
   const followed = strip()!.querySelector('[data-component="AgentCard"][aria-pressed="true"]')!;
   expect(followed.textContent).toContain("W13 · worker 13");
   fireEvent.change(within(strip()!).getByRole("searchbox"), { target: { value: "" } });
@@ -267,8 +267,8 @@ test("a large swarm: the search and a state chip narrow the rows; a row clicked 
 
 // ── the member's activity (swarm-relay S24, D9, D20) ─────────────────────────────
 
-const ACTIVE = LIVE.roster.find((r) => r.runner.startsWith("refresh-tokens/") && r.slice !== "orchestrator" && r.state !== "ended" && r.state !== "done")!;
-const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.runner === ACTIVE.runner ? { ...r, liveness } : r)) }) as BoardSnapshot;
+const ACTIVE = LIVE.roster.find((r) => r.member.startsWith("refresh-tokens/") && r.seat !== "orchestrator" && r.state !== "ended" && r.state !== "done")!;
+const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, liveness } : r)) }) as BoardSnapshot;
 const activeCard = () => within(strip()!).getAllByRole("button").find((c) => c.textContent?.includes(ACTIVE.nick))!;
 const minutesAgo = (m: number) => Date.now() - m * 60000;
 
@@ -371,7 +371,7 @@ test("opened, a plain list: one file per line with its holders, a shared one mar
   show([APP], 1, [SHARED]);
   fireEvent.click(screen.getByRole("button", { name: /Claims/ }));
   const row = screen.getByText("src/shared.ts").closest("li")!;
-  expect(row.querySelectorAll('[data-component="RunnerTag"]').length).toBe(2);
+  expect(row.querySelectorAll('[data-component="MemberTag"]').length).toBe(2);
   const mark = within(row).getByText("shared");
   expect(mark.getAttribute("style")).toBeNull();
   expect(row.getAttribute("style")).toBeNull();
@@ -416,8 +416,8 @@ test("the merge lock sits at the tab row's end, free or held, with its tip on ho
 test("clicking the merge lock opens its history, newest first; Escape closes it", () => {
   const at = LIVE.events[0].at;
   const lockHistory = [
-    { runner: "refresh-tokens/S4", askedAt: at, grantedAt: at, mergedAt: null, refused: 0 },
-    { runner: "refresh-tokens/S2", askedAt: at, grantedAt: at, mergedAt: at, refused: 2 },
+    { member: "refresh-tokens/S4", askedAt: at, grantedAt: at, mergedAt: null, refused: 0 },
+    { member: "refresh-tokens/S2", askedAt: at, grantedAt: at, mergedAt: at, refused: 2 },
   ];
   show([APP], null, [{ ...LIVE, lockHistory }]);
   fireEvent.click(tabs().getByText("merge lock free").closest("button")!);
