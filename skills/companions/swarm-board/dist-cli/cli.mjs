@@ -8152,15 +8152,19 @@ var callAiview = (launcher, cwd, argv) => {
     return { ok: false, error: `aiview ${argv[0]}: unreadable output ${r.stdout.trim()}` };
   }
 };
-function registerBoard(input) {
+function boardHome(input) {
   const launcher = aiviewLauncher(input.toolRoot);
-  if (!launcher) return { registered: false, reason: "aiview not found" };
-  const aiview = (argv) => callAiview(launcher, input.cwd, argv);
-  const status = aiview(["status"]);
-  if (!status.ok) return { registered: false, reason: status.error };
+  if (!launcher) return { found: false, reason: "aiview not found", launcher: null };
+  const status = callAiview(launcher, input.cwd, ["status"]);
+  if (!status.ok) return { found: false, reason: status.error, launcher: null };
   const project = status.out.cwdProject;
-  if (!project) return { registered: false, reason: `no aiview project for ${input.cwd}` };
-  const board2 = aiview(["board", "--repo", input.repo, "--project", project]);
+  if (!project) return { found: false, reason: `no aiview project for ${input.cwd}`, launcher };
+  return { found: true, launcher, project };
+}
+function registerBoard(input) {
+  const { home } = input;
+  if (!home.found) return { registered: false, reason: home.reason };
+  const board2 = callAiview(home.launcher, input.cwd, ["board", "--repo", input.repo, "--project", home.project]);
   if (!board2.ok) return { registered: false, reason: board2.error };
   const out = board2.out;
   return { registered: true, url: out.url, repos: out.repos };
@@ -8694,6 +8698,12 @@ ${USAGE}`);
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       if (protocol !== void 0 && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
+      const home = boardHome({ toolRoot: toolRoot(), cwd: process.cwd() });
+      if (!home.found && home.launcher)
+        fail(
+          `open: no aiview project covers ${process.cwd()}, so the run's board would show nowhere. Declare it, then open again:
+  node ${home.launcher} project add <slug> --path ${process.cwd()}`
+        );
       const run2 = await board.openRun({
         repo: repoOf(process.cwd()),
         kind,
@@ -8705,7 +8715,7 @@ ${USAGE}`);
         ...protocol !== void 0 ? { protocol } : {}
       });
       const link = startLinkLine({ name: `${run2.group}/orchestrator`, run: run2.id });
-      const doc = registerBoard({ toolRoot: toolRoot(), cwd: process.cwd(), repo: run2.repo });
+      const doc = registerBoard({ home, cwd: process.cwd(), repo: run2.repo });
       const next = firstPhaseLine(run2.kind, run2.group, protocol ?? null);
       const lines = (url) => [String(run2.id), url, link, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {

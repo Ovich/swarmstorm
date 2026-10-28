@@ -25,19 +25,30 @@ const callAiview = (launcher: string, cwd: string, argv: string[]): AiviewResult
 
 export type BoardPage =
   | { registered: true; url: string; repos: string[] }
-  | { registered: false; reason: string }; // "aiview not found", "no aiview project for <cwd>", an aiview error
+  | { registered: false; reason: string }; // "aiview not found", an aiview error
 
-/** Adds `repo` to the board of the project claiming `cwd` (never the active one), and returns the
- *  board page's link. Idempotent: a repository already on the board is not added twice. */
-export function registerBoard(input: { toolRoot: string; cwd: string; repo: string }): BoardPage {
+/** Where the run's board will show: aiview's project claiming `cwd`. Asked before the run opens,
+ *  so a run is never opened onto a board nobody can see. */
+export type BoardHome =
+  | { found: true; launcher: string; project: string }
+  | { found: false; reason: string; launcher: string | null }; // launcher set, reason "no aiview project …": aiview is there, the project is not
+
+export function boardHome(input: { toolRoot: string; cwd: string }): BoardHome {
   const launcher = aiviewLauncher(input.toolRoot);
-  if (!launcher) return { registered: false, reason: "aiview not found" };
-  const aiview = (argv: string[]) => callAiview(launcher, input.cwd, argv);
-  const status = aiview(["status"]);
-  if (!status.ok) return { registered: false, reason: status.error };
+  if (!launcher) return { found: false, reason: "aiview not found", launcher: null };
+  const status = callAiview(launcher, input.cwd, ["status"]);
+  if (!status.ok) return { found: false, reason: status.error, launcher: null };
   const project = (status.out as { cwdProject?: string | null }).cwdProject;
-  if (!project) return { registered: false, reason: `no aiview project for ${input.cwd}` };
-  const board = aiview(["board", "--repo", input.repo, "--project", project]);
+  if (!project) return { found: false, reason: `no aiview project for ${input.cwd}`, launcher };
+  return { found: true, launcher, project };
+}
+
+/** Adds `repo` to the board of `home`'s project (never the active one), and returns the board
+ *  page's link. Idempotent: a repository already on the board is not added twice. */
+export function registerBoard(input: { home: BoardHome; cwd: string; repo: string }): BoardPage {
+  const { home } = input;
+  if (!home.found) return { registered: false, reason: home.reason };
+  const board = callAiview(home.launcher, input.cwd, ["board", "--repo", input.repo, "--project", home.project]);
   if (!board.ok) return { registered: false, reason: board.error };
   const out = board.out as { url: string; repos: string[] };
   return { registered: true, url: out.url, repos: out.repos };

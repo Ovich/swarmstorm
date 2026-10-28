@@ -11,7 +11,7 @@ import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type Connected
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
-import { registerBoard } from "./aiview-board.ts";
+import { boardHome, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines } from "./unclaimed.ts";
 import { git, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
@@ -608,6 +608,14 @@ async function main(): Promise<void> {
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       if (protocol !== undefined && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
+      // aiview installed but no project here: the run's board would show nowhere, so refuse before opening
+      const home = boardHome({ toolRoot: toolRoot(), cwd: process.cwd() });
+      if (!home.found && home.launcher)
+        fail(
+          `open: no aiview project covers ${process.cwd()}, so the run's board would show nowhere. Declare it, then open again:
+` +
+            `  node ${home.launcher} project add <slug> --path ${process.cwd()}`,
+        );
       const run = await board.openRun({
         repo: repoOf(process.cwd()),
         kind,
@@ -621,7 +629,7 @@ async function main(): Promise<void> {
       // the orchestrator's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
       // the person watches the project's board on aiview's /board page
-      const doc = registerBoard({ toolRoot: toolRoot(), cwd: process.cwd(), repo: run.repo });
+      const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
       // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
       const lines = (url: string | null) => [String(run.id), url, link, next].filter((l): l is string => l !== null).join("\n");

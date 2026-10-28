@@ -160,6 +160,18 @@ test("a second repository joins the same board once; reopening either adds nothi
   assert.deepEqual(boardRepos(boards), [first.repo, second.repo]);
 });
 
+test("open with aiview but no project for the repository refuses, opens no run, and says how to declare it", async () => {
+  const { launcher, boards } = fakeAiview();
+  const noProject = path.join(toolRoot, "no-project.mjs");
+  fs.writeFileSync(noProject, fs.readFileSync(launcher, "utf8").replace('JSON.stringify({ cwdProject: "p" })', 'JSON.stringify({ cwdProject: null })'));
+  const r = openWith(noProject);
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /no aiview project covers .*so the run's board would show nowhere/);
+  assert.match(r.stderr, /project add <slug> --path /);
+  assert.equal(r.stdout.trim(), "");
+  assert.deepEqual(boardRepos(boards), []);
+});
+
 test("open without aiview opens the run and exits 0, printing no URL and saying the board is read in aiview once installed (D13)", async () => {
   const r = openWith(path.join(toolRoot, "none.mjs"));
   assert.equal(r.status, 0, r.stderr);
