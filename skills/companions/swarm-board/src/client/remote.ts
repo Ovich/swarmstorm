@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
 import type { Board, RunId } from "../board/board.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type RpcMethod, type ServerState } from "../wire.ts";
 import { linkPipe } from "../link/link.ts";
@@ -121,22 +122,42 @@ export const linkVerbArgs = (member: BoardMember): string[] => ["link", "--run",
 /** How long a verb in a harness session waits for the agent's own link to answer before going straight to the server (D39). */
 export const HARNESS_LINK_WAIT_MS = 10_000;
 
+/** After one miss, a later verb of the same member waits this long only: the link is still down, a full wait would only repeat the 10 s (F11, D11). */
+export const LINK_DOWN_WAIT_MS = 1_000;
+
+/** The marker of a member whose link did not answer: in the data home, one file per member, removed when the link answers. */
+export const linkDownMarker = (dataRoot: string, member: BoardMember): string =>
+  path.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+
 /** Inside a harness session: the agent runs its link as its own background task, so nothing here spawns one (D39). */
 export const inHarnessSession = (env: NodeJS.ProcessEnv = process.env): boolean => !!env.CLAUDE_CODE_SESSION_ID;
 
 /** The member's pipe. Inside a harness session, the agent's own link is waited for up to `harnessWaitMs`, never spawned:
  *  null when none answers by then (D39). Outside one, a detached link is spawned first when none answers: the fallback for
  *  an agent that did not start its own as a background task (D32), and a link that died comes back (D6). */
-async function openLinkPipe(dataRoot: string, member: BoardMember, harnessWaitMs: number | null): Promise<net.Socket | null> {
+export async function openLinkPipe(dataRoot: string, member: BoardMember, harnessWaitMs: number | null, downWaitMs: number = LINK_DOWN_WAIT_MS): Promise<net.Socket | null> {
   const pipe = linkPipe(dataRoot, member.run, member.name);
+  const marker = linkDownMarker(dataRoot, member);
+  const answered = (s: net.Socket): net.Socket => {
+    try {
+      fs.rmSync(marker, { force: true });
+    } catch {}
+    return s;
+  };
   const there = await connectPipe(pipe);
-  if (there) return there;
+  if (there) return answered(there);
   if (harnessWaitMs != null) {
-    for (const until = Date.now() + harnessWaitMs; Date.now() < until; ) {
+    // D11: a link that already failed to answer is waited for briefly, not for the full wait again
+    const wait = fs.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause(START_POLL_MS);
       const s = await connectPipe(pipe);
-      if (s) return s;
+      if (s) return answered(s);
     }
+    try {
+      fs.mkdirSync(path.dirname(marker), { recursive: true });
+      fs.writeFileSync(marker, String(Date.now()));
+    } catch {}
     return null;
   }
   const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
