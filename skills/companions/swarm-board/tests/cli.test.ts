@@ -27,14 +27,14 @@ const git = (cwd: string, ...argv: string[]): void => {
 };
 
 const SLICES = JSON.stringify([
-  { id: "S3", title: "the page", blockers: [] },
-  { id: "S5", title: "the skill", blockers: ["S3"] },
+  { id: "S3", blockers: [] },
+  { id: "S5", blockers: ["S3"] },
 ]);
 
 const openRun = (plan = "review-tool", cwd = repo): number => {
   const slices = path.join(toolRoot, `${plan}.slices.json`);
   fs.writeFileSync(slices, SLICES);
-  const r = runIn(cwd, "open", "--plan", plan, "--title", "A plan", "--slices", slices);
+  const r = runIn(cwd, "open", "--plan", plan, "--title", "A plan", "--seats", slices);
   assert.equal(r.status, 0, r.stderr);
   return Number(r.stdout.split("\n")[0].trim()); // the run id, then the board's URL when aiview registered it
 };
@@ -80,7 +80,7 @@ test("no verb prints usage and exits 1", () => {
 test("open then join prints the roster", () => {
   const id = openRun();
   assert.ok(id > 0);
-  const r = run("join", "--run", String(id), "--slice", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
+  const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
   assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}quiet {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
@@ -124,7 +124,7 @@ const boardRepos = (boards: string): string[] => (JSON.parse(fs.readFileSync(boa
 const openWith = (aiview: string, cwd = repo) => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
-  return spawnSync(process.execPath, [CLI, "open", "--plan", "review-tool", "--title", "A plan", "--slices", slices, "--json"], {
+  return spawnSync(process.execPath, [CLI, "open", "--plan", "review-tool", "--title", "A plan", "--seats", slices, "--json"], {
     cwd,
     encoding: "utf8",
     env: { ...env(), SWARM_AIVIEW: aiview },
@@ -180,7 +180,7 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   assert.match(r.stderr, /aiview not found: the run is open; its board is read in aiview once aiview is installed/);
   assert.doesNotMatch(r.stderr + r.stdout, /https?:\/\//);
   const slices = path.join(toolRoot, "s.json");
-  const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--slices", slices);
+  const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--seats", slices);
   assert.equal(text.status, 0, text.stderr);
   // idea 3: the run id, the link line, then the next step, last
   assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\nnext: no protocol[^\n]*\n$/, "the run id, the link line, the next step");
@@ -194,13 +194,13 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   assert.equal(fs.existsSync(path.join(toolRoot, "swarm.port")), false, "no server started");
 });
 
-test("the roster shows a runner's funny name beside it; open keeps the links (D43, D44)", async () => {
+test("the roster shows a member's funny name beside it; open keeps the links (D43, D44)", async () => {
   const slices = path.join(toolRoot, "linked.json");
-  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", title: "the page", blockers: [], link: "http://localhost:4321/d/7" }]));
-  const opened = run("open", "--plan", "review-tool", "--title", "A plan", "--slices", slices, "--link", "http://localhost:4321/d/6", "--json");
+  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", blockers: [], link: "http://localhost:4321/d/7" }]));
+  const opened = run("open", "--plan", "review-tool", "--title", "A plan", "--seats", slices, "--link", "http://localhost:4321/d/6", "--json");
   assert.equal(opened.status, 0, opened.stderr);
   const id = String(JSON.parse(opened.stdout).run);
-  const joined = JSON.parse(run("join", "--run", id, "--slice", "S3", "--doing", "the page", "--json").stdout);
+  const joined = JSON.parse(run("join", "--run", id, "--seat", "S3", "--doing", "the page", "--json").stdout);
   assert.match(joined.nick, /^[A-Z][a-z]+ [A-Z][a-z]+$/);
   const roster = run("roster").stdout;
   assert.ok(roster.includes(`${joined.nick} · review-tool/S3  run ${id}`), roster);
@@ -208,7 +208,7 @@ test("the roster shows a runner's funny name beside it; open keeps the links (D4
   const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
   try {
     const r = board.runs()[0];
-    assert.deepEqual([r.link, r.slices[0].link], ["http://localhost:4321/d/6", "http://localhost:4321/d/7"]);
+    assert.deepEqual([r.link, r.seats[0].link], ["http://localhost:4321/d/6", "http://localhost:4321/d/7"]);
   } finally {
     board.close();
   }
@@ -227,13 +227,13 @@ test("status --json lists each open run with its kind; the text names the kind (
 test("--json on every verb parses", () => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
-  const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--slices", slices, "--json").stdout);
+  const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--seats", slices, "--json").stdout);
   assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "next", "plan", "repo", "run", "url"]);
   const id = String(opened.run);
   const as = ["--as", "review-tool/S3"];
   const verbs: string[][] = [
-    ["join", "--run", id, "--slice", "S3", "--doing", "x"],
-    ["join", "--run", id, "--slice", "S5", "--doing", "y"],
+    ["join", "--run", id, "--seat", "S3", "--doing", "x"],
+    ["join", "--run", id, "--seat", "S5", "--doing", "y"],
     ["doing", ...as, "still x"],
     ["post", ...as, "@S5 hello"],
     ["agree", ...as, "@S5 I go first", "--about", "src/a.ts"],
@@ -242,7 +242,7 @@ test("--json on every verb parses", () => {
     ["deliver", "--as", "review-tool/S5"],
     ["wait", "--as", "review-tool/S5", "--timeout", "50"],
     ["roster"],
-    ["slice", "S3", "--run", id, "--state", "running"],
+    ["seat", "S3", "--run", id, "--state", "running"],
     ["status"],
     ["end", ...as],
     ["close", "--run", id],
@@ -254,19 +254,19 @@ test("--json on every verb parses", () => {
   }
 });
 
-test("an unknown run or runner is one line naming it, exit 1", () => {
-  const r1 = run("join", "--run", "7", "--slice", "S3", "--doing", "x");
+test("an unknown run or member is one line naming it, exit 1", () => {
+  const r1 = run("join", "--run", "7", "--seat", "S3", "--doing", "x");
   assert.equal(r1.status, 1);
   assert.match(r1.stderr, /unknown run 7/);
   const r2 = run("post", "--as", "nope/S1", "hi");
   assert.equal(r2.status, 1);
-  assert.match(r2.stderr, /unknown runner nope\/S1/);
+  assert.match(r2.stderr, /unknown member nope\/S1/);
 });
 
 test("wait in a child process wakes on a post from another", async () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S3", "--doing", "x");
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S3", "--doing", "x");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
 
   const child = spawn(process.execPath, [CLI, "wait", "--as", "review-tool/S5", "--timeout", "15000"], { cwd: repo, env: env() });
@@ -285,8 +285,8 @@ test("wait in a child process wakes on a post from another", async () => {
 
 test("wait prints, before the message, the line that re-arms it with the exact command, --as included", () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S3", "--doing", "x");
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S3", "--doing", "x");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   const r = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "5000");
@@ -305,32 +305,32 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   assert.equal(again.stdout, `nothing yet; wait again (give your shell tool a 600000 ms timeout): node ${script} wait --mentions --as review-tool/S5 --timeout 540000\n`);
 });
 
-const LISTEN = (runner: string): string =>
-  `start your listener now, in the background (your harness's background task): node ${CLI.replace(/\\/g, "/")} wait --mentions --as ${runner}`;
+const LISTEN = (member: string): string =>
+  `start your listener now, in the background (your harness's background task): node ${CLI.replace(/\\/g, "/")} wait --mentions --as ${member}`;
 
 const START_LINK = (member: string, run: string): string =>
   `start your link now, in the background (your harness's background task): node ${CLI.replace(/\\/g, "/")} link --run ${run} --as ${member}`;
 
 test("join prints the link line, then the line that starts the listener, the exact command with --as, last; --json carries them as link then next (D61, D32, swarm-relay D33)", () => {
   const id = String(openRun());
-  const r = run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  const r = run("join", "--run", id, "--seat", "S5", "--doing", "y");
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.trimEnd().split("\n");
   // the agent starts its link before a wait could block it
   assert.equal(lines.at(-2), START_LINK("review-tool/S5", id));
   assert.equal(lines.at(-1), LISTEN("review-tool/S5"));
   assert.equal(lines.filter((l) => l.startsWith("start your listener")).length, 1);
-  const json = JSON.parse(run("join", "--run", id, "--slice", "S3", "--doing", "x", "--json").stdout);
+  const json = JSON.parse(run("join", "--run", id, "--seat", "S3", "--doing", "x", "--json").stdout);
   assert.equal(json.next, LISTEN("review-tool/S3"));
   assert.equal(json.link, START_LINK("review-tool/S3", id));
   const keys = Object.keys(json);
   assert.ok(keys.indexOf("link") < keys.indexOf("next"), keys.join(","));
 });
 
-test("merged ends, for each merged path another runner holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
+test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S3", "--doing", "x");
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S3", "--doing", "x");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const s3 = ["--as", "review-tool/S3"];
   const s5 = ["--as", "review-tool/S5"];
   for (const f of ["src/held.ts", "src/holds.ts"]) assert.equal(run("claim", ...s3, f).status, 0);
@@ -352,7 +352,7 @@ test("merged ends, for each merged path another runner holds or held, on the lin
 
 test("claim, post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const as = ["--as", "review-tool/S5"];
   const unheard = [run("claim", ...as, "src/a.ts"), run("post", ...as, "hello"), run("doing", ...as, "the page")];
   for (const r of unheard) {
@@ -382,7 +382,7 @@ test("claim, post and doing end on the listener line while no listener is pendin
 
 test("a mentions-only wait in a child process sleeps through a join and wakes on a mention", async () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
   const child = spawn(process.execPath, [CLI, "wait", "--mentions", "--as", "review-tool/S5", "--timeout", "15000"], { cwd: repo, env: env() });
   let out = "";
@@ -395,7 +395,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
     }),
   );
   await new Promise((r) => setTimeout(r, 1500)); // the child is up and watching
-  run("join", "--run", id, "--slice", "S3", "--doing", "x"); // a roster line: not a mention
+  run("join", "--run", id, "--seat", "S3", "--doing", "x"); // a roster line: not a mention
   await new Promise((r) => setTimeout(r, 800));
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
@@ -407,8 +407,8 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
 
 test("a foreground wait supersedes the background listener in another process; the listener prints so, the wait gets the mention", async () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S3", "--doing", "x");
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S3", "--doing", "x");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
   const start = (...argv: string[]) => {
     const child = spawn(process.execPath, [CLI, "wait", "--mentions", "--as", "review-tool/S5", "--timeout", "15000", ...argv], { cwd: repo, env: env() });
@@ -433,9 +433,9 @@ test("a foreground wait supersedes the background listener in another process; t
   assert.equal(third.out(), "superseded by a newer wait\n");
 });
 
-test("end releases a runner's pending wait in another process", async () => {
+test("end releases a member's pending wait in another process", async () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const child = spawn(process.execPath, [CLI, "wait", "--mentions", "--as", "review-tool/S5", "--timeout", "15000"], { cwd: repo, env: env() });
   let out = "";
   child.stdout.on("data", (b) => (out += b));
@@ -456,8 +456,8 @@ test("two worktrees of one repository share one thread", () => {
   git(repo, "worktree", "add", "-q", "-b", "b", b);
   const id = String(openRun());
 
-  const ja = runIn(a, "join", "--run", id, "--slice", "S3", "--doing", "x", "--json");
-  const jb = runIn(b, "join", "--run", id, "--slice", "S5", "--doing", "y", "--json");
+  const ja = runIn(a, "join", "--run", id, "--seat", "S3", "--doing", "x", "--json");
+  const jb = runIn(b, "join", "--run", id, "--seat", "S5", "--doing", "y", "--json");
   assert.equal(ja.status, 0, ja.stderr);
   assert.deepEqual(JSON.parse(jb.stdout).roster.map((r: { name: string }) => r.name).sort(), [
     "review-tool/S3",
@@ -466,7 +466,7 @@ test("two worktrees of one repository share one thread", () => {
   ]);
   runIn(a, "deliver");
 
-  // no --as: each worktree's runner is the one that joined from it (D28)
+  // no --as: each worktree's member is the one that joined from it (D28)
   const posted = runIn(b, "post", "@S3 from the other worktree");
   assert.equal(posted.status, 0, posted.stderr);
   const got = runIn(a, "deliver", "--json");
@@ -482,8 +482,8 @@ test("two worktrees of one repository share one thread", () => {
 test("two runs of two plans on one repository share one thread and one roster", () => {
   const one = String(openRun("review-tool"));
   const two = String(openRun("swarm"));
-  run("join", "--run", one, "--slice", "S3", "--doing", "x");
-  run("join", "--run", two, "--slice", "S5", "--doing", "y");
+  run("join", "--run", one, "--seat", "S3", "--doing", "x");
+  run("join", "--run", two, "--seat", "S5", "--doing", "y");
   const roster = JSON.parse(run("roster", "--json").stdout).roster.map((r: { name: string }) => r.name);
   assert.ok(roster.includes("review-tool/S3") && roster.includes("swarm/S5"));
   run("deliver", "--as", "review-tool/S3");
@@ -578,8 +578,8 @@ test("config retention prints 30, sets 7 that prune then uses, refuses 0", async
 // ---- kinds: open, join, post, endorse, delivery, code verbs, help (SL2) ----
 
 const SEATS = JSON.stringify([
-  { id: "architect", title: "the architect", role: "designs", blockers: [] },
-  { id: "skeptic", title: "the skeptic", role: "doubts", blockers: [] },
+  { id: "architect", role: "designs", blockers: [] },
+  { id: "skeptic", role: "doubts", blockers: [] },
 ]);
 
 const openBrainstorm = (group = "idea"): number => {
@@ -621,20 +621,20 @@ test("open refuses an unknown kind, --plan with a brainstorm kind, and a missing
 
 test("a seats file entry without an id is refused", () => {
   const seats = path.join(toolRoot, "bad.json");
-  fs.writeFileSync(seats, JSON.stringify([{ title: "no id", role: "x" }]));
+  fs.writeFileSync(seats, JSON.stringify([{ role: "x" }]));
   const r = run("open", "--kind", "brainstorm", "--group", "g", "--title", "t", "--seats", seats);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /without an id/);
 });
 
-test("join --seat is --slice; both naming different ids exit 1 (D49)", () => {
+test("join takes --seat alone; the removed --slice flag and a missing --seat exit 1", () => {
   const id = openRun();
   const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
-  const both = run("join", "--run", String(id), "--seat", "S5", "--slice", "S3", "--doing", "x");
-  assert.equal(both.status, 1);
-  assert.match(both.stderr, /--seat S5 and --slice S3 name different members/);
+  const old = run("join", "--run", String(id), "--seat", "S5", "--doing", "x");
+  assert.equal(old.status, 1);
+  assert.match(old.stderr, /--seat is required/);
 });
 
 test("a seat joining from the shared checkout is told its --as and its next commands, the listener before the link line", () => {
@@ -647,7 +647,7 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   for (const verb of ["post", "agree", "endorse", "wait --mentions"]) {
     assert.ok(lines.some((l) => l.includes(` ${verb} `) && l.includes("--as idea/architect")), `${verb} line with --as`);
   }
-  assert.doesNotMatch(r.stdout, /--slice/);
+  assert.doesNotMatch(r.stdout, /slice/);
   // a seat waits in the foreground, never a background listener
   assert.equal(lines.at(-2), START_LINK("idea/architect", String(id)));
   assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is gone; give your shell tool a 600000 ms timeout\): node \S+ wait --mentions --as idea\/architect --timeout 540000$/);
@@ -657,13 +657,13 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   assert.ok(json.commands.every((c: string) => c.includes("--as idea/skeptic")));
 });
 
-test("every join tells the member its posts are markdown, before the link line: a seat and a runner alike", () => {
+test("every join tells the member its posts are markdown, before the link line: a worker and a brainswarm seat alike", () => {
   const markdown = /^posts are markdown, rendered on the board: .*mermaid block; more than one line goes through post --file <path>$/;
   const lines = joinSeat(openBrainstorm(), "architect").stdout.trimEnd().split("\n");
   assert.match(lines.at(-3)!, markdown);
-  const runner = run("join", "--run", String(openRun()), "--slice", "S3", "--doing", "x");
-  assert.equal(runner.status, 0, runner.stderr);
-  assert.ok(runner.stdout.split("\n").some((l) => markdown.test(l)), runner.stdout);
+  const member = run("join", "--run", String(openRun()), "--seat", "S3", "--doing", "x");
+  assert.equal(member.status, 0, member.stderr);
+  assert.ok(member.stdout.split("\n").some((l) => markdown.test(l)), member.stdout);
 });
 
 test("a seat's --files is refused by the board", () => {
@@ -693,7 +693,7 @@ test("post, agree and endorse --main exit 2 naming the mention to use, writing n
   const inRun = run("post", "in the run", "--about", "D3", "--as", "idea/architect");
   assert.match(inRun.stdout, /^#\d+$/m);
   const other = openRun();
-  run("join", "--run", String(other), "--slice", "S3", "--doing", "x");
+  run("join", "--run", String(other), "--seat", "S3", "--doing", "x");
   const cross = run("post", "@review-tool/S3 a question", "--as", "idea/architect");
   assert.equal(cross.status, 0, cross.stderr);
   assert.match(cross.stdout, /^#\d+$/m);
@@ -713,7 +713,7 @@ test("endorse backs an agreement and prints its seq; a plain post exits 1", () =
   assert.match(bad.stderr, /is not an agreement/);
 });
 
-test("a seat's wait that receives an agreement prints the back-it line; a plan runner's does not", () => {
+test("a seat's wait that receives an agreement prints the back-it line; a plan member's does not", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
   joinSeat(id, "skeptic");
@@ -722,8 +722,8 @@ test("a seat's wait that receives an agreement prints the back-it line; a plan r
   assert.equal(w.status, 0, w.stderr);
   assert.match(w.stdout, new RegExp(`back it: node \\S+ endorse ${seqOf(agreed.stdout)} --as idea/skeptic`));
   const plan = openRun();
-  run("join", "--run", String(plan), "--slice", "S3", "--doing", "x");
-  run("join", "--run", String(plan), "--slice", "S5", "--doing", "y");
+  run("join", "--run", String(plan), "--seat", "S3", "--doing", "x");
+  run("join", "--run", String(plan), "--seat", "S5", "--doing", "y");
   run("agree", "@S5 S3 owns the page", "--as", "review-tool/S3");
   const pw = run("wait", "--mentions", "--timeout", "2000", "--as", "review-tool/S5");
   assert.equal(pw.status, 0, pw.stderr);
@@ -756,7 +756,7 @@ test("--help prints the core verbs, --help code the claim and merge verbs; no ve
   assert.doesNotMatch(none.stderr, /^  claim /m);
 });
 
-// SL12: subscriptions (D59) and slices added mid-run (D60)
+// SL12: subscriptions (D59) and seats added mid-run (D60)
 test("join --on with an unknown event exits 1 listing the known ones; --on stores both", () => {
   const id = openBrainstorm();
   const bad = joinSeat(id, "architect", "--on", "agreed");
@@ -783,8 +783,8 @@ test("subscribe and unsubscribe print the member's subscriptions after", () => {
 test("a seat subscribed through its seats row wakes on an agreement with no mention, and the output carries back it", () => {
   const seats = path.join(toolRoot, "on.seats.json");
   fs.writeFileSync(seats, JSON.stringify([
-    { id: "architect", title: "the architect", blockers: [] },
-    { id: "skeptic", title: "the skeptic", blockers: [], on: ["agreement"] },
+    { id: "architect", blockers: [] },
+    { id: "skeptic", blockers: [], on: ["agreement"] },
   ]));
   const r = run("open", "--kind", "brainstorm", "--group", "idea", "--title", "An idea", "--seats", seats);
   assert.equal(r.status, 0, r.stderr);
@@ -797,30 +797,30 @@ test("a seat subscribed through its seats row wakes on an agreement with no ment
   assert.match(w.stdout, new RegExp(`back it: node \\S+ endorse ${seqOf(agreed.stdout)} --as idea/skeptic`));
 });
 
-test("slice add adds a slice mid-run that can be joined; a duplicate id and a closed run exit 1", () => {
+test("seat add adds a seat mid-run that can be joined; a duplicate id and a closed run exit 1", () => {
   const id = openRun();
-  const a = run("slice", "add", "S7", "--run", String(id), "--title", "the late one", "--blockers", "S3");
+  const a = run("seat", "add", "S7", "--run", String(id), "--role", "worker", "--blockers", "S3");
   assert.equal(a.status, 0, a.stderr);
   assert.match(a.stdout, /^S7 added$/m);
-  const j = run("join", "--run", String(id), "--slice", "S7", "--doing", "late");
+  const j = run("join", "--run", String(id), "--seat", "S7", "--doing", "late");
   assert.equal(j.status, 0, j.stderr);
-  const dup = run("slice", "add", "S7", "--run", String(id), "--title", "again");
+  const dup = run("seat", "add", "S7", "--run", String(id), "--role", "worker");
   assert.equal(dup.status, 1);
   assert.match(dup.stderr, /already in run/);
   run("close", "--run", String(id));
-  const closed = run("slice", "add", "S8", "--run", String(id), "--title", "x");
+  const closed = run("seat", "add", "S8", "--run", String(id), "--role", "x");
   assert.equal(closed.status, 1);
   assert.match(closed.stderr, /is closed/);
 });
 
-test("--help names --on, subscribe, unsubscribe, slice add and the known events", () => {
+test("--help names --on, subscribe, unsubscribe, seat add and the known events", () => {
   const h = run("--help");
-  for (const w of ["--on", "subscribe", "unsubscribe", "slice   add", "agreement, endorsement, merged"]) assert.ok(h.stdout.includes(w), w);
+  for (const w of ["--on", "subscribe", "unsubscribe", "seat    add", "agreement, endorsement, merged"]) assert.ok(h.stdout.includes(w), w);
 });
 
 test("a mention naming nobody is told to its author, closest names offered; the message is unchanged (D63)", () => {
   const id = String(openRun());
-  const s3 = JSON.parse(run("join", "--run", id, "--slice", "S3", "--doing", "the page", "--json").stdout);
+  const s3 = JSON.parse(run("join", "--run", id, "--seat", "S3", "--doing", "the page", "--json").stdout);
   const nick = s3.nick.replace(/\s+/g, "");
   const r = run("post", "@S4 and @S3 and @orchestrator and @swarm and @RT and @all: the header", "--as", "review-tool/S3");
   assert.equal(r.status, 0, r.stderr);
@@ -843,7 +843,7 @@ test("a mention naming nobody is told to its author, closest names offered; the 
 
 test("roster --json and status --json give each member's worktree, null for a seat (D64)", () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S3", "--doing", "the page");
+  run("join", "--run", id, "--seat", "S3", "--doing", "the page");
   const roster = JSON.parse(run("roster", "--json").stdout).roster as { name: string; worktree: string | null }[];
   const s3 = roster.find((m) => m.name === "review-tool/S3")!;
   assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(repo), String(s3.worktree));
@@ -913,11 +913,11 @@ test("done: a member's done is counted, roster and status show n/m done, the las
 
 test("end on an ended member exits 0 and says nothing; on a closed run it prints the summary prompt the closed line promised, never a link line (S62)", () => {
   const id = openRun();
-  assert.equal(run("join", "--run", String(id), "--slice", "S3", "--doing", "x").status, 0);
+  assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "x").status, 0);
   assert.equal(run("end", "--as", "review-tool/S3").status, 0);
   const again = run("end", "--as", "review-tool/S3");
   assert.deepEqual([again.status, again.stdout, again.stderr], [0, "", ""]);
-  assert.equal(run("join", "--run", String(id), "--slice", "S5", "--doing", "x").status, 0);
+  assert.equal(run("join", "--run", String(id), "--seat", "S5", "--doing", "x").status, 0);
   run("close", "--run", String(id));
   const closed = run("end", "--as", "review-tool/S5");
   assert.deepEqual([closed.status, closed.stdout, closed.stderr], [0, `run ${id} closed: review-tool/S5 ended; return your summary now\n`, ""]);
@@ -966,7 +966,7 @@ test("a wait pending when its run closes returns the closed line, exit 0", async
   assert.match(out.trimEnd(), new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect$`));
 });
 
-test("how a member listens: a seat's wait re-arms in the foreground, the orchestrator's and a runner's in the background", () => {
+test("how a member listens: a seat's wait re-arms in the foreground, the orchestrator's and a member's in the background", () => {
   const id = openBrainstorm();
   assert.equal(joinSeat(id, "architect").status, 0);
   run("deliver", "--as", "idea/architect");
@@ -978,25 +978,25 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
   assert.match(orch, /start this listener again, in the background: node .* wait --mentions --as idea\/orchestrator/);
-  const runner = run("join", "--run", String(openRun()), "--slice", "S3", "--doing", "x").stdout.trimEnd().split("\n");
-  assert.match(runner.at(-1)!, /^start your listener now, in the background/);
+  const member = run("join", "--run", String(openRun()), "--seat", "S3", "--doing", "x").stdout.trimEnd().split("\n");
+  assert.match(member.at(-1)!, /^start your listener now, in the background/);
 });
 
-test("open --transcript, slice --transcript and the seats file's transcript are refused as unknown, and the help names none (D24)", () => {
+test("open --transcript, seat --transcript and the seats file's transcript are refused as unknown, and the help names none (D24)", () => {
   const seats = path.join(toolRoot, "seats.json");
   fs.writeFileSync(seats, SEATS);
   const flagged = run("open", "--kind", "brainstorm", "--group", "idea", "--title", "I", "--seats", seats, "--transcript", "t.jsonl");
   assert.equal(flagged.status, 1);
   assert.match(flagged.stderr, /^open: unknown flag --transcript/);
   const named = path.join(toolRoot, "named.json");
-  fs.writeFileSync(named, JSON.stringify([{ id: "a", title: "A", blockers: [], transcript: "t.jsonl" }]));
+  fs.writeFileSync(named, JSON.stringify([{ id: "a", blockers: [], transcript: "t.jsonl" }]));
   const fielded = run("open", "--kind", "brainstorm", "--group", "idea", "--title", "I", "--seats", named);
   assert.equal(fielded.status, 1);
   assert.match(fielded.stderr, /unknown field transcript in a/);
   const id = String(openBrainstorm());
-  const sliced = run("slice", "architect", "--run", id, "--state", "running", "--transcript", "t.jsonl");
+  const sliced = run("seat", "architect", "--run", id, "--state", "running", "--transcript", "t.jsonl");
   assert.equal(sliced.status, 1);
-  assert.match(sliced.stderr, /^slice: unknown flag --transcript/);
+  assert.match(sliced.stderr, /^seat: unknown flag --transcript/);
   for (const help of [run("--help").stdout, run("--help", "code").stdout]) assert.doesNotMatch(help, /transcript/);
 });
 
@@ -1015,7 +1015,7 @@ test("open starts no poller process, and the hidden poll verb is gone (US6, D13)
 test("status and roster print each member's state, what it is doing, and its two ages, progressAt and aliveAt (D38)", () => {
   const id = openRun();
   const before = Date.now();
-  assert.equal(run("join", "--run", String(id), "--slice", "S3", "--doing", "page").status, 0);
+  assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "page").status, 0);
   // no activity yet from its link: no evidence of work, so quiet, nothing open (swarm-relay D33); never linked: link never
   assert.match(run("roster").stdout, /review-tool\/S3  run \d+  quiet  progress \d+s ago, link never  doing: page/);
   const roster = JSON.parse(run("roster", "--json").stdout).roster.find((r: { name: string }) => r.name === "review-tool/S3");
@@ -1030,7 +1030,7 @@ test("status and roster print each member's state, what it is doing, and its two
 test("on a plan run too: the current phase heads wait, deliver and read, follows the roster at join, and sits beside the title in roster and status", () => {
   const id = openRun();
   const s3 = "review-tool/S3";
-  assert.equal(run("join", "--run", String(id), "--slice", "S3", "--doing", "page").status, 0);
+  assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "page").status, 0);
   // before any phase: no header
   run("post", "@S3 before", "--as", "review-tool/orchestrator");
   assert.doesNotMatch(run("deliver", "--as", s3).stdout, /^phase /m);
@@ -1050,7 +1050,7 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   assert.match(delivered[0], short);
   assert.match(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], short);
 
-  const joined = run("join", "--run", String(id), "--slice", "S5", "--doing", "skill").stdout.split("\n");
+  const joined = run("join", "--run", String(id), "--seat", "S5", "--doing", "skill").stdout.split("\n");
   const lastRoster = joined.map((l) => / run \d+ {2}\w+ .*doing: /.test(l)).lastIndexOf(true);
   assert.equal(joined[lastRoster + 1], header);
 
@@ -1135,7 +1135,7 @@ test("open --protocol names the run's protocol: status and the board snapshot ca
 test("read --json gives the current phase's full header in its phase field, also after the member's first return", () => {
   const id = openRun();
   const s3 = "review-tool/S3";
-  run("join", "--run", String(id), "--slice", "S3", "--doing", "page");
+  run("join", "--run", String(id), "--seat", "S3", "--doing", "page");
   run("phase", "build", "the", "first", "wave", "--as", "review-tool/orchestrator");
   run("wait", "--mentions", "--as", s3, "--timeout", "3000");
   const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
@@ -1145,7 +1145,7 @@ test("read --json gives the current phase's full header in its phase field, also
 // B7, F6 (test 2.1, fixed in build 2.2): the tool-timeout sentence sits before the colon; what follows it runs as written
 test("a printed wait line ends on its bare command, and that command, run as copied, exits 0", () => {
   const id = String(openRun());
-  run("join", "--run", id, "--slice", "S5", "--doing", "y");
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
   const empty = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50").stdout.trimEnd();
   assert.match(empty, /^nothing yet; wait again \(give your shell tool a 600000 ms timeout\): node /);
@@ -1163,7 +1163,7 @@ test("a printed wait line ends on its bare command, and that command, run as cop
 
 const seatsFile = (name: string, ids: string[]) => {
   const f = path.join(toolRoot, `${name}.seats.json`);
-  fs.writeFileSync(f, JSON.stringify(ids.map((id) => ({ id, title: id, blockers: [] }))));
+  fs.writeFileSync(f, JSON.stringify(ids.map((id) => ({ id, blockers: [] }))));
   return f;
 };
 const PHASE_CMD = (group: string) => new RegExp(`: node \\S+ phase <name> "<its message>" --as ${group}\\/orchestrator$`);
@@ -1178,7 +1178,7 @@ test("C1: open under a protocol ends on next: its first phase, the command last 
   assert.ok(lines.slice(-6).includes(last));
   const slices = path.join(toolRoot, "c1p.slices.json");
   fs.writeFileSync(slices, SLICES);
-  const plan = run("open", "--plan", "c1p", "--title", "T", "--slices", slices, "--protocol", "build-verify");
+  const plan = run("open", "--plan", "c1p", "--title", "T", "--seats", slices, "--protocol", "build-verify");
   assert.match(plan.stdout.trimEnd().split("\n").at(-1)!, /^next: open build-verify's first phase before any task/);
 });
 
@@ -1218,14 +1218,14 @@ test("idea 3's addition: open --protocol none ends on next: phaseless, with no p
   assert.doesNotMatch(String(JSON.parse(run("post", "@w1 task T2", "--as", "none1/orchestrator", "--json").stdout).next), /^next:/);
 });
 
-test("idea 5: slice add --busy-max gives the seat its bound, shown in the roster; a bad one is refused", () => {
+test("idea 5: seat add --busy-max gives the seat its bound, shown in the roster; a bad one is refused", () => {
   const id = openRun();
-  const bad = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "5min");
+  const bad = run("seat", "add", "V2", "--run", String(id), "--role", "verifier", "--busy-max", "5min");
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /--busy-max takes a positive whole number of ms, got 5min/);
-  const ok = run("slice", "add", "V2", "--run", String(id), "--title", "verifier", "--busy-max", "300000");
+  const ok = run("seat", "add", "V2", "--run", String(id), "--role", "verifier", "--busy-max", "300000");
   assert.equal(ok.status, 0, ok.stderr);
-  run("join", "--run", String(id), "--slice", "V2", "--doing", "verify");
+  run("join", "--run", String(id), "--seat", "V2", "--doing", "verify");
   assert.match(run("roster").stdout, /V2[^\n]*busy max: 300 s \(non-shell calls\)/);
   assert.doesNotMatch(run("roster").stdout.split("\n").filter((l) => /review-tool\/S3/.test(l)).join("\n"), /busy max/, "the default is not shown");
 });

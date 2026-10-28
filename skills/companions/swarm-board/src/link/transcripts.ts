@@ -9,7 +9,7 @@ import type { RunId } from "../board/board.ts";
 import { claudeCodeJsonl } from "../board/liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 
-/** The verb a member's CLI ran that the link stands for: a runner's or seat's `join`, an orchestrator's `open`. */
+/** The verb a member's CLI ran that the link stands for: a member's `join`, an orchestrator's `open`. */
 export type Binding = { verb: "join"; run: RunId; seat: string } | { verb: "open"; group: string };
 
 /** Where a read of a transcript stopped, and what the lines before it said. */
@@ -131,7 +131,7 @@ export function commandRunsBinding(command: string, binding: Binding, backslashE
     if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
     const args = segment.slice(at + 1);
     if (binding.verb === "join") {
-      if (flagValue(args, ["--run"]) === String(binding.run) && flagValue(args, ["--seat", "--slice"]) === binding.seat) return true;
+      if (flagValue(args, ["--run"]) === String(binding.run) && flagValue(args, ["--seat"]) === binding.seat) return true;
     } else if (flagValue(args, ["--group", "--plan"]) === binding.group) return true;
   }
   return false;

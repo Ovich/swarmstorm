@@ -3,7 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SliceSpec, type SliceState } from "../board/board.ts";
+import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
 import { EVENTS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, SQLITE_PATH } from "../board/home.ts";
@@ -26,16 +26,16 @@ const USAGE = [
   "usage: swarm <verb> [--json]        (swarm --help code: the claim and merge verbs)",
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
-  "          # --plan <slug> --slices <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  '          # the seats file: [{"id", "title", "role"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
-  "  slice   <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
-  "  slice   add <id> --run <id> --title <t> [--blockers a,b] [--link <url>] [--role <r>] [--on <events>] [--busy-max <ms>]   # adds a slice or seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
+  "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
+  '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
+  "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
+  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
   "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
   "  close   --run <id>                                              # (orchestrator)",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # --slice <id> the same; a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a slice runner listens in the background), then the command that starts your link',
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link',
   "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -57,16 +57,16 @@ const USAGE = [
   "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
   "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
   `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
-  "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the runner joined from this worktree",
+  "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree",
 ].join("\n");
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
 const CODE_USAGE = [
   "usage: swarm <verb> [--json]        the code verbs; refused on a run whose kind has no claims",
-  "  claim   [--as <runner>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
-  "  release [--as <runner>] <path>                                  # gives up a claim",
-  "  merge-lock --onto <branch> [--as <runner>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <runner>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict",
+  "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
+  "  release [--as <member>] <path>                                  # gives up a claim",
+  "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
+  "  merged  [--as <member>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict",
 ].join("\n");
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
@@ -182,14 +182,14 @@ let board!: ConnectedBoard;
 /** The caller whose link did not answer in a harness session: the verb ends on the line that starts it (D39). */
 let linkToStart: BoardMember | null = null;
 
-/** The caller: --as names it; otherwise the runner that joined from this worktree, asked of the server
+/** The caller: --as names it; otherwise the member that joined from this worktree, asked of the server
  *  directly (D29). From then on the verb's calls go through that member's link. */
 async function caller(): Promise<Participant> {
   const as = args.flag("--as");
   const wt = as ? null : worktreeOf(process.cwd());
   const p = as
-    ? ((await board.participant(as)) ?? fail(`unknown runner ${as}`))
-    : ((wt ? await board.identify({ worktree: wt }) : null) ?? fail("who is calling? no single runner joined from this worktree; pass --as <plan>/<slice>"));
+    ? ((await board.participant(as)) ?? fail(`unknown member ${as}`))
+    : ((wt ? await board.identify({ worktree: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
   const direct = board;
   const member = { name: p.name, run: p.run };
   // S62: a member ended, or of a closed run, has no link: its verb stays on the server, waits for no link and never
@@ -215,8 +215,8 @@ const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "a
 
 const rosterLine = (r: RosterEntry, ages = false): string => {
   const files = r.files.map((f) => (f.interface ? `${f.path} (interface)` : f.path)).join(", ");
-  // the funny name beside the runner (D43); an orchestrator is its name alone
-  const who = r.slice === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
+  // the funny name beside the member (D43); an orchestrator is its name alone
+  const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
@@ -265,12 +265,12 @@ const printDelivery = (d: Delivery & { full: (Message & { endorse?: string })[] 
 /** A word of a POSIX command line, double-quoted when it holds anything else than plain characters. */
 const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
 
-/** This CLI as a runner calls it: `node <skill-dir>/swarm.mjs`, as the skill writes it and the allow
+/** This CLI as a member calls it: `node <skill-dir>/swarm.mjs`, as the skill writes it and the allow
  *  rule matches it; forward slashes, which Node takes on Windows too and no shell eats (D49). */
 const self = (): string[] => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 
 /** How a member listens, the one source the docs point at: a seat waits in the foreground (a subagent
- *  that ends its turn is gone, no background listener wakes it); the orchestrator and a slice runner
+ *  that ends its turn is gone, no background listener wakes it); the orchestrator and a worker
  *  listen in the background while they work. */
 /** The link line of join and open, before any listener or wait line (D32, swarm-relay D33, AGENTS rule 10): the member's link, run as its agent's own
  *  background task, so a stopped agent takes it down; a verb that finds none spawns one detached outside a harness session,
@@ -286,10 +286,10 @@ const waitCommand = (name: string, foreground = false): string => {
   // the command alone, so it runs as copied (F6); the tool-timeout sentence sits in the prose before the colon
   return foreground ? `${line} --timeout ${FOREGROUND_WAIT_MS}` : line;
 };
-const listensInForeground = (p: Pick<Participant, "slice" | "kind">): boolean => p.slice !== "orchestrator" && profileOf(p.kind).member === "seat";
+const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member === "seat";
 /** The line that starts a member's listener: the exact command, --as included (D61); `afterPhase`: it
  *  follows the owed-phase line, so a seat waits only once its part is in. */
-const listenNow = (p: Pick<Participant, "name" | "slice" | "kind">, afterPhase = false): string =>
+const listenNow = (p: Pick<Participant, "name" | "seat" | "kind">, afterPhase = false): string =>
   listensInForeground(p)
     ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`
     : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
@@ -308,7 +308,7 @@ const owedLine = async (p: Participant, thread = true): Promise<string | null> =
 /** A member's one step while its run is paused: stop and wait in the foreground for the resume; null when the
  *  run is not paused, for the orchestrator and for an ended member. */
 const pausedLine = async (p: Participant): Promise<string | null> => {
-  if (p.slice === "orchestrator" || p.ended) return null;
+  if (p.seat === "orchestrator" || p.ended) return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
   if (!run || run.paused == null) return null;
   // a pause waiting on the person says so (idea 2, B12); any other reads as before
@@ -408,7 +408,7 @@ const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): str
  *  (idea 3, C3, as d1 restated it #12346); null on any later post, with a phase open, or for any other author.
  *  "First" is the run's own count of the orchestrator's posts, from stats: 1 once this post is in. */
 const firstTaskPostLine = async (p: Participant): Promise<string | null> => {
-  if (p.slice !== "orchestrator") return null;
+  if (p.seat !== "orchestrator") return null;
   const run = (await board.runs()).find((r) => r.id === p.run);
   if (!run || (run.kind !== "task" && run.kind !== "plan") || run.protocol === PHASELESS || (await board.currentPhase(p.run))) return null;
   const mine = (await board.stats({ repo: p.repo, run: p.run })).runs.find((r) => r.run === p.run)?.members.find((x) => x.member === p.name);
@@ -440,10 +440,10 @@ const answeredClosed = async (p: Participant): Promise<boolean> => {
 /** One line per `@…` of `body` that names no member (D63): the closest active names, at most three. */
 const unmatchedLines = async (p: Participant, body: string): Promise<string[]> => {
   const roster = await board.roster(p.repo);
-  const runners = roster.filter((r) => r.slice !== "orchestrator");
+  const members = roster.filter((r) => r.seat !== "orchestrator");
   const plans = [...new Set(roster.map((r) => r.plan))];
-  const names = new Map(runners.map((r) => [nameHandle(r.nick), r.name]));
-  const nickOf = new Map(runners.map((r) => [r.name, r.nick.replace(/\s+/g, "")]));
+  const names = new Map(members.map((r) => [nameHandle(r.nick), r.name]));
+  const nickOf = new Map(members.map((r) => [r.name, r.nick.replace(/\s+/g, "")]));
   const ended = new Set(await board.endedMembers(p.repo));
   return unmatchedMentions(body, p.plan, plans, names).map(({ name, closest }) => {
     const member = name.includes("/") ? name : `${p.plan}/${name}`;
@@ -490,7 +490,7 @@ function aboutArg(): string | undefined {
 }
 
 /** `<path>`, `<path>:inside` or `<path>:interface`, the path resolved (D6); a file not there yet is one the
- *  slice creates, declared from the repository root. */
+ *  seat creates, declared from the repository root. */
 function parseFile(spec: string): Declared {
   const m = spec.match(/^(.*):(interface|inside)$/);
   const d = m ? { path: m[1], interface: m[2] === "interface" } : { path: spec, interface: false };
@@ -505,26 +505,27 @@ function declaredPath(file: string): string {
   return root ? path.resolve(root, file) : here;
 }
 
-function readSlices(file: string): SliceSpec[] {
+function readSeats(file: string): SeatSpec[] {
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
   } catch (e) {
-    return fail(`cannot read slices from ${file}: ${(e as Error).message}`);
+    return fail(`cannot read seats from ${file}: ${(e as Error).message}`);
   }
-  const list = Array.isArray(raw) ? raw : (raw as { slices?: unknown }).slices;
-  if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, title, blockers}`);
-  return list.map((s: { id?: unknown; title?: unknown; role?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
-    if (typeof s.id !== "string") fail(`${file}: a slice without an id`);
+  const list = Array.isArray(raw) ? raw : (raw as { seats?: unknown }).seats;
+  if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, role, area, blockers}`);
+  return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
+    if (typeof s.id !== "string") fail(`${file}: a seat without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
+    if ("title" in s) fail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
     if ("transcript" in s) fail(`${file}: unknown field transcript in ${s.id}`);
-    // busyMax: the seat's bound on a non-shell call (idea 5), validated as slice add --busy-max is
+    // busyMax: the seat's bound on a non-shell call (idea 5), validated as seat add --busy-max is
     if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) fail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
       ...(s.busyMax !== undefined ? { busyMax: s.busyMax as number } : {}),
       id: String(s.id),
-      title: String(s.title ?? s.id),
       ...(typeof s.role === "string" && s.role ? { role: s.role } : {}),
+      ...(typeof s.area === "string" && s.area ? { area: s.area } : {}),
       blockers: Array.isArray(s.blockers) ? s.blockers.map(String) : [],
       link: typeof s.link === "string" && s.link ? s.link : null,
       ...(Array.isArray(s.on) ? { on: s.on.map(String) } : {}),
@@ -547,12 +548,10 @@ function openKindAndGroup(): { kind: Kind; group: string } {
   return { kind, group };
 }
 
-/** `join`'s member id: `--seat` is `--slice` (D49); both, naming different ids, refused. */
+/** `join`'s member id: `--seat`. */
 function joinedSeat(): string {
   const seat = args.flag("--seat");
-  const slice = args.flag("--slice");
-  if (seat !== undefined && slice !== undefined && seat !== slice) fail(`join: --seat ${seat} and --slice ${slice} name different members; pass one`);
-  return seat ?? slice ?? fail(`--seat (or --slice) is required\n${USAGE}`);
+  return seat ?? fail(`--seat is required\n${USAGE}`);
 }
 
 /** What a seat's join tells it of its posts, before the listener line (D2). */
@@ -601,7 +600,7 @@ async function main(): Promise<void> {
     case "open": {
       const { kind, group } = openKindAndGroup();
       const plan = group;
-      const seatsFile = args.flag("--seats") ?? args.flag("--slices") ?? fail(`open: --seats <file.json> is required (or --slices)\n${USAGE}`);
+      const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${USAGE}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === undefined ? undefined : Number(rawStall);
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
@@ -622,7 +621,7 @@ async function main(): Promise<void> {
         group,
         title: need("--title"),
         link: args.flag("--link") ?? null,
-        seats: readSlices(seatsFile),
+        seats: readSeats(seatsFile),
         ...(stallMs !== undefined ? { stallMs } : {}),
         ...(protocol !== undefined ? { protocol } : {}),
       });
@@ -642,35 +641,36 @@ async function main(): Promise<void> {
       emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link, ...(next ? { next } : {}) }, lines(doc.url));
       break;
     }
-    case "slice": {
+    case "seat": {
       if (args.positional[0] === "add") {
-        const id = args.positional[1] ?? fail(`slice add: which id?\n${USAGE}`);
+        const id = args.positional[1] ?? fail(`seat add: which id?\n${USAGE}`);
         const run = runArg();
         const on = args.flag("--on");
         if (on !== undefined) subscriptionsArg(on);
         const role = args.flag("--role");
+        const area = args.flag("--area");
         // --busy-max: the seat's bound on a non-shell call (a browser or MCP step), as a seat row's busyMax (idea 5)
         const rawBusyMax = args.flag("--busy-max");
         const busyMax = rawBusyMax === undefined ? undefined : Number(rawBusyMax);
         if (busyMax !== undefined && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
-        const added = await board.addSlice(run, {
+        const added = await board.addSeat(run, {
           id,
-          title: need("--title"),
           ...(role ? { role } : {}),
+          ...(area ? { area } : {}),
           ...(busyMax !== undefined ? { busyMax } : {}),
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
           ...(on !== undefined ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}),
         });
-        emit({ run, slice: added }, `${id} added`);
+        emit({ run, seat: added }, `${id} added`);
         break;
       }
-      const id = args.positional[0] ?? fail(`slice: which slice?\n${USAGE}`);
+      const id = args.positional[0] ?? fail(`seat: which seat?\n${USAGE}`);
       const run = runArg();
-      refuseTranscriptFlag("slice");
-      const state = need("--state") as SliceState;
-      await board.setSliceState(run, id, state);
-      emit({ run, slice: id, state }, `${id} ${state}`);
+      refuseTranscriptFlag("seat");
+      const state = need("--state") as SeatState;
+      await board.setSeatState(run, id, state);
+      emit({ run, seat: id, state }, `${id} ${state}`);
       break;
     }
     case "close": {
@@ -736,7 +736,7 @@ ${USAGE}`);
       const r = await board.done(p, name);
       // the member's next step (rule 10): wait for the next phase
       const next = `wait for the next phase, in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
-      emit({ runner: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
+      emit({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
         // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
         const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
         console.log(late ?? `${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
@@ -745,29 +745,29 @@ ${USAGE}`);
       break;
     }
     case "join": {
-      const { runner, roster } = await board.join({
+      const { member, roster } = await board.join({
         run: runArg(),
-        slice: joinedSeat(),
+        seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
         worktree: worktreeOf(process.cwd()) ?? undefined,
         ...(args.flag("--on") !== undefined ? { on: subscriptionsArg(args.flag("--on")!) } : {}),
       });
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
-      const link = startLinkLine({ name: runner.name, run: runner.run });
-      // the runner's next step, after its link: the open phase it owes, then its listener (D61); the link
+      const link = startLinkLine({ name: member.name, run: member.run });
+      // the member's next step, after its link: the open phase it owes, then its listener (D61); the link
       // comes first, so the agent starts it before a wait blocks it (swarm-relay D33)
-      const next = await nextStep(runner);
+      const next = await nextStep(member);
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
-      const shared = !profileOf(runner.kind).worktree;
-      const as = shared ? `pass --as ${runner.name} on every call: this checkout is shared, the board cannot tell you apart` : null;
-      const commands = shared ? seatCommands(runner.name) : null;
+      const shared = !profileOf(member.kind).worktree;
+      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : null;
+      const commands = shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
       // the run's current phase after the roster: a late or restarted member starts in it
-      const phase = await phaseHeader(runner.run);
-      emit({ runner: runner.name, nick: runner.nick, roster, phase, ...(shared ? { as: runner.name, commands } : {}), ...(drawing ? { drawing } : {}), link, next }, () => {
-        console.log(`you are ${runner.name}, ${runner.nick}: @${runner.slice} or @${runner.nick.replace(/\s+/g, "")} mentions you`);
+      const phase = await phaseHeader(member.run);
+      emit({ member: member.name, nick: member.nick, roster, phase, ...(shared ? { as: member.name, commands } : {}), ...(drawing ? { drawing } : {}), link, next }, () => {
+        console.log(`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`);
         for (const r of roster) console.log(rosterLine(r));
         if (phase) console.log(phase);
         if (as) console.log(as);
@@ -783,7 +783,7 @@ ${USAGE}`);
       const p = await caller();
       const subs = subscriptionsArg(args.positional.join(",") || fail(`${args.verb}: which events?`));
       const after = args.verb === "subscribe" ? await board.subscribe(p, subs) : await board.unsubscribe(p, subs);
-      await emitHeard(p, { runner: p.name, subscriptions: after }, `${p.name} wakes on: ${formatSubscriptions(after) || "mentions and urgent posts only"}`);
+      await emitHeard(p, { member: p.name, subscriptions: after }, `${p.name} wakes on: ${formatSubscriptions(after) || "mentions and urgent posts only"}`);
       break;
     }
     case "doing": {
@@ -791,7 +791,7 @@ ${USAGE}`);
       if (await answeredClosed(p)) break;
       const text = args.positional.join(" ") || fail("doing: what?");
       await board.setDoing(p, text);
-      await emitHeard(p, { runner: p.name, doing: text }, `${p.name} doing: ${text}`);
+      await emitHeard(p, { member: p.name, doing: text }, `${p.name} doing: ${text}`);
       break;
     }
     case "post":
@@ -841,7 +841,7 @@ ${USAGE}`);
       const raw = (args.positional[0] ?? fail("read: which seq?")).replace(/^#/, "");
       const seq = Number(raw);
       if (!Number.isInteger(seq)) fail(`read takes a seq, got ${raw}`);
-      // a runner's read is a call of its own (D66); a reader no runner answers to reads all the same
+      // a member's read is a call of its own (D66); a reader no member answers to reads all the same
       let by: Participant | undefined;
       try {
         by = await caller();
@@ -905,10 +905,10 @@ ${USAGE}`);
       // the run closed while this wait was pending: the close ended the member
       if (await answeredClosed(p)) break;
       if (d.superseded) {
-        emit(d, "superseded by a newer wait"); // a newer wait of this runner gets what arrives (D64)
+        emit(d, "superseded by a newer wait"); // a newer wait of this member gets what arrives (D64)
         break;
       }
-      // the runner's next step, before the message: the exact command that re-arms this listener (D49)
+      // the member's next step, before the message: the exact command that re-arms this listener (D49)
       const again = [...self(), "wait"];
       if (mentionsOnly) again.push("--mentions");
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
@@ -918,11 +918,11 @@ ${USAGE}`);
       // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
       const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
       if (!d.full.length && !d.lines.length) {
-        // a timeout: the line to run again (B7); the runner ended: nothing to re-arm
+        // a timeout: the line to run again (B7); the member ended: nothing to re-arm
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
         else {
-          const next = (await pausedLine(p)) ?? (p.slice === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
+          const next = (await pausedLine(p)) ?? (p.seat === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
           emit({ ...d, next }, next);
         }
         break;
@@ -937,7 +937,7 @@ ${USAGE}`);
           ? `${owes}
 only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
           : `answer on the thread if needed, then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`
-        : p.slice === "orchestrator"
+        : p.seat === "orchestrator"
           ? `act on it, then start this listener again, in the background: ${again.join(" ")}`
           : `answer on the thread if needed, then start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
@@ -981,12 +981,12 @@ ${rearm}` : rearm;
       const abs = resolveClaimPath(file);
       const rel = repoRelative(abs);
       const verdict = await board.checkEdit(p, abs, { interface: args.has("--interface") });
-      // held (D41): exit 3, the runner posts about the path and claims again
+      // held (D41): exit 3, the member posts about the path and claims again
       if (!verdict.allowed) process.exitCode = 3;
-      // the other holders are named once per runner and path, when the board says so (D40)
+      // the other holders are named once per member and path, when the board says so (D40)
       const also =
         verdict.allowed && verdict.notice
-          ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.runner} · ${(await board.participant(o.runner))?.nick ?? "?"}: ${o.doing}`))).join("; ")
+          ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} · ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ")
           : "";
       await emitHeard(p, verdict, () => {
         if (!verdict.allowed) return console.log(verdict.refusal);
@@ -999,20 +999,20 @@ ${rearm}` : rearm;
       const file = args.positional[0] ?? fail("release: which path?");
       const abs = resolveClaimPath(file);
       await board.release(p, abs);
-      emit({ runner: p.name, released: repoRelative(abs) }, `${p.name} released ${repoRelative(abs)}`);
+      emit({ member: p.name, released: repoRelative(abs) }, `${p.name} released ${repoRelative(abs)}`);
       break;
     }
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
-      // the branch merged into: a worktree does not say which branch it left, so the runner names it (D59)
+      // the branch merged into: a worktree does not say which branch it left, so the member names it (D59)
       const onto = need("--onto");
       // a branch checked out in a worktree refuses the push: say where, grant nothing (validation finding 4)
       const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
       if (holding) {
         process.exitCode = 5;
         const line = `${onto} is checked out at ${holding}: ask the orchestrator to detach it, then run merge-lock again`;
-        emit({ runner: p.name, granted: false, checkedOutAt: holding, next: line }, line);
+        emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
       // what the branch wrote without a claim, committed or not, before the lock; a flag informs, never blocks
@@ -1024,7 +1024,7 @@ ${rearm}` : rearm;
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.worktree ? (headReflogLength(p.worktree) ?? undefined) : undefined;
       const r = await board.lockMerge(p, onto, reflogMark);
-      emit({ runner: p.name, ...r, reconciled, flags }, () => {
+      emit({ member: p.name, ...r, reconciled, flags }, () => {
         printReconciled(unclaimed, flags);
         console.log(r.granted ? "granted: merge, then swarm merged <sha> --files <path>..." : `held by ${r.holder}: swarm wait --mentions for its merged event`);
       });
@@ -1041,11 +1041,11 @@ ${rearm}` : rearm;
       // the post after a resolved conflict, prompted by the command just run (D63)
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map((o) =>
-        ended.has(o.runner)
-          ? `if you resolved a conflict in ${o.path}: ${o.runner} has ended, so say how in your report`
-          : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.runner} I resolved ${o.path}: <how>" --about ${o.path}`,
+        ended.has(o.member)
+          ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report`
+          : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`,
       );
-      emit({ runner: p.name, sha, files, tell }, () => {
+      emit({ member: p.name, sha, files, tell }, () => {
         console.log(`merged ${sha}: lock released`);
         for (const line of tell) console.log(line);
       });
@@ -1056,19 +1056,19 @@ ${rearm}` : rearm;
       // its run closed: the close ended it; end answers what the closed line promised, the summary to return
       if ((await board.runs()).every((r) => r.id !== p.run)) {
         const line = `run ${p.run} closed: ${p.name} ended; return your summary now`;
-        emit({ runner: p.name, ended: true, closed: true, next: line }, line);
+        emit({ member: p.name, ended: true, closed: true, next: line }, line);
         break;
       }
       // a member already ended: nothing to do, nothing to say
       if (p.ended) break;
-      // what the runner wrote without claiming it, once, before its claims go (D58)
+      // what the member wrote without claiming it, once, before its claims go (D58)
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       await board.end(p);
-      emit({ runner: p.name, ended: true, reconciled, flags }, () => {
+      emit({ member: p.name, ended: true, reconciled, flags }, () => {
         printReconciled(unclaimed, flags);
         console.log(`${p.name} ended`);
       });
@@ -1176,7 +1176,7 @@ ${rearm}` : rearm;
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
-          for (const s of r.slices) console.log(`  ${s.id} ${s.state}  ${s.title}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
+          for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) console.log(`  ${m.name}  ${stateLine(m, true)}`);
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)

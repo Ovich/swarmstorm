@@ -105,15 +105,15 @@ export function makeRepo(prefix = "swarm-merge-"): Repo {
 }
 
 const SLICES = JSON.stringify([
-  { id: "S3", title: "the page", blockers: [] },
-  { id: "S5", title: "the skill", blockers: [] },
+  { id: "S3", blockers: [] },
+  { id: "S5", blockers: [] },
 ]);
 
 /** A plan run `review-tool` with S3 joined in worktree a holding src/a.ts and S5 in worktree b; its id. */
 export function openTwoRunners(r: Repo, plan = "review-tool", title = "T"): number {
   const slices = path.join(r.home, `slices-${plan}.json`);
   fs.writeFileSync(slices, SLICES);
-  const id = Number(r.cli(r.repo, "open", "--plan", plan, "--title", title, "--slices", slices).split("\n")[0].trim());
+  const id = Number(r.cli(r.repo, "open", "--plan", plan, "--title", title, "--seats", slices).split("\n")[0].trim());
   r.cli(r.wtA, "join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
   r.cli(r.wtB, "join", "--run", String(id), "--seat", "S5", "--doing", "the skill");
   r.cli(r.wtA, "deliver");

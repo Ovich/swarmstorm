@@ -14,8 +14,8 @@ import { decode, encode, serverLogFile, serverStateFile, SERVER_STARTER_ENV, typ
 
 const REPO = "/repos/one/.git";
 const SEATS = [
-  { id: "S1", title: "one", blockers: [] },
-  { id: "S2", title: "two", blockers: [] },
+  { id: "S1", blockers: [] },
+  { id: "S2", blockers: [] },
 ];
 
 let dir: string;

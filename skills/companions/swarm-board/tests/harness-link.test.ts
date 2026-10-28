@@ -43,9 +43,9 @@ function joinedInHarness(): { r: Repo; run: number; member: { name: string; run:
   fs.mkdirSync(transcripts);
   const env = { ...process.env, SWARM_ROOT: r.home, SWARMSTORM_HOME: r.home, SWARM_NO_POLLER: "1", CLAUDE_CODE_SESSION_ID: SESSION, SWARM_TRANSCRIPTS_ROOT: transcripts };
   const slices = path.join(r.home, "slices-harness.json");
-  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", title: "S3", blockers: [] }]));
-  const run = Number(r.cli(r.repo, "open", "--plan", "harness-plan", "--title", "T", "--slices", slices).split(/\r?\n/)[0]);
-  const joined = spawnSync(process.execPath, [CLI, "join", "--run", String(run), "--slice", "S3", "--doing", "x"], { cwd: r.wtA, encoding: "utf8", env });
+  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", blockers: [] }]));
+  const run = Number(r.cli(r.repo, "open", "--plan", "harness-plan", "--title", "T", "--seats", slices).split(/\r?\n/)[0]);
+  const joined = spawnSync(process.execPath, [CLI, "join", "--run", String(run), "--seat", "S3", "--doing", "x"], { cwd: r.wtA, encoding: "utf8", env });
   assert.equal(joined.status, 0, joined.stderr);
   const [, entry, verb] = joined.stdout.trimEnd().split(/\r?\n/).at(-2)!.match(LINK_LINE)!;
   return { r, run, member: { name: "harness-plan/S3", run }, env, linkArgv: [entry, ...verb.split(" ")] };

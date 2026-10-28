@@ -2,9 +2,8 @@
 const VALUE_FLAGS = new Set([
   "--plan",
   "--title",
-  "--slices",
   "--run",
-  "--slice",
+  "--area",
   "--state",
   "--doing",
   "--file",

@@ -114,15 +114,15 @@ test("the server and a link are started when absent, a verb that finds no link a
 test("open ends on the command that starts the member's link, join prints it before its listener line (swarm-relay D33); started from it, it answers the member's pipe, and the next verb starts no other (D32)", async () => {
   const r = fresh();
   const slices = path.join(r.home, "slices-link.json");
-  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", title: "S3", blockers: [] }]));
-  const opened = r.cli(r.repo, "open", "--plan", "link-plan", "--title", "T", "--slices", slices).trimEnd().split(/\r?\n/);
+  fs.writeFileSync(slices, JSON.stringify([{ id: "S3", blockers: [] }]));
+  const opened = r.cli(r.repo, "open", "--plan", "link-plan", "--title", "T", "--seats", slices).trimEnd().split(/\r?\n/);
   const run = Number(opened[0]);
   const linkLine = /^start your link now, in the background \(your harness's background task\): node (\S+) (link .*)$/;
   // idea 3: the link line, then the next step, last
   assert.match(opened.at(-1)!, /^next: /);
   assert.match(opened.at(-2)!, linkLine);
   assert.ok(opened.at(-2)!.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.at(-2)!);
-  const joined = r.cli(r.wtA, "join", "--run", String(run), "--slice", "S3", "--doing", "x").trimEnd().split(/\r?\n/);
+  const joined = r.cli(r.wtA, "join", "--run", String(run), "--seat", "S3", "--doing", "x").trimEnd().split(/\r?\n/);
   const [, entry, verb] = joined.at(-2)!.match(linkLine)!;
   assert.equal(verb, `link --run ${run} --as link-plan/S3`);
   assert.match(joined.at(-1)!, /^start your listener now, in the background/);

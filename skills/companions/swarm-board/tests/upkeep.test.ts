@@ -13,7 +13,7 @@ import { openBoard, UPKEEP_EVERY_MS } from "../src/board/board.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 const REPO = "/repos/one/.git";
-const SEATS = [{ id: "S1", title: "one", blockers: [] }];
+const SEATS = [{ id: "S1", blockers: [] }];
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 
@@ -63,8 +63,8 @@ const events = async (event: string) => {
 };
 const openRunCli = (group: string): number => {
   const seats = path.join(dir, `${group}.seats.json`);
-  fs.writeFileSync(seats, JSON.stringify([{ id: "S3", title: "the page", blockers: [] }]));
-  const r = cli("open", "--plan", group, "--title", group, "--slices", seats);
+  fs.writeFileSync(seats, JSON.stringify([{ id: "S3", blockers: [] }]));
+  const r = cli("open", "--plan", group, "--title", group, "--seats", seats);
   assert.equal(r.status, 0, r.stderr);
   return Number(r.stdout.split("\n")[0].trim());
 };

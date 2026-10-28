@@ -129,7 +129,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const version = bundleVersion();
   const speakers = new Set<Speaker>();
   const calls = new Map<string, CallRecord>();
-  /** Per run, per member (its seat or slice id): its link connected, else since when it is lost (D12). */
+  /** Per run, per member (its seat id): its link connected, else since when it is lost (D12). */
   const links = new Map<number, Map<string, { connected: boolean; lostAt: number | null }>>();
   const memberOf = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
   /** Sets a member's link here and in the store (D37). */

@@ -50,10 +50,10 @@ const scene = async (r: Repo, afterKnown?: (id: number) => void) => {
   const a = runWithBothMerges(r, afterKnown);
   const repo = statsJson(r).scope.repo;
   const seatsFile = path.join(r.home, "seats.json");
-  fs.writeFileSync(seatsFile, JSON.stringify([{ id: "S1", title: "x", blockers: [] }]));
-  const b = Number(r.cli(r.repo, "open", "--plan", "billing", "--title", "B", "--slices", seatsFile).split("\n")[0].trim());
+  fs.writeFileSync(seatsFile, JSON.stringify([{ id: "S1", blockers: [] }]));
+  const b = Number(r.cli(r.repo, "open", "--plan", "billing", "--title", "B", "--seats", seatsFile).split("\n")[0].trim());
   r.cli(r.repo, "close", "--run", String(b));
-  fs.writeFileSync(seatsFile, JSON.stringify([{ id: "skeptic", title: "the skeptic", blockers: [] }]));
+  fs.writeFileSync(seatsFile, JSON.stringify([{ id: "skeptic", blockers: [] }]));
   const brain = Number(r.cli(r.repo, "open", "--kind", "brainstorm", "--group", "ideas", "--title", "Brain", "--seats", seatsFile).split("\n")[0].trim());
   // in process, on a fake Date: two runs older than the CLI's clock
   const now = Date.now();
@@ -61,11 +61,11 @@ const scene = async (r: Repo, afterKnown?: (id: number) => void) => {
   let old: number;
   try {
     mock.timers.enable({ apis: ["Date"], now: now - 40 * DAY_MS });
-    old = board.openRun({ repo, group: "legacy", title: "Old", seats: [{ id: "S1", title: "x", blockers: [] }] }).id;
+    old = board.openRun({ repo, group: "legacy", title: "Old", seats: [{ id: "S1", blockers: [] }] }).id;
     mock.timers.setTime(now - 40 * DAY_MS + 2 * 60 * 60 * 1000);
     board.closeRun(old);
     mock.timers.setTime(now - 25 * DAY_MS);
-    const mid = board.openRun({ repo, group: "middle", title: "Mid", seats: [{ id: "S1", title: "x", blockers: [] }] }).id;
+    const mid = board.openRun({ repo, group: "middle", title: "Mid", seats: [{ id: "S1", blockers: [] }] }).id;
     mock.timers.setTime(now - 20 * DAY_MS);
     board.closeRun(mid);
   } finally {
