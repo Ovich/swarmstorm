@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { EVENTS } from "../src/board/events.ts";
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
@@ -76,7 +76,7 @@ test("an activity updates the member's member_activity row and adds a token read
   const base = Date.now() + 60_000;
   board.recordActivity(run.id, "a", act({ grewAt: base, tokens: 42, context: 9, lastTool: "Read src/x.ts" }), at(base, 0));
   board.recordActivity(run.id, "a", act({ grewAt: base + 1000, tokens: 50, lastTool: "Read src/y.ts" }), at(base, 1));
-  const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
+  const db = openRawStore(path.join(dir, "swarm.sqlite"));
   try {
     const row = db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = 'a'").get(run.id) as Record<string, unknown>;
     assert.deepEqual([row.tokens, row.grew_at, row.last_tool, row.finished], [50, base + 1000, "Read src/y.ts", 0]);

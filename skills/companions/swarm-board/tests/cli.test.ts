@@ -1,5 +1,5 @@
 import { test, beforeEach, afterEach } from "node:test";
-import { DatabaseSync } from "node:sqlite";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -597,7 +597,7 @@ test("status flags a run idle a day with its close command, never a fresh one", 
   assert.ok(fresh.lastActivity);
   assert.doesNotMatch(run("status").stdout, /no activity for/);
   const old = new Date(Date.now() - 2 * 86400000).toISOString();
-  const db = new DatabaseSync(path.join(toolRoot, "swarm.sqlite"));
+  const db = openRawStore(path.join(toolRoot, "swarm.sqlite"));
   db.prepare("UPDATE runs SET opened_at = ? WHERE id = ?").run(old, id);
   db.prepare("UPDATE participants SET joined_at = ?, last_call = NULL WHERE run = ?").run(old, id);
   db.prepare("UPDATE messages SET at = ? WHERE author IN (SELECT id FROM participants WHERE run = ?)").run(old, id);

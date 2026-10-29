@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { DatabaseSync } from "node:sqlite";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard } from "../src/board/board.ts";
 import { startBoardServer, stopBoardServer } from "../src/server/server.ts";
 import { decode, encode, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type Hello, type MemberActivity, type RpcMethod, type ServerState } from "../src/wire.ts";
@@ -279,7 +279,7 @@ const within = async <T>(c: Client, ms: number, pick: (snap: any) => T | undefin
  *  it sees the close, which a loaded machine may run after the test has skewed that clock (S31). */
 const untilLinkLost = async (run: number, seat: string): Promise<void> => {
   for (let i = 0; i < 100; i++) {
-    const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
+    const db = openRawStore(path.join(dir, "swarm.sqlite"));
     try {
       const row = db.prepare("SELECT lost_at FROM member_links WHERE run = ? AND member = ?").get(run, seat) as { lost_at: number | null } | undefined;
       if (row?.lost_at != null) return;
@@ -306,7 +306,7 @@ test("an activity frame from a member's link updates its member_activity row and
   link.send({ type: "activity", at: Date.now(), activity: activity({ tokens: 77, openTool: { name: "Bash", target: "npm test", since: Date.now() } }) });
   const live = await within(c, 3000, (snap) => snap.roster.find((r: { member: string; liveness?: { tokens: number | null } }) => r.member === "g/S1" && r.liveness?.tokens === 77)?.liveness);
   assert.deepEqual([live.state, live.doing], ["busy", "Bash npm test"]);
-  const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
+  const db = openRawStore(path.join(dir, "swarm.sqlite"));
   try {
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM token_readings WHERE run = ? AND member = 'S1'").get(run.id) as { n: number }).n, 1);
     assert.equal((db.prepare("SELECT open_tool FROM member_activity WHERE run = ? AND member = 'S1'").get(run.id) as { open_tool: string }).open_tool, "Bash");
@@ -350,7 +350,7 @@ test("an upkeep or tick that throws is logged to stderr, and the server goes on"
   const broken = await value(c, "openRun", { repo: REPO, group: "b", title: "B", seats: SEATS });
   await value(c, "join", { run: broken.id, seat: "S1", doing: "x", files: [] });
   // the broken run's tick throws: pruning its old token reading is refused by a trigger
-  const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
+  const db = openRawStore(path.join(dir, "swarm.sqlite"));
   try {
     db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, 'S1', '2000-01-01T00:00:00.000Z', 1)").run(broken.id);
     db.exec(`CREATE TRIGGER refuse_prune BEFORE DELETE ON token_readings WHEN old.run = ${Number(broken.id)} BEGIN SELECT RAISE(ABORT, 'refused'); END`);

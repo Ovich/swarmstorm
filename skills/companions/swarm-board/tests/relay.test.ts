@@ -4,7 +4,7 @@
 import { test, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import child_process, { spawn, spawnSync } from "node:child_process";
-import { DatabaseSync } from "node:sqlite";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
@@ -187,7 +187,7 @@ test("a wait whose process is killed leaves the member not waiting (D16)", async
   const r = fresh();
   openTwoRunners(r);
   const waiting = () => {
-    const db = new DatabaseSync(r.store, { readOnly: true });
+    const db = openRawStore(r.store, { readOnly: true });
     try {
       return Number((db.prepare("SELECT waiting FROM participants WHERE seat = 'S5'").get() as { waiting: number }).waiting);
     } finally {

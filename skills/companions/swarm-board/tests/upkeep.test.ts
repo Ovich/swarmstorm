@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard, UPKEEP_EVERY_MS } from "../src/board/board.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
@@ -41,7 +42,7 @@ afterEach(() => {
 
 /** The store opened raw: what the interface cannot do, dating rows in the past. */
 const withRaw = <T>(fn: (raw: DatabaseSync) => T): T => {
-  const raw = new DatabaseSync(file);
+  const raw = openRawStore(file);
   try {
     return fn(raw);
   } finally {
