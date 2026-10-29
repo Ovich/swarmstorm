@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { commonGitDir, relativeIn, repoOf, resolveIn } from "../src/place/place.ts";
-import { leftover } from "../src/cli/worktrees.ts";
+import { worktrees } from "../src/packs/code/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
@@ -77,7 +77,7 @@ test("V8: a worktree branched from a base only on origin is clean and merged aga
   git(dir, "clone", "-q", origin, clone);
   const wt = path.join(dir, "seat");
   git(clone, "worktree", "add", "-q", "-b", "seat", wt, "refs/remotes/origin/feat");
-  assert.equal(leftover(wt, "feat"), null);
+  assert.equal(worktrees(path.resolve(clone, ".git")).unmerged(wt, "feat"), null);
 });
 
 test("D6: the legacy data-home worktrees are swept once: a clean one removed, a dirty one kept and named, then never again", () => {

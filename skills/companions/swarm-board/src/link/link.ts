@@ -1,11 +1,13 @@
 // A member's link (swarm-relay D1): the pipe its member's CLI calls come in on, one WebSocket to the
 // board server, every Call forwarded and its Result sent back to the pipe that asked. It keeps no
 // state file (D15): a restart re-locates the server and re-reads. Its one file is its pid, for `stopLinks`.
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { DATA_ROOT } from "../board/home.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -335,4 +337,47 @@ export async function runLink(opts: {
     watchTranscript();
   }
   return finished;
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** The command line of a live process; null when it is gone or cannot be read. */
+function commandLine(pid: number): string | null {
+  const r =
+    process.platform === "win32"
+      ? spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
+      : spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+  return (r.stdout ?? "").trim() || null;
+}
+
+/** Stops the members' links before their worktrees go (Windows refuses to remove a folder a live process holds):
+ *  only the pid each link wrote under this data home, and only while that process is still a link. */
+export function stopLinks(runId: number, members: string[]): void {
+  const pids: number[] = [];
+  for (const member of members) {
+    const file = linkPidFile(DATA_ROOT, runId, member);
+    let pid: number;
+    try {
+      pid = Number(fs.readFileSync(file, "utf8").trim());
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
+      try {
+        process.kill(pid);
+        pids.push(pid);
+      } catch {}
+    }
+    try {
+      fs.rmSync(file);
+    } catch {}
+  }
+  for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
 }

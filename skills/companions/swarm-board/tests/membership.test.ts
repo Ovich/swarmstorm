@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { ensureWorktree } from "../src/cli/worktrees.ts";
+import { worktrees } from "../src/packs/code/worktrees.ts";
 import type { MemberActivity } from "../src/wire.ts";
 
 const REPO = "/repos/one/.git";
@@ -74,7 +74,7 @@ test("G36: a base that exists only on origin: the seat's worktree is on its own 
   const clone = path.join(dir, "clone");
   git(dir, "clone", "-q", origin, clone);
   const common = path.resolve(clone, git(clone, "rev-parse", "--git-common-dir"));
-  const made = ensureWorktree(clone, common, 1, "g", "w1", "feat");
+  const made = worktrees(common).forSeat(1, "g", "w1", "feat");
   assert.equal(git(made.path, "branch", "--show-current"), "swarm/1-g/w1");
   assert.equal(git(clone, "branch", "--list", "feat"), "", "the base stays origin's");
 });

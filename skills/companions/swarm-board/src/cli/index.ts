@@ -20,7 +20,8 @@ import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { answer, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-import { branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, sweepLegacyRoot, worktreeDirs } from "./worktrees.ts";
+// board-split#D13: the CLI reaches worktrees through the entry alone, interim until P3 moves claim/merge-lock/end/close into the code pack
+import { sweepAll, sweepLegacy, worktrees } from "../packs/code/worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -638,15 +639,15 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
   // outside a repository, or in one with no commit yet: nothing to branch from
   const base = run.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), run.repo)) return null;
+  const place = worktrees(run.repo).place(run.id, run.group, seat, cwd);
+  if (!place) return null;
   if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
-  const at = worktreeDir(run.repo, run.id, seat);
-  return { path: at, branch: branchFor(run.id, run.group, seat), base, reused: fs.existsSync(at) };
+  return { ...place, base };
 }
 
 /** The caller's board worktree, made now when its join only named it (G20): a member that never claims or merges gets none. */
 async function madeWorktree(p: Participant): Promise<void> {
-  if (!p.worktree || !owned(p.worktree, p.repo) || fs.existsSync(p.worktree)) return;
+  if (!p.worktree || !worktrees(p.repo).owns(p.worktree) || fs.existsSync(p.worktree)) return;
   const run = await runOf(p.run);
   if (!run) return;
   // any checkout of the repository adds it: the caller's, else the repository's own beside its git dir
@@ -654,7 +655,7 @@ async function madeWorktree(p: Participant): Promise<void> {
   const base = run.base ?? baseAt(cwd);
   if (!base) fail(`${p.name}: no base to make the worktree from`);
   try {
-    ensureWorktree(cwd, p.repo, run.id, run.group, p.seat, base as string);
+    worktrees(p.repo).forSeat(run.id, run.group, p.seat, base as string);
     // claim and release resolve paths in it from now on (G19)
     callerWorktree = p.worktree;
   } catch (e) {
@@ -664,7 +665,7 @@ async function madeWorktree(p: Participant): Promise<void> {
 
 async function main(): Promise<void> {
   // D6: the worktrees an older board made under the data home, swept once
-  for (const line of sweepLegacyRoot()) console.error(`legacy worktree ${line}`);
+  for (const line of sweepLegacy()) console.error(`legacy worktree ${line}`);
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
     process.exitCode = 2;
@@ -761,11 +762,10 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
-      const trees = (await board.worktrees(run)).filter((w) => owned(w.worktree, w.repo) && fs.existsSync(w.worktree));
+      const trees = (await board.worktrees(run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs.existsSync(w.worktree));
       await board.closeRun(run);
-      // the run's worktrees go once clean and merged; their links go first, as Windows holds a folder a live process is in
-      if (trees.length) stopLinks(run, trees.map((w) => w.member));
-      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
+      // the run's worktrees go once clean and merged, each seat's link stopped first
+      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run, member: w.member, worktree: w.worktree }, w.base) }));
       const kept = swept.filter((w) => !w.removed);
       emit({ run, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run} closed`);
@@ -1231,8 +1231,9 @@ async function main(): Promise<void> {
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       // the board's worktree with work not merged: end refuses, naming it and the merge
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree, p.repo) && fs.existsSync(p.worktree) ? slashed(p.worktree) : null;
-      const left = mine ? leftover(mine, base) : null;
+      const seatTrees = worktrees(p.repo);
+      const mine = seatTrees.owns(p.worktree) && fs.existsSync(p.worktree) ? slashed(p.worktree) : null;
+      const left = mine ? seatTrees.unmerged(mine, base) : null;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
         fail(
@@ -1249,9 +1250,8 @@ async function main(): Promise<void> {
       await board.end(p);
       // ended: no link to start
       linkToStart = null;
-      // its link goes first: Windows holds a folder a live process is in
-      if (mine) stopLinks(p.run, [p.name]);
-      const removal = mine ? removeWorktree(mine, p.repo) : null;
+      // its link goes first, inside release: Windows holds a folder a live process is in
+      const removal = mine ? seatTrees.release({ run: p.run, member: p.name, worktree: mine }, base).why : null;
       emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
@@ -1263,15 +1263,10 @@ async function main(): Promise<void> {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${verbHelp()}`);
       const known = await board.worktrees();
       // each repository the board knows a run of: its worktrees folder is the only one walked
-      const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
       const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
-      const out = dirs.map((dir) => {
-        // the latest member to join from it says which run it belongs to
-        const w = known.filter((k) => fold(k.worktree) === fold(dir)).at(-1);
-        if (!w) return { worktree: slashed(dir), removed: false, why: "no member of any run joined from it" };
-        if (w.open) return { worktree: slashed(dir), removed: false, why: `run ${w.run} is open` };
-        return { worktree: slashed(dir), ...sweep(dir, w.repo, w.base) };
-      });
+      // the latest member to join from it says which run it belongs to
+      const recordOf = (dir: string) => known.filter((k) => fold(k.worktree) === fold(dir)).at(-1) ?? null;
+      const out = sweepAll([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)], recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
       const kept = out.filter((o) => !o.removed);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);

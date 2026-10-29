@@ -1,30 +1,32 @@
 // The worktrees the board makes for a code run's members (kind profile `worktree`): one per seat under
 // `<repo's git common dir>/swarm/worktrees/<run>/<seat>`, beside the repository's own git data, never in its tree, on branch `swarm/<run>-<group>/<seat>` from the run's base.
 // Removed once clean and merged, the branch kept; what is not removed is said, with why.
+// One entry (board-split#D13, widened by #D37): `worktrees(repo)` and the sweeps; paths, branch names, git hidden.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DATA_ROOT } from "../board/home.ts";
-import { linkPidFile } from "../link/link.ts";
-import { baseRef, git } from "../git.ts";
+import { DATA_ROOT } from "../../board/home.ts";
+import { baseRef, git } from "../../git.ts";
+import { stopLinks } from "../../link/link.ts";
+import { worktreeOf } from "../../place/place.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
-export const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
+const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
 
 const CASELESS = process.platform === "win32" || process.platform === "darwin";
 const fold = (s: string): string => (CASELESS ? path.resolve(s).toLowerCase() : path.resolve(s));
 const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 // the run id keeps two runs apart: group a-b seat c and group a seat b-c never share a folder or a branch
-export const worktreeDir = (repo: string, run: number, seat: string): string => path.join(worktreesRoot(repo), String(run), safe(seat));
-export const branchFor = (run: number, group: string, seat: string): string => `swarm/${run}-${group}/${seat}`;
+const worktreeDir = (repo: string, run: number, seat: string): string => path.join(worktreesRoot(repo), String(run), safe(seat));
+const branchFor = (run: number, group: string, seat: string): string => `swarm/${run}-${group}/${seat}`;
 
 /** A worktree the board made for `repo`: `<repo>/swarm/worktrees/<run>/<seat>`. */
-export const owned = (wt: string | null, repo: string): wt is string => !!wt && fold(path.dirname(path.dirname(wt))) === fold(worktreesRoot(repo));
+const owned = (wt: string | null, repo: string): wt is string => !!wt && fold(path.dirname(path.dirname(wt))) === fold(worktreesRoot(repo));
 
 /** Every worktree folder under each repository's worktrees folder, run by run. */
-export const worktreeDirs = (repos: Iterable<string>): string[] => {
+const worktreeDirs = (repos: Iterable<string>): string[] => {
   const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
   return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
 };
@@ -38,7 +40,7 @@ function run(cwd: string, ...argv: string[]): { ok: boolean; out: string; err: s
 }
 
 /** True when `cwd` is a worktree git added (not the repository's own checkout). */
-export function inLinkedWorktree(cwd: string): boolean {
+function inLinkedWorktree(cwd: string): boolean {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
   const common = git(cwd, "rev-parse", "--git-common-dir");
   return !!dir && !!common && !same(dir, path.resolve(cwd, common));
@@ -48,7 +50,7 @@ const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-par
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
-export function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
+function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
   const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
   const top = fs.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
@@ -66,7 +68,7 @@ export function ensureWorktree(cwd: string, repo: string, runId: number, group: 
 }
 
 /** Why the worktree cannot go yet: uncommitted changes, or commits not in `into`; null when it can (or is gone). */
-export function leftover(wt: string, into: string | null): string | null {
+function leftover(wt: string, into: string | null): string | null {
   if (!fs.existsSync(wt)) return null;
   const status = run(wt, "status", "--porcelain", "--untracked-files=all");
   if (!status.ok) return `git status failed: ${status.err}`;
@@ -78,7 +80,7 @@ export function leftover(wt: string, into: string | null): string | null {
 }
 
 /** `git worktree remove`, then prune; run from the repository's git dir, never from inside the worktree. Null on success, else why. */
-export function removeWorktree(wt: string, repo: string): string | null {
+function removeWorktree(wt: string, repo: string): string | null {
   if (!fs.existsSync(wt)) {
     run(os.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
     return null;
@@ -88,63 +90,20 @@ export function removeWorktree(wt: string, repo: string): string | null {
   return r.ok ? null : r.err || "git worktree remove failed";
 }
 
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** The command line of a live process; null when it is gone or cannot be read. */
-function commandLine(pid: number): string | null {
-  const r =
-    process.platform === "win32"
-      ? spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
-      : spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
-  return (r.stdout ?? "").trim() || null;
-}
-
-/** Stops the members' links before their worktrees go (Windows refuses to remove a folder a live process holds):
- *  only the pid each link wrote under this data home, and only while that process is still a link. */
-export function stopLinks(runId: number, members: string[]): void {
-  const pids: number[] = [];
-  for (const member of members) {
-    const file = linkPidFile(DATA_ROOT, runId, member);
-    let pid: number;
-    try {
-      pid = Number(fs.readFileSync(file, "utf8").trim());
-    } catch {
-      continue;
-    }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
-      try {
-        process.kill(pid);
-        pids.push(pid);
-      } catch {}
-    }
-    try {
-      fs.rmSync(file);
-    } catch {}
-  }
-  for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
-}
-
 /** Removes `wt` when clean and merged into `into`; otherwise says why it stays. */
-export function sweep(wt: string, repo: string, into: string | null): { removed: boolean; why: string | null } {
+function sweep(wt: string, repo: string, into: string | null): { removed: boolean; why: string | null } {
   const why = leftover(wt, into) ?? removeWorktree(wt, repo);
   return { removed: why === null, why };
 }
 
 /** Where the board made worktrees before D6: under the data home. */
-export const LEGACY_ROOT = path.join(DATA_ROOT, "worktrees");
+const LEGACY_ROOT = path.join(DATA_ROOT, "worktrees");
 const LEGACY_SWEPT = path.join(LEGACY_ROOT, ".swept");
 
 /** D6: the legacy data-home root, swept once as a migration, never by prune: each clean worktree in it is removed
  *  (its branch kept, so no commit is lost), one with uncommitted changes is kept and named. The root goes when empty;
  *  else a marker keeps the sweep from running again. Returns one line per kept worktree; [] when nothing was there. */
-export function sweepLegacyRoot(): string[] {
+function sweepLegacyRoot(): string[] {
   if (!fs.existsSync(LEGACY_ROOT) || fs.existsSync(LEGACY_SWEPT)) return [];
   const kept: string[] = [];
   const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
@@ -169,3 +128,52 @@ export function sweepLegacyRoot(): string[] {
   else fs.writeFileSync(LEGACY_SWEPT, `${new Date().toISOString()}\n`);
   return kept;
 }
+
+/** A seat's worktree as its callers hold it: the run, the member whose link holds it open, its folder. */
+export type SeatRef = { run: number; member: string; worktree: string };
+/** A worktree folder's owner as the board recorded it. */
+export type WorktreeRecord = { run: number; open: boolean; repo: string; base: string | null };
+
+/** The board's worktrees of one repository, `repo` its git common dir. */
+export function worktrees(repo: string) {
+  return {
+    /** Where the seat's worktree is, without making it (G20); null when `cwd` is a worktree the board did not make. */
+    place(run: number, group: string, seat: string, cwd: string): { path: string; branch: string; reused: boolean } | null {
+      if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
+      const at = worktreeDir(repo, run, seat);
+      return { path: at, branch: branchFor(run, group, seat), reused: fs.existsSync(at) };
+    },
+    /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
+    forSeat(run: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
+      return ensureWorktree(repo, repo, run, group, seat, base);
+    },
+    /** True when `wt` is a worktree the board made for this repository. */
+    owns(wt: string | null): wt is string {
+      return owned(wt, repo);
+    },
+    /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
+    unmerged(wt: string, into: string | null): string | null {
+      return leftover(wt, into);
+    },
+    /** Stops the seat's link (Windows refuses to remove a folder a live process is in), then removes the worktree once
+     *  clean and merged into `into`; otherwise says why it stays. */
+    release(seat: SeatRef, into: string | null): { removed: boolean; why: string | null } {
+      stopLinks(seat.run, [seat.member]);
+      return sweep(seat.worktree, repo, into);
+    },
+  };
+}
+
+/** `worktree prune`: every worktree folder of each repository, judged by the board's record of it (null: no member of
+ *  any run joined from it); removed once its run is closed and it is clean and merged, else kept with why. */
+export function sweepAll(repos: Iterable<string>, recordOf: (dir: string) => WorktreeRecord | null): { worktree: string; removed: boolean; why: string | null }[] {
+  return worktreeDirs(repos).map((dir) => {
+    const w = recordOf(dir);
+    if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
+    if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
+    return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+  });
+}
+
+/** D6: the worktrees an older board made under the data home, swept once; one line per kept worktree. */
+export const sweepLegacy = (): string[] => sweepLegacyRoot();
