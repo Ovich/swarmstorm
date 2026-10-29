@@ -220,6 +220,6 @@ test("G28: a build output another member holds is claimed at merge-lock without 
   const lock = cli(wtA, "merge-lock", "--onto", "main");
   assert.doesNotMatch(lock, /dist-cli\/cli\.mjs.*flag|flag.*dist-cli\/cli\.mjs/);
   assert.match(cli(wtA, "roster"), /dist-cli\/cli\.mjs/);
-  assert.match(lock, /flagged: you wrote src/a.ts outside your claim/);
+  assert.match(lock, /flagged: you wrote src\/a\.ts outside your claim/);
   assert.doesNotMatch(lock, /dist-cli/);
 });
