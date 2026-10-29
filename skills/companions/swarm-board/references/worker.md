@@ -33,6 +33,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
    `--interface` for a file the task marks interface, `--new` for one you create; paths
    repository-relative. Read its answer and do what it says (*Claiming a file*). A task that
    changes no file (research, a review, a draft) claims nothing.
+   A rename is two claims: the old path, and the new one with --new.
 5. **A message for you arrives** (your listener's output, or a message the orchestrator sends you
    directly): act on it, answer on the thread if it asks (`$S post "@<them> …" --about <path>`; a
    message ending on `swarm agree …` is answered with that agreement, *Sharing a file*), then go

@@ -184,7 +184,9 @@ test("end lists what it reconciled, then the end", () => {
   fs.writeFileSync(path.join(wtB, "src", "new.ts"), "export const x = 1;\n");
   fs.writeFileSync(path.join(wtB, "src", "a.ts"), "// S3's\n");
   const out = cli(wtB, "end").split("\n");
-  assert.deepEqual(out.filter((l) => l.startsWith("reconciled ")).sort(), ["reconciled src/a.ts: written without a claim", "reconciled src/new.ts: written without a claim"]);
+  const lines = out.filter((l) => l.startsWith("reconciled "));
+  assert.equal(lines.length, 1, out.join("\n"));
+  assert.match(lines[0], /^reconciled 2 written without a claim: (src\/a\.ts, src\/new\.ts|src\/new\.ts, src\/a\.ts)$/);
   assert.ok(out.some((l) => /^#\d+ flagged: you wrote src\/a\.ts outside your claim; review-tool\/S3 holds it/.test(l)), out.join("\n"));
   assert.ok(out.includes("review-tool/S5 ended"));
 });
@@ -199,7 +201,7 @@ test("merge-lock reconciles the branch's commits against --onto: a never-claimed
   fs.writeFileSync(path.join(wtB, "src", "new.ts"), "export const x = 1;\n");
   commit(wtB, "new");
   const out = cli(wtB, "merge-lock", "--onto", "main").split("\n");
-  assert.deepEqual(out.filter((l) => l.startsWith("reconciled ")), ["reconciled src/new.ts: written without a claim"]);
+  assert.deepEqual(out.filter((l) => l.startsWith("reconciled ")), ["reconciled 1 written without a claim: src/new.ts"]);
   assert.ok(out.some((l) => l.startsWith("granted: ")), out.join("\n"));
   // claimed: another member is now held on it
   assert.equal(swarm(wtA, "claim", "src/new.ts", "--new").status, 3);

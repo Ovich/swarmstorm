@@ -1,20 +1,21 @@
-// The unclaimed writes `end` and `merge-lock` print (D72): a folder of more than 20 collapses to one line.
+// The unclaimed writes `end` and `merge-lock` print (D72, F24): one summary line; a rename one `old → new` entry.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { unclaimedLines } from "../src/cli/unclaimed.ts";
 
 const many = (folder: string, n: number): string[] => Array.from({ length: n }, (_, i) => `${folder}/f${i}.js`);
 
-test("a folder of more than 20 unclaimed writes prints as one line; the rest one line each, in order", () => {
-  const paths = ["src/a.ts", ...many("dist/assets", 21), "dist/index.html", "README.md"];
-  assert.deepEqual(unclaimedLines(paths), [
-    "reconciled src/a.ts: written without a claim",
-    "21 files under dist/assets/ written unclaimed",
-    "reconciled dist/index.html: written without a claim",
-    "reconciled README.md: written without a claim",
-  ]);
+test("any number of unclaimed writes print as one line: count, first three, …", () => {
+  assert.deepEqual(unclaimedLines(["src/a.ts", ...many("dist", 21)]), ["reconciled 22 written without a claim: src/a.ts, dist/f0.js, dist/f1.js, …"]);
 });
 
-test("exactly 20 in one folder still print one line each", () => {
-  assert.equal(unclaimedLines(many("dist/assets", 20)).length, 20);
+test("three or fewer: no ellipsis; none: no line", () => {
+  assert.deepEqual(unclaimedLines(["a", "b"]), ["reconciled 2 written without a claim: a, b"]);
+  assert.deepEqual(unclaimedLines([]), []);
+});
+
+test("a rename with an unclaimed side is one old → new entry; both claimed, nothing", () => {
+  assert.deepEqual(unclaimedLines(["old.ts", "new.ts"], [["old.ts", "new.ts"]]), ["reconciled 1 written without a claim: old.ts → new.ts"]);
+  assert.deepEqual(unclaimedLines(["new.ts"], [["old.ts", "new.ts"]]), ["reconciled 1 written without a claim: old.ts → new.ts"]);
+  assert.deepEqual(unclaimedLines([], [["old.ts", "new.ts"]]), []);
 });
