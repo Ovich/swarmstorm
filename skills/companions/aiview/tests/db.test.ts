@@ -319,3 +319,15 @@ test("project add registers the .git of its paths as board repos, and a project 
   index.upsertProject("p", { addPaths: [repo] });
   assert.equal(index.boardRepos("p").filter((r) => r === gitDir).length, 1);
 });
+
+test("a project path that is a git worktree registers its repository's common git dir, as the board keys it (G6)", () => {
+  const common = path.join(tmp, "main", ".git");
+  const own = path.join(common, "worktrees", "wt");
+  fs.mkdirSync(own, { recursive: true });
+  fs.writeFileSync(path.join(own, "commondir"), "../..\n");
+  const wt = path.join(tmp, "wt");
+  fs.mkdirSync(wt);
+  fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${own}\n`);
+  index.upsertProject("w", { addPaths: [wt] });
+  assert.deepEqual(index.boardRepos("w"), [common.split("\\").join("/")]);
+});
