@@ -51,7 +51,7 @@ test("G10 target: a wake in an unchanged phase carries no phase line", async () 
 });
 
 // G14: the idle answer says first that the seat stays, so it never reads as the end of the run
-test("G14 target: the idle answer says the seat stays before it says end", { skip }, async () => {
+test("G14 target: the idle answer says the seat stays before it says end", async () => {
   const s = await scene("worker", "idle");
   try {
     s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");

@@ -25,7 +25,8 @@ export const WORDING = {
   nothingYetOrchestrator: (wait: Command) => `nothing yet; wait again: ${wait}`,
   nothingYet: (wait: Command) => `nothing yet; wait again (${FOREGROUND_NOTE}): ${wait}`,
   superseded: "superseded by a newer wait",
-  idle: (end: Command) => `nothing for you now: run ${end} and return; your seat stays in the run, and the orchestrator may dispatch you to it again`,
+  // G14: the seat stays, said before the end command, so it never reads as the end of the run
+  idle: (end: Command) => `nothing for you now; the run is open and your seat stays in it, the orchestrator may dispatch you to it again: run ${end} and return`,
   ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm`,
   delivered: "these lines are delivered; the task-end notice is the same event",
 
