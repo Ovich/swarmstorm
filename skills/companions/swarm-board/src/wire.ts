@@ -133,15 +133,28 @@ export function decode(text: string): Frame {
   return f as Frame;
 }
 
-const versionsByEntry = new Map<string, string>();
+const versionsByBuild = new Map<string, string>();
+let ownVersion: string | undefined;
 
-/** D28: the hash of the running entry file, read once; a peer of another version is refused. */
-export function bundleVersion(entry: string = process.argv[1] ?? ""): string {
+/** The file a version is read from: the built CLI beside a launcher (`<entry dir>/dist-cli/cli.mjs`), else the entry itself. */
+function builtCliOf(entry: string): string {
   const file = path.resolve(entry);
-  let v = versionsByEntry.get(file);
+  const bundle = path.join(path.dirname(file), "dist-cli", "cli.mjs");
+  return fs.existsSync(bundle) ? bundle : file;
+}
+
+/** D28, D40 (board-split): the hash of the built CLI an entry runs, never of the launcher `swarm.mjs`, so a rebuilt
+ *  bundle is another version and its next call replaces a server of the old build, whichever checkout or reader
+ *  started it. With no entry, this process's own build, read once: what it runs never changes under it. */
+export function bundleVersion(entry?: string): string {
+  if (entry === undefined) return (ownVersion ??= bundleVersion(process.argv[1] ?? ""));
+  const file = builtCliOf(entry);
+  const st = fs.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
   if (v === undefined) {
     v = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByEntry.set(file, v);
+    versionsByBuild.set(key, v);
   }
   return v;
 }

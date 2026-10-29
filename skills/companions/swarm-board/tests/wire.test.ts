@@ -40,3 +40,22 @@ test("bundleVersion hashes the entry file; another content, another version", ()
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("D40: the version of a launcher is the hash of its built CLI; a rebuilt bundle is another version, the launcher unchanged", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-wire-"));
+  try {
+    const launcher = path.join(dir, "swarm.mjs");
+    const bundle = path.join(dir, "dist-cli", "cli.mjs");
+    fs.mkdirSync(path.dirname(bundle));
+    fs.writeFileSync(launcher, "launcher");
+    fs.writeFileSync(bundle, "build one");
+    const before = bundleVersion(launcher);
+    fs.writeFileSync(bundle, "build two, a rebuild");
+    const after = bundleVersion(launcher);
+    // a server started from the old build names `before`: every client of the rebuilt CLI sees another version and restarts it
+    assert.notEqual(before, after);
+    assert.equal(after, bundleVersion(bundle));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
