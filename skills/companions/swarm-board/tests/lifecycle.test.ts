@@ -215,6 +215,17 @@ test("a run whose every member is silent is flagged once with the run, by its or
   assert.ok(board.deliver(s1).lines.some((l) => l.includes("is stale")));
 });
 
+test("the board's own stale flag is no activity of the run: a run idle two days stays forgotten after it (S31)", () => {
+  const { run } = runWithMembers("idle2d");
+  const old = ago(2 * DAY);
+  raw.prepare("UPDATE runs SET opened_at = ? WHERE id = ?").run(old, run.id);
+  raw.prepare("UPDATE participants SET joined_at = ?, last_call = NULL WHERE run = ?").run(old, run.id);
+  raw.prepare("UPDATE messages SET at = ? WHERE run = ?").run(old, run.id);
+  assert.equal(board.lastActivity(run.id), old);
+  assert.deepEqual(board.flagStale(), [run.id]);
+  assert.equal(board.lastActivity(run.id), old);
+});
+
 test("a silent orchestrator is posted quiet once, with its run; its next call posts back; a silent member gets none (D15)", () => {
   const { run } = runWithMembers("hush");
   const orchestrator = board.participant("hush/orchestrator")!;

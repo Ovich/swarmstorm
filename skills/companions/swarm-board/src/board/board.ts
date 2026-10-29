@@ -2087,9 +2087,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     },
 
     lastActivity(run) {
+      // what the board posts on its own clock (stale, quiet, idle) is no member's activity: counted, a forgotten run's
+      // stale flag would unforget it (S31)
       const r = runRow(run);
       const row = db
-        .prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ?) AS posts FROM participants p WHERE p.run = ?")
+        .prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ? AND m.by_board = 0) AS posts FROM participants p WHERE p.run = ?")
         .get(run, run) as Row | undefined;
       return [String(r.opened_at), row?.calls, row?.posts].filter((v): v is string => typeof v === "string").sort().at(-1)!;
     },
