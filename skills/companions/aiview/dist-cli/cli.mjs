@@ -9117,6 +9117,8 @@ var init_wire = __esm({
       "phaseProgress",
       "lastActivity",
       "owedPhase",
+      "idle",
+      "unreadMentions",
       "setting",
       "runs",
       "join",
