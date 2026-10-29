@@ -1259,10 +1259,9 @@ test("C2: open with no protocol ends on next: no protocol, workers on call, and 
   assert.match(last, PHASE_CMD("c2"));
 });
 
-test("C3: the orchestrator's first post of a task run with no phase open ends on next:; its second does not; with a phase open, never; a brainstorm, never", () => {
+test("C3, V4: open says next: once; no post repeats it, the first included; with a phase open, never; a brainstorm, never", () => {
   run("open", "--kind", "task", "--group", "c3", "--title", "T", "--seats", seatsFile("c3", ["w1"]));
-  const first = run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout.trimEnd().split("\n");
-  assert.match(first.at(-1)!, /^next: no protocol/);
+  assert.doesNotMatch(run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout, /^next:/m);
   assert.doesNotMatch(run("post", "@w1 task T2", "--as", "c3/orchestrator").stdout, /^next:/m);
   run("open", "--kind", "task", "--group", "c3b", "--title", "T", "--seats", seatsFile("c3b", ["w1"]));
   run("phase", "build", "go", "--as", "c3b/orchestrator");
@@ -1272,12 +1271,12 @@ test("C3: the orchestrator's first post of a task run with no phase open ends on
   assert.doesNotMatch(run("post", "@a an idea", "--as", "c3c/orchestrator").stdout, /^next:/m);
 });
 
-test("C4: --json carries the line as next, on open and on that first post", () => {
+test("C4, V4: --json carries the line as next on open, never on the first post", () => {
   const opened = JSON.parse(run("open", "--kind", "task", "--group", "c4", "--title", "T", "--seats", seatsFile("c4", ["w1"]), "--protocol", "build-verify", "--json").stdout);
   assert.match(opened.next, /^next: open build-verify's first phase/);
-  const text = run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"])).stdout.trimEnd().split("\n").at(-1)!;
+  run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"]));
   const posted = JSON.parse(run("post", "@w1 task", "--as", "c4b/orchestrator", "--json").stdout);
-  assert.equal(posted.next, text, "the first post's next is open's last line");
+  assert.doesNotMatch(String(posted.next), /^next:/);
 });
 
 test("idea 3's addition: open --protocol none ends on next: phaseless, with no phase command, and its first post carries no next:", () => {
