@@ -487,9 +487,12 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
   const names = new Map(members.map((r) => [nameHandle(r.nick), r.name]));
   const nickOf = new Map(members.map((r) => [r.name, r.nick.replace(/\s+/g, "")]));
   const ended = new Set(await board.endedMembers(p.repo));
+  // a seat an open run declares, not joined yet: the post waits for it and is read at its join (G1)
+  const declared = new Set((await board.runs()).filter((r) => r.repo === p.repo).flatMap((r) => r.seats.map((s) => `${r.group}/${s.id}`)));
   return unmatchedMentions(body, p.plan, plans, names).map(({ name, closest }) => {
     const member = name.includes("/") ? name : `${p.plan}/${name}`;
     if (ended.has(member)) return `@${name} has ended: the post stays on the thread, but they will not read it`;
+    if (declared.has(member)) return `@${name} has not joined yet: the post waits for it, read at its join`;
     const guesses = closest.map((c) => (nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`));
     return `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`;
   });

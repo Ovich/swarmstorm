@@ -889,6 +889,18 @@ test("a mention naming nobody is told to its author, closest names offered; the 
   assert.equal(clean.unmatched, undefined);
 });
 
+test("a mention of a declared seat not joined yet is not 'matched nobody': it waits and is read at the seat's join (G1)", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--seat", "S3", "--doing", "the page");
+  const r = run("post", "@S5 the header is yours", "--as", "review-tool/S3");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!r.stdout.includes("matched nobody"), r.stdout);
+  assert.match(r.stdout, /^@S5 has not joined yet: the post waits for it, read at its join$/m);
+  run("join", "--run", id, "--seat", "S5", "--doing", "joining");
+  const delivered = run("deliver", "--as", "review-tool/S5").stdout;
+  assert.ok(delivered.includes("@S5 the header is yours"), delivered);
+});
+
 test("roster --json and status --json give each member's worktree, null for a seat (D64)", () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S3", "--doing", "the page");
