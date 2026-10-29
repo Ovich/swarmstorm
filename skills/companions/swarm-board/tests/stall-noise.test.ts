@@ -49,9 +49,11 @@ test("a: a seat that only re-arms its wait, owing nothing, never draws stalled",
 
 test("b: a stalled is never carried: it wakes the orchestrator at once, the carried lines pending riding on it", async () => {
   const { run, m, orch } = setup(["w1", "w2"]);
-  board.lockMerge(m.w2);
-  board.merged(m.w2, "sha1", []);
-  assert.equal((await waitOf(orch)).full.length, 0, "the merged alone is carried");
+  // a seat added mid-run joins: a carried joined event (merged no longer reaches the orchestrator)
+  board.addSeat(run.id, { id: "late1", blockers: [] });
+  board.addSeat(run.id, { id: "late1-spare", blockers: [] });
+  board.join({ run: run.id, seat: "late1", doing: "late1", files: [] });
+  assert.equal((await waitOf(orch)).full.length, 0, "the joined alone is carried");
   const base = Date.now() + 60_000;
   board.recordActivity(run.id, "w1", act({ grewAt: base }), at(base, 0));
   board.recordActivity(run.id, "w2", act({ grewAt: base + 100_000 }), at(base, 0));
@@ -59,7 +61,7 @@ test("b: a stalled is never carried: it wakes the orchestrator at once, the carr
   board.livenessTick(run.id, at(base, 6), presence);
   const d = await held;
   assert.match(all(d), /stalled g\/w1/);
-  assert.match(all(d), /sha1/, "the carried merged rides on the stalled's wake");
+  assert.match(all(d), /late1/, "the carried joined rides on the stalled's wake");
 });
 
 test("c: three members stalled at one tick: one wake naming each, its rule and its move; repeated only when the set changes", async () => {

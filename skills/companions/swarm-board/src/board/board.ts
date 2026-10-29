@@ -2314,6 +2314,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
+      // a member holding the merge lock is mid-merge, never idle
+      if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== undefined) return false;
       return db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) === undefined;
     },
 

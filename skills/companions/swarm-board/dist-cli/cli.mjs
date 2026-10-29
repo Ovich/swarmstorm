@@ -2919,6 +2919,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id);
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR2 || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
+      if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== void 0) return false;
       return db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) === void 0;
     },
     wait(p, opts = {}) {
