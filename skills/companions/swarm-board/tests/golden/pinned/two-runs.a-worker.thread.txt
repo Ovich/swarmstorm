@@ -1,0 +1,7 @@
+exit 0
+phase build: build alpha
+#<seq> ga/orchestrator  <ts>
+alpha plain talk
+#<seq> ga/orchestrator  <ts>
+@w1 a-task-only: do it
+phase build is yours: Do your part now, then: node <cli> done build --as ga/w1

@@ -1,0 +1,7 @@
+exit 0
+phase ideas: ideas for beta
+#<seq> gb/orchestrator  <ts>
+beta plain talk
+#<seq> gb/orchestrator  <ts>
+@s1 an idea for b, please
+phase ideas is yours: Do your part now, then: node <cli> done ideas --as gb/s1

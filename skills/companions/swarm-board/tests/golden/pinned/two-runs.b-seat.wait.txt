@@ -1,0 +1,11 @@
+exit 0
+phase ideas is yours: Read the whole phase first: node <cli> thread --as gb/s1. Do your part now, then: node <cli> done ideas --as gb/s1
+only then wait again, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as gb/s1 --timeout 170000
+#<seq> gb/orchestrator (event)  <ts>
+phase ideas: ideas for beta
+when your part of ideas is posted: node <cli> done ideas --as gb/s1
+#<seq> gb/orchestrator  <ts>
+beta plain talk
+#<seq> gb/orchestrator  <ts>
+@s1 an idea for b, please
+these lines are delivered; the task-end notice is the same event
