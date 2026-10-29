@@ -787,15 +787,11 @@ async function main(): Promise<void> {
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
       // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
       const cli = self().join(" ");
-      const heard = watch.length
-        ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
-        : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
-      const forWhom = only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "";
-      const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
+      const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
-      const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
+      const brief = WORDING.briefThePerson;
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
-      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => `${s.slice(s.lastIndexOf("/") + 1)} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`);
+      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => WORDING.dormant(s.slice(s.lastIndexOf("/") + 1)));
       emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
         console.log(seqLine(m));
         for (const line of dormant) console.log(line);
@@ -813,7 +809,7 @@ async function main(): Promise<void> {
       const cli = self().join(" ");
       if (args.verb === "pause") {
         const m = await board.pause(p, text, person !== undefined ? { person: true } : undefined);
-        const next = `every member of run ${m.run} is told to stop and wait${person !== undefined ? `, waiting on the person: ${text}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`;
+        const next = WORDING.pausedAll(m.run, person !== undefined ? text : null, cli, shellWord(p.name));
         emit({ seq: m.seq, run: m.run, paused: true, person: person !== undefined, next }, () => {
           console.log(seqLine(m));
           console.log(next);
@@ -822,7 +818,7 @@ async function main(): Promise<void> {
       }
       const m = await board.resume(p, text);
       // what the pause held from the orchestrator, one line each, given once (idea 2, judgment 1)
-      const next = `run ${m.run} resumed${m.held.length ? `; ${m.held.length} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
+      const next = WORDING.resumed(m.run, m.held.length, cli, shellWord(p.name));
       emit({ seq: m.seq, run: m.run, paused: false, held: m.held, next }, () => {
         console.log(seqLine(m));
         for (const line of m.held) console.log(line);
@@ -1315,7 +1311,7 @@ async function main(): Promise<void> {
         process.exitCode = 3;
         const h = r.holder;
         const held = `held by ${h.nick} (${h.code}·${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
-        const next = `next: wait for its unlocked event, then lock again (${cli} lock ${shellWord(name)} --as ${who}); in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
+        const next = WORDING.lockHeldNext(cli, shellWord(name), who, waitCommand(p.name, true));
         emit({ name, granted: false, holder: h, next }, () => {
           console.log(held);
           console.log(next);

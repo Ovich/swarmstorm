@@ -48,6 +48,23 @@ export const WORDING = {
     `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
 
+  // ── the orchestrator's verbs ──
+  phaseHeard: (watch: string[]) =>
+    watch.length
+      ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
+      : "each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>",
+  phaseFor: (only: string[]) => (only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : ""),
+  phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
+    `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
+  briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
+  dormant: (seat: string) => `${seat} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`,
+  pausedAll: (run: number, person: string | null, cli: Command, as: string) =>
+    `every member of run ${run} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
+  resumed: (run: number, held: number, cli: Command, as: string) =>
+    `run ${run} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
+  lockHeldNext: (cli: Command, name: string, as: string, wait: Command) =>
+    `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
+
   // ── the run ──
   paused: (run: number, why: string, wait: Command) =>
     `run ${run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
