@@ -51,4 +51,6 @@ test("the agreement row gives a seat its back-it line, and nothing to a plan mem
   const a = msg({ kind: "agreement" });
   assert.equal(EVENTS.agreement.next!(a, me, "node swarm.mjs"), "back it: node swarm.mjs endorse 5 --as idea/skeptic");
   assert.equal(EVENTS.agreement.next!(a, { ...me, kind: "plan" }, "node swarm.mjs"), null);
+  // G34: never to the orchestrator, though its run's members are seats
+  assert.equal(EVENTS.agreement.next!(a, { ...me, seat: "orchestrator", name: "idea/orchestrator" }, "node swarm.mjs"), null);
 });

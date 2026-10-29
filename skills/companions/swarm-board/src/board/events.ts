@@ -63,7 +63,8 @@ export const EVENTS: Record<EventName, EventDef> = {
   agreement: {
     name: "agreement",
     next: (m, me, cli) =>
-      profileOf(me.kind).member === "seat" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null,
+      // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
+      profileOf(me.kind).member === "seat" && me.seat !== "orchestrator" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null,
   },
   endorsement: { name: "endorsement" },
   merged: { name: "merged" },
