@@ -3389,7 +3389,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const flushAlerts = (run3, t, orch) => {
     const due = alertsDue.get(run3);
     if (!due || !due.items.length) return;
-    if (due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
+    const goneDue = due.items.some((i) => i.event === EVENTS.gone.name);
+    if (!goneDue && due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
     const items = due.items.splice(0);
     due.lastToldAt = t;
     for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...i.meta ? { meta: i.meta } : {} });

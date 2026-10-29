@@ -1156,7 +1156,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   /** Since when every member of a run (the orchestrator aside) has been waiting, and when its last idle was posted. */
   /** `postedSeq`: the run's last post (idles aside) when the idle was told; `stirred`: a member left its wait since. */
   /** G31: the liveness alerts (gone, liveness, stalled) of a run. The first goes out at once; those due within
-   *  ALERT_WINDOW_MS after it are held and told together as one wake when the window ends. */
+   *  ALERT_WINDOW_MS after it are held and told together as one wake when the window ends, unless a gone is due:
+   *  it goes at once, the held ones with it (D43). */
   type DueAlert = { body: string; event: EventName; meta?: MessageMeta };
   const alertsDue = new Map<RunId, { lastToldAt: number | null; items: DueAlert[] }>();
   const raiseAlert = (run: RunId, item: DueAlert): void => {
@@ -1168,7 +1169,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const flushAlerts = (run: RunId, t: number, orch: Participant): void => {
     const due = alertsDue.get(run);
     if (!due || !due.items.length) return;
-    if (due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
+    // board-split#D43 (G31 amended): a gone is never held by the window; what is held rides along with it
+    const goneDue = due.items.some((i) => i.event === EVENTS.gone.name);
+    if (!goneDue && due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
     const items = due.items.splice(0);
     due.lastToldAt = t;
     // posted at one moment, they reach a waiting orchestrator in one wake, each line its own event

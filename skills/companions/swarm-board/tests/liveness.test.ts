@@ -344,14 +344,29 @@ test("no idle while a seat of the run has yet to join: a run filling up is not i
 test("G31: alerts due within the window after one told are held and told together at its end, one wake", () => {
   const { run } = setup();
   const base = Date.now() + 60_000;
-  board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
-  board.livenessTick(run.id, at(base, 1), presence);
-  assert.equal(events("gone").length, 1, "the first at once");
-  board.recordActivity(run.id, "b", act({ grewAt: base, finished: true }), at(base, 2));
-  board.livenessTick(run.id, at(base, 3), presence);
-  assert.equal(events("gone").length, 1, "the second held inside the window");
-  board.livenessTick(run.id, at(base, 10), presence);
-  assert.equal(events("gone").length, 1);
+  // both seats have no transcript: one liveness line at the first tick, the window opened by it
+  board.livenessTick(run.id, at(base, 0), presence);
+  assert.equal(events("liveness").length, 1, "the first at once");
+  board.recordActivity(run.id, "a", act({ grewAt: base, tokens: 1 }), at(base, 0));
+  board.recordActivity(run.id, "b", act({ grewAt: base, tokens: 1 }), at(base, 0));
+  // a stalls 5 s on: held inside the window
+  board.livenessTick(run.id, at(base, 6), presence);
+  assert.equal(events("stalled").length, 0, "held inside the window");
   board.livenessTick(run.id, at(base, 11), presence);
-  assert.deepEqual(events("gone").map((e) => e.body), ["gone idea/a: its agent finished without end", "gone idea/b: its agent finished without end"]);
+  assert.equal(events("stalled").length, 1, "told at the window's end");
+});
+
+test("D43: a gone due inside the window is told at once, and what is held rides along with it (S31: liveness then gone)", () => {
+  const { run } = setup();
+  const base = Date.now() + 60_000;
+  // b's link was lost 25 s before the first tick: its gone comes due 5 s after the liveness alert opened the window
+  links.set("b", { connected: false, lostAt: base - 25_000 });
+  board.livenessTick(run.id, at(base, 0), presence);
+  assert.equal(events("liveness").length, 1);
+  assert.equal(events("gone").length, 0);
+  board.recordActivity(run.id, "a", act({ grewAt: base, tokens: 1 }), at(base, 0));
+  // a stalls at 6 s: held; b is gone at 6 s: told at once, the held stalled with it
+  board.livenessTick(run.id, at(base, 6), presence);
+  assert.deepEqual(events("gone").map((e) => e.body), ["gone idea/b: its link was lost"], "told at this tick, not at the window's end");
+  assert.equal(events("stalled").length, 1, "the held alert rode along");
 });
