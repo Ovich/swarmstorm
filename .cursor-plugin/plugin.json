@@ -34,7 +34,8 @@
     "./skills/review/",
     "./skills/companions/",
     "./skills/help/",
-    "./skills/alignment/"
+    "./skills/alignment/",
+    "./skills/guides/"
   ],
   "agents": "./agents/"
 }
