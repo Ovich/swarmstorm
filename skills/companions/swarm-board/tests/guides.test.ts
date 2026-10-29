@@ -191,3 +191,35 @@ test("G41: a brace glob matches any of its alternatives; the shipped guides appl
     fs.rmSync(empty, { recursive: true, force: true });
   }
 });
+
+test("D11: merged refuses a sha git does not know, and takes a long report from --report-file (V1, G25)", () => {
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 3;\n");
+  commit(wtA, "a");
+  cli(wtA, "merge-lock", "--onto", "main");
+  const unknown = swarm(wtA, "merged", "deadbeef", "--files", "src/a.ts", "--report", "-", "--guides", "all:ok");
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /deadbeef is no commit git knows/);
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  const sha = git(wtA, "rev-parse", "HEAD").trim();
+  const file = path.join(home, "report.md");
+  fs.writeFileSync(file, "a long report\nover two lines\n");
+  const out = cli(wtA, "merged", sha, "--files", "src/a.ts", "--report-file", file, "--guides", "all:ok");
+  const seq = /reported as #(\d+)/.exec(out)?.[1];
+  assert.ok(seq, out);
+  assert.match(cli(repo, "read", seq!), /a long report\nover two lines/);
+});
+
+test("G28: a build output another member holds is claimed at merge-lock without a flag; a source file still flags", () => {
+  fs.mkdirSync(path.join(repo, "dist-cli"), { recursive: true });
+  cli(wtB, "claim", "--new", "dist-cli/cli.mjs");
+  cli(wtB, "claim", "src/a.ts");
+  fs.mkdirSync(path.join(wtA, "dist-cli"), { recursive: true });
+  fs.writeFileSync(path.join(wtA, "dist-cli", "cli.mjs"), "built\n");
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 4;\n");
+  commit(wtA, "build");
+  const lock = cli(wtA, "merge-lock", "--onto", "main");
+  assert.doesNotMatch(lock, /dist-cli\/cli\.mjs.*flag|flag.*dist-cli\/cli\.mjs/);
+  assert.match(cli(wtA, "roster"), /dist-cli\/cli\.mjs/);
+  assert.match(lock, /flagged: you wrote src/a.ts outside your claim/);
+  assert.doesNotMatch(lock, /dist-cli/);
+});

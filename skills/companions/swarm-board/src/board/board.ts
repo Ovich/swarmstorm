@@ -417,7 +417,7 @@ export interface Board {
   checkEdit(p: Participant, path: string, opts?: { interface?: boolean }): EditAllowed | EditHeld;
   // checkEdit, reconcileWrites, release, lockMerge, merged: refused when the caller's kind has no claims
   /** Paths written outside the claim: a free one is claimed, a held one flagged on the thread. */
-  reconcileWrites(p: Participant, changed: string[]): Flag[];
+  reconcileWrites(p: Participant, changed: string[], generated?: string[]): Flag[];
   release(p: Participant, path: string): void;
   /** `reflogMark`: the length of the caller's HEAD reflog at the call, kept with a new grant so `merged` replays only a later rebase (D36). */
   /** `guides`: the guides the branch's changes fall under, which `merged --guides` must settle. */
@@ -2531,8 +2531,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return claims.checkEdit(gated(live(p), "claim"), file, opts);
     },
 
-    reconcileWrites(p, changed) {
-      return claims.reconcileWrites(gated(live(p), "reconcile"), changed);
+    reconcileWrites(p, changed, generated) {
+      return claims.reconcileWrites(gated(live(p), "reconcile"), changed, generated);
     },
 
     release(p, file) {

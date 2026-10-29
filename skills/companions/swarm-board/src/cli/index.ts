@@ -448,6 +448,11 @@ const emitHeard = async (p: Participant, json: object, human: string | (() => vo
   });
 };
 
+/** G28: the build outputs among `files` (repository-relative): under a `dist` or `dist-*` folder, or marked
+ *  `linguist-generated` in the repository's .gitattributes. */
+const generatedAmong = (worktree: string, files: string[]): string[] =>
+  files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
+
 /** A path as every answer prints it: forward slashes, on Windows too. */
 const slashed = (s: string): string => s.replace(/\\/g, "/");
 
@@ -1091,8 +1096,10 @@ ${USAGE}`);
       const reconciled = p.worktree ? branchChangedIn(p.worktree, ontoRef) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
-      const unclaimed = reconciled.filter((f) => !held.has(f));
-      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
+      // G28: build outputs are claimed like any file, never exempted, and never flagged: whoever merges second rebuilds them
+      const generated = p.worktree ? generatedAmong(p.worktree, reconciled) : [];
+      const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
+      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled, generated) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.worktree ? (headReflogLength(p.worktree) ?? undefined) : undefined;
@@ -1110,7 +1117,17 @@ ${USAGE}`);
       const p = await caller();
       const sha = args.positional[0] ?? fail("merged: which sha?");
       // the report rides on the merge: one post, the orchestrator's one wake; "-" merges silently, recorded in the run only
-      const report = args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake; --report - merges silently');
+      // G25: a long report comes from a file
+      const reportFile = args.flag("--report-file");
+      let fromFile: string | undefined;
+      if (reportFile !== undefined) {
+        try {
+          fromFile = fs.readFileSync(path.resolve(reportFile), "utf8").trim();
+        } catch {
+          fail(`merged: --report-file ${reportFile} cannot be read`);
+        }
+      }
+      const report = fromFile || args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently');
       const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = await board.heldMergeLock(p);
@@ -1131,7 +1148,10 @@ ${USAGE}`);
       if (settled.unknown.length) fail(`merged: --guides names ${settled.unknown.join(", ")}, which merge-lock did not list; the guides of this merge: ${listed.join(", ") || "none"}`);
       if (settled.unjudged.length) fail(`merged: --guides gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`);
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
-      if (lock?.onto && p.worktree && git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`) && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+      // V1: a sha git does not know was never merged
+      if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+        fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
+      if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.worktree)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
