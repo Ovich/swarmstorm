@@ -634,7 +634,7 @@ const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id
  *  made, or its harness did) gets none. */
 async function memberWorktree(runId: number, seat: string): Promise<{ path: string; branch: string; base: string; reused: boolean } | null> {
   const run = await runOf(runId);
-  if (!run || !profileOf(run.kind).worktree || !run.seats.some((s) => s.id === seat)) return null;
+  if (!run || run.kindPack === null || !run.seats.some((s) => s.id === seat)) return null;
   const cwd = process.cwd();
   // outside a repository, or in one with no commit yet: nothing to branch from
   const base = run.base ?? baseAt(cwd);
@@ -860,7 +860,7 @@ async function main(): Promise<void> {
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: member.name, run: member.run });
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
-      const shared = !profileOf(member.kind).worktree;
+      const shared = member.kindPack === null;
       const as = shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
@@ -1169,7 +1169,7 @@ async function main(): Promise<void> {
       const lock = await board.heldMergeLock(p);
       // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
       const unlocked = args.flag("--unlocked")?.trim();
-      if (!lock && profileOf(p.kind).mergeLock) {
+      if (!lock && p.kindPack !== null) {
         if (unlocked === undefined) {
           return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
         }

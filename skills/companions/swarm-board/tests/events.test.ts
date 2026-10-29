@@ -6,7 +6,7 @@ import { EVENTS, eventOf, formatSubscriptions, parseSubscriptions, wakes } from 
 
 const me: Participant = {
   id: 1, run: 7, repo: "/r/.git", kind: "brainstorm", plan: "idea", seat: "skeptic", name: "idea/skeptic", nick: "Zesty Moose",
-  ended: false, worktree: null, listening: true, subscriptions: [],
+  ended: false, worktree: null, listening: true, subscriptions: [], pack: null, verify: false, kindPack: null,
 };
 const msg = (over: Partial<Message> = {}): Message => ({
   seq: 5, repo: "/r/.git", from: "idea/architect", body: "x", about: null, kind: "msg", mentions: [], at: "", run: 7,

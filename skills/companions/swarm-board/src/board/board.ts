@@ -10,6 +10,7 @@ import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { claimsOf, type HeldMergeLock } from "./claims.ts";
 import { statsOf, summarize, type Stats, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
+import { registry } from "../packs/registry.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -83,6 +84,9 @@ export interface Run {
   protocol: string | null;
   /** The branch (else the commit) the repository's checkout stood on at open: a code run's worktrees branch from it; null before it was recorded. */
   base: string | null;
+  /** The pack its kind gives a member by default (board-split#D22); null: core only. Phase 2's gate for claims, the
+   *  merge lock and the worktree, until phase 3 reads each member's own `pack` instead. */
+  kindPack: string | null;
 }
 
 /** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
@@ -110,6 +114,13 @@ export interface Participant {
   listening: boolean;
   /** The events that wake its `wait --mentions`, besides mentions and urgent posts (D59). */
   subscriptions: Subscription[];
+  /** Its pack, chosen once at join from the registry (board-split#D11, D22); null: core only. A row from before reads
+   *  as its kind's default. */
+  pack: string | null;
+  /** It carries the verify setting (a `verifier` seat, D11). */
+  verify: boolean;
+  /** The pack its run's kind gives by default: phase 2's gate, see Run.kindPack. */
+  kindPack: string | null;
 }
 
 /** A merged path and another member that holds it, or held it during the merger's run (D63). */
@@ -706,6 +717,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // 1 while a `wait --mentions` is pending: a listener, not a wait (D49)
   upkeep("participants", "listening", "listening INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "nick", "nick TEXT");
+  // the member's pack and verify setting, chosen at join (board-split#D11, D22); pack_chosen 0 on a row from before,
+  // read as its kind's default
+  upkeep("participants", "pack", "pack TEXT");
+  upkeep("participants", "verify", "verify INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "pack_chosen", "pack_chosen INTEGER NOT NULL DEFAULT 0");
   // moved by every `wait` start: a pending wait whose number is no longer this one is superseded (D64)
   upkeep("participants", "wait_gen", "wait_gen INTEGER NOT NULL DEFAULT 0");
   // 1 once the member has called `merged` since it joined: what `end` writes as its doing (D66)
@@ -882,6 +898,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
     base: r.base == null ? null : String(r.base),
+    kindPack: kindPackOf(String(r.kind ?? "plan")),
     id: Number(r.id),
     repo: String(r.repo),
     kind: profileOf(String(r.kind ?? "plan")).kind,
@@ -918,6 +935,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       ...(x.carry === true ? { carry: true as const } : {}),
     }));
 
+  /** The pack a run of `kind` gives a member by default (D22). The switch point of phase 3: the claims, merge-lock and
+   *  worktree gates read this today, so a verifier keeps today's answers; phase 3 reads the member's own row (D12). */
+  const kindPackOf = (kind: string): string | null => registry.forMember(kind, null).pack?.name ?? null;
+
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
     LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
   /** D4 (G16), V3: the member listens while its link reports a background listener running, or while a `wait --mentions`
@@ -937,6 +958,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     worktree: r.worktree == null ? null : String(r.worktree),
     listening: listensNow(r),
     subscriptions: subsOf(r),
+    // pack_chosen 0: a member from before the registry (or an orchestrator), read as its kind's default (D22)
+    ...(Number(r.pack_chosen ?? 0) === 1
+      ? { pack: r.pack == null ? null : String(r.pack), verify: Number(r.verify) === 1 }
+      : { pack: kindPackOf(String(r.kind ?? "plan")), verify: registry.forMember(String(r.kind ?? "plan"), null).verify }),
+    kindPack: kindPackOf(String(r.kind ?? "plan")),
   });
 
   const participantById = (id: number): Participant => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id) as Row);
@@ -997,7 +1023,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   /** A code verb on a kind with no claims is refused before any write (D22, D25). */
   const gated = (p: Participant, verb: string): Participant => {
-    if (!profileOf(p.kind).claims) throw new Error(`${verb}: a ${p.kind} run has no claims`);
+    if (p.kindPack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
     return p;
   };
 
@@ -1777,29 +1803,36 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (r.state !== "open") throw new Error(`run ${run} is closed`);
       if (seat === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
-      if (files.length && !profile.claims) throw new Error(`join: a ${profile.kind} run has no claims`);
+      const kindPack = kindPackOf(profile.kind);
+      if (files.length && kindPack === null) throw new Error(`join: a ${profile.kind} run has no claims`);
       // a kind with no worktree records none, whatever the caller passed (D21)
-      const where = worktree && profile.worktree ? path.resolve(worktree) : null;
+      const where = worktree && kindPack !== null ? path.resolve(worktree) : null;
       // one transaction: the page sees a join as one change
       return transaction(() => {
       let entry = "new" as "new" | "back" | "again";
       const id = transaction(() => {
         const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         // --on, else the seat row's on, else the kind's defaults (D59)
-        const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
+        const seatRow = db.prepare("SELECT on_events, role FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
         // D17: a seat is declared before anyone sits in it
         if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run}: declare it first with \`seat add ${seat}\``);
         const seatOn = seatRow?.on_events != null ? parseOn(JSON.parse(String(seatRow.on_events)) as string[]) : null;
         const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
         const fresh = (): string => unusedNick(String(r.repo));
+        // the member's pack, chosen once here from the registry, never re-checked per verb (D11, D22)
+        const given = registry.forMember(profile.kind, seatRow?.role == null ? null : String(seatRow.role));
+        const packName = given.pack?.name ?? null;
+        const verify = given.verify ? 1 : 0;
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
-          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
+          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1 WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
             subs,
             existing.nick == null ? fresh() : null,
+            packName,
+            verify,
             Number(existing.id),
           );
           // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link
@@ -1816,8 +1849,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           .get(run, `%"${String(r.plan)}/${seat}"%`) as Row | undefined;
         const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
         const ins = db
-          .prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(run, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
+          .prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")
+          .run(run, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs, packName, verify);
         return Number(ins.lastInsertRowid);
       });
       const member = participantById(id);
@@ -2407,11 +2440,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
         named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
-        if (!named.length && profileOf(fresh.kind).claims) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
+        if (!named.length && fresh.kindPack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
       // posting is claiming (D7), on a kind with claims
-      const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
+      const claimed = fresh.kindPack !== null ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
 

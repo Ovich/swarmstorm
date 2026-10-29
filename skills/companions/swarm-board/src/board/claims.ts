@@ -4,7 +4,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, Message, MessageKind, Participant, Sharer } from "./board.ts";
 import { type EventName, EVENTS } from "./events.ts";
-import { profileOf } from "./kinds.ts";
+import { registry } from "../packs/registry.ts";
 
 export interface ClaimsDeps {
   db: DatabaseSync;
@@ -427,7 +427,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
-          .filter((r) => profileOf(String(r.kind)).claims)
+          .filter((r) => registry.forMember(String(r.kind), null).pack !== null)
           .map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
