@@ -107,6 +107,10 @@ test("in a harness session with no link started, the verb answers within 10 s th
   assert.ok(last.endsWith(`link --run ${h.run} --as harness-plan/S3`), last);
   // the call was made: the server has it
   assert.match(h.r.cli(h.r.repo, "roster"), /doing: the client/);
+  // V11: told once per member, not on every call
+  const again = spawnSync(process.execPath, [CLI, "doing", "still the client"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
+  assert.equal(again.status, 0, again.stderr);
+  assert.doesNotMatch(again.stdout, /start your link now/);
 });
 
 test("in a harness session, on a closed run, no verb prints the link line: end prints the summary prompt the closed line promised (S62, validation 2)", () => {

@@ -328,6 +328,18 @@ const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(
 /** The link line of join and open, before any listener or wait line (D32, swarm-relay D33, AGENTS rule 10): the member's link, run as its agent's own
  *  background task, so a stopped agent takes it down; a verb that finds none spawns one detached outside a harness session,
  *  and inside one ends on this line (D39). */
+/** V11: where the board marks that a member was told to start its link: one file per member and run. */
+const linkToldFile = (member: BoardMember): string => path.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
+const linkTold = (member: BoardMember): boolean => fs.existsSync(linkToldFile(member));
+const markLinkTold = (member: BoardMember): void => {
+  try {
+    fs.mkdirSync(path.dirname(linkToldFile(member)), { recursive: true });
+    fs.writeFileSync(linkToldFile(member), "");
+  } catch {
+    // a mark not written: the line is told again next call, never lost
+  }
+};
+const clearLinkTold = (member: BoardMember): void => fs.rmSync(linkToldFile(member), { force: true });
 const startLinkLine = (member: BoardMember): string =>
   `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
 const SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
@@ -1407,6 +1419,8 @@ if (args.verb === "link") {
   // found none (D32): not a member's verb, so not in the usage
   try {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
+    // V11: a link that starts clears its member's told mark, so a link lost later is told once more
+    clearLinkTold(member);
     await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     process.exit(0);
   } catch (e) {
@@ -1427,7 +1441,11 @@ if (args.verb === "serve") {
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
     // D39: the call went straight to the server; the agent starts its own link (on stderr under --json, which stays parseable)
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    // V11: once per member, not on every call: told until its link starts, which clears the mark
+    if (linkToStart && !linkTold(linkToStart)) {
+      (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+      markLinkTold(linkToStart);
+    }
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);
