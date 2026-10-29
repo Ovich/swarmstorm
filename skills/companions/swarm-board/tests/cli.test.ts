@@ -449,7 +449,8 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(await exited, 0);
   assert.match(out, /^start this listener again[^\n]* \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 170000\n/);
   assert.match(out, /@S5 your turn/);
-  assert.doesNotMatch(out, /joined/);
+  // G5: the join rides on the wake as the run's one composition line, never as a wake of its own
+  assert.equal(out.split("joined:").length - 1, 1, out);
 });
 
 test("a foreground wait supersedes the background listener in another process; the listener prints so, the wait gets the mention", async () => {
@@ -945,7 +946,7 @@ test("done: a member's done is counted, roster and status show n/m done, the las
   assert.match(wrong.stderr, /the current phase is diverge/);
   const first = run("done", "diverge", "--as", `idea/${a}`);
   assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /^done diverge: 1\/2 members done$/m);
+  assert.match(first.stdout, /^done diverge: members done 1\/2$/m);
   assert.match(first.stdout, /wait for the next phase.* wait --mentions --as idea\//);
   assert.match(run("roster").stdout, new RegExp(`^run ${id} {2}An idea {2}phase diverge: every idea {2}1/2 done$`, "m"));
   assert.match(run("status").stdout, /phase diverge: every idea {2}1\/2 done/);
@@ -1090,7 +1091,9 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   assert.equal(r.status, 0, r.stderr);
   const header = "phase build: the first wave";
   const woken = run("wait", "--mentions", "--as", s3, "--timeout", "3000");
-  assert.equal(woken.stdout.split("\n")[0], header);
+  // G7, G10: the re-arm line first; the phase's text once, in its own event
+  assert.match(woken.stdout.split("\n")[0], /^start this listener again/);
+  assert.equal(woken.stdout.split("the first wave").length - 1, 1, woken.stdout);
   assert.match(woken.stdout, /phase build: the first wave/);
 
   const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
@@ -1132,7 +1135,9 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.match(run("deliver", "--as", "idea/skeptic").stdout, owed);
   // a member woken by the phase event is told to do it before it waits again
   const woken = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000");
-  assert.match(woken.stdout, /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part now, then: node \S+ done ping --as idea\/architect$/m);
+  // G7: the phase's text comes once, in its event; the owed step names the phase alone
+  assert.equal(woken.stdout.split("say hi").length - 1, 1, woken.stdout);
+  assert.match(woken.stdout, /^phase ping is yours: Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part now, then: node \S+ done ping --as idea\/architect$/m);
   assert.match(woken.stdout, /^only then wait again, in the foreground.*: node .* wait --mentions --as idea\/architect/m);
 
   // after done: the wait step, nothing owed
@@ -1356,4 +1361,13 @@ test("seat is the verb; slice is its silent alias, accepted but never shown in -
   const help = run("--help");
   assert.match(help.stdout, /^ {2}seat +add /m);
   assert.doesNotMatch(help.stdout, /^ {2}slice /m);
+});
+
+test("G3: on a home other than the default, every printed command carries SWARMSTORM_HOME", () => {
+  const id = openRun();
+  const r = spawnSync(process.execPath, [CLI, "join", "--run", String(id), "--seat", "S3", "--doing", "home"], { cwd: repo, encoding: "utf8", env: { ...env(), SWARMSTORM_PRINT_HOME: "1" } });
+  assert.equal(r.status, 0, r.stderr);
+  const commands = r.stdout.split("\n").filter((l) => /: (SWARMSTORM_HOME=\S+ )?node \S+ /.test(l));
+  assert.ok(commands.length >= 2, r.stdout);
+  for (const l of commands) assert.match(l, /: SWARMSTORM_HOME=\S+ node \S+ /, l);
 });

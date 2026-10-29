@@ -1,7 +1,7 @@
 ---
 name: guide-deepen-module
 description: Use when code is written or changed that adds a module or changes a module's public interface, in any tier. Produces an interface shaped before the code behind it, and the bar it must meet at merge. Not for designing the interface with the person (deepen-module) and not for code that leaves every interface as it was.
-paths: ["**"]
+paths: ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"]
 ---
 
 # Guide: deep modules

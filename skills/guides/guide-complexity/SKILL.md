@@ -1,7 +1,7 @@
 ---
 name: guide-complexity
 description: Use when code is written or changed that branches heavily, in any language: if/else or switch chains, type-check cascades, kind fields compared to strings, flag parameters, deep nesting. Produces the branching shaped before it lands, and the bar it must meet at merge. Not for auditing or reworking existing code (complexity-rework).
-paths: ["**"]
+paths: ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"]
 ---
 
 # Guide: complexity

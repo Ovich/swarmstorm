@@ -62,7 +62,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
       worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
    6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with
-      `--guides "<name>:ok|n/a <why>, …"` naming every guide the grant listed (refused otherwise): the
+      `--guides` settling every guide the grant listed, in the form the grant's answer gives (refused otherwise): the
       report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
       orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
       change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.

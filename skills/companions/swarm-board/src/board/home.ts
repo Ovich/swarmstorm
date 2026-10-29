@@ -10,4 +10,8 @@ const NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
 const OLD_HOME = path.join(os.homedir(), "charrette_appdata");
 export const DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
 
+/** The home this process uses when it is not the default, as a command must carry it to reach the same board (G3); null at the default. */
+// SWARMSTORM_PRINT_HOME=0 keeps the commands bare (the test suite, whose every home is a temporary one)
+export const HOME_OVERRIDE: string | null = homeFromEnv && path.resolve(homeFromEnv) !== NEW_HOME && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT : null;
+
 export const SQLITE_PATH = path.join(DATA_ROOT, "swarm.sqlite");

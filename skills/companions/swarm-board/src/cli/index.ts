@@ -6,7 +6,7 @@ import path from "node:path";
 import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
 import { EVENTS, FOREGROUND_NOTE, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
-import { DATA_ROOT, SQLITE_PATH } from "../board/home.ts";
+import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
@@ -259,16 +259,17 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
  *  header naming where its text is (B15); the owed line stays whole elsewhere. */
 const phaseHeader = async (run: number, shownTo?: Participant): Promise<string | null> => (await phaseHeaders(run, shownTo)).printed;
 /** The phase header twice: `printed`, short after a member's first return in the phase (B15); `full`, always whole, for --json (F7). */
-const phaseHeaders = async (run: number, shownTo?: Participant, showPause = true): Promise<{ printed: string | null; full: string | null }> => {
+const phaseHeaders = async (run: number, shownTo?: Participant, showPause = true): Promise<{ printed: string | null; full: string | null; first: boolean }> => {
   const shown = shownTo ? await board.showPhase(shownTo) : null;
   const ph = shown ? shown.phase : await board.currentPhase(run);
   const r = (await board.runs()).find((x) => x.id === run);
   const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
   const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo!.name)].join(" ")})` : whole;
-  if (r?.paused == null || !showPause) return { printed: short, full: whole };
+  const first = !shown || shown.first;
+  if (r?.paused == null || !showPause) return { printed: short, full: whole, first };
   const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
   const withPause = (head: string | null) => [head, `PAUSED${why}`].filter(Boolean).join("  ");
-  return { printed: withPause(short), full: withPause(whole) };
+  return { printed: withPause(short), full: withPause(whole), first };
 };
 /** `phase <name>: <text>  <n>/<m> done[, <k> gone]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
@@ -300,7 +301,8 @@ const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w
  *  rule matches it; forward slashes, which Node takes on Windows too and no shell eats (D49). */
 /** A path with forward slashes: git and both shells take it, and PowerShell shows no doubled backslash. */
 const fwd = (p: string): string => p.split("\\").join("/");
-const self = (): string[] => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
+// G3: a board on a home other than the default is reached only with that home, so every printed command carries it
+const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : []), "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 
 /** How a member listens, the one source the docs point at: a seat waits in the foreground (a subagent
  *  that ends its turn is gone, no background listener wakes it); the orchestrator and a worker
@@ -327,14 +329,16 @@ const listenNow = (p: Pick<Participant, "name" | "seat" | "kind">, afterPhase = 
 
 /** The step a member owing the run's open phase takes before any wait: a member that joined, or woke,
  *  after the phase event passed does its part now, never sleeps through it; null when it owes none. */
-const owedLine = async (p: Participant, thread = true): Promise<string | null> => {
+const owedLine = async (p: Participant, thread = true, brief = false): Promise<string | null> => {
   const paused = await pausedLine(p);
   if (paused) return paused;
   const ph = await board.owedPhase(p);
   if (!ph) return null;
   // in a whole-thread run the part starts from the phase's whole discussion, never from the last post alone
   const read = thread && profileOf(p.kind).wholeThread ? `Read the whole phase first: ${[...self(), "thread", "--as", shellWord(p.name)].join(" ")}. ` : "";
-  return `phase ${ph.name} is open and asks: ${ph.text}. ${read}Do your part now, then: ${[...self(), "done", shellWord(ph.name), "--as", shellWord(p.name)].join(" ")}`;
+  // brief (G7): the wake already shows the phase, or showed it before; the step alone
+  const asks = brief ? `phase ${ph.name} is yours: ` : `phase ${ph.name} is open and asks: ${ph.text}. `;
+  return `${asks}${read}Do your part now, then: ${[...self(), "done", shellWord(ph.name), "--as", shellWord(p.name)].join(" ")}`;
 };
 /** A member's one step while its run is paused: stop and wait in the foreground for the resume; null when the
  *  run is not paused, for the orchestrator and for an ended member. */
@@ -856,7 +860,7 @@ ${USAGE}`);
       emit({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
         // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
         const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
-        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
+        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
         console.log(next);
       });
       break;
@@ -1052,7 +1056,7 @@ ${USAGE}`);
         if (ended) emit(d, "");
         else if (mentionsOnly && (await board.idle(p))) {
           // a member with nothing to do ends rather than wake every 170 s (tokens); the orchestrator dispatches it again
-          const next = `nothing for you: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; the orchestrator dispatches you again when it has work`;
+          const next = `nothing for you now: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; your seat stays in the run, and the orchestrator may dispatch you to it again`;
           emit({ ...d, idle: true, next }, next);
         } else {
           const next = (await pausedLine(p)) ?? (p.seat === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
@@ -1060,8 +1064,10 @@ ${USAGE}`);
         }
         break;
       }
-      // a member owing the open phase does it before it waits again
-      const owes = await owedLine(p);
+      // G7: the phase's own event in this wake carries its text and its done line; no owed line besides it
+      const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
+      // a member owing the open phase does it before it waits again; the phase text is shown once, so the step alone
+      const owes = phaseEvent && !profileOf(p.kind).wholeThread ? null : await owedLine(p, true, true);
       const pausedNow = await pausedLine(p);
       const rearm = pausedNow
         ? pausedNow
@@ -1073,15 +1079,18 @@ only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLin
         : p.seat === "orchestrator"
           ? `act on it, then start this listener again, in the background: ${again.join(" ")}`
           : `start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
-      const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
-${rearm}` : rearm;
-      // the run's phase first, so a member always knows which phase it answers in
-      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p, !pausedNow);
+      // G10: the re-arm line first, then the owed step
+      const next = owes && !pausedNow && !listensInForeground(p) ? `${rearm}
+${owes}` : rearm;
+      // G7: the phase heads the wake once, when new since the member's last read, and never beside its own event
+      const { printed: phasePrinted, full: phaseFull, first: phaseNew } = await phaseHeaders(p.run, p, !pausedNow);
+      const phase = phaseNew && !phaseEvent ? phasePrinted : null;
       // F28: a background listener's end is also announced by the harness; the same event, already delivered here
       const delivered = mentionsOnly ? DELIVERED_LINE : null;
       emit({ phase: phaseFull, next, ...d, ...(delivered ? { delivered } : {}) }, () => {
-        if (phase) console.log(phase);
+        if (listensInForeground(p) && phase) console.log(phase);
         console.log(next);
+        if (!listensInForeground(p) && phase) console.log(phase);
         printDelivery(d);
         if (delivered) console.log(delivered);
       });

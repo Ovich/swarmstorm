@@ -1190,11 +1190,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return { run, entries, showRole, lines };
   };
   /** A change of the run's composition, one carried line to every member (D4): `+ w4 worker (the app) added`, `- w2 gone`. */
-  const postComposition = (author: Participant, seat: string, sign: "+" | "-", tag: string): void => {
-    const c = compositionOf(author.run);
+  const seatWho = (run: RunId, seat: string): string => {
+    const c = compositionOf(run);
     const e = c.entries.find((x) => x.seat === seat);
-    const who = `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
-    insertMessage(author, `${sign} ${who}${tag ? ` ${tag}` : ""}`, null, "event", undefined, { event: EVENTS.composition.name });
+    return `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
+  };
+  const postComposition = (author: Participant, seat: string, sign: "+" | "-", tag: string): void => {
+    insertMessage(author, `${sign} ${seatWho(author.run, seat)}${tag ? ` ${tag}` : ""}`, null, "event", undefined, { event: EVENTS.composition.name });
   };
 
   const setSubs = (p: Participant, subs: Subscription[]): Subscription[] => {
@@ -1750,14 +1752,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       });
       const member = participantById(id);
       claims.claimDeclared(member, files);
-      insertMessage(member, `joined: ${doing}`, null, "event", undefined, { event: EVENTS.joined.name });
-      // D4: every other member hears of a joiner (or a comeback) as one carried line
-      if (entry !== "again") postComposition(member, seat, "+", entry === "back" ? "back" : "");
+      // G5, D4: one line per join: the joined event names the seat as a composition line would, and every
+      // member of the run hears it carried (events.ts), so no composition line beside it
+      insertMessage(member, `joined: ${doing} · + ${seatWho(run, seat)}${entry === "back" ? " back" : ""}`, null, "event", undefined, { event: EVENTS.joined.name });
       // D5: the last declared seat to get a member tells the orchestrator once
       if (entry === "new") {
         const declared = Number((db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run) as Row).n);
         const seated = Number((db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run, ORCHESTRATOR) as Row).n);
-        if (declared > 0 && seated >= declared && (db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run) === undefined)) {
+        const phased = db.prepare("SELECT 1 FROM messages WHERE run = ? AND event = ?").get(run, EVENTS.phase.name) !== undefined;
+        if (!phased && declared > 0 && seated >= declared && (db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run) === undefined)) {
           insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", undefined, { event: EVENTS["all-joined"].name });
         }
       }

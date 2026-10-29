@@ -225,7 +225,8 @@ export function wakes(m: Message, me: Participant, subs: Subscription[]): boolea
   const e = eventOf(m);
   if (!e) return false;
   if (EVENTS[e].always) return true;
-  return subs.some((s) => !s.carry && s.event === e && (s.scope === "any" || m.run === me.run));
+  // G5: a join is a composition change too: a member subscribed to composition wakes on it
+  return subs.some((s) => !s.carry && (s.event === e || (e === "joined" && s.event === "composition")) && (s.scope === "any" || m.run === me.run));
 }
 
 /** A message carried to `me` (idea 2): an event of a carry subscription in its scope, that does not wake it;
@@ -235,6 +236,7 @@ export function carries(m: Message, me: Participant, subs: Subscription[]): bool
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
-  if (EVENTS[e].ambient && m.run === me.run) return true;
+  // G5: a join is the run's one composition line for a join, carried to every member of the run
+  if ((EVENTS[e].ambient || e === "joined") && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
