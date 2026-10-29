@@ -74,7 +74,8 @@ afterEach(() => {
 test("no verb prints usage and exits 1", () => {
   const r = run();
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /^usage: swarm <verb>/);
+  // V1: the usage names the real invocation
+  assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
 });
 
 test("open then join prints the roster", () => {
@@ -557,7 +558,7 @@ test("the launcher has no hook verb: usage, exit 1, and the usage never names a 
   for (const kind of ["pre", "post"]) {
     const r = spawnSync(process.execPath, [launcher, "hook", kind], { cwd: repo, input: "{}", encoding: "utf8", env: env() });
     assert.equal(r.status, 1, kind);
-    assert.match(r.stderr, /^usage: swarm <verb>/);
+    assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
     assert.doesNotMatch(r.stderr, /hook/i);
     assert.equal(r.stdout, "");
   }
@@ -1118,8 +1119,9 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   assert.match(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], short);
 
   const joined = run("join", "--run", String(id), "--seat", "S5", "--doing", "skill").stdout.split("\n");
-  const lastRoster = joined.map((l) => / run \d+ {2}\w+ .*doing: /.test(l)).lastIndexOf(true);
-  assert.equal(joined[lastRoster + 1], header);
+  // G32: S5 owes the phase, so its text is stated once, on the owed line, with no header line besides it
+  assert.ok(!joined.includes(header), joined.join("\n"));
+  assert.equal(joined.join("\n").split("the first wave").length - 1, 1, joined.join("\n"));
 
   assert.match(run("roster").stdout, new RegExp(`^run ${id} {2}A plan {2}phase build: the first wave {2}0/2 done$`, "m"));
   assert.match(run("status").stdout, new RegExp(`run ${id} {2}plan {2}review-tool {2}A plan {2}phase build: the first wave {2}0/2 done`));

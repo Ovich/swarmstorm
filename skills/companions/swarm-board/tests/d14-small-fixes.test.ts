@@ -42,10 +42,26 @@ afterEach(() => {
   fs.rmSync(toolRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-test("G21: read with no seq names its usage", () => {
-  const r = run("read");
+test("G21, V1: read with no seq prints its usage and one corrected form, runnable as printed", () => {
+  const r = run("read", "--as", "p/S3");
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /read: which seq\? usage: swarm read <seq>/);
+  assert.match(r.stderr, /read: which seq\?/);
+  // the real invocation: the data home when not the default, node, this script; never a bare `swarm`
+  assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=\S+ )?node \S+index\.ts read <seq> \[--as <member>\]$/m);
+  assert.match(r.stderr, /^e\.g\. (SWARMSTORM_HOME=\S+ )?node \S+index\.ts read 12 --as p\/S3$/m);
+});
+
+test("V1: the usage header names the real invocation", () => {
+  const r = run("--help");
+  assert.match(r.stdout + r.stderr, /^usage: (SWARMSTORM_HOME=\S+ )?node \S+index\.ts <verb> /m);
+  assert.doesNotMatch(r.stdout + r.stderr, /usage: swarm /);
+});
+
+test("V1: done with no phase prints usage and a corrected form", () => {
+  const r = run("done", "--as", "p/S3");
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /^usage: .* done <phase> --as <member>$/m);
+  assert.match(r.stderr, /^e\.g\. .* done build --as p\/S3$/m);
 });
 
 test("G30: a closed run's thread is read with --run, every post or one phase; read-only", () => {

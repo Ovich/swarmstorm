@@ -26,8 +26,17 @@ const asJson = args.has("--json");
 /** An open run idle this long is shown by status as likely forgotten, with its close command. */
 const FORGOTTEN_MS = 24 * 60 * 60 * 1000;
 
+/** V1: this CLI as every usage line prints it, the way a member runs it: the data home when it is not the default,
+ *  then node and this script, forward slashes, quoted when needed, so a usage line runs as printed. */
+const quoted = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
+const CLI = [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${quoted(HOME_OVERRIDE.split("\\").join("/"))}`] : []), "node", quoted(process.argv[1].split("\\").join("/"))].join(" ");
+/** V1: an argument error: what is wrong, the verb's usage, and one corrected form to copy. */
+const usageError = (what: string, usage: string, example: string): never => fail(`${what}\nusage: ${CLI} ${usage}\ne.g. ${CLI} ${example}`);
+/** The --as a corrected form carries: the caller's own, else the placeholder. */
+const asWord = (): string => quoted(args.flag("--as") ?? "<group>/<seat>");
+
 const USAGE = [
-  "usage: swarm <verb> [--json]        (swarm --help code: the claim and merge verbs)",
+  `usage: ${CLI} <verb> [--json]        (${CLI} --help code: the claim and merge verbs)`,
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
@@ -70,7 +79,7 @@ const USAGE = [
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
 const CODE_USAGE = [
-  "usage: swarm <verb> [--json]        the code verbs; refused on a run whose kind has no claims",
+  `usage: ${CLI} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
   "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
@@ -79,10 +88,10 @@ const CODE_USAGE = [
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
 const STATS_USAGE = [
-  "usage: swarm stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]",
+  `usage: ${CLI} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
   "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
   "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
-  "  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with swarm read <seq>",
+  `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${CLI} read <seq>`,
 ].join("\n");
 
 /** A length as an agent reads it: `2h 05m`, `12m`, `40s`; `—` when not known. */
@@ -808,7 +817,7 @@ ${USAGE}`);
     case "done": {
       const p = await caller();
       if (await answeredClosed(p)) break;
-      const name = args.positional[0] ?? fail(`done: which phase?\n${USAGE}`);
+      const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
       let r;
       try {
         r = await board.done(p, name);
@@ -912,9 +921,9 @@ ${USAGE}`);
       break;
     }
     case "read": {
-      const raw = (args.positional[0] ?? fail("read: which seq? usage: swarm read <seq>")).replace(/^#/, "");
+      const raw = (args.positional[0] ?? usageError("read: which seq?", "read <seq> [--as <member>]", `read 12 --as ${asWord()}`)).replace(/^#/, "");
       const seq = Number(raw);
-      if (!Number.isInteger(seq)) fail(`read takes a seq, got ${raw}`);
+      if (!Number.isInteger(seq)) usageError(`read takes a seq, got ${raw}`, "read <seq> [--as <member>]", `read 12 --as ${asWord()}`);
       // a member's read is a call of its own (D66); a reader no member answers to reads all the same
       let by: Participant | undefined;
       try {
@@ -939,7 +948,7 @@ ${USAGE}`);
       const outside = args.flag("--run");
       if (outside !== undefined) {
         const run = Number(outside);
-        if (!Number.isInteger(run)) fail(`thread --run takes a run id, got ${outside}`);
+        if (!Number.isInteger(run)) usageError(`thread --run takes a run id, got ${outside}`, "thread --run <id> [<phase>]", "thread --run 3");
         const name = args.positional[0];
         const posts = await board.runThread(run, name);
         emit({ run, posts }, () => {
@@ -971,7 +980,7 @@ ${USAGE}`);
       if (await answeredClosed(p)) break;
       const raw = args.flag("--timeout");
       const timeout = raw === undefined ? undefined : Number(raw);
-      if (timeout !== undefined && !(timeout >= 0)) fail(`--timeout takes milliseconds, got ${raw}`);
+      if (timeout !== undefined && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(p, await board.wait(p, { timeoutMs: timeout, mentionsOnly }));
       // the run closed while this wait was pending: the close ended the member
@@ -1365,8 +1374,8 @@ if (args.verb === "stats" && args.has("--help")) {
 if ((args.verb === "serve" || args.verb === "link") && (args.has("--help") || args.has("-h"))) {
   console.log(
     args.verb === "serve"
-      ? "usage: swarm serve [stop]   # the board server of the data home, started on demand by any verb; `serve stop` ends it"
-      : "usage: swarm link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints",
+      ? `usage: ${CLI} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it`
+      : `usage: ${CLI} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`,
   );
   process.exit(0);
 }
