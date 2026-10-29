@@ -553,7 +553,8 @@ function claimsOf(deps) {
         return { allowed: true, sharedWith, notice: noticeOf(me, rel, people) };
       });
     },
-    reconcileWrites(me, changed) {
+    reconcileWrites(me, changed, generated = []) {
+      const built = new Set(generated.map((f) => relPath(me.repo, f)).filter((r) => !!r));
       const flags = [];
       return transaction(() => {
         const flag = db.prepare("INSERT OR IGNORE INTO flags (repo, path, participant) VALUES (?, ?, ?)");
@@ -566,6 +567,7 @@ function claimsOf(deps) {
             continue;
           }
           const { held: others, taken } = take(me, rel, "inside");
+          if (built.has(rel)) continue;
           if (taken || others.length) flag.run(me.repo, rel, me.id);
           if (!others.length) continue;
           const holder = participantById(others[0].participant);
@@ -1891,8 +1893,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const unseen = unseenRows(me);
       const silentWhilePaused = runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
-      const carried2 = (r) => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
-      const woken = (r) => silentWhilePaused ? eventOf(toMessage(r)) === "urgent" || me.seat !== ORCHESTRATOR2 && eventOf(toMessage(r)) === "pause" : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || carried2(r) && due.get(me.id, Number(r.seq)) != null;
+      const asked = db.prepare("SELECT 1 FROM messages WHERE author = ? AND about = ? AND kind = 'msg' AND seq < ? LIMIT 1");
+      const ridesOn = (m) => m.from !== me.name && (m.kind === "agreement" && m.about != null && asked.get(me.id, m.about, m.seq) != null || m.kind === "endorsement" && me.seat === ORCHESTRATOR2);
+      const carried2 = (r) => !silentWhilePaused && (ridesOn(toMessage(r)) || carries(toMessage(r), me, me.subscriptions));
+      const woken = (r) => silentWhilePaused ? eventOf(toMessage(r)) === "urgent" || me.seat !== ORCHESTRATOR2 && eventOf(toMessage(r)) === "pause" : ridesOn(toMessage(r)) ? due.get(me.id, Number(r.seq)) != null : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || carried2(r) && due.get(me.id, Number(r.seq)) != null;
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried2(r));
       const rows = silentWhilePaused && fromWait ? heard.some(woken) ? heard.filter(woken) : [] : !mentionsOnly ? heard : !heard.some(woken) ? [] : heard.filter((r) => woken(r) || carried2(r) || whole && ownPost(toMessage(r)));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
@@ -2029,6 +2033,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     due.lastToldAt = t;
     for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...i.meta ? { meta: i.meta } : {} });
   };
+  const stalledToldOf = /* @__PURE__ */ new Map();
   const idleSince = /* @__PURE__ */ new Map();
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
@@ -2069,7 +2074,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
-      const owing = owingOf(p, run3, a, t, stallMs);
+      const owing = a.bg_target == null ? owingOf(p, run3, a, t, stallMs) : null;
       if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
@@ -2825,7 +2830,11 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             ...downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}
           });
         }
-        if (stalledNow.some((x) => x.due)) {
+        const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
+        const lastTold = stalledToldOf.get(run3);
+        const sameSetTold = lastTold != null && lastTold.set === stalledSet && t - lastTold.at < STALLED_AGAIN_MS;
+        if (stalledNow.some((x) => x.due) && !sameSetTold) {
+          stalledToldOf.set(run3, { set: stalledSet, at: t });
           if (stalledNow.length === 1) {
             const [{ st, meta }] = stalledNow;
             raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
@@ -3071,8 +3080,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     checkEdit(p, file, opts = {}) {
       return claims.checkEdit(gated(live(p), "claim"), file, opts);
     },
-    reconcileWrites(p, changed) {
-      return claims.reconcileWrites(gated(live(p), "reconcile"), changed);
+    reconcileWrites(p, changed, generated) {
+      return claims.reconcileWrites(gated(live(p), "reconcile"), changed, generated);
     },
     release(p, file) {
       claims.release(gated(live(p), "release"), file);
@@ -8375,6 +8384,7 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--note",
   "--busy-max",
   "--report",
+  "--report-file",
   "--unlocked"
 ]);
 var LIST_FLAGS = /* @__PURE__ */ new Set(["--files"]);
@@ -8479,6 +8489,25 @@ function unclaimedLines(paths, renames = []) {
 // src/cli/guides.ts
 import fs8 from "node:fs";
 import path8 from "node:path";
+function flowItems(list) {
+  const items = [];
+  let item = "";
+  let quote = null;
+  let braces = 0;
+  for (const c of list) {
+    if (quote) quote = c === quote ? null : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === "{") braces++;
+    else if (c === "}") braces = Math.max(0, braces - 1);
+    else if (c === "," && braces === 0) {
+      items.push(item);
+      item = "";
+      continue;
+    }
+    item += c;
+  }
+  return [...items, item];
+}
 function parseGuide(text, folder) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
   if (!fm) return null;
@@ -8492,7 +8521,7 @@ function parseGuide(text, folder) {
     if (m[1] === "name" && m[2].trim()) skill = unquote(m[2]);
     if (m[1] !== "paths") continue;
     const v = m[2].trim();
-    if (v.startsWith("[")) paths = v.replace(/^\[|\]$/g, "").split(",").map(unquote).filter(Boolean);
+    if (v.startsWith("[")) paths = flowItems(v.replace(/^\[|\]$/g, "")).map(unquote).filter(Boolean);
     else if (v) paths = [unquote(v)];
     else {
       paths = [];
@@ -8528,6 +8557,7 @@ function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
 }
 function globRegex(glob) {
   let re = "";
+  let depth = 0;
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
     if (c === "*" && glob[i + 1] === "*") {
@@ -8536,6 +8566,13 @@ function globRegex(glob) {
       i += slash ? 2 : 1;
     } else if (c === "*") re += "[^/]*";
     else if (c === "?") re += "[^/]";
+    else if (c === "{") {
+      re += "(?:";
+      depth++;
+    } else if (c === "}" && depth > 0) {
+      re += ")";
+      depth--;
+    } else if (c === "," && depth > 0) re += "|";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
   return new RegExp(`^${re}$`);
@@ -9267,6 +9304,7 @@ var emitHeard = async (p, json, human) => {
     if (next) console.log(next);
   });
 };
+var generatedAmong = (worktree, files) => files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
 var slashed = (s) => s.replace(/\\/g, "/");
 var guidesHere = (p, onto) => {
   const root = p.worktree ?? worktreeOf(process.cwd());
@@ -9804,8 +9842,9 @@ ${USAGE}`);
       const ontoRef = p.worktree && fs12.existsSync(p.worktree) ? baseRef(p.worktree, onto) : onto;
       const reconciled = p.worktree ? branchChangedIn(p.worktree, ontoRef) : [];
       const held = new Set(await board.heldBy(p));
-      const unclaimed = reconciled.filter((f) => !held.has(f));
-      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
+      const generated = p.worktree ? generatedAmong(p.worktree, reconciled) : [];
+      const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
+      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled, generated) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
       const reflogMark = p.worktree ? headReflogLength(p.worktree) ?? void 0 : void 0;
       const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
@@ -9820,7 +9859,16 @@ ${USAGE}`);
     case "merged": {
       const p = await caller();
       const sha = args.positional[0] ?? fail("merged: which sha?");
-      const report = args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake; --report - merges silently');
+      const reportFile = args.flag("--report-file");
+      let fromFile;
+      if (reportFile !== void 0) {
+        try {
+          fromFile = fs12.readFileSync(path12.resolve(reportFile), "utf8").trim();
+        } catch {
+          fail(`merged: --report-file ${reportFile} cannot be read`);
+        }
+      }
+      const report = fromFile || args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently');
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const unlocked = args.flag("--unlocked")?.trim();
@@ -9837,7 +9885,9 @@ ${USAGE}`);
       if (settled.missing.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${settled.missing.join(", ")}. Pass --guides "${settled.missing.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
       if (settled.unknown.length) fail(`merged: --guides names ${settled.unknown.join(", ")}, which merge-lock did not list; the guides of this merge: ${listed.join(", ") || "none"}`);
       if (settled.unjudged.length) fail(`merged: --guides gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`);
-      if (lock?.onto && p.worktree && git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`) && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+      if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+        fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
+      if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.worktree)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
       const sharers = await board.merged(p, sha, files.map((f) => path12.resolve(f)), conflicts);
