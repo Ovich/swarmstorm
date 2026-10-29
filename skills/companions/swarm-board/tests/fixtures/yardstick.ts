@@ -146,7 +146,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
         .full.map((m) => ({ m, e: eventOf(m) }))
         .filter(({ m, e }) => e !== null && WAKE_EVENTS.has(e) && m.mentions.includes(orch.name));
       for (const { m, e } of all) if (m.body.includes("yard/w") && ALERTS.has(e!)) companionAlerts.push(s);
-      const fresh = all.filter(({ m }) => !m.body.includes("yard/w"));
+      // a grouped line naming x and w both is about x too
+      const fresh = all.filter(({ m }) => !m.body.includes("yard/w") || m.body.includes("yard/x"));
       for (const { m, e } of fresh) told.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       for (const { m, e } of fresh) if (ALERTS.has(e!)) alerts.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: EVENTS[e as keyof typeof EVENTS]?.next?.(m, orch, "swarm") ?? null });
       if (fresh.length) wakes.push({ s, events: fresh.map(({ e }) => e as string) });
@@ -230,6 +231,9 @@ const rearmedWait = (from: number, to: number): Step[] => {
   }
   return steps;
 };
+
+/** The step builders, for a test that writes its own scenario. */
+export const steps = { work, open, result, startedInBackground, notifiedAsPrompt, rearmedWait, id: () => id(), WAIT };
 
 export const SCENARIOS: Scenario[] = (() => {
   const t = () => id();
