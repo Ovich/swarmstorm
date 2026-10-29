@@ -1,10 +1,9 @@
-// Claims and the merge lock (D35): internal to the board, imported by board.ts only. The
-// second module that sees SQL. The Board's verbs of the same names delegate here after the
-// kind gate; behaviour and wording are the board's, moved, not rewritten.
+// Claims and the merge lock (D35): the code pack's tables (board-split#D20), opened by the board through the
+// registry, the second module that sees SQL. The Board's verbs of the same names delegate here after the
+// member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
-import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, Message, MessageKind, Participant, Sharer } from "./board.ts";
-import { type EventName, EVENTS } from "./events.ts";
-import { registry } from "../packs/registry.ts";
+import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, Message, MessageKind, Participant, Sharer } from "../../board/board.ts";
+import { type EventName, EVENTS } from "../../board/events.ts";
 
 export interface ClaimsDeps {
   db: DatabaseSync;
@@ -19,6 +18,8 @@ export interface ClaimsDeps {
   fold(s: string): string;
   slashes(rel: string): string;
   doingOf(id: number): string;
+  /** A run of `kind` gives its members claims by default (D22): an interface change is announced to those runs. */
+  kindHasClaims(kind: string): boolean;
 }
 
 export interface Claims {
@@ -61,7 +62,7 @@ type Row = Record<string, unknown>;
 type ClaimRow = { participant: number; kind: string; since: number };
 
 export function claimsOf(deps: ClaimsDeps): Claims {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasClaims } = deps;
 
   /** A flag lives while a claim on its path does; a notice while both its holders' claims do. */
   const clearFlags = (): void => {
@@ -423,7 +424,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
-          .filter((r) => registry.forMember(String(r.kind), null).pack !== null)
+          .filter((r) => kindHasClaims(String(r.kind)))
           .map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
@@ -455,6 +456,10 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           JSON.stringify(rels),
           conflicts && "files" in conflicts ? JSON.stringify(conflicts.files.map(slashes)) : null,
         );
+        // S28: the merged files are no longer the merger's to hold; its other claims stay for the work still open
+        const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
+        for (const rel of rels) release.run(me.repo, rel, me.id);
+        clearFlags();
       });
       return sharers;
     },

@@ -33,6 +33,7 @@ export const RPC_METHODS = [
   "setting",
   "runs",
   "worktrees",
+  "packCall",
   "join",
   "participant",
   "identify",

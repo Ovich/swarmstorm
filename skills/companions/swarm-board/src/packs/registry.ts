@@ -6,7 +6,7 @@ import type * as CoreStats from "../board/stats.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { CodeMemberStats, CodeRunStats, CodeTotals, FileAcrossRuns, PlanRunStats, SharedFile } from "./code/stats.ts";
 import { codePack } from "./code/index.ts";
-import type { Kind, MemberPackRow, Pack } from "./types.ts";
+import type { Kind, MemberPackRow, Pack, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
 const PACKS: Record<string, Pack> = { [codePack.name]: codePack };
@@ -39,6 +39,16 @@ export const registry = {
   packNamed(name: string | null): Pack | null {
     return name !== null && Object.hasOwn(PACKS, name) ? PACKS[name] : null;
   },
+  /** Every registered pack, for a call no member makes (a prune, a legacy sweep). */
+  all(): Pack[] {
+    return Object.values(PACKS);
+  },
+  /** The packs' tables, opened once per board (D20): the one pack with tables in this plan. */
+  openTables(deps: PackTablesDeps): PackTables {
+    const opener = Object.values(PACKS).find((p) => p.openTables);
+    if (!opener?.openTables) throw new Error("no pack has tables");
+    return opener.openTables(deps);
+  },
 };
 
 // `swarm stats` as it reads with every pack's figures (D15): the core's shape and each pack's fields, the types the
@@ -49,4 +59,5 @@ export type Totals = Omit<CoreStats.Totals, "series"> &
   CodeTotals & { series: CoreStats.Totals["series"] & Record<"slicesMerged" | "sliceTimeP50" | "lockWaitP50" | "sharedAgreed" | "flags" | "conflicts", (number | null)[]> };
 export type Stats = Omit<CoreStats.Stats, "runs" | "totals" | "files"> & { runs: RunStats[]; totals: Totals; files: FileAcrossRuns[] };
 export type { FileAcrossRuns, PlanRunStats, SharedFile };
-export type { PackCtx } from "./types.ts";
+export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
+export type { HeldMergeLock } from "./code/claims.ts";

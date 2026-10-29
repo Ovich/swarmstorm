@@ -1,6 +1,6 @@
 // D3 for P3 (board-rework#D3): the code verbs' answers pinned through one real code run, two workers and the
 // orchestrator on a git repository, `--onto main`: what the code pack will own once it moves, pinned before it moves.
-// S25 flipped in P3 (T8: an agreement wakes its own parties only, tests/s25-agreement-wake.test.ts); S28 pinned as today until T7 (D14). The D19 target (stats' per-kind figures read
+// S25 flipped in P3 (T8: an agreement wakes its own parties only, tests/s25-agreement-wake.test.ts); S28 flipped in T7 (merged releases the merged files' claims, tests/golden/claim-flow.test.ts). The D19 target (stats' per-kind figures read
 // through the pack) changes no line here: only where the figures come from.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -109,7 +109,7 @@ test("golden code flow: two workers, one run onto main", async () => {
     // the merged event, as the orchestrator is given it; its wake lines name the file's holders and the agreement's own parties (S25)
     pin("code.merged.orchestrator", call("deliver", "--as", ORCHESTRATOR));
 
-    // end: w1 with its claims held, merged and clean (S28: merged released none of them, pinned as today, D14);
+    // end: w1 merged and clean, its merged a.ts no longer held (S28, T7);
     // w2 with a commit not merged (the refusal)
     // end refuses while a mention is unread: each worker reads its own first
     must("deliver", "--as", W1);

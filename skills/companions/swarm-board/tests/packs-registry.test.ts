@@ -24,12 +24,11 @@ test("registry: each (kind, role) row", () => {
   assert.throws(() => registry.forMember("retro", null), /unknown kind retro: the kinds are plan, brainstorm, task/);
 });
 
-test("registry: the code pack lists its verbs; its reads (stats, alsoFor, defaultParties, busy) are in (P3, D15), the rest still to come", () => {
+test("registry: the code pack lists its verbs and carries its pack methods (D15, D19, D38)", () => {
   const code = registry.forMember("task", null).pack!;
   assert.deepEqual(code.verbs.map((v) => v.name), ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"]);
   assert.equal(typeof code.stats?.ofRun, "function");
-  for (const method of ["alsoFor", "defaultParties", "busy"] as const) assert.equal(typeof code[method], "function", method);
-  for (const method of ["onJoin", "onPost", "beforeEnd", "afterEnd"]) assert.equal(method in code, false, method);
+  for (const method of ["alsoFor", "defaultParties", "busy", "openTables", "run", "beforeEnd", "afterEnd"] as const) assert.equal(typeof code[method], "function", method);
 });
 
 test("a member's pack is chosen at join, stored, and survives a server restart", async () => {
@@ -51,7 +50,7 @@ test("a member's pack is chosen at join, stored, and survives a server restart",
     assert.deepEqual(stored("t/v1"), { pack: null, verify: true });
     assert.deepEqual(stored("b/s1"), { pack: null, verify: false });
     assert.deepEqual(stored("b/sk"), { pack: null, verify: false });
-    // phase 2: the gates still read the kind's default, so a verifier keeps today's claims (D12 flips it in phase 3)
+    // the run's kind still names its default pack: what a close and an orchestrator read (D22)
     assert.equal(board.participant("t/v1")!.kindPack, "code");
     board.close();
   } finally {
@@ -79,15 +78,11 @@ test("a member row from before the registry reads as its kind's default", async 
   }
 });
 
-// interim until P3 (D13): T5 left src/cli/index.ts the one import of the worktrees entry; P3 removes this exception
-const INTERIM_CLI_PACK_IMPORTS: Record<string, string[]> = { "index.ts": ["../packs/code/worktrees.ts"] };
-
 test("no file under src/cli/ imports src/packs/ (D9)", () => {
   const cli = path.resolve(import.meta.dirname, "..", "src", "cli");
   const files = fs.readdirSync(cli, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"));
   for (const f of files) {
-    const allowed = INTERIM_CLI_PACK_IMPORTS[f.split(path.sep).join("/")] ?? [];
     const imported = [...fs.readFileSync(path.join(cli, f), "utf8").matchAll(/from\s+["']([^"']*\/packs\/[^"']*)["']/g)].map((m) => m[1]);
-    assert.deepEqual(imported.filter((i) => !allowed.includes(i)), [], f);
+    assert.deepEqual(imported, [], f);
   }
 });

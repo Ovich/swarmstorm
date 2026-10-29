@@ -7,10 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
 import { nameHandle, parseMentions, planCode } from "./mentions.ts";
-import { claimsOf, type HeldMergeLock } from "./claims.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type PackCtx, type Stats } from "../packs/registry.ts";
+import { registry, type HeldMergeLock, type PackCtx, type PackRefusal, type PackVerbInput, type Stats } from "../packs/registry.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -19,7 +18,7 @@ import type { MemberActivity } from "../wire.ts";
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
 export type { EventName, Subscription } from "./events.ts";
-export type { HeldMergeLock } from "./claims.ts";
+export type { HeldMergeLock, PackRefusal } from "../packs/registry.ts";
 /** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
  *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */
 export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
@@ -85,8 +84,8 @@ export interface Run {
   protocol: string | null;
   /** The branch (else the commit) the repository's checkout stood on at open: a code run's worktrees branch from it; null before it was recorded. */
   base: string | null;
-  /** The pack its kind gives a member by default (board-split#D22); null: core only. Phase 2's gate for claims, the
-   *  merge lock and the worktree, until phase 3 reads each member's own `pack` instead. */
+  /** The pack its kind gives a member by default (board-split#D22); null: core only. What a run's close and an
+   *  interface change are judged by; a member's verbs read the member's own `pack` (D11). */
   kindPack: string | null;
 }
 
@@ -120,7 +119,7 @@ export interface Participant {
   pack: string | null;
   /** It carries the verify setting (a `verifier` seat, D11). */
   verify: boolean;
-  /** The pack its run's kind gives by default: phase 2's gate, see Run.kindPack. */
+  /** The pack its run's kind gives by default, see Run.kindPack. */
   kindPack: string | null;
 }
 
@@ -455,6 +454,9 @@ export interface Board {
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** The merge lock `p` holds, its grant time, branch and reflog mark, for the CLI to replay the rebase since (D33, D36); null when it holds none. */
   heldMergeLock(p: Participant): HeldMergeLock | null;
+  /** A pack verb's server side (board-split#D9, D19): the member's pack answers, before any transaction, with facts or a
+   *  `PackRefusal`; `p` null for a call no member makes (a seat's place before its join, a close, a prune). */
+  packCall(p: Participant | null, verb: string, input: PackVerbInput): unknown;
   /** The figures of the scope's runs (D33, D34): one read, no write; a figure not recorded or not computed yet is null, never 0. */
   stats(scope: StatsScope): Stats;
 
@@ -958,8 +960,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       ...(x.carry === true ? { carry: true as const } : {}),
     }));
 
-  /** The pack a run of `kind` gives a member by default (D22). The switch point of phase 3: the claims, merge-lock and
-   *  worktree gates read this today, so a verifier keeps today's answers; phase 3 reads the member's own row (D12). */
+  /** The pack a run of `kind` gives a member by default (D22): a member from before the registry, an orchestrator,
+   *  a run's close. A member's verbs read its own `pack` (D11, D12). */
   const kindPackOf = (kind: string): string | null => registry.forMember(kind, null).pack?.name ?? null;
 
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
@@ -1046,7 +1048,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   /** A code verb on a kind with no claims is refused before any write (D22, D25). */
   const gated = (p: Participant, verb: string): Participant => {
-    if (p.kindPack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
+    if (p.pack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
     return p;
   };
 
@@ -1089,10 +1091,24 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
 
   const doingOf = (id: number): string => String((db.prepare("SELECT doing FROM participants WHERE id = ?").get(id) as Row).doing) || "no note";
-  const claims = claimsOf({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf });
-  /** The member's pack (its kind's, phase 3's switch point is w1's) and its context for one call (D9, D10). */
-  const packOf = (p: Participant) => registry.packNamed(p.kindPack);
-  const packCtxOf = (p: Participant): PackCtx => ({ run: p.run, repo: p.repo, tables: claims, insertMessage: (author, body, about) => insertMessage(author, body, about, "msg") });
+  // the code pack's tables, opened through the registry (board-split#D20)
+  const claims = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasClaims: (kind) => kindPackOf(kind) !== null });
+
+  /** One run's context for a pack call (D10). */
+  const runPackCtx = (runId: RunId): PackCtx => {
+    const r = runRow(runId);
+    return {
+      run: runId,
+      repo: String(r.repo),
+      group: String(r.plan),
+      base: r.base == null ? null : String(r.base),
+      tables: claims,
+      insertMessage: (author, body, about) => insertMessage(author, body, about, "msg"),
+    };
+  };
+  /** The member's own pack, chosen at its join (D11), and its run's context for one call (D9, D10). */
+  const packOf = (p: Participant) => registry.packNamed(p.pack);
+  const packCtxOf = (p: Participant): PackCtx => runPackCtx(p.run);
   /** The messages not yet delivered to `me`, oldest first: its own run's and any other's (the caller filters). */
   const unseenRows = (me: Participant): Row[] =>
     db
@@ -1865,26 +1881,26 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (r.state !== "open") throw new Error(`run ${run} is closed`);
       if (seat === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
-      const kindPack = kindPackOf(profile.kind);
-      if (files.length && kindPack === null) throw new Error(`join: a ${profile.kind} run has no claims`);
-      // a kind with no worktree records none, whatever the caller passed (D21)
-      const where = worktree && kindPack !== null ? path.resolve(worktree) : null;
+      // the member's pack, chosen once here from the registry, never re-checked per verb (D11, D22)
+      const role = db.prepare("SELECT role FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
+      const given = registry.forMember(profile.kind, role?.role == null ? null : String(role.role));
+      const packName = given.pack?.name ?? null;
+      const verify = given.verify ? 1 : 0;
+      if (files.length && packName === null) throw new Error(`join: a ${profile.kind} run has no claims`);
+      // a member with no pack records no worktree, whatever the caller passed (D21, D11)
+      const where = worktree && packName !== null ? path.resolve(worktree) : null;
       // one transaction: the page sees a join as one change
       return transaction(() => {
       let entry = "new" as "new" | "back" | "again";
       const id = transaction(() => {
         const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         // --on, else the seat row's on, else the kind's defaults (D59)
-        const seatRow = db.prepare("SELECT on_events, role FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
+        const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
         // D17: a seat is declared before anyone sits in it
         if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run}: declare it first with \`seat add ${seat}\``);
         const seatOn = seatRow?.on_events != null ? parseOn(JSON.parse(String(seatRow.on_events)) as string[]) : null;
         const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
         const fresh = (): string => unusedNick(String(r.repo));
-        // the member's pack, chosen once here from the registry, never re-checked per verb (D11, D22)
-        const given = registry.forMember(profile.kind, seatRow?.role == null ? null : String(seatRow.role));
-        const packName = given.pack?.name ?? null;
-        const verify = given.verify ? 1 : 0;
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
           // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
@@ -2518,11 +2534,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
         named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
-        if (!named.length && fresh.kindPack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
+        if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
       // posting is claiming (D7), on a kind with claims
-      const claimed = fresh.kindPack !== null ? claims.claimByPost(fresh, m) : null;
+      const claimed = fresh.pack !== null ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
 
@@ -2681,6 +2697,33 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     heldMergeLock(p) {
       return claims.heldMergeLock(p);
+    },
+
+    packCall(p, verb, input) {
+      const member = p ? participantById(p.id) : null;
+      // an ended member's verb has nothing for its pack to do (the verb itself answers it); afterEnd runs once it has
+      if (member?.ended && verb !== "afterEnd") return null;
+      // whose pack answers: the member's own; a seat not joined yet, its seat's row; a run's call, its kind's; else every pack
+      const runId = member ? member.run : typeof input.run === "number" ? input.run : null;
+      const packs = member
+        ? [registry.packNamed(member.pack)]
+        : runId !== null && typeof input.seat === "string"
+          ? [registry.forMember(String(runRow(runId).kind ?? "plan"), (db.prepare("SELECT role FROM seats WHERE run = ? AND id = ?").get(runId, input.seat) as Row | undefined)?.role as string | null ?? null).pack]
+          : runId !== null
+            ? [registry.packNamed(kindPackOf(String(runRow(runId).kind ?? "plan")))]
+            : registry.all();
+      const ctx = runId !== null ? runPackCtx(runId) : null;
+      // a pack verb called by a member whose pack lacks it: the refusal fact the answer module words (D12)
+      const known = registry.all().some((k) => k.verbs.some((v) => v.name === verb));
+      const own = packs[0];
+      if (member && known && !own?.verbs.some((v) => v.name === verb)) {
+        const refusal: PackRefusal = { refused: { reason: "no-pack", verb, seatKind: member.verify ? "verifier" : "seat" } };
+        return refusal;
+      }
+      if (member && ctx && own && verb === "beforeEnd") return own.beforeEnd?.(member, ctx) ?? null;
+      if (member && ctx && own && verb === "afterEnd") return own.afterEnd?.(member, ctx) ?? {};
+      const answers = packs.filter((k): k is NonNullable<typeof k> => !!k?.run).map((k) => k.run!(verb, member, input, ctx));
+      return answers.length <= 1 ? (answers[0] ?? null) : answers.flat();
     },
 
     stats(scope) {

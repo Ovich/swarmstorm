@@ -3,7 +3,7 @@
 import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
+import { openBoard, progressText, type PackRefusal, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
 import { EVENTS, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
@@ -20,8 +20,6 @@ import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { answer, CODE_WORDING, coreUsage, eventStep, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-// board-split#D13: the CLI reaches worktrees through the entry alone, interim until P3 moves claim/merge-lock/end/close into the code pack
-import { sweepAll, sweepLegacy, worktrees } from "../packs/code/worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -572,43 +570,53 @@ const NO_MAIN = "there is no Main any more: the conversation is one; mention who
 /** An open run by id; null when closed or unknown. */
 const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id) ?? null;
 
-/** A code run's member gets the board's worktree, its place named at join and made at its first claim or merge-lock (G20),
- *  reused when there; a seat of a talk-only kind, an undeclared seat, or a caller already in a worktree of its own (one it
- *  made, or its harness did) gets none. */
+/** A pack verb's refusal (board-split#D12, D19): a member whose pack lacks the verb, or a git failure making its
+ *  worktree; nothing was written. */
+const isPackRefusal = (fact: unknown): fact is PackRefusal => typeof fact === "object" && fact !== null && "refused" in fact;
+function refusedCodeVerb(p: Participant, fact: PackRefusal): never {
+  const r = fact.refused;
+  // the old gate's words until T9 words the no-pack line in the answer module (D12)
+  // thrown, as the board's own refusals are, so the answer reads as one (`swarm: …`)
+  throw new Error(r.reason === "git" ? `worktree: ${r.detail}` : `${r.verb}: a ${p.kind} run has no claims`);
+}
+/** The server side of a code verb, its refusal failing the verb before anything else runs (D9). */
+async function packVerb(p: Participant, verb: string, input: Record<string, unknown> = {}): Promise<unknown> {
+  const fact = await board.packCall(p, verb, input);
+  return isPackRefusal(fact) ? refusedCodeVerb(p, fact) : fact;
+}
+
+/** A code-pack member gets the board's worktree, its place named at join and made at its first claim or merge-lock
+ *  (G20, D19), reused when there; a seat with no pack (a verifier, a brainswarm seat), an undeclared seat, or a caller
+ *  already in a worktree of its own (one it made, or its harness did) gets none. */
 async function memberWorktree(runId: number, seat: string): Promise<{ path: string; branch: string; base: string; reused: boolean } | null> {
   const run = await runOf(runId);
-  if (!run || run.kindPack === null || !run.seats.some((s) => s.id === seat)) return null;
+  if (!run || !run.seats.some((s) => s.id === seat)) return null;
   const cwd = process.cwd();
   // outside a repository, or in one with no commit yet: nothing to branch from
   const base = run.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  const place = worktrees(run.repo).place(run.id, run.group, seat, cwd);
+  const place = (await board.packCall(null, "place", { run: run.id, seat, cwd })) as { path: string; branch: string; reused: boolean } | null;
   if (!place) return null;
   if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
   return { ...place, base };
 }
 
-/** The caller's board worktree, made now when its join only named it (G20): a member that never claims or merges gets none. */
-async function madeWorktree(p: Participant): Promise<void> {
-  if (!p.worktree || !worktrees(p.repo).owns(p.worktree) || fs.existsSync(p.worktree)) return;
-  const run = await runOf(p.run);
-  if (!run) return;
-  // any checkout of the repository adds it: the caller's, else the repository's own beside its git dir
+/** The caller's board worktree, made by its pack in the board server when its join only named it (G20, D19): a
+ *  member that never claims or merges gets none; a member with no pack is refused the verb. */
+async function madeWorktree(p: Participant, verb: "claim" | "merge-lock"): Promise<void> {
+  // there already: nothing for the pack to make, and the verb's own gate stands
+  if (p.worktree && fs.existsSync(p.worktree)) return;
+  // any checkout of the repository gives the base: the caller's, else the repository's own beside its git dir
   const cwd = worktreeOf(process.cwd()) && repoOf(process.cwd()) === p.repo ? process.cwd() : path.dirname(p.repo);
-  const base = run.base ?? baseAt(cwd);
-  if (!base) fail(`${p.name}: no base to make the worktree from`);
-  try {
-    worktrees(p.repo).forSeat(run.id, run.group, p.seat, base as string);
-    // claim and release resolve paths in it from now on (G19)
-    callerWorktree = p.worktree;
-  } catch (e) {
-    fail(`worktree: ${(e as Error).message}`);
-  }
+  const made = (await packVerb(p, verb, { cwd })) as { made: boolean } | null;
+  // claim and release resolve paths in it from now on (G19)
+  if (made?.made) callerWorktree = p.worktree;
 }
 
 async function main(): Promise<void> {
-  // D6: the worktrees an older board made under the data home, swept once
-  for (const line of sweepLegacy()) console.error(`legacy worktree ${line}`);
+  // D6: the worktrees an older board made under the data home, swept once, by the code pack in the board server
+  if (fs.existsSync(path.join(DATA_ROOT, "worktrees")) && !fs.existsSync(path.join(DATA_ROOT, "worktrees", ".swept")))
+    for (const line of ((await board.packCall(null, "legacy", {})) as string[] | null) ?? []) console.error(`legacy worktree ${line}`);
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
     process.exitCode = 2;
@@ -705,10 +713,10 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
-      const trees = (await board.worktrees(run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs.existsSync(w.worktree));
+      const trees = await board.worktrees(run);
       await board.closeRun(run);
-      // the run's worktrees go once clean and merged, each seat's link stopped first
-      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run, member: w.member, worktree: w.worktree }, w.base) }));
+      // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
+      const swept = ((await board.packCall(null, "close", { run, trees })) as { worktree: string; member: string; removed: boolean; why: string | null }[] | null) ?? [];
       const kept = swept.filter((w) => !w.removed);
       emit({ run, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run} closed`);
@@ -818,7 +826,7 @@ async function main(): Promise<void> {
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: member.name, run: member.run });
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
-      const shared = member.kindPack === null;
+      const shared = member.pack === null;
       const as = shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
@@ -1026,7 +1034,7 @@ async function main(): Promise<void> {
     case "claim": {
       const p = await caller();
       if (await refusedPaused(p, "claim")) break;
-      await madeWorktree(p);
+      await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
       // every path given is claimed, each answered on its own line (G4)
       const answers: { rel: string; verdict: Awaited<ReturnType<typeof board.checkEdit>>; also: string }[] = [];
@@ -1073,9 +1081,9 @@ async function main(): Promise<void> {
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
-      await madeWorktree(p);
       // the branch merged into: a worktree does not say which branch it left, so the member names it (D59)
       const onto = need("--onto");
+      await madeWorktree(p, "merge-lock");
       // a branch checked out in a worktree refuses the push: say where, grant nothing (validation finding 4)
       const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
       if (holding) {
@@ -1130,7 +1138,7 @@ async function main(): Promise<void> {
       const lock = await board.heldMergeLock(p);
       // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
       const unlocked = args.flag("--unlocked")?.trim();
-      if (!lock && p.kindPack !== null) {
+      if (!lock && p.pack !== null) {
         if (unlocked === undefined) {
           return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
         }
@@ -1187,12 +1195,11 @@ async function main(): Promise<void> {
       // a mention landed since its last look: it reads it before it ends
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
-      // the board's worktree with work not merged: end refuses, naming it and the merge
+      // the board's worktree with work not merged: the pack refuses the end, naming it and the merge (beforeEnd)
       const base = (await runOf(p.run))?.base ?? null;
-      const seatTrees = worktrees(p.repo);
-      const mine = seatTrees.owns(p.worktree) && fs.existsSync(p.worktree) ? slashed(p.worktree) : null;
-      const left = mine ? seatTrees.unmerged(mine, base) : null;
-      if (mine && left) {
+      const refusal = (await board.packCall(p, "beforeEnd", {})) as { reason: string; worktree: string; left: string } | null;
+      if (refusal) {
+        const { worktree: mine, left } = refusal;
         const who = `--as ${shellWord(p.name)}`;
         fail(
           `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
@@ -1208,8 +1215,10 @@ async function main(): Promise<void> {
       await board.end(p);
       // ended: no link to start
       linkToStart = null;
-      // its link goes first, inside release: Windows holds a folder a live process is in
-      const removal = mine ? seatTrees.release({ run: p.run, member: p.name, worktree: mine }, base).why : null;
+      // the pack removes its worktree once clean and merged, its link stopped first (afterEnd)
+      const after = ((await board.packCall(p, "afterEnd", {})) ?? {}) as { worktree?: string; removed?: boolean; why?: string | null };
+      const mine = after.worktree ?? null;
+      const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
@@ -1220,11 +1229,10 @@ async function main(): Promise<void> {
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${verbHelp()}`);
       const known = await board.worktrees();
-      // each repository the board knows a run of: its worktrees folder is the only one walked
-      const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
-      // the latest member to join from it says which run it belongs to
-      const recordOf = (dir: string) => known.filter((k) => fold(k.worktree) === fold(dir)).at(-1) ?? null;
-      const out = sweepAll([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)], recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
+      // each repository the board knows a run of: its worktrees folder is the only one walked, by the code pack; the
+      // latest member to join from a folder says which run it belongs to
+      const repos = [...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)];
+      const out = ((await board.packCall(null, "prune", { known, repos })) as { worktree: string; removed: boolean; why: string | null }[] | null) ?? [];
       const kept = out.filter((o) => !o.removed);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
