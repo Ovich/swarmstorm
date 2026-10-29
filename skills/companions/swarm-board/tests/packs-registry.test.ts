@@ -24,10 +24,11 @@ test("registry: each (kind, role) row", () => {
   assert.throws(() => registry.forMember("retro", null), /unknown kind retro: the kinds are plan, brainstorm, task/);
 });
 
-test("registry: the code pack lists its verbs and has no pack method yet (phase 2, inert)", () => {
+test("registry: the code pack lists its verbs; of its pack methods, stats is in (P3, D15), the rest still to come", () => {
   const code = registry.forMember("task", null).pack!;
   assert.deepEqual(code.verbs.map((v) => v.name), ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"]);
-  for (const method of ["onJoin", "onPost", "alsoFor", "defaultParties", "busy", "beforeEnd", "afterEnd", "stats"]) assert.equal(method in code, false, method);
+  assert.equal(typeof code.stats?.ofRun, "function");
+  for (const method of ["onJoin", "onPost", "alsoFor", "defaultParties", "busy", "beforeEnd", "afterEnd"]) assert.equal(method in code, false, method);
 });
 
 test("a member's pack is chosen at join, stored, and survives a server restart", async () => {
