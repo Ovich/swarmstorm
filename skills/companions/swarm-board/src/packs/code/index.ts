@@ -13,7 +13,7 @@ export const codePack: Pack = {
   stats: codeStats,
   // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
   alsoFor: (member, message, ctx) =>
-    (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && claimsOf(ctx).holds(member, message.about),
+    (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && claimsOf(ctx).holderNames(member.repo, message.about).includes(member.name),
   // an agreement with no party named binds the file's other holders (F25)
   defaultParties: (about, ctx) => claimsOf(ctx).holderNames(ctx.repo, about),
   // a member holding a claim or the merge lock is mid-work, never idle

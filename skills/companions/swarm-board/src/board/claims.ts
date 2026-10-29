@@ -45,8 +45,6 @@ export interface Claims {
   askedAbout(me: Participant, author: number, m: Message): string | null;
   /** `rel` is held, or was held during the run, by a member of a run other than `p`'s. */
   heldInOtherRun(p: Participant, rel: string): boolean;
-  /** `p` holds `about` (a path, or its tail) now. */
-  holds(p: Participant, about: string): boolean;
   /** `p` holds a claim or the merge lock now: mid-work, never idle. */
   holdsAny(p: Participant): boolean;
   /** The live holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
@@ -241,20 +239,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     },
 
     holdsAny(p) {
-      return (
-        db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== undefined ||
-        db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== undefined
-      );
-    },
-
-    holds(p, about) {
-      const f = fold(relPath(p.repo, about) ?? slashes(about));
-      if (!f) return false;
-      const rows = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(p.repo, p.id) as Row[];
-      return rows.some((r) => {
-        const x = fold(String(r.path));
-        return x === f || x.endsWith(`/${f}`);
-      });
+      return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id, p.id) !== undefined;
     },
 
     checkEdit(me, file, opts = {}) {
