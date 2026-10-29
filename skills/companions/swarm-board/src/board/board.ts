@@ -396,6 +396,9 @@ export interface Board {
   /** Every post of `p`'s run since its phase `name` was last opened (its current phase when omitted), events left
    *  out: the whole discussion a member reads before it decides or adds to it. Empty before the first phase. */
   thread(p: Participant, name?: string): Message[];
+  /** A run read from outside it, open or closed, by no member (G30): its phase `name`, or every post of the run when
+   *  omitted, events left out. Reads only; counts no call. */
+  runThread(run: RunId, name?: string): Message[];
   deliver(p: Participant): Delivery; // own run's items + what wakes p from any run (plan D2); undelivered since last time; marks them delivered; stamps the last call
   /** The first delivery, or empty on timeout or once `p` has ended (D49). `mentionsOnly`: only a
    *  message that mentions `p`, is urgent, or is an event `p` subscribed to (D59) ends it, and only those are marked delivered; the rest
@@ -849,6 +852,20 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     db.prepare("INSERT INTO changes (repo, version) VALUES (?, 1) ON CONFLICT (repo) DO UPDATE SET version = version + 1").run(repo);
     if (depth > 0) dirty = true;
     else touch();
+  };
+
+  /** Every post of `run` since its phase `phase` was last opened, to the next phase event or to now, events left out. */
+  const phasePosts = (run: RunId, phase: string): Message[] => {
+    const opened = db
+      .prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?")
+      .get(run, EVENTS.phase.name, phase) as Row;
+    if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${run}`);
+    const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(run, EVENTS.phase.name, Number(opened.s)) as Row;
+    return (
+      db
+        .prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq")
+        .all(run, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)) as Row[]
+    ).map(toMessage);
   };
 
   const runRow = (id: RunId): Row => {
@@ -2360,17 +2377,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const fresh = participantById(p.id);
       const phase = name ?? phaseOf(runRow(fresh.run))?.name;
       if (!phase) return [];
-      // the phase event that opened it last: the thread runs from it to the next phase event, or to now
-      const opened = db
-        .prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?")
-        .get(fresh.run, EVENTS.phase.name, phase) as Row;
-      if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${fresh.run}`);
-      const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(fresh.run, EVENTS.phase.name, Number(opened.s)) as Row;
-      return (
-        db
-          .prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq")
-          .all(fresh.run, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)) as Row[]
-      ).map(toMessage);
+      return phasePosts(fresh.run, phase);
+    },
+
+    runThread(run, name) {
+      runRow(run);
+      if (name !== undefined) return phasePosts(run, name);
+      return (db.prepare("SELECT * FROM messages WHERE run = ? AND kind != 'event' ORDER BY seq").all(run) as Row[]).map(toMessage);
     },
 
     read(seq) {

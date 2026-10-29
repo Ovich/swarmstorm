@@ -15,6 +15,17 @@ const NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
 const OLD_HOME = path.join(os.homedir(), "charrette_appdata");
 export const DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
 
+/** The default home's port; another data home gets its own, so two homes' servers never clash (G22). */
+const HOME_PORT = 4321;
+
+/** The port aiview serves on when none is asked: 4321 for the default home, else one in 4400–4899 derived from the home's path. */
+export function defaultPort(root: string = DATA_ROOT): number {
+  if (path.resolve(root) === NEW_HOME || path.resolve(root) === OLD_HOME) return HOME_PORT;
+  let hash = 2166136261;
+  for (const ch of path.resolve(root).toLowerCase()) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return 4400 + (hash % 500);
+}
+
 /** Documents live here, one directory per project. Never inside a project repo. */
 export const DOCS_ROOT = path.join(DATA_ROOT, "docs");
 

@@ -17,6 +17,12 @@ var __export = (target, all) => {
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+function defaultPort(root = DATA_ROOT) {
+  if (path.resolve(root) === NEW_HOME || path.resolve(root) === OLD_HOME) return HOME_PORT;
+  let hash = 2166136261;
+  for (const ch of path.resolve(root).toLowerCase()) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return 4400 + hash % 500;
+}
 function ensureHome() {
   fs.mkdirSync(DOCS_ROOT, { recursive: true });
 }
@@ -27,7 +33,7 @@ function adoptLegacyIndex(toolRoot, sqlitePath) {
   fs.copyFileSync(legacy, sqlitePath);
   console.error(`aiview: adopted the index from ${legacy} (the original is left in place, unused)`);
 }
-var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, DOCS_ROOT, docsDirFor;
+var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
 var init_home = __esm({
   "src/core/home.ts"() {
     "use strict";
@@ -35,6 +41,7 @@ var init_home = __esm({
     NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
     OLD_HOME = path.join(os.homedir(), "charrette_appdata");
     DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
+    HOME_PORT = 4321;
     DOCS_ROOT = path.join(DATA_ROOT, "docs");
     docsDirFor = (projectSlug) => path.join(DOCS_ROOT, projectSlug);
   }
@@ -9145,6 +9152,7 @@ var init_wire = __esm({
       "endorse",
       "read",
       "thread",
+      "runThread",
       "deliver",
       "deliverMentions",
       "wait",
@@ -10465,7 +10473,7 @@ var USAGE = [
   "  use <slug|*>                             # set the active project",
   "  remove <file|#id>...",
   "  move <file|#id>... [--project <slug>]    # refile: file + index together",
-  "  serve [file] [--port 4321] [--open] [--detach]",
+  "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
   "  pending add <file|#id> --label L [--note N]   # work the reader is waiting on",
   "  pending done <#pendingId>                     # the work landed; the card goes away",
   "  pending list [<file|#id>] | clear <file|#id>",
@@ -10587,7 +10595,7 @@ function stopServerProcess(pid) {
   }
 }
 function portOfInstalledServer() {
-  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321);
+  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort());
   const st = readServerStatus();
   if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(requested);
   const installed = collectionVersion(TOOL_ROOT);
@@ -11076,7 +11084,7 @@ async function cmdServe() {
   const index = openIndex();
   const startDoc = args.positional[0] ? index.register(path13.resolve(args.positional[0]), registerOpts()) : null;
   startServer2(index, {
-    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321),
+    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
     open: args.has("--open"),
     startDoc
   });

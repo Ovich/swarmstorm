@@ -49,6 +49,7 @@ const USAGE = [
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
   "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
+  "  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only",
   "  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)",
   "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
   "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end …",
@@ -992,7 +993,7 @@ ${USAGE}`);
       break;
     }
     case "read": {
-      const raw = (args.positional[0] ?? fail("read: which seq?")).replace(/^#/, "");
+      const raw = (args.positional[0] ?? fail("read: which seq? usage: swarm read <seq>")).replace(/^#/, "");
       const seq = Number(raw);
       if (!Number.isInteger(seq)) fail(`read takes a seq, got ${raw}`);
       // a member's read is a call of its own (D66); a reader no member answers to reads all the same
@@ -1016,6 +1017,19 @@ ${USAGE}`);
       break;
     }
     case "thread": {
+      // --run: a run read from outside it, closed ones too, by no member (G30)
+      const outside = args.flag("--run");
+      if (outside !== undefined) {
+        const run = Number(outside);
+        if (!Number.isInteger(run)) fail(`thread --run takes a run id, got ${outside}`);
+        const name = args.positional[0];
+        const posts = await board.runThread(run, name);
+        emit({ run, posts }, () => {
+          if (!posts.length) console.log(`no post in run ${run}${name ? ` phase ${name}` : ""}`);
+          for (const m of posts) console.log(fullText(m));
+        });
+        break;
+      }
       const me = await caller();
       if (await answeredClosed(me)) break;
       const name = args.positional[0];
@@ -1074,7 +1088,8 @@ ${USAGE}`);
       if (!d.full.length && !d.lines.length) {
         // a timeout: the line to run again (B7); the member ended: nothing to re-arm
         const ended = (await board.participant(p.name))?.ended ?? true;
-        if (ended) emit(d, "");
+        // G26: never an empty answer, which reads as a listener that died; the member learns why it stopped
+        if (ended) emit(d, `you have ended in run ${p.run}: this listener stops; nothing to re-arm`);
         else if (mentionsOnly && (await board.idle(p))) {
           // a member with nothing to do ends rather than wake every 170 s (tokens); the orchestrator dispatches it again
           const next = `nothing for you now: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; your seat stays in the run, and the orchestrator may dispatch you to it again`;

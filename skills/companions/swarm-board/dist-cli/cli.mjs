@@ -1739,6 +1739,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (depth > 0) dirty = true;
     else touch();
   };
+  const phasePosts = (run3, phase) => {
+    const opened = db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?").get(run3, EVENTS.phase.name, phase);
+    if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${run3}`);
+    const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(run3, EVENTS.phase.name, Number(opened.s));
+    return db.prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq").all(run3, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)).map(toMessage);
+  };
   const runRow = (id) => {
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(id);
     if (!r) throw new Error(`unknown run ${id}`);
@@ -2936,10 +2942,12 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const fresh = participantById(p.id);
       const phase = name ?? phaseOf(runRow(fresh.run))?.name;
       if (!phase) return [];
-      const opened = db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?").get(fresh.run, EVENTS.phase.name, phase);
-      if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${fresh.run}`);
-      const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(fresh.run, EVENTS.phase.name, Number(opened.s));
-      return db.prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq").all(fresh.run, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)).map(toMessage);
+      return phasePosts(fresh.run, phase);
+    },
+    runThread(run3, name) {
+      runRow(run3);
+      if (name !== void 0) return phasePosts(run3, name);
+      return db.prepare("SELECT * FROM messages WHERE run = ? AND kind != 'event' ORDER BY seq").all(run3).map(toMessage);
     },
     read(seq) {
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq);
@@ -3403,6 +3411,7 @@ var init_wire = __esm({
       "endorse",
       "read",
       "thread",
+      "runThread",
       "deliver",
       "deliverMentions",
       "wait",
@@ -8723,6 +8732,7 @@ var USAGE = [
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
   "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
+  "  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only",
   "  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)",
   "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
   "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
@@ -9453,7 +9463,7 @@ ${USAGE}`);
       break;
     }
     case "read": {
-      const raw = (args.positional[0] ?? fail("read: which seq?")).replace(/^#/, "");
+      const raw = (args.positional[0] ?? fail("read: which seq? usage: swarm read <seq>")).replace(/^#/, "");
       const seq = Number(raw);
       if (!Number.isInteger(seq)) fail(`read takes a seq, got ${raw}`);
       let by;
@@ -9474,6 +9484,18 @@ ${USAGE}`);
       break;
     }
     case "thread": {
+      const outside = args.flag("--run");
+      if (outside !== void 0) {
+        const run3 = Number(outside);
+        if (!Number.isInteger(run3)) fail(`thread --run takes a run id, got ${outside}`);
+        const name2 = args.positional[0];
+        const posts2 = await board.runThread(run3, name2);
+        emit({ run: run3, posts: posts2 }, () => {
+          if (!posts2.length) console.log(`no post in run ${run3}${name2 ? ` phase ${name2}` : ""}`);
+          for (const m of posts2) console.log(fullText(m));
+        });
+        break;
+      }
       const me = await caller();
       if (await answeredClosed(me)) break;
       const name = args.positional[0];
@@ -9524,7 +9546,7 @@ ${USAGE}`);
       const foregroundLine = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
       if (!d.full.length && !d.lines.length) {
         const ended = (await board.participant(p.name))?.ended ?? true;
-        if (ended) emit(d, "");
+        if (ended) emit(d, `you have ended in run ${p.run}: this listener stops; nothing to re-arm`);
         else if (mentionsOnly && await board.idle(p)) {
           const next2 = `nothing for you now: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; your seat stays in the run, and the orchestrator may dispatch you to it again`;
           emit({ ...d, idle: true, next: next2 }, next2);

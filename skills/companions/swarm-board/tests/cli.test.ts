@@ -494,7 +494,8 @@ test("end releases a member's pending wait in another process", async () => {
   const t0 = Date.now();
   assert.equal(await exited, 0);
   assert.ok(Date.now() - t0 < 5000, "end did not release the wait");
-  assert.equal(out, "");
+  // G26: an ended member's listener says why it stopped, never an empty answer
+  assert.match(out, /you have ended in run [0-9]+: this listener stops; nothing to re-arm/);
 });
 
 test("two worktrees of one repository share one thread", () => {

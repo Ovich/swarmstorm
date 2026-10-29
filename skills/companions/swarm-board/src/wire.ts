@@ -45,6 +45,7 @@ export const RPC_METHODS = [
   "endorse",
   "read",
   "thread",
+  "runThread",
   "deliver",
   "deliverMentions",
   "wait",

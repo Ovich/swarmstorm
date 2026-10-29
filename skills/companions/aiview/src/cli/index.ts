@@ -20,7 +20,7 @@ import { isHtml, readDoc, sidecarOf } from "../core/paths.ts";
 import { pointerHash, isName, unknownNames } from "../core/pointer.ts";
 import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
-import { adoptLegacyIndex, DATA_ROOT, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
+import { adoptLegacyIndex, DATA_ROOT, defaultPort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
 import { readServerStatus, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
@@ -46,7 +46,7 @@ const USAGE = [
   "  use <slug|*>                             # set the active project",
   "  remove <file|#id>...",
   "  move <file|#id>... [--project <slug>]    # refile: file + index together",
-  "  serve [file] [--port 4321] [--open] [--detach]",
+  "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
   "  pending add <file|#id> --label L [--note N]   # work the reader is waiting on",
   "  pending done <#pendingId>                     # the work landed; the card goes away",
   "  pending list [<file|#id>] | clear <file|#id>",
@@ -204,7 +204,7 @@ function stopServerProcess(pid: number): void {
  *  or with none recorded, is stopped and replaced on its own port. With no installed
  *  version to compare against, any running server is reused. */
 function portOfInstalledServer(): number {
-  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321);
+  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort());
   const st: ServerStatus = readServerStatus();
   if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(requested);
   const installed = collectionVersion(TOOL_ROOT);
@@ -763,7 +763,7 @@ async function cmdServe(): Promise<void> {
   const index = openIndex();
   const startDoc = args.positional[0] ? index.register(path.resolve(args.positional[0]), registerOpts()) : null;
   startServer(index, {
-    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321),
+    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
     open: args.has("--open"),
     startDoc,
   });
