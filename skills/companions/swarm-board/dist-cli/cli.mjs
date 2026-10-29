@@ -155,7 +155,7 @@ var init_kinds = __esm({
     run = (...events) => events.map((event) => ({ event, scope: "run" }));
     carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
     PROFILES = {
-      plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } },
+      plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } },
       brainstorm: {
         kind: "brainstorm",
         claims: false,
@@ -166,7 +166,7 @@ var init_kinds = __esm({
         defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
       },
       // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-      task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("merged", "done", "joined", "idle")] } }
+      task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } }
     };
   }
 });
@@ -8202,7 +8202,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--watch",
   "--person",
   "--note",
-  "--busy-max"
+  "--busy-max",
+  "--report"
 ]);
 var LIST_FLAGS = /* @__PURE__ */ new Set(["--files"]);
 function parseArgs(argv) {
@@ -8415,7 +8416,7 @@ var CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <member>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict"
+  '  merged  [--as <member>] <sha> --files <path>... --report <text>|-   # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently'
 ].join("\n");
 var STATS_USAGE = [
   "usage: swarm stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]",
@@ -9231,16 +9232,18 @@ ${rearm}` : rearm;
     case "merged": {
       const p = await caller();
       const sha = args.positional[0] ?? fail("merged: which sha?");
+      const report = args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake; --report - merges silently');
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
       const sharers = await board.merged(p, sha, files.map((f) => path9.resolve(f)), conflicts);
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
         (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
       );
-      emit({ member: p.name, sha, files, tell }, () => {
-        console.log(`merged ${sha}: lock released`);
+      emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {} }, () => {
+        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
       });
       break;

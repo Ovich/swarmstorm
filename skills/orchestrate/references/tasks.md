@@ -57,6 +57,6 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 
 ## A report
 
-The worker's report is one post to `@orchestrator`: done or not, the commit when it merged, each
+The worker's report is one post to `@orchestrator`, given with its merge as the swarm-board skill's `references/worker.md` says: done or not, the commit when it merged, each
 done-when with its evidence, what it shaped around the task and why, and anything the task did
 not predict. **Re-run the done-when on the merged branch** before the task counts as done.

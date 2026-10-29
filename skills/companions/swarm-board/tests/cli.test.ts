@@ -339,15 +339,33 @@ test("merged ends, for each merged path another member holds or held, on the lin
 
   const TELL = (f: string): string =>
     `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/S3 I resolved ${f}: <how>" --about ${f}`;
-  const r = run("merged", ...s5, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
+  const r = run("merged", "--report", "-", ...s5, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(r.stdout.trimEnd().split("\n"), ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts")]);
 
-  const j = JSON.parse(run("merged", ...s5, "def456", "--files", "src/held.ts", "--json").stdout);
+  const j = JSON.parse(run("merged", "--report", "-", ...s5, "def456", "--files", "src/held.ts", "--json").stdout);
   assert.deepEqual(j.tell, [TELL("src/held.ts")]);
 
   // a path nobody else held: the merge line alone
-  assert.equal(run("merged", ...s5, "fed789", "--files", "src/mine.ts", "src/nobody.ts").stdout, "merged fed789: lock released\n");
+  assert.equal(run("merged", "--report", "-", ...s5, "fed789", "--files", "src/mine.ts", "src/nobody.ts").stdout, "merged fed789: lock released\n");
+});
+
+test("merged carries the worker's report: refused without --report, naming it and `-`; posts @orchestrator merged <sha>: <report>; `-` posts nothing", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
+  const s5 = ["--as", "review-tool/S5"];
+  const orch = ["--as", "review-tool/orchestrator"];
+  run("deliver", ...orch);
+  const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts");
+  assert.notEqual(bare.status, 0);
+  assert.match(bare.stderr, /--report "<what you did>".*--report - merges silently/);
+  const r = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(typeof JSON.parse(r.stdout).reported, "number");
+  const heard = run("deliver", ...orch).stdout;
+  assert.match(heard, /^@orchestrator merged abc123: T1 done, tests green$/m);
+  assert.equal(run("merged", ...s5, "def456", "--files", "src/a.ts", "--report", "-").stdout, "merged def456: lock released\n");
+  assert.equal(/@orchestrator merged def456/.test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
 });
 
 test("claim, post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
@@ -734,7 +752,7 @@ test("a seat's wait that receives an agreement prints the back-it line; a plan m
 test("the code verbs, called by a seat, exit 1 naming the kind", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
-  for (const argv of [["claim", "src/x.ts"], ["release", "src/x.ts"], ["merge-lock", "--onto", "main"], ["merged", "abc", "--files", "x"]]) {
+  for (const argv of [["claim", "src/x.ts"], ["release", "src/x.ts"], ["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
     const r = run(...argv, "--as", "idea/architect");
     assert.equal(r.status, 1, argv.join(" "));
     assert.match(r.stderr, new RegExp(`${argv[0]}: a brainstorm run has no claims`));

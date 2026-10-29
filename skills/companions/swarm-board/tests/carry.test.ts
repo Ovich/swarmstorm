@@ -47,23 +47,32 @@ const merge = (p: Participant, sha: string) => {
   board.lockMerge(p);
   board.merged(p, sha, []);
 };
+/** A member joins a seat added mid-run, its doing `tag`: a carried joined event. A second seat stays unjoined, so no all-joined wakes. */
+const arrive = (run: number, tag: string) => {
+  board.addSeat(run, { id: tag, blockers: [] });
+  board.addSeat(run, { id: `${tag}-spare`, blockers: [] });
+  return board.join({ run, seat: tag, doing: tag, files: [] }).member;
+};
 /** A tick past the carry deadline, on the tick's own clock. */
 const pastDeadline = (run: number, from = Date.now()) => board.livenessTick(run, new Date(from + CARRY_MAX_MS + 1000), presence);
 
-test("B1: three merges, each followed by its report: 3 wakes, not 6; each report's wake carries its merged line once", async () => {
-  const { m, orch } = setup();
+test("B1: three merges, each with its report (merged --report): 3 wakes, each the report alone; the merged event never reaches the orchestrator", async () => {
+  const { run, m, orch } = setup();
   let wakes = 0;
   for (const [i, id] of ["w1", "w2", "w3"].entries()) {
     merge(m[id], `sha${i}`);
     assert.equal(woke(await waitOf(orch)), false, `${id}'s merged alone wakes nothing`);
-    board.post(m[id], `@orchestrator merged sha${i}, T${i} done`);
+    board.post(m[id], `@orchestrator merged sha${i}: T${i} done`);
     const d = await waitOf(orch);
     assert.ok(woke(d));
     wakes++;
-    assert.equal(all(d).match(new RegExp(`sha${i}`, "g"))!.length >= 2, true, all(d));
-    assert.equal(d.lines.filter((l) => /merged/.test(l) && l.includes(`sha${i}`)).length, 1, d.lines.join("\n"));
+    assert.equal(all(d).match(new RegExp(`sha${i}`, "g"))!.length, 1, all(d));
   }
   assert.equal(wakes, 3);
+  // no carry deadline brings the merged events (the report was the wake); a silent merge (--report -) wakes nothing either
+  merge(m.w1, "silent0");
+  pastDeadline(run.id);
+  assert.equal(/sha\d|silent0/.test(all(await waitOf(orch, 150))), false);
 });
 
 test("B2 (restated, #12261): the first three dones are carried; the straggler's done wakes carrying the earlier ones; all-done wakes", async () => {
@@ -114,23 +123,23 @@ test("B3: a watched member's done, a done without its deliverable, the straggler
   assert.match(all(told), /^late done p; the current phase is q/m);
 });
 
-test("B4, B10: a lone carried merged wakes the waiting orchestrator by the tick past CARRY_MAX_MS, exactly once", async () => {
+test("B4, B10: a lone carried joined wakes the waiting orchestrator by the tick past CARRY_MAX_MS, exactly once", async () => {
   const { run, m, orch } = setup();
-  merge(m.w1, "abc123");
+  arrive(run.id, "abc123");
   const held = waitOf(orch, 3000);
   board.livenessTick(run.id, new Date(Date.now() + CARRY_MAX_MS - 5000), presence);
   pastDeadline(run.id);
   const d = await held;
-  assert.equal(d.lines.filter((l) => /merged.*abc123/.test(l)).length + d.full.filter((x) => /abc123/.test(x.body)).length, 1, all(d));
+  assert.equal(d.lines.filter((l) => /joined.*abc123/.test(l)).length + d.full.filter((x) => /joined.*abc123/.test(x.body)).length, 1, all(d));
   assert.equal(/abc123/.test(all(board.deliver(orch))), false, "never twice");
 });
 
 test("B4: a carried line and a wake together come once; the deadline does not bring it again", async () => {
   const { run, m, orch } = setup();
-  merge(m.w1, "def456");
+  arrive(run.id, "def456");
   board.post(m.w1, "@orchestrator report");
   const d = await waitOf(orch);
-  assert.equal(all(d).match(/merged[^\n]*def456/g)?.length, 1, all(d));
+  assert.equal(all(d).match(/joined[^\n]*def456/g)?.length, 1, all(d));
   pastDeadline(run.id);
   const again = await waitOf(orch, 150);
   assert.equal(wokeBesidesLiveness(again), false, all(again));
@@ -195,8 +204,8 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   board.pause(orch, "the person decides");
   board.deliver(orch);
   const base = Date.now();
-  // during the pause: a merge, both dones (all-done), a member gone
-  merge(m.w1, "aaa111");
+  // during the pause: a joiner, both dones (all-done), a member gone
+  board.done(arrive(run.id, "aaa111"), "p");
   board.done(m.w1, "p");
   board.done(m.w2, "p");
   board.recordActivity(run.id, "w2", act({ grewAt: base }), new Date(base));
@@ -208,8 +217,8 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   assert.ok(woke(await urgent), "urgent still wakes");
   const resumed = board.resume(orch, "go on");
   const held = resumed.held.join("\n");
-  for (const said of [/aaa111/, /all done p/, /gone g\/w2/]) assert.match(held, said);
-  for (const said of ["aaa111", "all done p", "gone g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
+  for (const said of [/joined: aaa111/, /all done p/, /gone g\/w2/]) assert.match(held, said);
+  for (const said of ["joined: aaa111", "all done p", "gone g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
   // g1: still gone after the resume, told once
   assert.equal(board.memberStates(run.id, new Date(base + 1801_000)).find((s) => s.member === "w2")!.state, "gone");
   board.livenessTick(run.id, new Date(base + 1802_000), presence);
@@ -220,11 +229,11 @@ test("d3's guard g3: a carried message held through a pause wakes within the res
   const { run, m, orch } = setup(["w1", "w2"]);
   board.pause(orch, "hold");
   board.deliver(orch);
-  merge(m.w1, "bbb222");
+  arrive(run.id, "bbb222");
   pastDeadline(run.id);
   board.resume(orch, "go");
   board.deliver(orch);
-  merge(m.w2, "ccc333");
+  arrive(run.id, "ccc333");
   const resumedAt = Date.now();
   board.livenessTick(run.id, new Date(resumedAt + 1000), presence);
   assert.equal(woke(await waitOf(orch, 150)), false, "not at once after the resume");

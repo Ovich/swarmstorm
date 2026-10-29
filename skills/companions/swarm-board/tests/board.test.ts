@@ -981,7 +981,7 @@ const SEATS = [
 test("join: --on over the seat row's on over the kind's defaults, per role", () => {
   const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   assert.deepEqual(board.join({ run: plan.id, seat: "S3", doing: "x", files: [] }).member.subscriptions, []);
-  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "all-joined", "merged", "done", "joined", "idle"]);
+  assert.deepEqual(board.participant("review-tool/orchestrator")!.subscriptions.map((s) => s.event), ["ended", "stale", "all-joined", "done", "joined", "idle"]);
   const idea = board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: SEATS });
   assert.deepEqual(board.participant("idea/orchestrator")!.subscriptions.map((s) => s.event), ["agreement", "endorsement", "ended", "stale", "all-joined", "done", "joined", "idle"]);
   assert.deepEqual(board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member.subscriptions, []);

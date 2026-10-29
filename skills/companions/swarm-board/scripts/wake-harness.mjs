@@ -114,7 +114,7 @@ if (nick) await kase("B1e @Nick", "wake", "ra/s", () => post("ra/w1", `@${nick[1
 else record({ id: "B1e @Nick", status: "FAIL", detail: "no funny name for ra/s in the roster" });
 await kase("B3a subscribed any:merged (another seat's merge)", "wake", "rs/sub", () => {
   sw("claim", "--as", "rs/m", "src/b3a.txt", "--new");
-  return sw("merged", "--as", "rs/m", "cafe001", "--files", "src/b3a.txt");
+  return sw("merged", "--report", "-", "--as", "rs/m", "cafe001", "--files", "src/b3a.txt");
 }, 5000);
 await kase("B4 agreement on file it holds", "wake", "ra/s", () => {
   sw("claim", "--as", "ra/s", "README.md");
@@ -124,10 +124,10 @@ await kase("B4 agreement on file it holds", "wake", "ra/s", () => {
 await kase("B5a pause wakes member", "wake", "ra/s", () => sw("pause", "stop", "--as", "ra/orchestrator"));
 await kase("B5b resume wakes member", "wake", "ra/s", () => sw("resume", "go on", "--as", "ra/orchestrator"));
 await kase("B5c phase wakes member", "wake", "ra/s", () => sw("phase", "p1", "do it", "--as", "ra/orchestrator"));
-await kase("B8 agreement party: merged of the agreed file", "wake", "ra/s", () => sw("merged", "--as", "ra/w1", "deadbeef", "--files", "README.md"));
+await kase("B8 agreement party: merged of the agreed file", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", "deadbeef", "--files", "README.md"));
 // D7: the party to an agreement hears the merge without holding a claim
 sw("release", "--as", "ra/s", "README.md");
-await kase("D7 agreement party with no claim woken by merged", "wake", "ra/s", () => sw("merged", "--as", "ra/w1", "deadbee2", "--files", "README.md"));
+await kase("D7 agreement party with no claim woken by merged", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", "deadbee2", "--files", "README.md"));
 
 // D8: a paused run holds a mention; the resume brings it
 {

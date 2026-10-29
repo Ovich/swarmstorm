@@ -367,7 +367,7 @@ test("a flag is posted once, whether merge-lock or end finds it; it is the flag 
 test("the merged event names the branch from merge-lock --onto and stores whom it told (D9, D11)", async () => {
   running();
   cli(wtB, "merge-lock", "--onto", "main");
-  cli(wtB, "merged", "abc123", "--files", "src/a.ts");
+  cli(wtB, "merged", "--report", "-", "abc123", "--files", "src/a.ts");
   const board = await openBoard(path.join(home, "swarm.sqlite"));
   try {
     const merged = board.snapshot(board.repos()[0].repo).events.find((e) => e.event === "merged")!;

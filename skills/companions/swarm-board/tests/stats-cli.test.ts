@@ -34,10 +34,10 @@ const runWithBothMerges = (r: Repo, afterKnown?: (id: number) => void): number =
   r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
   r.cli(r.wtB, "merge-lock", "--onto", "main");
   r.rebaseOntoMain(r.wtB, { "src/a.ts": edit(0, "export const one = 'both';") });
-  r.cli(r.wtB, "merged", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
+  r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
   afterKnown?.(id);
   r.commitFile(r.wtA, "src/c.ts", edit(0, "export const one = 'a';"));
-  for (const argv of [["merge-lock", "--onto", "main"], ["merged", r.git(r.wtA, "rev-parse", "HEAD").trim(), "--files", "src/c.ts"]]) {
+  for (const argv of [["merge-lock", "--onto", "main"], ["merged", "--report", "-", r.git(r.wtA, "rev-parse", "HEAD").trim(), "--files", "src/c.ts"]]) {
     const out = r.swarm(r.wtA, argv, { oldGit: true });
     assert.equal(out.status, 0, out.stderr);
   }

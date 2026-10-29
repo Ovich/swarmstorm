@@ -31,7 +31,7 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    call site; no generic names (`data`, `handle`, `utils`, `manager`, `info`), none left from what
    the code used to do.
 5. **Merge** under the board's lock onto the branch your brief names, fast-forward only, as
-   `references/worker.md` says; **report** to `@orchestrator`: the commit, each done-when with its
+   `references/worker.md` says, the report given with the merge there; **report** to `@orchestrator`: the commit, each done-when with its
    evidence, what the shaping changed and why, anything the task did not predict.
 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop

@@ -52,11 +52,14 @@ the foreground: an agent that ends its turn on a background task of its own is n
    4. Run the task's done-when on the rebased branch, then fast-forward `<target>` from your own
       worktree: `git push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
-   5. `$S merged <sha> --files <every path the merge changed>`; after a change to an *interface*
-      file, `$S post "@swarm <what changed in it>" --about <file>`.
-7. **Report**: one post to `@orchestrator`, as your agent's definition says, through
-   `post --file`. A fix task reports per finding id what changed. Then `$S release` the files you
-   no longer touch, and back to 3.
+   5. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`: the
+      report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
+      orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
+      change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.
+7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
+   post after the merge; a task that merged nothing reports in one post to `@orchestrator`
+   (`post --file` for a long one). A fix task reports per finding id what changed. Then
+   `$S release` the files you no longer touch, and back to 3.
 8. **The run closes** (the closed line): `$S end`, then return one line per task you did. `end`
    claims or flags what you wrote without a claim, releases your claims and the lock, and makes
    your listener return empty: do not re-arm it. A task that stops on a finding posts it first:

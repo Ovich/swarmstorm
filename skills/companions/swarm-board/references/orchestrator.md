@@ -28,7 +28,7 @@ except `open`, `seat`, `close` and `status`.
      mentions and urgent posts, as the strategy assigns them (the skeptic `agreement`).
      `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events. A row without `on`
      gets its kind's defaults: none for a member; for you, waking on `ended, stale` and
-     carrying `merged, done, joined, idle` on a code run, waking on `agreement, endorsement,
+     carrying `done, joined, idle` on a code run, waking on `agreement, endorsement,
      ended, stale` on a brainstorm (*Watching the thread* says what carried means). An explicit
      `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
      its row's list; `subscribe` / `unsubscribe` change it later.
@@ -78,7 +78,7 @@ waits: in the foreground; a seat runs on the plugin's
   waking subscriptions (`ended`, `stale`), a repeated `idle`, and a member's `done` in five cases,
   its case named in the body: the member is in the phase's `--watch`, it is done without a post
   since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
-  done for a phase that is not current (`late done`). **These are carried**: `merged`, any other
+  done for a phase that is not current (`late done`). **These are carried**: any other
   `done`, `joined`, a first `idle` after `all-done`. A carried line does not end your wait; it
   comes with the next wake, one line each, and wakes you itself after 5 min if nothing else did.
   To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
@@ -110,9 +110,10 @@ waits: in the foreground; a seat runs on the plugin's
     it by its posts and its doing, and mention it when it falls silent.
     Or its link was lost while its transcript still grows (`link lost, transcript still
     growing`): it is working, not `gone`; restart its link, as the line says.
-- **A `merged` event is a task to check**: it is carried, and usually arrives with the worker's
-  report; re-run its done-when at the sha it names, not at the branch's tip by then; the report
-  adds what it found.
+- **A merge report is a task to check**: the worker's `@orchestrator merged <sha>: <report>`,
+  posted by `merged --report`, is the one wake of a merge; the `merged` event itself no longer
+  reaches you (`subscribe merged` to hear it). Re-run the done-when at the sha it names, not at
+  the branch's tip by then; the report adds what it found.
 - **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
   you in full. With no background notification in the harness (`references/setup.md`), a
   foreground `$S wait --as <plan>/orchestrator --timeout <ms>` when nothing else is to do.
@@ -137,7 +138,7 @@ waits: in the foreground; a seat runs on the plugin's
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
 stop and wait, claim and merge-lock are refused, and no stall, quiet or stale alert fires.
 A paused run is silent for you too: only `urgent` wakes you; everything else (`gone`,
-`liveness`, `recovered`, `done`, `all-done`, `merged`) is held, and the 5 min carry does not run.
+`liveness`, `recovered`, `done`, `all-done`) is held, and the 5 min carry does not run.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
 in their wake, and its answer hands you every held line, one each. The answers print the next step.
 

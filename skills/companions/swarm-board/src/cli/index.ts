@@ -66,7 +66,7 @@ const CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <member>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict",
+  "  merged  [--as <member>] <sha> --files <path>... --report <text>|-   # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
 ].join("\n");
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
@@ -1097,11 +1097,14 @@ ${rearm}` : rearm;
     case "merged": {
       const p = await caller();
       const sha = args.positional[0] ?? fail("merged: which sha?");
+      // the report rides on the merge: one post, the orchestrator's one wake; "-" merges silently, recorded in the run only
+      const report = args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake; --report - merges silently');
       const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = await board.heldMergeLock(p);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
       // the post after a resolved conflict, prompted by the command just run (D63)
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map((o) =>
@@ -1109,8 +1112,8 @@ ${rearm}` : rearm;
           ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report`
           : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`,
       );
-      emit({ member: p.name, sha, files, tell }, () => {
-        console.log(`merged ${sha}: lock released`);
+      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}) }, () => {
+        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
       });
       break;
