@@ -4,7 +4,6 @@ orchestrator <nick:orchestrator>: joined
 w1 <nick:w1>: joined
 g/orchestrator  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined, done (carried), joined (carried), idle (carried)
 <nick:w1> · g/w1  run 1  waiting  doing: x
-phase build: build the thing
 your worktree: <home>/repo/.git/swarm/worktrees/1/w1 (branch swarm/1-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C <home>/repo/.git/swarm/worktrees/1/w1, never cd into it; pass --as g/w1 on every call
 posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>
 start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/w1

@@ -105,7 +105,9 @@ export function answer(r: VerbResult, s: Situation): Answer {
     case "join": {
       const headers = phaseHeaders(s);
       const next = nextStep(s);
-      return { lines: [...r.head, ...(headers.printed ? [headers.printed] : []), ...r.tail, next], next, phase: headers.full };
+      // G32: a member owing the phase reads its text once, on the owed line; the header only when it owes nothing
+      const header = headers.printed && !(s.owed && !pausedLine(s)) ? [headers.printed] : [];
+      return { lines: [...r.head, ...header, ...r.tail, next], next, phase: headers.full };
     }
   }
 }

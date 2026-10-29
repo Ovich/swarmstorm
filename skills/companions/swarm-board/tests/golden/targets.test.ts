@@ -94,7 +94,7 @@ test("G17 target: the phase-open wake names the worker's task posted before it",
 });
 
 // G32: join with a phase open states the phase once: the owed line alone, no header line besides it
-test("G32 target: join in an open phase states it once", { skip }, async () => {
+test("G32 target: join in an open phase states it once", async () => {
   const s = await scene("worker", "owes-first");
   try {
     const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
