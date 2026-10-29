@@ -3,7 +3,7 @@
 // reflog gives the head before the rebase and the commit it started onto, and one
 // `merge-tree --write-tree` replays them. Never throws; what git cannot answer is an unknown.
 import type { Conflicts } from "../board/board.ts";
-import { git, gitAnswer } from "./git.ts";
+import { git, gitAnswer } from "../git.ts";
 
 export type { Conflicts } from "../board/board.ts";
 

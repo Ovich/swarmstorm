@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { linkPidFile } from "../link/link.ts";
-import { git } from "./git.ts";
+import { baseRef, git } from "../git.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
 export const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
@@ -37,12 +37,6 @@ function run(cwd: string, ...argv: string[]): { ok: boolean; out: string; err: s
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
 }
 
-/** What the run's worktrees branch from: the checkout's branch, else its commit; null outside a repository or before its first commit. */
-export const baseAt = (cwd: string): string | null => {
-  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
-  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
-};
-
 /** True when `cwd` is a worktree git added (not the repository's own checkout). */
 export function inLinkedWorktree(cwd: string): boolean {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
@@ -52,14 +46,6 @@ export function inLinkedWorktree(cwd: string): boolean {
 
 const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
-
-/** The base as a full ref git cannot guess from (G36): the local branch, else `origin/<base>`, else the base as given
- *  (a commit). A bare branch name that exists only on origin makes `git worktree add -b <seat> <dir> <base>` create and
- *  check out the base itself instead of the seat branch. */
-export const baseRef = (cwd: string, base: string): string => {
-  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
-  return base;
-};
 
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
 export function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {

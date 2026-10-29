@@ -14,13 +14,13 @@ import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
-import { git, gitAnswer, worktreeHolding } from "./git.ts";
+import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { answer, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-import { baseAt, baseRef, branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, sweepLegacyRoot, worktreeDirs } from "./worktrees.ts";
+import { branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, sweepLegacyRoot, worktreeDirs } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");

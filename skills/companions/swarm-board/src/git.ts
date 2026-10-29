@@ -1,5 +1,5 @@
-// The CLI's one way to ask git: a command in a folder, its answer. Shared by the verbs and by
-// conflicts.ts; the board never runs git.
+// The one way to ask git: a command in a folder, its answer. Shared by the CLI's verbs, conflicts.ts and the
+// code pack's worktrees; the board never runs git.
 import { spawnSync } from "node:child_process";
 
 /** git's exit and output; `status` null when git could not be run at all. */
@@ -29,4 +29,18 @@ export const worktreeHolding = (cwd: string, branch: string): string | null => {
     else if (line === `branch ${ref}`) return at;
   }
   return null;
+};
+
+/** What the run's worktrees branch from: the checkout's branch, else its commit; null outside a repository or before its first commit. */
+export const baseAt = (cwd: string): string | null => {
+  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
+  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
+};
+
+/** The base as a full ref git cannot guess from (G36): the local branch, else `origin/<base>`, else the base as given
+ *  (a commit). A bare branch name that exists only on origin makes `git worktree add -b <seat> <dir> <base>` create and
+ *  check out the base itself instead of the seat branch. */
+export const baseRef = (cwd: string, base: string): string => {
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  return base;
 };
