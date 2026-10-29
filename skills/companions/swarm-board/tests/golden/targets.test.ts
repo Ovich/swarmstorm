@@ -157,6 +157,19 @@ test("S1 target: join shows the unread task posted before it", async () => {
     const again = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
     assert.doesNotMatch(again.text, /the task: build the thing/);
     assert.doesNotMatch(s.call("wait", "--mentions", "--as", s.me, "--timeout", "300").text, /the task: build the thing/);
+
+// S5: agree's parties line names every party, its author included, in one stable order (by name); every --with counts
+test("S5 target: agree names every party, the author included, each --with counted", async () => {
+  const s = await scene("worker", "idle");
+  try {
+    s.must("seat", "add", "w2", "--run", "1", "--as", O);
+    s.must("join", "--run", "1", "--seat", "w2", "--doing", "x", "--as", "g/w2");
+    const agreed = s.call("agree", "I change a.ts first", "--with", "w2", "--with", "orchestrator", "--as", s.me);
+    expect(agreed, [
+      "#<seq>",
+      "parties: g/orchestrator, g/w1 (you), g/w2; woken when its file merges",
+      `start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as ${s.me}`,
+    ]);
   } finally {
     s.stop();
   }

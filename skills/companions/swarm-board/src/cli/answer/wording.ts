@@ -48,6 +48,11 @@ export const WORDING = {
     `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
 
+  // ── agree ──
+  /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
+  agreeParties: (author: string, others: string[]) =>
+    `parties: ${[...new Set([author, ...others])].sort().map((n) => (n === author ? `${n} (you)` : n)).join(", ")}; woken when its file merges`,
+
   // ── the orchestrator's verbs ──
   phaseHeard: (watch: string[]) =>
     watch.length

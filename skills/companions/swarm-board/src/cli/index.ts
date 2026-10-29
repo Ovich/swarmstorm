@@ -912,7 +912,8 @@ async function main(): Promise<void> {
       const m = await board.post(p, body, {
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
-        ...(args.verb === "agree" && args.flag("--with") ? { with: args.flag("--with")!.split(",") } : {}),
+        // every --with counts, each a seat or a comma list of seats (S5)
+        ...(args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}),
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
@@ -921,7 +922,7 @@ async function main(): Promise<void> {
         // posting is claiming (D7)
         ...(m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : []),
         ...unmatched,
-        ...(args.verb === "agree" && m.mentions?.length ? [`parties: ${m.mentions.join(", ")}, woken when its file merges`] : []),
+        ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
       await emitHeard(p, json, human);
