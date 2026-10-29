@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, SQLITE_PATH;
+var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH;
 var init_home = __esm({
   "src/board/home.ts"() {
     "use strict";
@@ -59,6 +59,7 @@ var init_home = __esm({
     NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
     OLD_HOME = path.join(os.homedir(), "charrette_appdata");
     DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
+    HOME_OVERRIDE = homeFromEnv && path.resolve(homeFromEnv) !== NEW_HOME && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT : null;
     SQLITE_PATH = path.join(DATA_ROOT, "swarm.sqlite");
   }
 });
@@ -222,14 +223,14 @@ function wakes(m, me, subs) {
   const e = eventOf(m);
   if (!e) return false;
   if (EVENTS[e].always) return true;
-  return subs.some((s) => !s.carry && s.event === e && (s.scope === "any" || m.run === me.run));
+  return subs.some((s) => !s.carry && (s.event === e || e === "joined" && s.event === "composition") && (s.scope === "any" || m.run === me.run));
 }
 function carries(m, me, subs) {
   if (m.from === me.name && !(m.event && isEvent(m.event) && EVENTS[m.event].toAuthor)) return false;
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
-  if (EVENTS[e].ambient && m.run === me.run) return true;
+  if ((EVENTS[e].ambient || e === "joined") && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
 var word, FOREGROUND_WAIT_MS, FOREGROUND_NOTE, foregroundWait, EVENTS, NAMES, isEvent;
@@ -1979,11 +1980,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const lines = entries.map((e) => `${e.seat}${e.nick ? ` ${e.nick}` : ""}${showRole && e.role ? ` ${e.role}` : ""}${e.area ? ` (${e.area})` : ""}: ${e.state}`);
     return { run: run3, entries, showRole, lines };
   };
-  const postComposition = (author, seat, sign, tag) => {
-    const c = compositionOf(author.run);
+  const seatWho = (run3, seat) => {
+    const c = compositionOf(run3);
     const e = c.entries.find((x) => x.seat === seat);
-    const who = `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
-    insertMessage(author, `${sign} ${who}${tag ? ` ${tag}` : ""}`, null, "event", void 0, { event: EVENTS.composition.name });
+    return `${seat}${e?.nick ? ` ${e.nick}` : ""}${c.showRole && e?.role ? ` ${e.role}` : ""}${e?.area ? ` (${e.area})` : ""}`;
+  };
+  const postComposition = (author, seat, sign, tag) => {
+    insertMessage(author, `${sign} ${seatWho(author.run, seat)}${tag ? ` ${tag}` : ""}`, null, "event", void 0, { event: EVENTS.composition.name });
   };
   const setSubs = (p, subs) => {
     db.prepare("UPDATE participants SET subs = ? WHERE id = ?").run(JSON.stringify(subs), p.id);
@@ -2433,12 +2436,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
         });
         const member = participantById(id);
         claims.claimDeclared(member, files);
-        insertMessage(member, `joined: ${doing}`, null, "event", void 0, { event: EVENTS.joined.name });
-        if (entry2 !== "again") postComposition(member, seat, "+", entry2 === "back" ? "back" : "");
+        insertMessage(member, `joined: ${doing} \xB7 + ${seatWho(run3, seat)}${entry2 === "back" ? " back" : ""}`, null, "event", void 0, { event: EVENTS.joined.name });
         if (entry2 === "new") {
           const declared = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run3).n);
           const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run3, ORCHESTRATOR2).n);
-          if (declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run3) === void 0) {
+          const phased = db.prepare("SELECT 1 FROM messages WHERE run = ? AND event = ?").get(run3, EVENTS.phase.name) !== void 0;
+          if (!phased && declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run3) === void 0) {
             insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", void 0, { event: EVENTS["all-joined"].name });
           }
         }
@@ -8848,10 +8851,11 @@ var phaseHeaders = async (run3, shownTo, showPause = true) => {
   const r = (await board.runs()).find((x) => x.id === run3);
   const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
   const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo.name)].join(" ")})` : whole;
-  if (r?.paused == null || !showPause) return { printed: short, full: whole };
+  const first = !shown || shown.first;
+  if (r?.paused == null || !showPause) return { printed: short, full: whole, first };
   const why = r.pausedPerson ? `: waiting on the person: ${r.paused || "their decision"}` : r.paused ? `: ${r.paused}` : "";
   const withPause = (head) => [head, `PAUSED${why}`].filter(Boolean).join("  ");
-  return { printed: withPause(short), full: withPause(whole) };
+  return { printed: withPause(short), full: withPause(whole), first };
 };
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
 var withNext = (me, d) => ({
@@ -8871,7 +8875,7 @@ var printDelivery = (d) => {
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var fwd = (p) => p.split("\\").join("/");
-var self = () => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
+var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 var startLinkLine = (member) => `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
 var SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
 var waitCommand = (name, foreground = false) => {
@@ -8880,13 +8884,14 @@ var waitCommand = (name, foreground = false) => {
 };
 var listensInForeground = (p) => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";
 var listenNow = (p, afterPhase = false) => listensInForeground(p) ? `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}` : `start your listener now, in the background (your harness's background task): ${waitCommand(p.name)}`;
-var owedLine = async (p, thread = true) => {
+var owedLine = async (p, thread = true, brief = false) => {
   const paused = await pausedLine(p);
   if (paused) return paused;
   const ph = await board.owedPhase(p);
   if (!ph) return null;
   const read = thread && profileOf(p.kind).wholeThread ? `Read the whole phase first: ${[...self(), "thread", "--as", shellWord(p.name)].join(" ")}. ` : "";
-  return `phase ${ph.name} is open and asks: ${ph.text}. ${read}Do your part now, then: ${[...self(), "done", shellWord(ph.name), "--as", shellWord(p.name)].join(" ")}`;
+  const asks = brief ? `phase ${ph.name} is yours: ` : `phase ${ph.name} is open and asks: ${ph.text}. `;
+  return `${asks}${read}Do your part now, then: ${[...self(), "done", shellWord(ph.name), "--as", shellWord(p.name)].join(" ")}`;
 };
 var pausedLine = async (p) => {
   if (p.seat === "orchestrator" || p.ended) return null;
@@ -9310,7 +9315,7 @@ ${USAGE}`);
       const next = `wait for the next phase, in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
       emit({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, next }, () => {
         const late = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : null;
-        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: ${r.progress.done}/${r.progress.of} members done${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
+        console.log(late ?? `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`);
         console.log(next);
       });
       break;
@@ -9479,7 +9484,7 @@ ${USAGE}`);
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
         else if (mentionsOnly && await board.idle(p)) {
-          const next2 = `nothing for you: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; the orchestrator dispatches you again when it has work`;
+          const next2 = `nothing for you now: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; your seat stays in the run, and the orchestrator may dispatch you to it again`;
           emit({ ...d, idle: true, next: next2 }, next2);
         } else {
           const next2 = await pausedLine(p) ?? (p.seat === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
@@ -9487,17 +9492,20 @@ ${USAGE}`);
         }
         break;
       }
-      const owes = await owedLine(p);
+      const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
+      const owes = phaseEvent && !profileOf(p.kind).wholeThread ? null : await owedLine(p, true, true);
       const pausedNow = await pausedLine(p);
       const rearm = pausedNow ? pausedNow : listensInForeground(p) ? owes ? `${owes}
 only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : `wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}` : p.seat === "orchestrator" ? `act on it, then start this listener again, in the background: ${again.join(" ")}` : `start this listener again, in the background while you work, in the foreground when you are waiting (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`;
-      const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
-${rearm}` : rearm;
-      const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p, !pausedNow);
+      const next = owes && !pausedNow && !listensInForeground(p) ? `${rearm}
+${owes}` : rearm;
+      const { printed: phasePrinted, full: phaseFull, first: phaseNew } = await phaseHeaders(p.run, p, !pausedNow);
+      const phase = phaseNew && !phaseEvent ? phasePrinted : null;
       const delivered = mentionsOnly ? DELIVERED_LINE : null;
       emit({ phase: phaseFull, next, ...d, ...delivered ? { delivered } : {} }, () => {
-        if (phase) console.log(phase);
+        if (listensInForeground(p) && phase) console.log(phase);
         console.log(next);
+        if (!listensInForeground(p) && phase) console.log(phase);
         printDelivery(d);
         if (delivered) console.log(delivered);
       });
