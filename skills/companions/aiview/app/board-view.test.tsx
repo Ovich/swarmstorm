@@ -54,7 +54,7 @@ test("the tab row: the Archive icon, then each open run with its code, title and
   expect(tabs().queryByText("All")).toBeNull();
   // the run tabs, then the Analytics pill drawn beside the merge lock at the row's end (SL4)
   // a brainstorm's seat rows are seats, never slices to merge: never "0/1"
-  expect(names.slice(1, -2)).toEqual(["RTSessions with refresh tokensplanlive · 2/7", "ALAudit logplanlive · 0/3", "NMNaming the kindsbrainstormlive · 1 seat"]);
+  expect(names.slice(1, -2)).toEqual(["RTSessions with refresh tokens", "ALAudit log", "NMNaming the kinds"]);
   expect(names.slice(-2)).toEqual(["All runs", "merge lock free"]);
   for (const r of CLOSED) expect(tabs().queryByText(r.title)).toBeNull();
   expect(pressed()).toBe(tabOf("Naming the kinds"));
@@ -90,7 +90,7 @@ test("a closed run in the URL opens as an archived tab, read only, × back to th
   show([APP], 4);
   const archived = screen.getByText("The login page").closest('[data-component="ArchivedTab"]') as HTMLElement;
   expect(archived.getAttribute("aria-pressed")).toBe("true");
-  expect(within(archived).getByText(/^archived/)).toBeTruthy();
+  expect(archived.getAttribute("title")).toMatch(/· archived$/);
   expect(convo().getByText(/read only · 4 of 4 slices/)).toBeTruthy();
   expect(convo().getByText(/merged 9f0c1d2/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close the archived run" }));
@@ -446,8 +446,8 @@ test("no open run: the board opens on the most recently closed, as its archived 
   show([APP], null, [ALL_CLOSED]);
   const archived = screen.getByText("Theme tokens").closest('[data-component="ArchivedTab"]') as HTMLElement;
   expect(archived.getAttribute("aria-pressed")).toBe("true");
-  expect(archived.textContent).toContain("2 seats");
-  expect(archived.textContent).not.toContain("2/2");
+  expect(archived.getAttribute("title")).toContain("2 seats");
+  expect(archived.getAttribute("title")).not.toContain("2/2");
   expect(convo().getByText(/read only · 2 seats$/)).toBeTruthy();
   expect(convo().queryByText(/slices/)).toBeNull();
 });
@@ -493,11 +493,13 @@ test("a phase opened more than once reads its iteration: build 1, verify 1, buil
   expect(names).toEqual(["build 1", "verify 1", "build 2", "verify 2"]);
 });
 
-test("a run that names a protocol shows it in its tab's chip, the kind otherwise", () => {
+test("a run that names a protocol shows it on its tab's hover, the kind otherwise; the tab prints only dot, code, title", () => {
   const withProtocol = { ...LIVE, runs: LIVE.runs.map((r) => (r.run === 1 ? { ...r, protocol: "build-verify" } : r)) };
   show([APP], null, [withProtocol]);
-  expect(tabOf("Sessions with refresh tokens").querySelector(".kind")?.textContent).toBe("build-verify");
-  expect(tabOf("Audit log").querySelector(".kind")?.textContent).toBe("plan");
+  expect(tabOf("Sessions with refresh tokens").getAttribute("title")).toBe("Sessions with refresh tokens · build-verify · plan run · 2/7 merged · live");
+  expect(tabOf("Audit log").getAttribute("title")).toContain("· plan run ·");
+  expect(tabOf("Audit log").querySelector(".kind")).toBeNull();
+  expect(tabOf("Audit log").querySelector('[data-component="RunState"]')!.getAttribute("aria-label")).toBe("live");
 });
 
 // ── idea 1: a stall named by its rule (agent-ergonomics, build 1.4: V1, V3) ──────────

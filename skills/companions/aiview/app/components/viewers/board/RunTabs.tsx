@@ -6,33 +6,38 @@ import { runHue, seatCount, workerCount, type RunId, type RunTab } from "../../.
 import { AnalyticsButton } from "./AnalyticsButton.tsx";
 import { MergeLock } from "./MergeLock.tsx";
 
-/** A tab's count: a plan's slices merged of its slices, a brainstorm's seats (its slice rows are seats, never slices
- *  to merge), as the archive reads them; none for a run with none. */
-function TabCount({ tab }: { tab: RunTab }) {
+/** A tab's count, as words: a plan's slices merged of its slices, a brainstorm's seats, a task's workers; null for none. */
+function countText(tab: RunTab): string | null {
   if (tab.of === 0) return null;
-  return <span className="of">{tab.kind === "brainstorm" ? seatCount(tab.of) : tab.kind === "task" ? workerCount(tab.of) : `${tab.done}/${tab.of}`}</span>;
+  return tab.kind === "brainstorm" ? seatCount(tab.of) : tab.kind === "task" ? workerCount(tab.of) : `${tab.done}/${tab.of} merged`;
 }
 
-/** The tab's status pill: live or quiet in its colour, the count after it. */
-function TabState({ tab }: { tab: RunTab }) {
+/** What the tab no longer prints, said on hover: the protocol or kind, the count and the state. */
+function tabTip(tab: RunTab, state: string): string {
+  return [tab.title, tab.protocol ? `${tab.protocol} · ${tab.kind} run` : `${tab.kind} run`, countText(tab), state].filter(Boolean).join(" · ");
+}
+
+/** The tab's state as a dot alone: live, quiet or closed in its colour, named for a screen reader. */
+function StateDot({ state }: { state: string }) {
+  return <span className={`dot s-${state}`} data-component="RunState" role="img" aria-label={state} />;
+}
+
+/** The run's code, in its colour. */
+function Code({ tab }: { tab: RunTab }) {
   return (
-    <span className={`st s-${tab.state}`} data-component="RunState" aria-label={tab.state}>
-      {tab.state}
-      {tab.of > 0 && " · "}
-      <TabCount tab={tab} />
+    <span className="code" style={{ color: `hsl(${runHue(tab.code)} 55% 45%)` }}>
+      {tab.code}
     </span>
   );
 }
 
+/** One open run: its state dot, its code and its title; the rest on hover (simpler tab, 2026-10-29). */
 function RunTabButton({ tab, picked, onPick }: { tab: RunTab; picked: boolean; onPick: () => void }) {
   return (
-    <button className={tab.state === "closed" ? "run closed" : "run"} data-component="RunTab" aria-pressed={picked} onClick={onPick}>
-      <span className="code" style={{ color: `hsl(${runHue(tab.code)} 55% 45%)` }}>
-        {tab.code}
-      </span>
+    <button className={tab.state === "closed" ? "run closed" : "run"} data-component="RunTab" aria-pressed={picked} title={tabTip(tab, tab.state)} onClick={onPick}>
+      <StateDot state={tab.state} />
+      <Code tab={tab} />
       <span className="t">{tab.title}</span>
-      <span className="kind" title={tab.protocol ? `${tab.kind} run, protocol ${tab.protocol}` : undefined}>{tab.protocol ?? tab.kind}</span>
-      <TabState tab={tab} />
     </button>
   );
 }
@@ -86,16 +91,10 @@ export function RunTabs({
         <RunTabButton key={t.run} tab={t} picked={!analytics && pick === t.run} onPick={() => onPick(t.run)} />
       ))}
       {archived && (
-        <span className="run archived" data-component="ArchivedTab" aria-pressed={!analytics && pick === archived.run}>
-          <span className="code" style={{ color: `hsl(${runHue(archived.code)} 55% 45%)` }}>
-            {archived.code}
-          </span>
+        <span className="run archived" data-component="ArchivedTab" aria-pressed={!analytics && pick === archived.run} title={tabTip(archived, "archived")}>
+          <StateDot state="closed" />
+          <Code tab={archived} />
           <span className="t">{archived.title}</span>
-          <span className="kind">{archived.protocol ?? archived.kind}</span>
-          <span className="st">
-            archived{archived.of > 0 && " · "}
-            <TabCount tab={archived} />
-          </span>
           <button className="x" aria-label="Close the archived run" onClick={() => onPick(tabs[0]?.run ?? null)}>
             ×
           </button>
