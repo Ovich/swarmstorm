@@ -40,7 +40,10 @@ except `open`, `seat`, `close` and `status`.
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
-   `--protocol none` for a run with no phases on purpose.
+   `--protocol none` for a run with no phases on purpose. A run that builds code (plan, task)
+   takes `--onto <branch>`, the branch its work merges into: each member's join makes its
+   worktree from it, under the data home, never in the repository, and the cleanup checks a
+   worktree's branch is merged into it. Without `--onto`, the checkout's branch at the open.
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
    opens this run's tab), then the line that starts your link. `open`'s last line is the next
@@ -53,7 +56,8 @@ except `open`, `seat`, `close` and `status`.
 
 ## Dispatch
 
-**The `orchestrate` skill dispatches.** For a kind without worktree, no `isolation`, and each
+**The `orchestrate` skill dispatches.** Never with `isolation`: a code run's member gets its
+worktree from its join. For a kind without worktree, each
 brief carries `--as <group>/<seat>` and the join line, whose answer tells the seat how it
 waits: in the foreground; a seat runs on the plugin's
 `brainswarm-seat` agent, as the `brainswarm` skill says.
@@ -182,3 +186,8 @@ open), or the brainstorm concluded; it archives the run's posts. **Before ending
 your session, close** the run you opened unless it is still being worked: one left open stays an
 active tab. `$S status` flags a run idle a day with its close command; ask the person, then close. A member's pending `wait`, and any call it makes after, answers with the
 `end` command to run and the summary to return.
+
+**`close` cleans up the worktrees the board made for the run**: each one clean and merged goes,
+its branch kept; its answer names each one kept and why (uncommitted changes, commits not
+merged). Merge or discard what it names, then `$S worktree prune`, which sweeps every worktree
+of a closed run that is clean and merged, and names the rest.

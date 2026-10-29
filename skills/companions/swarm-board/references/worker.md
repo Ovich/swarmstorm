@@ -13,9 +13,14 @@ the foreground: an agent that ends its turn on a background task of its own is n
 
 ## The loop
 
-1. **Join, from your worktree, before anything else**, the install and a rebase included, so the
+1. **Join, from the repository's checkout, before anything else**, the install included, so the
    roster shows you from the start:
-   `$S join --run <run> --seat <your seat> --doing "waiting for a task"`. Read the roster it prints: who is there, doing what, holding
+   `$S join --run <run> --seat <your seat> --doing "waiting for a task" --as <group>/<seat>`. **The board makes your
+   worktree**, outside the repository, on a branch of its own from `<target>`, or gives you back
+   the one your seat already has; its answer prints the path. **That path is where you work**:
+   every file by its absolute path under it, every git command as `git -C <path>`, the install
+   run there; never `cd` into it (a shell parked in it keeps the folder from being removed), and
+   every `$S` call carries `--as`. Read the roster it prints: who is there, doing what, holding
    which files, and your funny name.
 2. **Start your link, then your listener, as your first two background tasks.** After the
    roster, `join` prints `start your link now, in the background …`: run that command, as
@@ -50,18 +55,21 @@ the foreground: an agent that ends its turn on a background task of its own is n
       resolved a conflict in <file>, tell them: swarm post "@<them> I resolved <file>: <how>"
       --about <file>`. For each file you resolved, run that post with `<how>` filled in.
    4. Run the task's done-when on the rebased branch, then fast-forward `<target>` from your own
-      worktree: `git push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
+      worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
    5. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`: the
       report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
       orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
       change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.
+      Its answer says whether your worktree went, clean and merged, the branch kept: read it, and
+      for your next task join again as it prints.
 7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
    post after the merge; a task that merged nothing reports in one post to `@orchestrator`
    (`post --file` for a long one). A fix task reports per finding id what changed. Then
    `$S release` the files you no longer touch, and back to 3.
 8. **The run closes** (the closed line): `$S end`, then return one line per task you did. `end`
-   claims or flags what you wrote without a claim, releases your claims and the lock, and makes
+   refuses while your worktree holds work not merged, naming it and the merge; once it ends, it
+   removes the worktree. It claims or flags what you wrote without a claim, releases your claims and the lock, and makes
    your listener return empty: do not re-arm it. A task that stops on a finding posts it first:
    `$S post "@orchestrator <the finding>"`, then waits.
 
@@ -78,9 +86,8 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 
 ## Along the way
 
-- **One command per shell call**: run from the worktree root, no `cd … &&`, no pipes into
-  xargs, no `$(…)`; `git -C <dir>` instead of cd. The harness's worktree guard refuses what it
-  cannot verify stays in your worktree, and each refusal costs a retry.
+- **One command per shell call**: absolute paths into your worktree, no `cd … &&`, no pipes into
+  xargs, no `$(…)`; `git -C <path>` instead of cd.
 - **`$S doing "<text>"`** at each step another worker would want to know: the module you are
   in, a test going green, a merge coming.
 - **A mention that asks you something is answered before you go on.**

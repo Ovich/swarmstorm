@@ -77,7 +77,7 @@ the person wants to steer closely) is orchestrated here.
 - **The brief is the only thing sent.** Read `references/brief.md` before the first dispatch.
 - **Check blockers before every dispatch.**
 - **Every ready member's `Agent` call goes in one message**, each in the background, nothing between them.
-- **A member whose kind needs a worktree** gets `isolation: "worktree"`, its own install, and its base named in the brief. On Windows, set `git config core.longpaths true` before the first worktree removal.
+- **No member is dispatched with `isolation`**: a member whose kind needs a worktree gets it from its join (the `swarm-board` skill), and its brief names its base and its install. On Windows, set `git config core.longpaths true` before the first worktree removal.
 
 ## Roles
 

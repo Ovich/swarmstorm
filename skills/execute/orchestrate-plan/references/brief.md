@@ -10,7 +10,7 @@ Dispatched on the `swarm-worker` agent, which holds how a worker does a task.
 ```markdown
 You are worker `<wN>`, `<role and area>`, of plan `<file name>` (aiview id `#<id>`, project `<slug>`, read through the aiview skill's tool), board run `<run id>` on `<repository>`. Join the board before anything else, the install and the rebase included; what the phases before left is on the thread: `thread <phase>`.
 
-**Workspace**: <the worktree>, based on `<branch>` at `<sha>`; merge into `<branch>` as the worker side says, fast-forward only, no pull request. **Prepare**: `<the command, install included>`.
+**Workspace**: the worktree your join makes from `<branch>` (at `<sha>`), its path in the join's answer; merge into `<branch>` as the worker side says, fast-forward only, no pull request. **Prepare**: `<the command, install included>`.
 
 <the testing prompt of the mandate's `tests` answer, from `references/tests.md`>
 

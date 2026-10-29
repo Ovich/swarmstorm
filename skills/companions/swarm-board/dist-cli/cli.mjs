@@ -370,7 +370,7 @@ var init_events = __esm({
 
 // src/board/claims.ts
 function claimsOf(deps) {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf } = deps;
   const clearFlags = () => {
     db.prepare("DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path)").run();
     db.prepare(
@@ -402,11 +402,11 @@ function claimsOf(deps) {
     const rows = db.prepare("SELECT seq, body, about, mentions FROM messages WHERE repo = ? AND author = ? AND seq > ? AND kind != 'event' AND by_board = 0").all(p.repo, p.id, since);
     const base = rel.split("/").pop();
     const names = (r) => {
-      const about = r.about == null ? "" : fold(slashes(String(r.about)));
-      const f = fold(rel);
+      const about = r.about == null ? "" : fold2(slashes(String(r.about)));
+      const f = fold2(rel);
       if (about && (about === f || f.endsWith(`/${about}`))) return true;
-      const body = fold(String(r.body));
-      return body.includes(f) || body.includes(fold(base));
+      const body = fold2(String(r.body));
+      return body.includes(f) || body.includes(fold2(base));
     };
     const told = rows.filter(names).map((r) => ({ seq: Number(r.seq), mentions: JSON.parse(String(r.mentions)) }));
     return holders.every((h) => {
@@ -456,10 +456,10 @@ function claimsOf(deps) {
     },
     claimByPost(me, m) {
       if (m.kind !== "msg" && m.kind !== "agreement" || !m.about) return null;
-      const about = fold(relPath(me.repo, m.about) ?? slashes(m.about));
+      const about = fold2(relPath(me.repo, m.about) ?? slashes(m.about));
       return transaction(() => {
         const asked = db.prepare("SELECT path, kind FROM claim_requests WHERE repo = ? AND participant = ?").all(me.repo, me.id).find((r) => {
-          const x = fold(String(r.path));
+          const x = fold2(String(r.path));
           return x === about || x.endsWith(`/${about}`);
         });
         if (!asked) return null;
@@ -482,36 +482,36 @@ function claimsOf(deps) {
       });
     },
     askedAbout(me, author, m) {
-      const about = fold(relPath(me.repo, m.about) ?? slashes(m.about));
+      const about = fold2(relPath(me.repo, m.about) ?? slashes(m.about));
       const mine = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ? AND since_seq < ?").all(me.repo, me.id, m.seq);
-      const rel = mine.map((r) => String(r.path)).find((x) => fold(x) === about || fold(x).endsWith(`/${about}`));
+      const rel = mine.map((r) => String(r.path)).find((x) => fold2(x) === about || fold2(x).endsWith(`/${about}`));
       if (!rel) return null;
       const theirs = db.prepare("SELECT 1 FROM claims WHERE repo = ? AND path = ? AND participant = ? AND since_seq < ?").get(me.repo, rel, author, m.seq);
       return theirs ? null : rel;
     },
     heldInOtherRun(p, rel) {
-      const f = fold(rel);
+      const f = fold2(rel);
       const rows = db.prepare("SELECT l.path FROM claim_log l JOIN participants q ON q.id = l.participant WHERE l.repo = ? AND q.run != ?").all(p.repo, p.run);
       return rows.some((r) => {
-        const x = fold(String(r.path));
+        const x = fold2(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       });
     },
     holderNames(repo, about) {
-      const f = fold(relPath(repo, about) ?? slashes(about));
+      const f = fold2(relPath(repo, about) ?? slashes(about));
       if (!f) return [];
       const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo);
       return [...new Set(rows.filter((r) => {
-        const x = fold(String(r.path));
+        const x = fold2(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       }).map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
     holds(p, about) {
-      const f = fold(relPath(p.repo, about) ?? slashes(about));
+      const f = fold2(relPath(p.repo, about) ?? slashes(about));
       if (!f) return false;
       const rows = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(p.repo, p.id);
       return rows.some((r) => {
-        const x = fold(String(r.path));
+        const x = fold2(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       });
     },
@@ -617,7 +617,7 @@ function claimsOf(deps) {
     },
     merged(me, sha, files, conflicts) {
       const rels = [...new Set(files.map((f) => relPath(me.repo, f)).filter((x) => x !== null))];
-      const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold(slashes(f)))) : null;
+      const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold2(slashes(f)))) : null;
       const wanted = new Set(rels);
       const told = /* @__PURE__ */ new Set();
       const iface = /* @__PURE__ */ new Set();
@@ -653,10 +653,10 @@ function claimsOf(deps) {
           }
         }
         const agreed = /* @__PURE__ */ new Set();
-        const foldedWanted = new Set(rels.map(fold));
+        const foldedWanted = new Set(rels.map(fold2));
         const live = new Set(db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo).map((o) => `${o.plan}/${o.seat}`));
         for (const a of db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo)) {
-          if (!foldedWanted.has(fold(slashes(String(a.about))))) continue;
+          if (!foldedWanted.has(fold2(slashes(String(a.about))))) continue;
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
           for (const n of parties) if (n !== me.name && live.has(n) && !told.has(n)) agreed.add(n);
         }
@@ -669,7 +669,7 @@ function claimsOf(deps) {
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
         for (const rel of rels) {
-          if (conflicted && !conflicted.has(fold(rel))) continue;
+          if (conflicted && !conflicted.has(fold2(rel))) continue;
           const ids = new Set(holdersOf(me.repo, rel).map((c) => c.participant));
           const held = db.prepare("SELECT l.participant FROM claim_log l JOIN participants p ON p.id = l.participant WHERE l.repo = ? AND l.path = ? AND p.run = ? ORDER BY l.rowid").all(me.repo, rel, me.run);
           for (const r of held) ids.add(Number(r.participant));
@@ -704,8 +704,8 @@ function distinctFlags(messages) {
   const seen = /* @__PURE__ */ new Set();
   return messages.filter((m) => {
     if (!isBoardFlag(m)) return false;
-    const [, path10 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
-    const key = JSON.stringify([Number(m.author), foldPath(String(path10)), holder]);
+    const [, path11 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
+    const key = JSON.stringify([Number(m.author), foldPath(String(path11)), holder]);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -908,7 +908,7 @@ function computeRun(db, r, now, silentAfterMs) {
     if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
     holdersByPath.set(key, entry2);
   }
-  const sharersOf = (path10) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path10)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
+  const sharersOf = (path11) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path11)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
   const byId = new Map(people.map((p) => [Number(p.id), p]));
   const membershipOf = (pid) => {
     const p = byId.get(pid);
@@ -920,10 +920,10 @@ function computeRun(db, r, now, silentAfterMs) {
     return x.from < y.to && y.from < x.to;
   };
   const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
-  const namesPath = (m, path10) => {
-    if (aboutNames(m.about, path10)) return true;
+  const namesPath = (m, path11) => {
+    if (aboutNames(m.about, path11)) return true;
     const body = foldPath(String(m.body));
-    return body.includes(foldPath(path10)) || body.includes(foldPath(path10.split("/").pop()));
+    return body.includes(foldPath(path11)) || body.includes(foldPath(path11.split("/").pop()));
   };
   const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
   const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
@@ -931,14 +931,14 @@ function computeRun(db, r, now, silentAfterMs) {
   let everyHolderTold = 0;
   let agreed = 0;
   let agreedBeforeMerge = 0;
-  for (const { path: path10, holders: everyHolder } of holdersByPath.values()) {
-    const sharers = sharersOf(path10);
+  for (const { path: path11, holders: everyHolder } of holdersByPath.values()) {
+    const sharers = sharersOf(path11);
     const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
     if (holders.length < 2) continue;
     const tellTimes = [];
     let told = true;
     for (let i = 1; i < holders.length; i++) {
-      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path10));
+      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path11));
       tellTimes.push(...tells.map((m) => ms(m.at)));
       const mentioned = (e) => tells.some((m) => {
         const named = JSON.parse(String(m.mentions));
@@ -947,8 +947,8 @@ function computeRun(db, r, now, silentAfterMs) {
       if (!holders.slice(0, i).every(mentioned)) told = false;
     }
     const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
-    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path10));
-    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path10)) : holders.includes(m.participant));
+    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path11));
+    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path11)) : holders.includes(m.participant));
     const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
     if (told) {
       everyHolderTold++;
@@ -958,13 +958,13 @@ function computeRun(db, r, now, silentAfterMs) {
       }
     }
     const met = mergedWith.map((m) => m.conflicts);
-    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path10))) ? true : met.some((c) => c === null) ? null : false;
+    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path11))) ? true : met.some((c) => c === null) ? null : false;
     const declaredInterface = holders.some(
-      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path10))
+      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path11))
     );
-    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path10));
+    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path11));
     perFile.push({
-      path: path10,
+      path: path11,
       holders: holders.map((h) => nameOf(byId.get(h))),
       interface: declaredInterface || claimedInterface,
       told,
@@ -998,17 +998,17 @@ function computeRun(db, r, now, silentAfterMs) {
     }
   };
 }
-function skepticOf(db, run2, seats) {
+function skepticOf(db, run3, seats) {
   const seated = (seat) => new Set(seats.filter((p) => String(p.seat) === seat).map((p) => Number(p.id)));
   const named = seated(SKEPTIC);
   if (named.size) return named;
-  const rows = db.prepare("SELECT id, on_events FROM seats WHERE run = ? AND on_events IS NOT NULL ORDER BY ord").all(run2);
+  const rows = db.prepare("SELECT id, on_events FROM seats WHERE run = ? AND on_events IS NOT NULL ORDER BY ord").all(run3);
   const subscribesToAgreement = (row) => JSON.parse(String(row.on_events)).flatMap((e) => e.split(",")).some((e) => e.trim().replace(/^(any|main):/, "") === "agreement");
   const subscribed = rows.find(subscribesToAgreement);
   return subscribed ? seated(String(subscribed.id)) : /* @__PURE__ */ new Set();
 }
-function debateOf(db, run2, seats, messages) {
-  const skeptic = skepticOf(db, run2, seats);
+function debateOf(db, run3, seats, messages) {
+  const skeptic = skepticOf(db, run3, seats);
   const seatIds = new Set(seats.map((p) => Number(p.id)));
   const questionOf = (m) => {
     const about = m.about == null ? "" : String(m.about).trim();
@@ -1084,38 +1084,38 @@ function debateOf(db, run2, seats, messages) {
     unsourcedOf
   };
 }
-function withMemberFigures(run2) {
-  const debated = run2.brainstorm !== void 0;
+function withMemberFigures(run3) {
+  const debated = run3.brainstorm !== void 0;
   const marked = (m, what) => m.marks.filter((x) => x.what === what).length;
   const lengthOf = (i) => ms(i.to) - ms(i.from);
-  const members = run2.members.map((m) => ({
+  const members = run3.members.map((m) => ({
     ...m,
-    waitingMs: m.waitingMs ?? (run2.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null),
+    waitingMs: m.waitingMs ?? (run3.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null),
     agreementsMade: m.agreementsMade ?? marked(m, "agreement"),
     endorsed: m.endorsed ?? (debated ? marked(m, "endorsed") : null),
     objections: m.objections ?? (debated ? marked(m, "objected") : null),
     // a summary from before the events were read (D45) reads its member as not estimated
     estimated: m.estimated ?? false
   }));
-  const plan = run2.plan && {
-    ...run2.plan,
-    slices: slicesOfSummary(run2.plan.slices),
+  const plan = run3.plan && {
+    ...run3.plan,
+    slices: slicesOfSummary(run3.plan.slices),
     shared: {
-      ...run2.plan.shared,
-      estimated: run2.plan.shared.estimated ?? false,
+      ...run3.plan.shared,
+      estimated: run3.plan.shared.estimated ?? false,
       // a summary from before `told` (D46) reads each file told, as its list read it
-      perFile: run2.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
+      perFile: run3.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
     }
   };
-  return { ...run2, members, ...plan ? { plan } : {} };
+  return { ...run3, members, ...plan ? { plan } : {} };
 }
 function slicesOfSummary(slices) {
   const { estimated, ...rest } = slices;
   return { ...rest, timesEstimated: slices.timesEstimated ?? estimated ?? false };
 }
-function summarize(db, run2, silentAfterMs) {
-  const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run2);
-  if (!r) throw new Error(`no run ${run2}`);
+function summarize(db, run3, silentAfterMs) {
+  const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
+  if (!r) throw new Error(`no run ${run3}`);
   return withMemberFigures(computeRun(db, r, Date.now(), silentAfterMs));
 }
 function totalsOf(runs) {
@@ -1204,8 +1204,8 @@ function filesAcross(runs) {
       byPath.set(key, entry2);
     }
   }
-  return [...byPath.values()].map(({ path: path10, perRun }) => ({
-    path: path10,
+  return [...byPath.values()].map(({ path: path11, perRun }) => ({
+    path: path11,
     runs: perRun.map((x) => x.run),
     holders: new Set(perRun.flatMap((x) => x.holders)).size,
     agreements: perRun.filter((x) => x.agreed).length,
@@ -1272,10 +1272,10 @@ var init_stats = __esm({
     ms = (at) => Date.parse(String(at));
     iso = (t) => new Date(t).toISOString();
     firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
-    aboutNames = (about, path10) => {
+    aboutNames = (about, path11) => {
       if (about == null) return false;
       const a = foldPath(String(about).replace(/\\/g, "/"));
-      const f = foldPath(path10);
+      const f = foldPath(path11);
       return a === f || f.endsWith(`/${a}`);
     };
     MERGED_BODY = /^merged \S+/;
@@ -1660,6 +1660,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "resumed_at", "resumed_at TEXT");
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
   upkeep("runs", "protocol", "protocol TEXT");
+  upkeep("runs", "base", "base TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "phase_watch", "phase_watch TEXT");
@@ -1742,6 +1743,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     paused: r.paused == null ? null : String(r.paused),
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
+    base: r.base == null ? null : String(r.base),
     id: Number(r.id),
     repo: String(r.repo),
     kind: profileOf(String(r.kind ?? "plan")).kind,
@@ -1812,9 +1814,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const insertMessage = (p, body, about, kind, named, extra = {}) => {
     const mentions2 = named ?? extra.parties ?? (kind === "event" ? [] : parseMentions(body, p.plan, openPlans(p.repo), activeNames(p.repo)));
-    const run2 = p.run;
-    if (runRow(run2).state === "closed") throw new Error(`run ${run2} is closed`);
-    const r = db.prepare("INSERT INTO messages (repo, author, body, about, kind, mentions, at, by_board, run, endorses, event, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(p.repo, p.id, body, about, kind, JSON.stringify(mentions2), now(), named ? 1 : 0, run2, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
+    const run3 = p.run;
+    if (runRow(run3).state === "closed") throw new Error(`run ${run3} is closed`);
+    const r = db.prepare("INSERT INTO messages (repo, author, body, about, kind, mentions, at, by_board, run, endorses, event, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(p.repo, p.id, body, about, kind, JSON.stringify(mentions2), now(), named ? 1 : 0, run3, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
     return board2.read(seq);
@@ -1829,7 +1831,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fresh;
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
-  const fold = (s) => CASELESS2 ? s.toLowerCase() : s;
+  const fold2 = (s) => CASELESS2 ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
@@ -1840,15 +1842,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const relPath = (repo, file) => {
     if (!path2.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
-    const abs = fold(path2.resolve(file));
+    const abs = fold2(path2.resolve(file));
     for (const root of roots(repo)) {
-      const r = fold(root);
+      const r = fold2(root);
       if (abs.startsWith(r.endsWith(path2.sep) ? r : r + path2.sep)) return slashes(path2.resolve(file).slice(root.length)) || null;
     }
     return null;
   };
   const doingOf = (id) => String(db.prepare("SELECT doing FROM participants WHERE id = ?").get(id).doing) || "no note";
-  const claims = claimsOf({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf });
+  const claims = claimsOf({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf });
   const unseenRows = (me) => db.prepare(
     `SELECT m.* FROM messages m
          WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
@@ -1938,11 +1940,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
   let watching = null;
   let versions = /* @__PURE__ */ new Map();
   const readVersions = () => new Map(db.prepare("SELECT repo, version FROM changes").all().map((r) => [String(r.repo), Number(r.version)]));
-  const insertSeat = (run2, s, ord) => {
+  const insertSeat = (run3, s, ord) => {
     if (s.on) parseSubscriptions(s.on);
     if (s.busyMax != null && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) throw new Error(`seat ${s.id}: busyMax is a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
-      run2,
+      run3,
       s.id,
       s.role ?? null,
       s.area ?? null,
@@ -1953,11 +1955,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
       s.busyMax ?? null
     );
   };
-  const compositionOf = (run2) => {
-    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run2);
-    const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run2);
-    const goneSet = new Set(db.prepare("SELECT member FROM liveness_warned WHERE run = ? AND cond = 'gone'").all(run2).map((x) => String(x.member)));
-    const plan = String(runRow(run2).plan);
+  const compositionOf = (run3) => {
+    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run3);
+    const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run3);
+    const goneSet = new Set(db.prepare("SELECT member FROM liveness_warned WHERE run = ? AND cond = 'gone'").all(run3).map((x) => String(x.member)));
+    const plan = String(runRow(run3).plan);
     const showRole = new Set(seats.map((s) => s.role == null ? "" : String(s.role))).size > 1;
     const entry2 = (seat, s) => {
       const p = people.find((x) => String(x.seat) === seat);
@@ -1972,7 +1974,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     };
     const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
     const lines = entries.map((e) => `${e.seat}${e.nick ? ` ${e.nick}` : ""}${showRole && e.role ? ` ${e.role}` : ""}${e.area ? ` (${e.area})` : ""}: ${e.state}`);
-    return { run: run2, entries, showRole, lines };
+    return { run: run3, entries, showRole, lines };
   };
   const postComposition = (author, seat, sign, tag) => {
     const c = compositionOf(author.run);
@@ -1990,21 +1992,21 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
   const heldWaits = /* @__PURE__ */ new Map();
-  const orchestratorIn = (run2) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR2).id));
-  const activityOf = (run2, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run2, member);
-  const progressAtOf = (p, run2, a) => Math.max(
+  const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
+  const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
+  const progressAtOf = (p, run3, a) => Math.max(
     a?.grew_at == null ? 0 : Number(a.grew_at),
     p.progress_at == null ? 0 : Date.parse(String(p.progress_at)),
     Date.parse(String(p.joined_at)),
-    run2.resumed_at == null ? 0 : Date.parse(String(run2.resumed_at))
+    run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at))
   );
-  const seatBusyMaxOf = (run2, seat) => {
-    const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run2, seat);
+  const seatBusyMaxOf = (run3, seat) => {
+    const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run3, seat);
     return s?.busy_max == null ? null : Number(s.busy_max);
   };
-  const stateOf = (p, run2, t, presence, withHolder = true) => {
+  const stateOf = (p, run3, t, presence, withHolder = true) => {
     const member = String(p.seat);
-    const a = activityOf(Number(run2.id), member);
+    const a = activityOf(Number(run3.id), member);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const inWait = heldSince != null;
     if (a && Number(a.finished) === 1) return { member, state: "gone", doing: null, since: Number(a.at), reason: "its agent finished without end" };
@@ -2019,24 +2021,24 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return { member, state: "quiet", doing: null, since: joined, reason: t - joined >= NO_TRANSCRIPT_MS ? "no transcript found" : "no activity yet" };
     }
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
-    const stallMs = Number(run2.stall_ms ?? STALL_MS_DEFAULT);
+    const stallMs = Number(run3.stall_ms ?? STALL_MS_DEFAULT);
     const last = a.last_tool == null ? null : String(a.last_tool);
     const lastLine = a.last_line == null ? last : String(a.last_line);
     const said = `; last: "${lastLine ?? ""}"`;
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
-      const owing = owingOf(p, run2, a, t, stallMs);
+      const owing = owingOf(p, run3, a, t, stallMs);
       if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
     if (open) {
       const since = Number(a.open_since);
-      const cap = Number(a.open_shell ?? 0) === 1 ? BUSY_MAX_MS : seatBusyMaxOf(Number(run2.id), member) ?? BUSY_MAX_MS;
+      const cap = Number(a.open_shell ?? 0) === 1 ? BUSY_MAX_MS : seatBusyMaxOf(Number(run3.id), member) ?? BUSY_MAX_MS;
       const long = t - since >= cap;
       return { member, state: "busy", doing: open, since, ...long ? { reason: `call open ${minutes(cap)} min, may be long or hung${said}`, rule: "call" } : {} };
     }
-    const progressed = progressAtOf(p, run2, a);
+    const progressed = progressAtOf(p, run3, a);
     if (t - progressed < stallMs) return { member, state: "working", doing: last, since: progressed };
     const inTurn = a.in_turn == null ? null : Number(a.in_turn) === 1;
     if (inTurn === true && t - progressed < IN_TURN_MS) return { member, state: "working", doing: last, since: progressed };
@@ -2055,23 +2057,23 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return { member, state: "quiet", doing: last, since: progressed, reason };
   };
   const minutes = (ms2) => Math.round(ms2 / 6e4);
-  const phaseIsFor = (run2, seat) => run2.phase_for == null || JSON.parse(String(run2.phase_for)).includes(seat);
-  const owedNameOf = (p, run2) => {
-    if (String(p.seat) === ORCHESTRATOR2 || run2.state !== "open" || run2.phase == null || !phaseIsFor(run2, String(p.seat))) return null;
-    const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run2.id), Number(p.id), String(run2.phase));
-    return done ? null : String(run2.phase);
+  const phaseIsFor = (run3, seat) => run3.phase_for == null || JSON.parse(String(run3.phase_for)).includes(seat);
+  const owedNameOf = (p, run3) => {
+    if (String(p.seat) === ORCHESTRATOR2 || run3.state !== "open" || run3.phase == null || !phaseIsFor(run3, String(p.seat))) return null;
+    const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run3.id), Number(p.id), String(run3.phase));
+    return done ? null : String(run3.phase);
   };
   const othersSettledSince = /* @__PURE__ */ new Map();
-  const owingOf = (p, run2, a, t, stallMs) => {
-    const phase = owedNameOf(p, run2);
+  const owingOf = (p, run3, a, t, stallMs) => {
+    const phase = owedNameOf(p, run3);
     if (phase == null || a.owe_since == null) return null;
     const since = Number(a.owe_since);
     if (t - since >= OWE_WAIT_MS) return { phase, since };
-    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND seat != ?").all(Number(run2.id), Number(p.id), ORCHESTRATOR2);
+    const others = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND id != ? AND seat != ?").all(Number(run3.id), Number(p.id), ORCHESTRATOR2);
     const settled = others.every((o) => {
-      const oa = activityOf(Number(run2.id), String(o.seat));
+      const oa = activityOf(Number(run3.id), String(o.seat));
       const waits = heldWaits.has(Number(o.id)) && (oa == null || Number(oa.open_wait) === 1);
-      return waits || owedNameOf(o, run2) == null;
+      return waits || owedNameOf(o, run3) == null;
     });
     const key = Number(p.id);
     if (!settled) {
@@ -2082,38 +2084,38 @@ async function openBoard(dbPath = SQLITE_PATH) {
     othersSettledSince.set(key, from);
     return t - Math.max(from, since) >= stallMs ? { phase, since } : null;
   };
-  const keepOwingSpan = (run2, p, a, t) => {
+  const keepOwingSpan = (run3, p, a, t) => {
     const set = (oweSince, leftAt2) => {
       const was = a.owe_since == null ? null : Number(a.owe_since);
       if (was === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt2) return;
       const spanChanged = was !== oweSince;
-      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt2, Number(run2.id), String(p.seat));
+      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt2, Number(run3.id), String(p.seat));
     };
     const held = heldWaits.get(Number(p.id));
     const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
-    if (owedNameOf(p, run2) == null) return set(null, null);
+    if (owedNameOf(p, run3) == null) return set(null, null);
     if (inWait) return set(a.owe_since == null ? held : Number(a.owe_since), null);
     if (a.owe_since == null) return;
     const leftAt = a.wait_left_at == null ? t : Number(a.wait_left_at);
     const progressAt = p.progress_at == null ? 0 : Date.parse(String(p.progress_at));
     const otherCall = a.open_tool != null && Number(a.open_wait) !== 1;
-    const lapsed = t - leftAt >= Number(run2.stall_ms ?? STALL_MS_DEFAULT);
+    const lapsed = t - leftAt >= Number(run3.stall_ms ?? STALL_MS_DEFAULT);
     if (otherCall || progressAt > leftAt || lapsed) return set(null, null);
     set(Number(a.owe_since), leftAt);
   };
-  const statesOf = (run2, t) => {
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run2);
+  const statesOf = (run3, t) => {
+    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
     if (!r) return /* @__PURE__ */ new Map();
-    const presence = presenceOf.get(run2) ?? noPresence;
-    const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run2);
+    const presence = presenceOf.get(run3) ?? noPresence;
+    const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run3);
     return new Map(live2.map((p) => [String(p.seat), stateOf(p, r, t, presence)]));
   };
   const LOCK_NAME = /^[a-z0-9:._/-]{1,80}$/;
   const memberRowOf = (id) => db.prepare("SELECT p.*, r.plan AS plan, r.repo AS repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
   const holderOf = (lock, t) => {
     const h = memberRowOf(Number(lock.participant));
-    const run2 = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run));
-    const st = stateOf(h, run2, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
+    const run3 = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run));
+    const st = stateOf(h, run3, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
     return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: st.state, doing: st.doing };
   };
   const lockWaitOf = (id, t) => {
@@ -2151,12 +2153,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (only == null) db.prepare("DELETE FROM named_lock_waiters WHERE participant = ?").run(id);
     return freed;
   };
-  const livenessOf = (run2, st, t) => {
+  const livenessOf = (run3, st, t) => {
     if (!st) return void 0;
-    const a = activityOf(run2, st.member);
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run2);
-    const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run2, st.member);
-    const link = (presenceOf.get(run2) ?? noPresence)(st.member);
+    const a = activityOf(run3, st.member);
+    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
+    const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run3, st.member);
+    const link = (presenceOf.get(run3) ?? noPresence)(st.member);
     const { member: _, ...state } = st;
     return {
       ...state,
@@ -2191,14 +2193,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
     }
     return null;
   };
-  const progressOf = (run2, phase) => {
+  const progressOf = (run3, phase) => {
     if (phase == null) return null;
     const rows = db.prepare(
       `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR2}'`
-    ).all(phase, run2);
-    const runR = runRow(run2);
+    ).all(phase, run3);
+    const runR = runRow(run3);
     const named = (seat) => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
     const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
     const gone = live2.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
@@ -2215,78 +2217,78 @@ async function openBoard(dbPath = SQLITE_PATH) {
     });
     return true;
   };
-  const storeRunStats = (run2) => {
-    const body = summarize(db, run2, STALE_MS);
-    const r = runRow(run2);
-    db.prepare("INSERT OR REPLACE INTO run_stats (run, repo, kind, closed_at, body) VALUES (?, ?, ?, ?, ?)").run(run2, String(r.repo), body.kind, String(r.closed_at), JSON.stringify(body));
+  const storeRunStats = (run3) => {
+    const body = summarize(db, run3, STALE_MS);
+    const r = runRow(run3);
+    db.prepare("INSERT OR REPLACE INTO run_stats (run, repo, kind, closed_at, body) VALUES (?, ?, ?, ?, ?)").run(run3, String(r.repo), body.kind, String(r.closed_at), JSON.stringify(body));
   };
   const board2 = {
-    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol }) {
+    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, base }) {
       const profile = profileOf(kind);
       if (protocol != null && !PROTOCOL_NAME.test(protocol)) throw new Error(`a protocol is named in lower case, digits and dashes (build-verify), got ${protocol}`);
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
-        const r = db.prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null);
-        const run2 = Number(r.lastInsertRowid);
-        seats.forEach((s, i) => insertSeat(run2, s, i));
+        const r = db.prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, base ?? null);
+        const run3 = Number(r.lastInsertRowid);
+        seats.forEach((s, i) => insertSeat(run3, s, i));
         const orchestrator = db.prepare("INSERT INTO participants (run, seat, since_seq, joined_at, subs, nick) VALUES (?, ?, ?, ?, ?, ?)").run(
-          run2,
+          run3,
           ORCHESTRATOR2,
           lastSeq(),
           now(),
           JSON.stringify(profile.defaults.orchestrator),
           unusedNick(repo)
         );
-        insertMessage(participantById(Number(orchestrator.lastInsertRowid)), `run ${run2} opened: ${profile.kind} ${group}, ${title}`, null, "event", void 0, {
+        insertMessage(participantById(Number(orchestrator.lastInsertRowid)), `run ${run3} opened: ${profile.kind} ${group}, ${title}`, null, "event", void 0, {
           event: EVENTS.opened.name
         });
         bump(repo);
-        return run2;
+        return run3;
       });
       return toRun(runRow(id));
     },
-    setSeatState(run2, seat, state) {
-      runRow(run2);
+    setSeatState(run3, seat, state) {
+      runRow(run3);
       if (!SEAT_STATES.has(state)) throw new Error(`unknown seat state ${state}`);
       transaction(() => {
-        const r = db.prepare("UPDATE seats SET state = ? WHERE run = ? AND id = ?").run(state, run2, seat);
-        if (Number(r.changes) === 0) throw new Error(`unknown seat ${seat} in run ${run2}`);
-        bump(String(runRow(run2).repo));
+        const r = db.prepare("UPDATE seats SET state = ? WHERE run = ? AND id = ?").run(state, run3, seat);
+        if (Number(r.changes) === 0) throw new Error(`unknown seat ${seat} in run ${run3}`);
+        bump(String(runRow(run3).repo));
         if (state !== "done") return;
-        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, seat);
+        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
         if (p) claims.releaseAll(Number(p.id));
       });
     },
-    addSeat(run2, spec) {
-      const r = runRow(run2);
-      if (r.state !== "open") throw new Error(`run ${run2} is closed`);
+    addSeat(run3, spec) {
+      const r = runRow(run3);
+      if (r.state !== "open") throw new Error(`run ${run3} is closed`);
       if (spec.id === ORCHESTRATOR2) throw new Error(`"${ORCHESTRATOR2}" is not a seat`);
       return transaction(() => {
-        const ids = db.prepare("SELECT id FROM seats WHERE run = ?").all(run2).map((x) => String(x.id));
-        if (ids.includes(spec.id)) throw new Error(`seat ${spec.id} is already in run ${run2}`);
+        const ids = db.prepare("SELECT id FROM seats WHERE run = ?").all(run3).map((x) => String(x.id));
+        if (ids.includes(spec.id)) throw new Error(`seat ${spec.id} is already in run ${run3}`);
         const unknown = (spec.blockers ?? []).filter((b) => !ids.includes(b));
-        if (unknown.length) throw new Error(`unknown blocker ${unknown.join(", ")} in run ${run2}`);
-        const ord = Number(db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM seats WHERE run = ?").get(run2).o) + 1;
-        insertSeat(run2, spec, ord);
-        const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR2);
+        if (unknown.length) throw new Error(`unknown blocker ${unknown.join(", ")} in run ${run3}`);
+        const ord = Number(db.prepare("SELECT COALESCE(MAX(ord), -1) AS o FROM seats WHERE run = ?").get(run3).o) + 1;
+        insertSeat(run3, spec, ord);
+        const orchestrator = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2);
         postComposition(participantById(Number(orchestrator.id)), spec.id, "+", "added");
-        return toRun(runRow(run2)).seats.find((x) => x.id === spec.id);
+        return toRun(runRow(run3)).seats.find((x) => x.id === spec.id);
       });
     },
-    closeRun(run2) {
-      runRow(run2);
+    closeRun(run3) {
+      runRow(run3);
       transaction(() => {
-        const author = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR2) ?? db.prepare("SELECT id FROM participants WHERE run = ? ORDER BY id LIMIT 1").get(run2);
-        if (author) insertMessage(participantById(Number(author.id)), `run ${run2} closed`, null, "event", void 0, { event: EVENTS.closed.name });
-        for (const m of db.prepare("SELECT id FROM participants WHERE run = ?").all(run2)) releaseLocksOf(Number(m.id), "close", ` (run ${run2} closed)`);
-        db.prepare("UPDATE runs SET state = 'closed', closed_at = ? WHERE id = ?").run(now(), run2);
-        bump(String(runRow(run2).repo));
-        db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run2);
+        const author = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2) ?? db.prepare("SELECT id FROM participants WHERE run = ? ORDER BY id LIMIT 1").get(run3);
+        if (author) insertMessage(participantById(Number(author.id)), `run ${run3} closed`, null, "event", void 0, { event: EVENTS.closed.name });
+        for (const m of db.prepare("SELECT id FROM participants WHERE run = ?").all(run3)) releaseLocksOf(Number(m.id), "close", ` (run ${run3} closed)`);
+        db.prepare("UPDATE runs SET state = 'closed', closed_at = ? WHERE id = ?").run(now(), run3);
+        bump(String(runRow(run3).repo));
+        db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run3);
         try {
-          storeRunStats(run2);
+          storeRunStats(run3);
         } catch {
         }
-        for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run2)) claims.releaseAll(Number(p.id));
+        for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run3)) claims.releaseAll(Number(p.id));
       });
     },
     prune(at = /* @__PURE__ */ new Date()) {
@@ -2316,8 +2318,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
           dropMessage.run(Number(m.seq));
           touched.add(String(m.repo));
         }
-        for (const run2 of runIds) {
-          for (const r of db.prepare("SELECT id FROM participants WHERE run = ?").all(run2)) {
+        for (const run3 of runIds) {
+          for (const r of db.prepare("SELECT id FROM participants WHERE run = ?").all(run3)) {
             const id = Number(r.id);
             for (const table of ["claim_log", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "deliveries", "claim_requests", "flag_posts", "call_log", "lock_requests"]) {
               db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(id);
@@ -2326,10 +2328,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
             db.prepare("DELETE FROM shares WHERE other = ?").run(id);
             if (!db.prepare("SELECT 1 FROM messages WHERE author = ? LIMIT 1").get(id)) db.prepare("DELETE FROM participants WHERE id = ?").run(id);
           }
-          db.prepare("DELETE FROM seats WHERE run = ?").run(run2);
-          db.prepare("DELETE FROM merges WHERE run = ?").run(run2);
-          for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run2);
-          db.prepare("UPDATE runs SET pruned_at = ? WHERE id = ?").run(at.toISOString(), run2);
+          db.prepare("DELETE FROM seats WHERE run = ?").run(run3);
+          db.prepare("DELETE FROM merges WHERE run = ?").run(run3);
+          for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run3);
+          db.prepare("UPDATE runs SET pruned_at = ? WHERE id = ?").run(at.toISOString(), run3);
         }
         for (const repo of touched) bump(repo);
         return { messages: doomed.length, runs: runIds.length };
@@ -2389,9 +2391,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     runs() {
       return db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all().map(toRun);
     },
-    join({ run: run2, seat, doing, files, worktree, on }) {
-      const r = runRow(run2);
-      if (r.state !== "open") throw new Error(`run ${run2} is closed`);
+    worktrees(run3) {
+      const rows = db.prepare(`SELECT p.run, r.plan, p.seat, p.worktree, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.worktree IS NOT NULL${run3 === void 0 ? "" : " AND p.run = ?"} ORDER BY p.id`).all(...run3 === void 0 ? [] : [run3]);
+      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.worktree), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
+    },
+    join({ run: run3, seat, doing, files, worktree, on }) {
+      const r = runRow(run3);
+      if (r.state !== "open") throw new Error(`run ${run3} is closed`);
       if (seat === ORCHESTRATOR2) throw new Error(`"${ORCHESTRATOR2}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
       if (files.length && !profile.claims) throw new Error(`join: a ${profile.kind} run has no claims`);
@@ -2399,9 +2405,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return transaction(() => {
         let entry2 = "new";
         const id = transaction(() => {
-          const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run2, seat);
-          const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run2, seat);
-          if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run2}: declare it first with \`seat add ${seat}\``);
+          const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
+          const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run3, seat);
+          if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run3}: declare it first with \`seat add ${seat}\``);
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
           const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
           const fresh = () => unusedNick(String(r.repo));
@@ -2417,9 +2423,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
             );
             return Number(existing.id);
           }
-          const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run2, `%"${String(r.plan)}/${seat}"%`);
+          const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run3, `%"${String(r.plan)}/${seat}"%`);
           const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
-          const ins = db.prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(run2, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
+          const ins = db.prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(run3, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
           return Number(ins.lastInsertRowid);
         });
         const member = participantById(id);
@@ -2427,18 +2433,18 @@ async function openBoard(dbPath = SQLITE_PATH) {
         insertMessage(member, `joined: ${doing}`, null, "event", void 0, { event: EVENTS.joined.name });
         if (entry2 !== "again") postComposition(member, seat, "+", entry2 === "back" ? "back" : "");
         if (entry2 === "new") {
-          const declared = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run2).n);
-          const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run2, ORCHESTRATOR2).n);
-          if (declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run2) === void 0) {
+          const declared = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run3).n);
+          const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run3, ORCHESTRATOR2).n);
+          if (declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run3) === void 0) {
             insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", void 0, { event: EVENTS["all-joined"].name });
           }
         }
-        return { member, roster: board2.roster(member.repo), composition: compositionOf(run2) };
+        return { member, roster: board2.roster(member.repo), composition: compositionOf(run3) };
       });
     },
-    composition(run2) {
-      runRow(run2);
-      return compositionOf(run2);
+    composition(run3) {
+      runRow(run3);
+      return compositionOf(run3);
     },
     participant(name) {
       const i = name.lastIndexOf("/");
@@ -2450,10 +2456,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
     },
     identify({ worktree }) {
       if (!worktree) return null;
-      const here = fold(path2.resolve(worktree));
+      const here = fold2(path2.resolve(worktree));
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.worktree IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
         (r) => {
-          const root = fold(String(r.worktree));
+          const root = fold2(String(r.worktree));
           return here === root || here.startsWith(root.endsWith(path2.sep) ? root : root + path2.sep);
         }
       );
@@ -2511,8 +2517,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
       });
     },
-    currentPhase(run2) {
-      return phaseOf(runRow(run2));
+    currentPhase(run3) {
+      return phaseOf(runRow(run3));
     },
     showPhase(p) {
       const fresh = participantById(p.id);
@@ -2597,8 +2603,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return { ...message, held: held.map(messageLine) };
       });
     },
-    pausedOf(run2) {
-      const r = runRow(run2);
+    pausedOf(run3) {
+      const r = runRow(run3);
       return r.paused == null ? null : String(r.paused);
     },
     done(p, name) {
@@ -2632,14 +2638,14 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return { progress, all, already: false, late: false, message };
       });
     },
-    lastActivity(run2) {
-      const r = runRow(run2);
-      const row = db.prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ?) AS posts FROM participants p WHERE p.run = ?").get(run2, run2);
+    lastActivity(run3) {
+      const r = runRow(run3);
+      const row = db.prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ?) AS posts FROM participants p WHERE p.run = ?").get(run3, run3);
       return [String(r.opened_at), row?.calls, row?.posts].filter((v) => typeof v === "string").sort().at(-1);
     },
-    phaseProgress(run2) {
-      const r = runRow(run2);
-      return progressOf(run2, r.phase == null ? null : String(r.phase));
+    phaseProgress(run3) {
+      const r = runRow(run3);
+      return progressOf(run3, r.phase == null ? null : String(r.phase));
     },
     owedPhase(p) {
       const row = db.prepare("SELECT id, run, seat, ended_at FROM participants WHERE id = ?").get(p.id);
@@ -2650,18 +2656,18 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(row.run), Number(row.id), current.name);
       return done ? null : current;
     },
-    recordActivity(run2, member, act, at) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run2);
+    recordActivity(run3, member, act, at) {
+      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
       if (!r || r.state !== "open") return;
-      if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run2, member)) return;
+      if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member)) return;
       transaction(() => {
         const o = act.openTool;
         db.prepare(
           `INSERT INTO member_activity (run, member, grew_at, tokens, context, open_tool, open_target, open_since, open_wait, last_tool, finished, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
              open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`
-        ).run(run2, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
-        db.prepare("UPDATE member_activity SET open_shell = ? WHERE run = ? AND member = ?").run(o?.shell ? 1 : 0, run2, member);
+        ).run(run3, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
+        db.prepare("UPDATE member_activity SET open_shell = ? WHERE run = ? AND member = ?").run(o?.shell ? 1 : 0, run3, member);
         const bg = act.background ?? null;
         db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(
           act.inTurn == null ? null : act.inTurn ? 1 : 0,
@@ -2670,18 +2676,18 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           bg?.since ?? null,
           bg?.outputGrewAt ?? null,
           act.transcript ?? null,
-          run2,
+          run3,
           member
         );
-        db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run2, member, at.toISOString(), act.tokens);
+        db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run3, member, at.toISOString(), act.tokens);
         const kill = act.breach ?? null;
         if (kill) {
-          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run2, member);
+          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member);
           const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
           const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
           const command = kill.command.slice(0, 120);
-          if (breached && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run2, member, `breach ${command}`).changes) === 1) {
-            const orch = orchestratorIn(run2);
+          if (breached && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run3, member, `breach ${command}`).changes) === 1) {
+            const orch = orchestratorIn(run3);
             const ports = kill.kind === "port" ? ` (port ${unlockedPorts.join(", ")} not locked)` : "";
             insertMessage(orch, `breach ${String(r.plan)}/${member}: ${command}${ports}`, null, "event", [orch.name], { event: EVENTS.breach.name, meta: { breach: `${String(r.plan)}/${member}` } });
           }
@@ -2689,53 +2695,53 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         bump(String(r.repo));
       });
     },
-    memberStates(run2, at) {
-      return [...statesOf(run2, at.getTime()).values()];
+    memberStates(run3, at) {
+      return [...statesOf(run3, at.getTime()).values()];
     },
-    livenessTick(run2, at, presence) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run2);
+    livenessTick(run3, at, presence) {
+      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
       if (!r || r.state !== "open") {
-        presenceOf.delete(run2);
-        idleSince.delete(run2);
+        presenceOf.delete(run3);
+        idleSince.delete(run3);
         return false;
       }
-      presenceOf.set(run2, presence);
+      presenceOf.set(run3, presence);
       const t = at.getTime();
       transaction(() => {
-        db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run2, new Date(t - READINGS_KEPT_MS).toISOString());
-        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run2)) {
-          const a = activityOf(run2, String(p.seat));
+        db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run3, new Date(t - READINGS_KEPT_MS).toISOString());
+        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run3)) {
+          const a = activityOf(run3, String(p.seat));
           if (a) keepOwingSpan(r, p, a, t);
         }
-        const states = statesOf(run2, t);
+        const states = statesOf(run3, t);
         const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR2);
-        const orch = orchestratorIn(run2);
-        let progress = progressOf(run2, r.phase == null ? null : String(r.phase));
+        const orch = orchestratorIn(run3);
+        let progress = progressOf(run3, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
         const livenessLines = [];
         const stalledNow = [];
         for (const st of others) {
           if (st.state !== "gone") {
-            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run2, st.member).changes) === 1) {
+            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run3, st.member).changes) === 1) {
               insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
               postComposition(orch, st.member, "+", "back");
             }
-          } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run2, st.member).changes) === 1) {
+          } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run3, st.member).changes) === 1) {
             insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
             postComposition(orch, st.member, "-", "gone");
-            const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run2, st.member);
+            const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
           }
           if (st.reason === "link down" && st.state === "working") {
-            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run2, st.member).changes) === 1)
+            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run3, st.member).changes) === 1)
               livenessLines.push({ body: `${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, linkDown: `${orch.plan}/${st.member}` });
-          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run2, st.member);
-          const a = activityOf(run2, st.member);
+          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run3, st.member);
+          const a = activityOf(run3, st.member);
           if (!a) {
-            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run2, st.member);
+            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
-              const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run2, st.member);
+              const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run3, st.member);
               if (Number(warned.changes) === 1)
                 livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
             }
@@ -2745,7 +2751,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           if (st.state !== "quiet" && !longCall || r.paused != null || !presence(st.member).connected) {
             const owingSpanOpen = a.owe_since != null;
             if (a.stalled_at != null && !owingSpanOpen) {
-              db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run2, st.member);
+              db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run3, st.member);
               moved = true;
             }
             continue;
@@ -2773,10 +2779,10 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
             insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
           }
-          for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run2, st.member);
+          for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run3, st.member);
         }
         if (r.paused == null) {
-          const waited = db.prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name").all(run2);
+          const waited = db.prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name").all(run3);
           for (const w of waited) {
             const name = String(w.name);
             const lock = db.prepare("SELECT * FROM locks WHERE name = ?").get(name);
@@ -2792,31 +2798,31 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             const body = `stalled ${h.member} \xB7 lock ${name}: ${why}; ${h.nick} (${h.state}${h.doing ? `, ${h.doing}` : ""}), ${Number(w.n)} waiting`;
             const meta = { rule: "lock", member: holderSlice, lock: name, holder: handle };
             const holderOrch = orchestratorIn(h.run);
-            for (const to of h.run === run2 ? [orch] : [orch, holderOrch]) {
+            for (const to of h.run === run3 ? [orch] : [orch, holderOrch]) {
               if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(to.run, ORCHESTRATOR2, `lock ${name}`).changes) !== 1) continue;
               insertMessage(to, body, null, "event", [to.name], { event: EVENTS.stalled.name, meta });
             }
           }
         }
-        progress = progressOf(run2, r.phase == null ? null : String(r.phase));
+        progress = progressOf(run3, r.phase == null ? null : String(r.phase));
         where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         if (progress?.gone.length) allDoneOnce(orch, progress);
         const gone = others.filter((st) => st.state === "gone").map((st) => `${orch.plan}/${st.member}`);
         const present = others.filter((st) => st.state !== "gone");
         const joined = new Set(others.map((st) => st.member));
-        const toJoin = db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run2).some((s) => !joined.has(String(s.id)));
+        const toJoin = db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run3).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
-          const was = idleSince.get(run2);
-          if (was) idleSince.set(run2, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false, postedSeq: was.postedSeq, stirred: true });
+          const was = idleSince.get(run3);
+          if (was) idleSince.set(run3, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false, postedSeq: was.postedSeq, stirred: true });
         } else {
-          const kept = idleSince.get(run2);
+          const kept = idleSince.get(run3);
           const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false, postedSeq: kept?.postedSeq ?? 0, stirred: kept?.stirred ?? false };
-          idleSince.set(run2, idle);
+          idleSince.set(run3, idle);
           const held = t - idle.since;
-          const lastSeq2 = Number(db.prepare("SELECT MAX(m.seq) AS s FROM messages m JOIN participants p ON p.id = m.author WHERE p.run = ? AND (m.event IS NULL OR m.event != 'idle')").get(run2).s ?? 0);
+          const lastSeq2 = Number(db.prepare("SELECT MAX(m.seq) AS s FROM messages m JOIN participants p ON p.id = m.author WHERE p.run = ? AND (m.event IS NULL OR m.event != 'idle')").get(run3).s ?? 0);
           if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS && (idle.stirred || lastSeq2 > idle.postedSeq)) {
-            const allDoneTold = r.phase != null && db.prepare("SELECT 1 FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").get(run2, ORCHESTRATOR2, `all-done ${String(r.phase)}`) != null;
+            const allDoneTold = r.phase != null && db.prepare("SELECT 1 FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").get(run3, ORCHESTRATOR2, `all-done ${String(r.phase)}`) != null;
             const carriedIdle = !idle.spellPosted && allDoneTold;
             idle.postedAt = t;
             idle.spellPosted = true;
@@ -2828,7 +2834,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         if (r.paused == null) {
           const resumedAt = r.resumed_at == null ? 0 : Date.parse(String(r.resumed_at));
           const markDue = db.prepare("INSERT OR IGNORE INTO carry_due (participant, seq) VALUES (?, ?)");
-          for (const row of db.prepare("SELECT id FROM participants WHERE run = ? AND ended_at IS NULL").all(run2)) {
+          for (const row of db.prepare("SELECT id FROM participants WHERE run = ? AND ended_at IS NULL").all(run3)) {
             const me = participantById(Number(row.id));
             if (!me.subscriptions.some((s) => s.carry)) continue;
             for (const m of unseenRows(me).map(toMessage)) {
@@ -2853,9 +2859,9 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const t = Date.now();
       const cutoff = t - STALE_MS;
       const statesByRun = /* @__PURE__ */ new Map();
-      const stateIn = (run2, member) => {
-        if (!statesByRun.has(run2)) statesByRun.set(run2, statesOf(run2, t));
-        return statesByRun.get(run2).get(member);
+      const stateIn = (run3, member) => {
+        if (!statesByRun.has(run3)) statesByRun.set(run3, statesOf(run3, t));
+        return statesByRun.get(run3).get(member);
       };
       return rows.map((r) => ({
         name: `${r.plan}/${r.seat}`,
@@ -3042,9 +3048,9 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
       const t = Date.now();
       const statesByRun = /* @__PURE__ */ new Map();
-      const stateIn = (run2, member) => {
-        if (!statesByRun.has(run2)) statesByRun.set(run2, statesOf(run2, t));
-        return statesByRun.get(run2).get(member);
+      const stateIn = (run3, member) => {
+        if (!statesByRun.has(run3)) statesByRun.set(run3, statesOf(run3, t));
+        return statesByRun.get(run3).get(member);
       };
       const cutoff = t - STALE_MS;
       const claimsOf2 = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
@@ -3065,7 +3071,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
         }
       }
-      const sharedBy = (path10, id) => live2.some((c) => String(c.path) === path10 && Number(c.participant) !== id);
+      const sharedBy = (path11, id) => live2.some((c) => String(c.path) === path11 && Number(c.participant) !== id);
       const roster = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
@@ -3113,15 +3119,15 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       });
       const nameOf = new Map(people.map((r) => [`${r.run}/${r.seat}`, `${r.plan}/${r.seat}`]));
       const queues = {};
-      for (const run2 of runRows) {
-        queues[String(run2.plan)] = sliceRows.filter((s) => Number(s.run) === Number(run2.id)).map((s) => ({
+      for (const run3 of runRows) {
+        queues[String(run3.plan)] = sliceRows.filter((s) => Number(s.run) === Number(run3.id)).map((s) => ({
           seat: String(s.id),
           ...s.role == null ? {} : { role: String(s.role) },
           ...s.area == null ? {} : { area: String(s.area) },
           link: s.link == null ? null : String(s.link),
           state: String(s.state),
           blockers: JSON.parse(String(s.blockers)),
-          member: nameOf.get(`${run2.id}/${s.id}`) ?? null
+          member: nameOf.get(`${run3.id}/${s.id}`) ?? null
         }));
       }
       const flags = db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
@@ -3173,8 +3179,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         }
       };
     },
-    recordLink(run2, member, link) {
-      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run2, member, link.connected ? 1 : 0, link.lostAt);
+    recordLink(run3, member, link) {
+      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt);
     },
     savedLinks() {
       return db.prepare("SELECT * FROM member_links").all().map((r) => ({
@@ -3351,6 +3357,7 @@ var init_wire = __esm({
       "unreadMentions",
       "setting",
       "runs",
+      "worktrees",
       "join",
       "participant",
       "identify",
@@ -7014,9 +7021,9 @@ __export(server_exports, {
   stopBoardServer: () => stopBoardServer
 });
 import crypto4 from "node:crypto";
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import http from "node:http";
-import path8 from "node:path";
+import path9 from "node:path";
 async function startBoardServer(opts) {
   logStart(opts.dataRoot);
   await takeStartLock(opts.dataRoot);
@@ -7028,26 +7035,26 @@ async function startBoardServer(opts) {
   }
 }
 function logStart(dataRoot) {
-  fs8.mkdirSync(dataRoot, { recursive: true });
-  fs8.appendFileSync(serverLogFile(dataRoot), `serve: home ${path8.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs9.mkdirSync(dataRoot, { recursive: true });
+  fs9.appendFileSync(serverLogFile(dataRoot), `serve: home ${path9.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
   if (passed) return passed;
   try {
-    const read = fs8.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+    const read = fs9.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
     if (read) return read;
   } catch {
   }
   return "unknown";
 }
 async function takeStartLock(dataRoot) {
-  fs8.mkdirSync(dataRoot, { recursive: true });
+  fs9.mkdirSync(dataRoot, { recursive: true });
   const lock = serverStartLock(dataRoot);
   for (let emptyReads = 0; ; ) {
     try {
-      fs8.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs9.writeFileSync(lock, String(process.pid), { flag: "wx" });
       return;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -7066,55 +7073,55 @@ async function takeStartLock(dataRoot) {
 async function removeStaleStartLock(dataRoot, seen) {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs8.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs9.writeFileSync(breaker, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
     try {
-      if (Date.now() - fs8.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs8.rmSync(breaker, { force: true });
+      if (Date.now() - fs9.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs9.rmSync(breaker, { force: true });
     } catch {
     }
     await new Promise((r) => setTimeout(r, LOCK_READ_RETRY_MS));
     return;
   }
   try {
-    if (serverLockHolder(dataRoot) === seen) fs8.rmSync(serverStartLock(dataRoot), { force: true });
+    if (serverLockHolder(dataRoot) === seen) fs9.rmSync(serverStartLock(dataRoot), { force: true });
   } finally {
-    fs8.rmSync(breaker, { force: true });
+    fs9.rmSync(breaker, { force: true });
   }
 }
 function releaseStartLock(dataRoot) {
-  if (serverLockHolder(dataRoot) === process.pid) fs8.rmSync(serverStartLock(dataRoot), { force: true });
+  if (serverLockHolder(dataRoot) === process.pid) fs9.rmSync(serverStartLock(dataRoot), { force: true });
 }
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path8.join(opts.dataRoot, "swarm.sqlite"));
+  const board2 = await openBoard(path9.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const speakers = /* @__PURE__ */ new Set();
   const calls = /* @__PURE__ */ new Map();
   const links = /* @__PURE__ */ new Map();
   const memberOf = (name) => name.slice(name.lastIndexOf("/") + 1);
-  const keepLink = (run3, member, link) => {
-    const members = links.get(run3) ?? /* @__PURE__ */ new Map();
-    links.set(run3, members);
+  const keepLink = (run4, member, link) => {
+    const members = links.get(run4) ?? /* @__PURE__ */ new Map();
+    links.set(run4, members);
     members.set(member, link);
-    logged("recordLink", () => board2.recordLink(run3, member, link));
+    logged("recordLink", () => board2.recordLink(run4, member, link));
   };
   const linked = (m, connected) => keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
   const transcripts = /* @__PURE__ */ new Map();
   const grewAt = (file) => {
     if (!file) return null;
     try {
-      const st = fs8.statSync(file);
+      const st = fs9.statSync(file);
       return st.isFile() ? st.mtimeMs : null;
     } catch {
       return null;
     }
   };
-  const presenceIn = (run3) => (member) => {
-    const link = links.get(run3)?.get(member) ?? { connected: false, lostAt: null };
-    return link.connected ? link : { ...link, transcriptGrewAt: grewAt(transcripts.get(run3)?.get(member)) };
+  const presenceIn = (run4) => (member) => {
+    const link = links.get(run4)?.get(member) ?? { connected: false, lostAt: null };
+    return link.connected ? link : { ...link, transcriptGrewAt: grewAt(transcripts.get(run4)?.get(member)) };
   };
   const logged = (what, fn) => {
     try {
@@ -7146,7 +7153,7 @@ async function runBoardServer(opts) {
     calls.delete(id);
     rec.cancelWait?.abort();
   };
-  const run2 = (s, call) => {
+  const run3 = (s, call) => {
     const known = calls.get(call.id);
     if (known) {
       known.speaker = s;
@@ -7176,8 +7183,8 @@ async function runBoardServer(opts) {
     if (out instanceof Promise) out.then(settle, (e) => calls.get(call.id) === rec && fail2(e.message));
     else settle(out);
   };
-  const closed = (run3) => {
-    for (const s of speakers) if (s.member?.run === run3) refuse(s, "closed");
+  const closed = (run4) => {
+    for (const s of speakers) if (s.member?.run === run4) refuse(s, "closed");
   };
   const httpServer = http.createServer((req, res) => {
     if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
@@ -7214,7 +7221,7 @@ async function runBoardServer(opts) {
         speakers.add(s);
         return send(s, { type: "welcome", version });
       }
-      if (f.type === "call") run2(s, f);
+      if (f.type === "call") run3(s, f);
       else if (f.type === "cancel") dropWait(f.id);
       else if (f.type === "bye") socket.close();
       else if (f.type === "activity" && s.member) {
@@ -7238,8 +7245,8 @@ async function runBoardServer(opts) {
   const port = await listen(httpServer, host, opts.port ?? 0);
   const state = { pid: process.pid, port, secret, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs8.mkdirSync(opts.dataRoot, { recursive: true });
-  fs8.writeFileSync(stateFile, JSON.stringify(state));
+  fs9.mkdirSync(opts.dataRoot, { recursive: true });
+  fs9.writeFileSync(stateFile, JSON.stringify(state));
   const stopTellingReaders = board2.onChange((repo) => {
     for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
   });
@@ -7273,8 +7280,8 @@ async function runBoardServer(opts) {
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
     try {
-      const written = JSON.parse(fs8.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs8.rmSync(stateFile);
+      const written = JSON.parse(fs9.readFileSync(stateFile, "utf8"));
+      if (written.pid === state.pid && written.port === state.port) fs9.rmSync(stateFile);
     } catch {
     }
     releaseStartLock(opts.dataRoot);
@@ -7291,7 +7298,7 @@ async function stopBoardServer(dataRoot) {
   const file = serverStateFile(dataRoot);
   let state;
   try {
-    state = JSON.parse(fs8.readFileSync(file, "utf8"));
+    state = JSON.parse(fs9.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -7299,12 +7306,12 @@ async function stopBoardServer(dataRoot) {
     const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
-    fs8.rmSync(file, { force: true });
+    fs9.rmSync(file, { force: true });
     const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs8.rmSync(serverStartLock(dataRoot), { force: true });
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs9.rmSync(serverStartLock(dataRoot), { force: true });
     return false;
   }
-  for (let i = 0; i < 100 && fs8.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 100 && fs9.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
   return true;
 }
 function listen(server, host, port) {
@@ -7349,9 +7356,9 @@ init_board();
 init_kinds();
 init_events();
 init_home();
-import { spawnSync as spawnSync3 } from "node:child_process";
-import fs9 from "node:fs";
-import path9 from "node:path";
+import { spawnSync as spawnSync4 } from "node:child_process";
+import fs10 from "node:fs";
+import path10 from "node:path";
 
 // src/client/remote.ts
 init_wire();
@@ -7768,9 +7775,9 @@ function observe(transcript, from) {
 
 // src/link/link.ts
 var DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
-function linkPipe(dataRoot, run2, member) {
+function linkPipe(dataRoot, run3, member) {
   const home = crypto2.createHash("sha256").update(path5.resolve(dataRoot)).digest("hex").slice(0, 12);
-  const name = `swarm-${home}-${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+  const name = `swarm-${home}-${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path5.join(os3.tmpdir(), `${name}.sock`);
 }
 function readServerState(dataRoot) {
@@ -8437,13 +8444,109 @@ function conflictsOf(worktree, onto, reflogMark) {
   }
 }
 
+// src/cli/worktrees.ts
+init_home();
+import { spawnSync as spawnSync3 } from "node:child_process";
+import fs8 from "node:fs";
+import os4 from "node:os";
+import path8 from "node:path";
+var WORKTREES_ROOT = path8.join(DATA_ROOT, "worktrees");
+var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
+var fold = (s) => CASELESS3 ? path8.resolve(s).toLowerCase() : path8.resolve(s);
+var safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
+var worktreeDir = (group, seat) => path8.join(WORKTREES_ROOT, `${safe(group)}-${safe(seat)}`);
+var branchFor = (group, seat) => `swarm/${group}/${seat}`;
+var owned = (wt) => !!wt && fold(path8.dirname(wt)) === fold(WORKTREES_ROOT);
+var same = (a, b) => fold(a) === fold(b);
+function run2(cwd, ...argv) {
+  const r = spawnSync3("git", argv, { cwd, encoding: "utf8" });
+  return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
+}
+var baseAt = (cwd) => {
+  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
+  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
+};
+function inLinkedWorktree(cwd) {
+  const dir = git(cwd, "rev-parse", "--absolute-git-dir");
+  const common = git(cwd, "rev-parse", "--git-common-dir");
+  return !!dir && !!common && !same(dir, path8.resolve(cwd, common));
+}
+var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
+var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
+function ensureWorktree(cwd, group, seat, base) {
+  const at = worktreeDir(group, seat);
+  const branch = branchFor(group, seat);
+  const top = fs8.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
+  if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
+  if (fs8.existsSync(at) && fs8.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
+  run2(cwd, "worktree", "prune");
+  fs8.mkdirSync(WORKTREES_ROOT, { recursive: true });
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
+  const r = run2(cwd, "worktree", "add", "-q", ...argv);
+  if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
+  return { path: at, branch, reused: false };
+}
+function leftover(wt, into) {
+  if (!fs8.existsSync(wt)) return null;
+  const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
+  if (!status.ok) return `git status failed: ${status.err}`;
+  const changed = status.out.split(/\r?\n/).filter(Boolean).length;
+  if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
+  if (!into) return "no base branch recorded for its run";
+  if (!isAncestor(wt, "HEAD", into)) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
+  return null;
+}
+function removeWorktree(wt, repo) {
+  if (!fs8.existsSync(wt)) {
+    run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+    return null;
+  }
+  const r = run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
+  run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+  return r.ok ? null : r.err || "git worktree remove failed";
+}
+function linkPids(runId, members) {
+  const lines = process.platform === "win32" ? spawnSync3("powershell", ["-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`], { encoding: "utf8", windowsHide: true }).stdout ?? "" : spawnSync3("ps", ["-eo", "pid=,args="], { encoding: "utf8" }).stdout ?? "";
+  const found = [];
+  for (const line of lines.split(/\r?\n/)) {
+    const m = /^\s*(\d+)\s.*\slink\s+--run\s+(\d+)\s+--as\s+"?([^\s"]+)"?/.exec(line);
+    if (!m || Number(m[2]) !== runId || Number(m[1]) === process.pid) continue;
+    if (members && !members.includes(m[3])) continue;
+    found.push(Number(m[1]));
+  }
+  return found;
+}
+var alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+function stopLinks(runId, members) {
+  const pids = linkPids(runId, members);
+  for (const pid of pids) {
+    try {
+      process.kill(pid);
+    } catch {
+    }
+  }
+  for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync3(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+}
+function sweep(wt, repo, into) {
+  const why = leftover(wt, into) ?? removeWorktree(wt, repo);
+  return { removed: why === null, why };
+}
+
 // src/cli/index.ts
 var args = parseArgs(process.argv.slice(2));
 var asJson = args.has("--json");
 var FORGOTTEN_MS = 24 * 60 * 60 * 1e3;
 var USAGE = [
   "usage: swarm <verb> [--json]        (swarm --help code: the claim and merge verbs)",
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
@@ -8454,8 +8557,8 @@ var USAGE = [
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  "  close   --run <id>                                              # (orchestrator)",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link',
+  "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<group>/<seat>, or reuses it',
   "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -8476,6 +8579,7 @@ var USAGE = [
   "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
   "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
   "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
+  "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
   "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree"
 ].join("\n");
@@ -8521,19 +8625,19 @@ ${USAGE}`);
 function repoOf(dir) {
   const common = git(dir, "rev-parse", "--git-common-dir");
   if (!common) fail(`not in a git repository: ${dir}`);
-  const abs = path9.resolve(dir, common);
+  const abs = path10.resolve(dir, common);
   try {
-    return fs9.realpathSync.native(abs);
+    return fs10.realpathSync.native(abs);
   } catch {
     return abs;
   }
 }
 function worktreeOf(dir) {
   const top = git(dir, "rev-parse", "--show-toplevel");
-  return top ? path9.resolve(top) : null;
+  return top ? path10.resolve(top) : null;
 }
 function changedIn(worktree) {
-  const r = spawnSync3("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = spawnSync4("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out = [];
@@ -8547,13 +8651,13 @@ function changedIn(worktree) {
 }
 function branchChangedIn(worktree, onto) {
   const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
-  const r = spawnSync3("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const r = spawnSync4("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
 }
 function renamesIn(worktree, base) {
-  const r = spawnSync3("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
+  const r = spawnSync4("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return [];
   const parts = r.stdout.split("\0");
   const out = [];
@@ -8571,7 +8675,7 @@ var printReconciled = (unclaimed, flags, renames = []) => {
   if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? path9.dirname(path9.resolve(process.argv[1]));
+var toolRoot = () => process.env.SWARM_ROOT ?? path10.dirname(path10.resolve(process.argv[1]));
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${USAGE}`);
 var runArg = () => {
@@ -8612,11 +8716,11 @@ var rosterLine = (r, ages = false) => {
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
   return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
-var phaseHeader = async (run2, shownTo) => (await phaseHeaders(run2, shownTo)).printed;
-var phaseHeaders = async (run2, shownTo, showPause = true) => {
+var phaseHeader = async (run3, shownTo) => (await phaseHeaders(run3, shownTo)).printed;
+var phaseHeaders = async (run3, shownTo, showPause = true) => {
   const shown = shownTo ? await board.showPhase(shownTo) : null;
-  const ph = shown ? shown.phase : await board.currentPhase(run2);
-  const r = (await board.runs()).find((x) => x.id === run2);
+  const ph = shown ? shown.phase : await board.currentPhase(run3);
+  const r = (await board.runs()).find((x) => x.id === run3);
   const whole = ph ? `phase ${ph.name}: ${ph.text}` : null;
   const short = ph && shown && !shown.first ? `phase ${ph.name} (unchanged; its text: ${[...self(), "thread", "--as", shellWord(shownTo.name)].join(" ")})` : whole;
   if (r?.paused == null || !showPause) return { printed: short, full: whole };
@@ -8660,9 +8764,9 @@ var owedLine = async (p, thread = true) => {
 };
 var pausedLine = async (p) => {
   if (p.seat === "orchestrator" || p.ended) return null;
-  const run2 = (await board.runs()).find((r) => r.id === p.run);
-  if (!run2 || run2.paused == null) return null;
-  const why = run2.pausedPerson ? `: waiting on the person: ${run2.paused || "their decision"}` : run2.paused ? `: ${run2.paused}` : "";
+  const run3 = (await board.runs()).find((r) => r.id === p.run);
+  if (!run3 || run3.paused == null) return null;
+  const why = run3.pausedPerson ? `: waiting on the person: ${run3.paused || "their decision"}` : run3.paused ? `: ${run3.paused}` : "";
   return `run ${p.run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${SHELL_TOOL_TIMEOUT}): ${waitCommand(p.name, true)}`;
 };
 var refusedPaused = async (p, verb) => {
@@ -8677,13 +8781,13 @@ var LOCK_PORT = /^port:(\d{1,5})$/;
 function listenersOn(port) {
   const found = /* @__PURE__ */ new Set();
   if (process.platform === "win32") {
-    const out = spawnSync3("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = spawnSync4("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const cols = line.trim().split(/\s+/);
       if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
     }
   } else {
-    const out = spawnSync3("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
+    const out = spawnSync4("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
   }
   return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
@@ -8694,13 +8798,13 @@ function processStarts(pids) {
   if (process.platform === "win32") {
     const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
     const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
-    const out = spawnSync3("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = spawnSync4("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const [pid, at] = line.trim().split(/\s+/);
       if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
     }
   } else {
-    const out = spawnSync3("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
+    const out = spawnSync4("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const m = /^\s*(\d+)\s+(.+)$/.exec(line);
       if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
@@ -8734,10 +8838,10 @@ var firstPhaseLine = (kind, group, protocol) => {
 };
 var firstTaskPostLine = async (p) => {
   if (p.seat !== "orchestrator") return null;
-  const run2 = (await board.runs()).find((r) => r.id === p.run);
-  if (!run2 || run2.kind !== "task" && run2.kind !== "plan" || run2.protocol === PHASELESS || await board.currentPhase(p.run)) return null;
+  const run3 = (await board.runs()).find((r) => r.id === p.run);
+  if (!run3 || run3.kind !== "task" && run3.kind !== "plan" || run3.protocol === PHASELESS || await board.currentPhase(p.run)) return null;
   const mine = (await board.stats({ repo: p.repo, run: p.run })).runs.find((r) => r.run === p.run)?.members.find((x) => x.member === p.name);
-  return mine?.posts === 1 ? firstPhaseLine(run2.kind, run2.group, run2.protocol) : null;
+  return mine?.posts === 1 ? firstPhaseLine(run3.kind, run3.group, run3.protocol) : null;
 };
 var nextStep = async (p) => {
   const paused = await pausedLine(p);
@@ -8782,19 +8886,19 @@ var emitHeard = async (p, json, human) => {
 };
 var DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
 function resolveClaimPath(file, about = false) {
-  if (path9.isAbsolute(file)) return file;
-  const here = path9.resolve(file);
-  if (fs9.existsSync(here)) return here;
+  if (path10.isAbsolute(file)) return file;
+  const here = path10.resolve(file);
+  if (fs10.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  const fromRoot = root ? path9.resolve(root, file) : null;
-  if (fromRoot && fs9.existsSync(fromRoot)) return fromRoot;
+  const fromRoot = root ? path10.resolve(root, file) : null;
+  if (fromRoot && fs10.existsSync(fromRoot)) return fromRoot;
   if (args.has("--new")) return here;
   return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
 }
 function repoRelative(abs) {
   const root = worktreeOf(process.cwd());
-  const rel = root ? path9.relative(root, abs) : abs;
-  return rel.split(path9.sep).join("/");
+  const rel = root ? path10.relative(root, abs) : abs;
+  return rel.split(path10.sep).join("/");
 }
 function aboutArg() {
   const about = args.flag("--about");
@@ -8807,16 +8911,16 @@ function parseFile(spec) {
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
 function declaredPath(file) {
-  if (path9.isAbsolute(file)) return file;
-  const here = path9.resolve(file);
-  if (fs9.existsSync(here)) return here;
+  if (path10.isAbsolute(file)) return file;
+  const here = path10.resolve(file);
+  if (fs10.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  return root ? path9.resolve(root, file) : here;
+  return root ? path10.resolve(root, file) : here;
 }
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs9.readFileSync(path9.resolve(file), "utf8"));
+    raw = JSON.parse(fs10.readFileSync(path10.resolve(file), "utf8"));
   } catch (e) {
     return fail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -8876,6 +8980,21 @@ var subscriptionsArg = (spec) => {
   }
 };
 var NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW\xB7SL3, @swarm)";
+var runOf = async (id) => (await board.runs()).find((r) => r.id === id) ?? null;
+async function memberWorktree(runId, seat) {
+  const run3 = await runOf(runId);
+  if (!run3 || !profileOf(run3.kind).worktree || !run3.seats.some((s) => s.id === seat)) return null;
+  const cwd = process.cwd();
+  const base = run3.base ?? baseAt(cwd);
+  if (!base || !worktreeOf(cwd)) return null;
+  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
+  if (repoOf(cwd) !== run3.repo) fail(`join: run ${runId} is on ${run3.repo}; join from a checkout of that repository`);
+  try {
+    return { ...ensureWorktree(cwd, run3.group, seat, base), base };
+  } catch (e) {
+    return fail(`join: ${e.message}`);
+  }
+}
 async function main() {
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
@@ -8910,7 +9029,7 @@ ${USAGE}`);
           `open: no aiview project covers ${process.cwd()}, so the run's board would show nowhere. Declare it, then open again:
   node ${home.launcher} project add <slug> --path ${process.cwd()}`
         );
-      const run2 = await board.openRun({
+      const run3 = await board.openRun({
         repo: repoOf(process.cwd()),
         kind,
         group,
@@ -8918,25 +9037,27 @@ ${USAGE}`);
         link: args.flag("--link") ?? null,
         seats: readSeats(seatsFile),
         ...stallMs !== void 0 ? { stallMs } : {},
-        ...protocol !== void 0 ? { protocol } : {}
+        ...protocol !== void 0 ? { protocol } : {},
+        // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
+        base: args.flag("--onto") ?? baseAt(process.cwd())
       });
-      const link = startLinkLine({ name: `${run2.group}/orchestrator`, run: run2.id });
-      const doc = registerBoard({ home, cwd: process.cwd(), repo: run2.repo });
-      const next = firstPhaseLine(run2.kind, run2.group, protocol ?? null);
-      const lines = (url) => [String(run2.id), url, link, next].filter((l) => l !== null).join("\n");
+      const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
+      const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
+      const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
+      const lines = (url) => [String(run3.id), url, link, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run2.id, repo: run2.repo, kind: run2.kind, group: run2.group, plan: run2.plan, url: null, link, ...next ? { next } : {} }, lines(null));
+        emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, ...next ? { next } : {} }, lines(null));
         break;
       }
-      emit({ run: run2.id, repo: run2.repo, kind: run2.kind, group: run2.group, plan: run2.plan, url: doc.url, link, ...next ? { next } : {} }, lines(doc.url));
+      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: doc.url, link, ...next ? { next } : {} }, lines(doc.url));
       break;
     }
     case "seat": {
       if (args.positional[0] === "add") {
         const id2 = args.positional[1] ?? fail(`seat add: which id?
 ${USAGE}`);
-        const run3 = runArg();
+        const run4 = runArg();
         const on = args.flag("--on");
         if (on !== void 0) subscriptionsArg(on);
         const role = args.flag("--role");
@@ -8944,7 +9065,7 @@ ${USAGE}`);
         const rawBusyMax = args.flag("--busy-max");
         const busyMax = rawBusyMax === void 0 ? void 0 : Number(rawBusyMax);
         if (busyMax !== void 0 && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
-        const added = await board.addSeat(run3, {
+        const added = await board.addSeat(run4, {
           id: id2,
           ...role ? { role } : {},
           ...area ? { area } : {},
@@ -8953,22 +9074,31 @@ ${USAGE}`);
           link: args.flag("--link") ?? null,
           ...on !== void 0 ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}
         });
-        emit({ run: run3, seat: added }, `${id2} added`);
+        emit({ run: run4, seat: added }, `${id2} added`);
         break;
       }
       const id = args.positional[0] ?? fail(`seat: which seat?
 ${USAGE}`);
-      const run2 = runArg();
+      const run3 = runArg();
       refuseTranscriptFlag("seat");
       const state = need("--state");
-      await board.setSeatState(run2, id, state);
-      emit({ run: run2, seat: id, state }, `${id} ${state}`);
+      await board.setSeatState(run3, id, state);
+      emit({ run: run3, seat: id, state }, `${id} ${state}`);
       break;
     }
     case "close": {
-      const run2 = runArg();
-      await board.closeRun(run2);
-      emit({ run: run2, state: "closed" }, `run ${run2} closed`);
+      const run3 = runArg();
+      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree) && fs10.existsSync(w.worktree));
+      await board.closeRun(run3);
+      if (trees.length) stopLinks(run3, trees.map((w) => w.member));
+      const swept = trees.map((w) => ({ worktree: w.worktree, member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
+      const kept = swept.filter((w) => !w.removed);
+      emit({ run: run3, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
+        console.log(`run ${run3} closed`);
+        const n = swept.length - kept.length;
+        if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
+        for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
+      });
       break;
     }
     case "phase": {
@@ -9040,22 +9170,23 @@ ${USAGE}`);
       break;
     }
     case "join": {
+      const own = await memberWorktree(runArg(), joinedSeat());
       const { member, roster, composition } = await board.join({
         run: runArg(),
         seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
-        worktree: worktreeOf(process.cwd()) ?? void 0,
+        worktree: own?.path ?? worktreeOf(process.cwd()) ?? void 0,
         ...args.flag("--on") !== void 0 ? { on: subscriptionsArg(args.flag("--on")) } : {}
       });
       const link = startLinkLine({ name: member.name, run: member.run });
       const next = await nextStep(member);
       const shared = !profileOf(member.kind).worktree;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : null;
+      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${own.path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(own.path)}, never cd into it; pass --as ${member.name} on every call` : null;
       const commands = shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const phase = await phaseHeader(member.run);
-      emit({ member: member.name, nick: member.nick, roster, composition, phase, ...shared ? { as: member.name, commands } : {}, ...drawing ? { drawing } : {}, link, next }, () => {
+      emit({ member: member.name, nick: member.nick, roster, composition, phase, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...drawing ? { drawing } : {}, link, next }, () => {
         console.log(`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`);
         for (const l of composition.lines) console.log(l);
         for (const r of roster) console.log(rosterLine(r));
@@ -9089,7 +9220,7 @@ ${USAGE}`);
       const p = await caller();
       if (await answeredClosed(p)) break;
       const file = args.flag("--file");
-      const body = (file ? fs9.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const body = (file ? fs10.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
@@ -9228,7 +9359,7 @@ ${rearm}` : rearm;
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf(path9.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf(path10.resolve(args.flag("--repo") ?? process.cwd()));
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -9239,8 +9370,8 @@ ${rearm}` : rearm;
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown = null;
         for (const r of roster) {
-          const run2 = runs.get(r.run);
-          if (run2 && r.run !== shown) console.log(`run ${run2.id}  ${run2.title}${phaseSuffix(run2.phase, progress.get(run2.id) ?? null)}`);
+          const run3 = runs.get(r.run);
+          if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}`);
           shown = r.run;
           console.log(rosterLine(r, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
@@ -9268,7 +9399,7 @@ ${rearm}` : rearm;
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       const released = [];
-      const targets = all ? (await board.heldBy(p)).map((f) => path9.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
+      const targets = all ? (await board.heldBy(p)).map((f) => path10.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
       if (all && !targets.length) {
         emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
         break;
@@ -9311,15 +9442,19 @@ ${rearm}` : rearm;
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await board.merged(p, sha, files.map((f) => path9.resolve(f)), conflicts);
+      const sharers = await board.merged(p, sha, files.map((f) => path10.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
         (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
       );
-      emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {} }, () => {
+      const into = lock?.onto ?? (await runOf(p.run))?.base ?? null;
+      const tree = owned(p.worktree) && fs10.existsSync(p.worktree) ? { worktree: p.worktree, ...sweep(p.worktree, p.repo, into) } : null;
+      const treeLine = !tree ? null : tree.removed ? `worktree ${tree.worktree} removed (branch kept); for your next task, join again for a fresh one: ${[...self(), "join", "--run", String(p.run), "--seat", shellWord(p.seat), "--doing", '"<the task>"', "--as", shellWord(p.name)].join(" ")}` : `worktree ${tree.worktree} kept: ${tree.why}`;
+      emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {}, ...tree ? { worktree: tree.worktree, removed: tree.removed, ...tree.why ? { kept: tree.why } : {} } : {} }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
+        if (treeLine) console.log(treeLine);
       });
       break;
     }
@@ -9333,22 +9468,53 @@ ${rearm}` : rearm;
       if (p.ended) break;
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
+      const base = (await runOf(p.run))?.base ?? null;
+      const mine = owned(p.worktree) && fs10.existsSync(p.worktree) ? p.worktree : null;
+      const left = mine ? leftover(mine, base) : null;
+      if (mine && left) {
+        const who = `--as ${shellWord(p.name)}`;
+        fail(
+          `end: your worktree ${mine} holds work not merged: ${left}. Commit it, then merge it: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
+        );
+      }
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
       await board.end(p);
-      emit({ member: p.name, ended: true, reconciled, flags }, () => {
+      if (mine) stopLinks(p.run, [p.name]);
+      const removal = mine ? removeWorktree(mine, p.repo) : null;
+      emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
+        if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
+      });
+      break;
+    }
+    case "worktree": {
+      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
+${USAGE}`);
+      const known = await board.worktrees();
+      const dirs = fs10.existsSync(WORKTREES_ROOT) ? fs10.readdirSync(WORKTREES_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path10.join(WORKTREES_ROOT, d.name)) : [];
+      const fold2 = (s) => process.platform === "win32" ? path10.resolve(s).toLowerCase() : path10.resolve(s);
+      const out = dirs.map((dir) => {
+        const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);
+        if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
+        if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
+        return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+      });
+      const kept = out.filter((o) => !o.removed);
+      emit({ root: WORKTREES_ROOT, removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
+        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${WORKTREES_ROOT} (branches kept)`);
+        for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
       });
       break;
     }
     case "stats": {
       const raw = args.flag("--run");
-      const run2 = raw === void 0 ? void 0 : Number(raw);
-      if (run2 !== void 0 && !Number.isInteger(run2)) fail(`--run takes a run id, got ${raw}`);
+      const run3 = raw === void 0 ? void 0 : Number(raw);
+      if (run3 !== void 0 && !Number.isInteger(run3)) fail(`--run takes a run id, got ${raw}`);
       const all = args.has("--all");
       const since = args.flag("--since");
       if (all && args.has("--since")) fail("stats: --since or --all, not both");
@@ -9360,10 +9526,10 @@ ${rearm}` : rearm;
         }
       });
       const stats = await board.stats({
-        repo: repoOf(path9.resolve(args.flag("--repo") ?? process.cwd())),
-        ...run2 !== void 0 ? { run: run2 } : {},
+        repo: repoOf(path10.resolve(args.flag("--repo") ?? process.cwd())),
+        ...run3 !== void 0 ? { run: run3 } : {},
         // a named run is read whatever its age: no default period (plan D40)
-        ...all ? {} : since !== void 0 ? { since } : run2 !== void 0 ? {} : { since: "30d" },
+        ...all ? {} : since !== void 0 ? { since } : run3 !== void 0 ? {} : { since: "30d" },
         ...kinds.length ? { kinds } : {},
         ...args.has("--closed") ? { closedOnly: true } : {}
       });

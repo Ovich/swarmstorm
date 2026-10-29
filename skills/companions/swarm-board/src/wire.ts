@@ -29,6 +29,7 @@ export const RPC_METHODS = [
   "unreadMentions",
   "setting",
   "runs",
+  "worktrees",
   "join",
   "participant",
   "identify",

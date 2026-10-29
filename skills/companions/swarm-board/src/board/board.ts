@@ -81,6 +81,18 @@ export interface Run {
   pausedPerson: boolean;
   /** The protocol the run follows, null when it names none. */
   protocol: string | null;
+  /** The branch (else the commit) the repository's checkout stood on at open: a code run's worktrees branch from it; null before it was recorded. */
+  base: string | null;
+}
+
+/** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
+export interface MemberWorktree {
+  run: RunId;
+  member: string;
+  worktree: string;
+  repo: string;
+  base: string | null;
+  open: boolean;
 }
 
 export interface Participant {
@@ -269,7 +281,7 @@ export type BoardSnapshot = {
 export interface Board {
   /** `kind` defaults to plan; throws on an unknown kind. The group is stored as the plan (D44). */
   /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall threshold, default 60000. */
-  openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null }): Run;
+  openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null; base?: string | null }): Run;
   /** `done` also releases the seat member's claims and lock: the orchestrator's way to free a stale member. */
   setSeatState(run: RunId, seat: string, state: SeatState): void;
   /** A seat added mid-run (D60): after the last, `ready`; refused on an id already in the run, an
@@ -343,6 +355,8 @@ export interface Board {
   upkeepIfDue(now?: Date): boolean;
   /** The open runs, every repository. */
   runs(): Run[];
+  /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
+  worktrees(run?: RunId): MemberWorktree[];
 
   /** `worktree` is ignored when the run's kind has none; `files` are refused when it has no claims.
    *  Declared files become claims where free (*interface* or *inside*); a held one stays declared only. */
@@ -732,6 +746,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the run's stall threshold, and the stalled events posted since a counter last moved
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
   upkeep("runs", "protocol", "protocol TEXT");
+  // the branch a code run's worktrees branch from, recorded at open
+  upkeep("runs", "base", "base TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
   // idea 2: a pause waiting on the person; the current phase's watched members (JSON ids); the phase a member was last shown
   upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
@@ -836,6 +852,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     paused: r.paused == null ? null : String(r.paused),
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
+    base: r.base == null ? null : String(r.base),
     id: Number(r.id),
     repo: String(r.repo),
     kind: profileOf(String(r.kind ?? "plan")).kind,
@@ -1477,15 +1494,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
 
   const board: Board = {
-    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol }) {
+    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, base }) {
       const profile = profileOf(kind);
       if (protocol != null && !PROTOCOL_NAME.test(protocol)) throw new Error(`a protocol is named in lower case, digits and dashes (build-verify), got ${protocol}`);
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
         // the group is stored as the plan (D44)
         const r = db
-          .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null);
+          .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, base ?? null);
         const run = Number(r.lastInsertRowid);
         seats.forEach((s, i) => insertSeat(run, s, i));
         // a funny name as a member gets at join (plan D17)
@@ -1672,6 +1689,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     runs() {
       return (db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all() as Row[]).map(toRun);
+    },
+
+    worktrees(run) {
+      const rows = db
+        .prepare(`SELECT p.run, r.plan, p.seat, p.worktree, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.worktree IS NOT NULL${run === undefined ? "" : " AND p.run = ?"} ORDER BY p.id`)
+        .all(...(run === undefined ? [] : [run])) as Row[];
+      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.worktree), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
     },
 
     join({ run, seat, doing, files, worktree, on }) {

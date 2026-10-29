@@ -341,7 +341,8 @@ test("merged ends, for each merged path another member holds or held, on the lin
     `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/S3 I resolved ${f}: <how>" --about ${f}`;
   const r = run("merged", "--report", "-", ...s5, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(r.stdout.trimEnd().split("\n"), ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts")]);
+  // the board's worktree line follows (worktrees.test.ts)
+  assert.deepEqual(r.stdout.trimEnd().split("\n").filter((l) => !l.startsWith("worktree ")), ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts")]);
 
   const j = JSON.parse(run("merged", "--report", "-", ...s5, "def456", "--files", "src/held.ts", "--json").stdout);
   assert.deepEqual(j.tell, [TELL("src/held.ts")]);
@@ -864,7 +865,8 @@ test("roster --json and status --json give each member's worktree, null for a se
   run("join", "--run", id, "--seat", "S3", "--doing", "the page");
   const roster = JSON.parse(run("roster", "--json").stdout).roster as { name: string; worktree: string | null }[];
   const s3 = roster.find((m) => m.name === "review-tool/S3")!;
-  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(repo), String(s3.worktree));
+  // joined from the repository's checkout: the board made its worktree under the data home
+  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(toolRoot, "worktrees", "review-tool-S3")), String(s3.worktree));
   const seat = openBrainstorm();
   assert.equal(joinSeat(seat, "skeptic").status, 0);
   const open = JSON.parse(run("status", "--json").stdout).open as { run: number; members: { name: string; worktree: string | null }[] }[];

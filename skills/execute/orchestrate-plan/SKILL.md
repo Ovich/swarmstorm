@@ -14,7 +14,7 @@ Read the plan's *Mandate* section. Ask what it leaves open before the first phas
 ## The run
 
 - **Every phase runs on the board, from the first to the close, whatever its width.** The board is the run's record, the person's view and the next phase's memory. Running a phase off it, or merging a seat's work yourself, changes the mandate, which is the person's.
-- **One board run for the plan**, opened before the first phase (`--kind task`, the plan's URL as `--link`, `--protocol build-verify` when `verify:` is on), one row per seat for the whole run: the builders `w1` … `w<N>`, each `role` naming its area, and the verifiers.
+- **One board run for the plan**, opened before the first phase (`--kind task`, the plan's branch as `--onto`, the plan's URL as `--link`, `--protocol build-verify` when `verify:` is on), one row per seat for the whole run: the builders `w1` … `w<N>`, each `role` naming its area, and the verifiers.
 - **Leave the plan's branch checked out nowhere** while the run is open (detach the main checkout): a worker fast-forwards it from its worktree. Re-run each done-when in a detached worktree of your own.
 - **Every seat is dispatched once, at the run's open**, all at once: builders on the plugin's `swarm-worker` agent in their own worktrees, verifiers on `verifier`, with the briefs of `references/brief.md`, read before the first dispatch. A worker stays for the whole run; one whose context runs long is replaced in the same seat.
 

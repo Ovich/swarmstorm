@@ -26,6 +26,9 @@ beforeEach(() => {
   for (const f of ["a", "b"]) fs.writeFileSync(path.join(repo, "src", `${f}.ts`), "export {};\n");
   git("add", ".");
   git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "root");
+  // the member works in a worktree of its own: the board makes none, and knows it by this folder
+  git("worktree", "add", "-q", "-b", "s3", path.join(toolRoot, "wt"));
+  repo = path.join(toolRoot, "wt");
   const seats = path.join(toolRoot, "seats.json");
   fs.writeFileSync(seats, JSON.stringify([{ id: "S3", blockers: [] }]));
   const open = run("open", "--plan", "p", "--title", "T", "--seats", seats);

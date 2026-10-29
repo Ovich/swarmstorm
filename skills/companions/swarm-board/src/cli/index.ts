@@ -16,6 +16,7 @@ import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { git, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
+import { WORKTREES_ROOT, baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -24,7 +25,8 @@ const FORGOTTEN_MS = 24 * 60 * 60 * 1000;
 
 const USAGE = [
   "usage: swarm <verb> [--json]        (swarm --help code: the claim and merge verbs)",
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
@@ -35,8 +37,8 @@ const USAGE = [
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  "  close   --run <id>                                              # (orchestrator)",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link',
+  "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<group>/<seat>, or reuses it',
   "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -57,6 +59,7 @@ const USAGE = [
   "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
   "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
   "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
+  "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
   "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree",
 ].join("\n");
@@ -615,6 +618,27 @@ const subscriptionsArg = (spec: string): Subscription[] => {
 /** Main is gone (D12): the conversation is one, a mention says who is meant. */
 const NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW·SL3, @swarm)";
 
+/** An open run by id; null when closed or unknown. */
+const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id) ?? null;
+
+/** A code run's member gets the board's worktree, made or reused (the kind's profile `worktree`); a seat of a talk-only
+ *  kind, an undeclared seat, or a caller already in a worktree of its own (one it made, or its harness did) gets none. */
+async function memberWorktree(runId: number, seat: string): Promise<{ path: string; branch: string; base: string; reused: boolean } | null> {
+  const run = await runOf(runId);
+  if (!run || !profileOf(run.kind).worktree || !run.seats.some((s) => s.id === seat)) return null;
+  const cwd = process.cwd();
+  // outside a repository, or in one with no commit yet: nothing to branch from
+  const base = run.base ?? baseAt(cwd);
+  if (!base || !worktreeOf(cwd)) return null;
+  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
+  if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
+  try {
+    return { ...ensureWorktree(cwd, run.group, seat, base), base };
+  } catch (e) {
+    return fail(`join: ${(e as Error).message}`);
+  }
+}
+
 async function main(): Promise<void> {
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
@@ -658,6 +682,8 @@ async function main(): Promise<void> {
         seats: readSeats(seatsFile),
         ...(stallMs !== undefined ? { stallMs } : {}),
         ...(protocol !== undefined ? { protocol } : {}),
+        // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
+        base: args.flag("--onto") ?? baseAt(process.cwd()),
       });
       // the orchestrator's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
@@ -709,8 +735,18 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
+      const trees = (await board.worktrees(run)).filter((w) => owned(w.worktree) && fs.existsSync(w.worktree));
       await board.closeRun(run);
-      emit({ run, state: "closed" }, `run ${run} closed`);
+      // the run's worktrees go once clean and merged; their links go first, as Windows holds a folder a live process is in
+      if (trees.length) stopLinks(run, trees.map((w) => w.member));
+      const swept = trees.map((w) => ({ worktree: w.worktree, member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
+      const kept = swept.filter((w) => !w.removed);
+      emit({ run, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
+        console.log(`run ${run} closed`);
+        const n = swept.length - kept.length;
+        if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
+        for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
+      });
       break;
     }
     case "phase": {
@@ -793,12 +829,13 @@ ${USAGE}`);
       break;
     }
     case "join": {
+      const own = await memberWorktree(runArg(), joinedSeat());
       const { member, roster, composition } = await board.join({
         run: runArg(),
         seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
-        worktree: worktreeOf(process.cwd()) ?? undefined,
+        worktree: own?.path ?? worktreeOf(process.cwd()) ?? undefined,
         ...(args.flag("--on") !== undefined ? { on: subscriptionsArg(args.flag("--on")!) } : {}),
       });
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
@@ -808,13 +845,17 @@ ${USAGE}`);
       const next = await nextStep(member);
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
       const shared = !profileOf(member.kind).worktree;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : null;
+      const as = shared
+        ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
+        : own
+          ? `your worktree: ${own.path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(own.path)}, never cd into it; pass --as ${member.name} on every call`
+          : null;
       const commands = shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
       // the run's current phase after the roster: a late or restarted member starts in it
       const phase = await phaseHeader(member.run);
-      emit({ member: member.name, nick: member.nick, roster, composition, phase, ...(shared ? { as: member.name, commands } : {}), ...(drawing ? { drawing } : {}), link, next }, () => {
+      emit({ member: member.name, nick: member.nick, roster, composition, phase, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(drawing ? { drawing } : {}), link, next }, () => {
         console.log(`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`);
         for (const l of composition.lines) console.log(l);
         for (const r of roster) console.log(rosterLine(r));
@@ -1123,9 +1164,18 @@ ${rearm}` : rearm;
           ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report`
           : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`,
       );
-      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}) }, () => {
+      // the board's worktree goes once clean and merged; the branch stays, and a later join makes a fresh one
+      const into = lock?.onto ?? (await runOf(p.run))?.base ?? null;
+      const tree = owned(p.worktree) && fs.existsSync(p.worktree) ? { worktree: p.worktree, ...sweep(p.worktree, p.repo, into) } : null;
+      const treeLine = !tree
+        ? null
+        : tree.removed
+          ? `worktree ${tree.worktree} removed (branch kept); for your next task, join again for a fresh one: ${[...self(), "join", "--run", String(p.run), "--seat", shellWord(p.seat), "--doing", '"<the task>"', "--as", shellWord(p.name)].join(" ")}`
+          : `worktree ${tree.worktree} kept: ${tree.why}`;
+      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}), ...(tree ? { worktree: tree.worktree, removed: tree.removed, ...(tree.why ? { kept: tree.why } : {}) } : {}) }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
+        if (treeLine) console.log(treeLine);
       });
       break;
     }
@@ -1142,6 +1192,16 @@ ${rearm}` : rearm;
       // a mention landed since its last look: it reads it before it ends
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
+      // the board's worktree with work not merged: end refuses, naming it and the merge
+      const base = (await runOf(p.run))?.base ?? null;
+      const mine = owned(p.worktree) && fs.existsSync(p.worktree) ? p.worktree : null;
+      const left = mine ? leftover(mine, base) : null;
+      if (mine && left) {
+        const who = `--as ${shellWord(p.name)}`;
+        fail(
+          `end: your worktree ${mine} holds work not merged: ${left}. Commit it, then merge it: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
+        );
+      }
       // what the member wrote without claiming it, once, before its claims go (D58)
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
@@ -1150,9 +1210,32 @@ ${rearm}` : rearm;
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
       await board.end(p);
-      emit({ member: p.name, ended: true, reconciled, flags }, () => {
+      // its link goes first: Windows holds a folder a live process is in
+      if (mine) stopLinks(p.run, [p.name]);
+      const removal = mine ? removeWorktree(mine, p.repo) : null;
+      emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
+        if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
+      });
+      break;
+    }
+    case "worktree": {
+      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${USAGE}`);
+      const known = await board.worktrees();
+      const dirs = fs.existsSync(WORKTREES_ROOT) ? fs.readdirSync(WORKTREES_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(WORKTREES_ROOT, d.name)) : [];
+      const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
+      const out = dirs.map((dir) => {
+        // the latest member to join from it says which run it belongs to
+        const w = known.filter((k) => fold(k.worktree) === fold(dir)).at(-1);
+        if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
+        if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
+        return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+      });
+      const kept = out.filter((o) => !o.removed);
+      emit({ root: WORKTREES_ROOT, removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
+        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${WORKTREES_ROOT} (branches kept)`);
+        for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
       });
       break;
     }

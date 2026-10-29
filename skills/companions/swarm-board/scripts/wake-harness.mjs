@@ -11,13 +11,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const REPO = path.resolve(ROOT, "..", "..", ".."); // the checkout: members run from its root, so paths are repository-relative
 const HOME = process.argv[2] ? path.resolve(process.argv[2]) : "";
 if (!HOME || (fs.existsSync(HOME) && fs.readdirSync(HOME).length > 0)) {
   console.error("usage: node scripts/wake-harness.mjs <empty dir>   (missing or empty: it is the data home)");
   process.exit(2);
 }
 fs.mkdirSync(HOME, { recursive: true });
+// a throwaway repository in the data home: members run from its root, so paths are repository-relative; a code
+// run's join makes a worktree and a branch per seat, which must never land in this checkout
+const REPO = path.join(HOME, "repo");
+fs.mkdirSync(REPO);
+fs.writeFileSync(path.join(REPO, "README.md"), "wake harness\n");
+for (const argv of [["init", "-q", "-b", "main"], ["add", "."], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "root"]])
+  if (spawnSync("git", argv, { cwd: REPO }).status !== 0) {
+    console.error(`git ${argv.join(" ")} failed in ${REPO}`);
+    process.exit(2);
+  }
 // the CLI under test is this checkout's source, bundled into the data home (dist-cli/ may be older than src/)
 const CLI = path.join(HOME, "swarm-cli.mjs");
 const built = spawnSync(process.execPath, [path.join(ROOT, "build.mjs"), "--outfile", CLI], { cwd: ROOT, encoding: "utf8" });

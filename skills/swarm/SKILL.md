@@ -26,20 +26,20 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
 ## Open and dispatch
 
 1. Create the branch, push it, and leave it checked out nowhere (detach the main checkout): a
-   worker fast-forwards it from its own worktree.
+   worker fast-forwards it from the worktree its join makes.
 2. A seats file, one row per worker, `w1` … `w<n>`, role `worker`, and under build-verify one
    per verifier, `v1` … `v<m>`, role `verifier`, area `<focus>`, with `"busyMax": 300000` (a browser or
    other non-shell call hung 5 min is told to you) and its own port range in its brief; then `$S open --kind task
-   --group <topic> --title "<what the swarm is for>" --seats <file>` with `--protocol <the
+   --group <topic> --title "<what the swarm is for>" --seats <file> --onto <branch>` with `--protocol <the
    charter's base>` when it runs one, or `--protocol none` for a swarm with no phases on purpose,
    and start your link as it prints; under a protocol, open its first phase before the first
    task post. Give the person the board's URL.
 3. **Every worker at once** on the plugin's `swarm-worker` agent (`subagent_type:
-   "swarmstorm:swarm-worker"`), each with `isolation: "worktree"`, as the `orchestrate` skill
+   "swarmstorm:swarm-worker"`), no `isolation` (its join makes its worktree), as the `orchestrate` skill
    dispatches. The brief holds no task (`<S>` is the CLI as you run it, the `swarm-board` skill's `$S`, written out in full):
 
    ```markdown
-   You are worker `<wN>` of task swarm run `<run id>` on `<repository>`. Your worktree is based on `<branch>`; merge into `<branch>`. **Prepare**: `<the command, install included>`. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <wN> --doing "joining" --as <topic>/<wN>`, then wait for the tasks posted to you.
+   You are worker `<wN>` of task swarm run `<run id>` on `<repository>`. Your join makes your worktree from `<branch>` and prints its path; merge into `<branch>`. **Prepare**, in that worktree: `<the command, install included>`. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <wN> --doing "joining" --as <topic>/<wN>`, then wait for the tasks posted to you.
    ```
 
    Under build-verify, every verifier at once too, on the plugin's `verifier` agent
