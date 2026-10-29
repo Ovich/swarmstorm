@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverGuides, globRegex, guidesFor, guidesNamed, parseGuide } from "../src/cli/guides.ts";
+import { discoverGuides, globRegex, guidesFor, guidesSettlement, parseGuide, projectGuidesAt } from "../src/cli/guides.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
@@ -95,6 +95,7 @@ test("merge-lock lists the branch's guides; merged refuses until every one is se
   const missing = swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits");
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /missing: ui/);
+  git(wtA, "push", "-q", ".", "HEAD:main");
   const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits, ui:n/a no screen, only a constant");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
@@ -102,12 +103,18 @@ test("merge-lock lists the branch's guides; merged refuses until every one is se
 });
 
 test("a branch touching no guide's paths merges without --guides", () => {
+  // the target drops its guides, and the branch takes that before its own change
+  git(repo, "checkout", "-q", "main");
   fs.rmSync(path.join(repo, ".claude"), { recursive: true });
-  fs.rmSync(path.join(wtA, ".claude"), { recursive: true });
-  commit(wtA, "no guides");
+  commit(repo, "no guides");
+  git(repo, "checkout", "-q", "--detach");
+  git(wtA, "rebase", "-q", "main");
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const b = 1;\n");
+  commit(wtA, "a");
   const lock = cli(wtA, "merge-lock", "--onto", "main");
   assert.doesNotMatch(lock, /guides of this merge/);
-  cli(wtA, "merged", git(wtA, "rev-parse", "HEAD").trim(), "--files", ".claude", "--report", "-");
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  cli(wtA, "merged", git(wtA, "rev-parse", "HEAD").trim(), "--files", "src/a.ts", "--report", "-");
 });
 
 test("guides: frontmatter forms, globs, shipped and project sources, settled names", () => {
@@ -125,5 +132,46 @@ test("guides: frontmatter forms, globs, shipped and project sources, settled nam
   // the project's guide-all stands in for the shipped one of the same name
   assert.deepEqual(found.map((g) => `${g.name}:${g.skill}`), ["layers:guide-layers", "all:guide-all", "ui:guide-ui"]);
   assert.deepEqual(guidesFor(found, ["docs/x.md"]).map((g) => g.name), ["all"]);
-  assert.deepEqual(guidesNamed("a:ok, b:n/a why, with comma, c: ok"), ["a", "b", "c"]);
+  assert.deepEqual(guidesSettlement("a:ok, b:n/a why, with comma, c: ok", ["a", "b", "c"]), { missing: [], unknown: [], unjudged: [] });
+  assert.deepEqual(guidesSettlement("a:fine, b:n/a, x:ok", ["a", "b", "c"]), { missing: ["c"], unknown: ["x"], unjudged: ["a", "b"] });
+  // the target's tree, read through git: only guide-* folders
+  const tree: Record<string, string> = { ".claude/skills/guide-t/SKILL.md": '---\nname: guide-t\npaths: ["lib/**"]\n---\n' };
+  assert.deepEqual(projectGuidesAt((spec) => tree[spec] ?? null, "guide-t\nother"), [{ name: "t", skill: "guide-t", paths: ["lib/**"] }]);
+});
+
+test("merged refuses an unknown guide, a verdict that is neither ok nor n/a with a why, and a sha not on the branch", () => {
+  fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 2;\n");
+  commit(wtA, "page");
+  cli(wtA, "merge-lock", "--onto", "main");
+  const sha = git(wtA, "rev-parse", "HEAD").trim();
+  const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
+  assert.match(merged("all:ok, ui:ok, bogus:ok").stderr, /names bogus, which merge-lock did not list/);
+  assert.match(merged("all:ok, ui:n/a").stderr, /gives ui no verdict/);
+  // not pushed onto main yet: not merged
+  assert.match(merged("all:ok, ui:ok").stderr, /is not on main; fast-forward it first/);
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", "all:ok, ui:ok");
+  // a silent merge still records its guides in the run
+  const seq = /guides recorded as #(\d+)/.exec(out)?.[1];
+  assert.ok(seq, out);
+  assert.match(cli(repo, "read", seq), /guides: all:ok, ui:ok/);
+});
+
+test("merge-lock names a guide the target gained since the branch left it", () => {
+  guideFile(path.join(repo, ".claude", "skills"), "guide-lib", 'name: guide-lib\npaths: ["src/a.ts"]');
+  git(repo, "checkout", "-q", "main");
+  commit(repo, "lib guide");
+  git(repo, "checkout", "-q", "--detach");
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 1;\n");
+  commit(wtA, "a");
+  assert.match(cli(wtA, "merge-lock", "--onto", "main"), /guides of this merge: all \(guide-all\), lib \(guide-lib\)/);
+});
+
+test("claim takes several paths, and resolves them in the member's worktree whatever the shell's folder", () => {
+  const out = cli(home, "claim", "src/a.ts", "src/ui/page.ts", "--as", "g/S1");
+  assert.match(out, /^claimed src\/a\.ts$/m);
+  assert.match(out, /^claimed src\/ui\/page\.ts$/m);
+  // the other member is held on both
+  const held = swarm(wtB, "claim", "src/a.ts");
+  assert.equal(held.status, 3);
 });

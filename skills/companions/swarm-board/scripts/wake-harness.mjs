@@ -1,4 +1,4 @@
-// Wake harness, run by hand: node scripts/wake-harness.mjs <empty dir>. It drives this checkout's swarm CLI as
+// Wake harness, run by hand: node scripts/wake-harness.mjs [<empty dir>]. It drives this checkout's swarm CLI as
 // several members of several runs in a throwaway data home (the directory given, which must be missing or empty),
 // and for each event asks one question: does a member sitting in `wait --mentions` wake or sleep? Cases that must
 // not wake (plain talk, other runs, claims, joins, bursts) and cases that must (mentions, pause/resume, an
@@ -7,13 +7,16 @@
 // end. Never part of `npm test`: it takes minutes and sleeps on purpose.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const HOME = process.argv[2] ? path.resolve(process.argv[2]) : "";
-if (!HOME || (fs.existsSync(HOME) && fs.readdirSync(HOME).length > 0)) {
-  console.error("usage: node scripts/wake-harness.mjs <empty dir>   (missing or empty: it is the data home)");
+// no dir given: a fresh one under the system temp folder, named in the first line (G11)
+const HOME = process.argv[2] ? path.resolve(process.argv[2]) : fs.mkdtempSync(path.join(os.tmpdir(), "wake-harness-"));
+if (!process.argv[2]) console.log(`data home: ${HOME}`);
+if (fs.existsSync(HOME) && fs.readdirSync(HOME).length > 0) {
+  console.error(`usage: node scripts/wake-harness.mjs [<empty dir>]   (${HOME} is not empty; with no dir, a fresh temp one is made)`);
   process.exit(2);
 }
 fs.mkdirSync(HOME, { recursive: true });

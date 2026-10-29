@@ -49,8 +49,15 @@ export function makeRepo(prefix = "swarm-merge-"): Repo {
     assert.equal(r.status, 0, `git ${argv.join(" ")}: ${r.stderr}`);
     return r.stdout;
   };
-  const swarm = (cwd: string, argv: string[], opts: { oldGit?: boolean } = {}) =>
-    spawnSync(process.execPath, [...(opts.oldGit ? ["--require", OLD_GIT] : []), CLI, ...argv], { cwd, encoding: "utf8", env: env() });
+  const swarm = (cwd: string, argv: string[], opts: { oldGit?: boolean } = {}) => {
+    // `merged` names a commit already on main, as the worker's push makes it: the fixture lands it first
+    const sha = argv[0] === "merged" ? argv.find((a) => /^[0-9a-f]{40}$/.test(a)) : undefined;
+    if (sha && spawnSync("git", ["merge-base", "--is-ancestor", sha, "main"], { cwd: repo }).status !== 0) {
+      git(repo, "merge", "-q", "--no-edit", sha);
+      git(repo, "update-ref", "refs/heads/main", "HEAD");
+    }
+    return spawnSync(process.execPath, [...(opts.oldGit ? ["--require", OLD_GIT] : []), CLI, ...argv], { cwd, encoding: "utf8", env: env() });
+  };
   const cli = (cwd: string, ...argv: string[]): string => {
     const r = swarm(cwd, argv);
     assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stderr}`);

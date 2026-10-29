@@ -54,9 +54,11 @@ function guidesIn(dir: string, keep: (folder: string) => boolean): Guide[] {
 
 /** The shipped guides (the plugin root is three levels above the swarm-board skill), then the project's;
  *  a project guide of the same name stands in for the shipped one. */
-export function discoverGuides(toolRoot: string, repoRoot: string | null): Guide[] {
+export function discoverGuides(toolRoot: string, repoRoot: string | null, alsoProject: Guide[] = []): Guide[] {
   const shipped = guidesIn(path.resolve(toolRoot, "..", "..", "..", "skills", "guides"), () => true);
-  const project = repoRoot ? guidesIn(path.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const here = repoRoot ? guidesIn(path.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  // the worktree's own stands in for one of the same name from elsewhere (the target's tree)
+  const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
 }
@@ -86,10 +88,29 @@ export function guidesFor(guides: Guide[], files: string[]): Guide[] {
 export const guidesLine = (guides: Guide[]): string | null =>
   guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
 
-/** `merged --guides "<name>:ok|n/a <why>, …"`: the names it settles; the rest of each entry is the member's word. */
-export const guidesNamed = (arg: string): string[] =>
-  arg
-    // an entry starts at `<name>:`, so a why may hold commas
+/** How `merged --guides` settles the guides merge-lock listed: those left out, names it never listed,
+ *  and entries whose verdict is neither `ok` nor `n/a <why>`. */
+export function guidesSettlement(arg: string, listed: string[]): { missing: string[]; unknown: string[]; unjudged: string[] } {
+  const entries = arg
     .split(/,(?=\s*[^\s:,]+\s*:)/)
-    .map((e) => /^\s*([^:\s]+)\s*:/.exec(e)?.[1])
-    .filter((n): n is string => !!n);
+    .map((e) => /^\s*([^:\s]+)\s*:\s*(.*)$/s.exec(e))
+    .filter((m): m is RegExpExecArray => !!m)
+    .map((m) => ({ name: m[1], verdict: m[2].trim() }));
+  const named = entries.map((e) => e.name);
+  return {
+    missing: listed.filter((g) => !named.includes(g)),
+    unknown: named.filter((n) => !listed.includes(n)),
+    unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name),
+  };
+}
+
+/** The project guides in `ref`'s tree, read through git: what a branch will meet once rebased onto it. */
+export function projectGuidesAt(show: (spec: string) => string | null, list: string | null): Guide[] {
+  const out: Guide[] = [];
+  for (const folder of (list ?? "").split(/\r?\n/).map((l) => l.trim().split("/").pop() ?? "").filter((f) => f.startsWith("guide-")).sort()) {
+    const text = show(`.claude/skills/${folder}/SKILL.md`);
+    const g = text ? parseGuide(text, folder) : null;
+    if (g) out.push(g);
+  }
+  return out;
+}

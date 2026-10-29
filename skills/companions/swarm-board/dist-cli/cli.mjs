@@ -740,13 +740,13 @@ function timeline(joined, over, calls, turns, silentAfterMs) {
   for (let i = 1; i < points.length; i++) if (points[i] - points[i - 1] > silentAfterMs) silent.push({ from: points[i - 1], to: points[i], what: "silent" });
   const clip = (t) => Math.min(over, Math.max(joined, t));
   const bounds = [.../* @__PURE__ */ new Set([joined, over, ...[...exact, ...silent].flatMap((s) => [clip(s.from), clip(s.to)])])].sort((a, b) => a - b);
-  const inside = (spans, what, at) => spans.some((s) => s.what === what && s.from <= at && at < s.to);
+  const inside2 = (spans, what, at) => spans.some((s) => s.what === what && s.from <= at && at < s.to);
   const out = [];
   for (let i = 1; i < bounds.length; i++) {
     const from = bounds[i - 1];
     const to = bounds[i];
     const mid = (from + to) / 2;
-    const what = inside(exact, "merging", mid) ? "merging" : inside(exact, "waiting", mid) ? "waiting" : inside(silent, "silent", mid) ? "silent" : "working";
+    const what = inside2(exact, "merging", mid) ? "merging" : inside2(exact, "waiting", mid) ? "waiting" : inside2(silent, "silent", mid) ? "silent" : "working";
     const last = out[out.length - 1];
     if (last && last.what === what && ms(last.to) === from) last.to = iso(to);
     else out.push({ from: iso(from), to: iso(to), what, inferred: what === "working" || what === "silent" });
@@ -8447,9 +8447,10 @@ function guidesIn(dir, keep) {
   }
   return out;
 }
-function discoverGuides(toolRoot2, repoRoot) {
+function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
   const shipped = guidesIn(path8.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
-  const project = repoRoot ? guidesIn(path8.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const here = repoRoot ? guidesIn(path8.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
 }
@@ -8471,7 +8472,24 @@ function guidesFor(guides, files) {
   return guides.filter((g) => g.paths.some((glob) => files.some((f) => globRegex(glob).test(f))));
 }
 var guidesLine = (guides) => guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
-var guidesNamed = (arg) => arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((e) => /^\s*([^:\s]+)\s*:/.exec(e)?.[1]).filter((n) => !!n);
+function guidesSettlement(arg, listed) {
+  const entries = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((e) => /^\s*([^:\s]+)\s*:\s*(.*)$/s.exec(e)).filter((m) => !!m).map((m) => ({ name: m[1], verdict: m[2].trim() }));
+  const named = entries.map((e) => e.name);
+  return {
+    missing: listed.filter((g) => !named.includes(g)),
+    unknown: named.filter((n) => !listed.includes(n)),
+    unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name)
+  };
+}
+function projectGuidesAt(show, list) {
+  const out = [];
+  for (const folder of (list ?? "").split(/\r?\n/).map((l) => l.trim().split("/").pop() ?? "").filter((f) => f.startsWith("guide-")).sort()) {
+    const text = show(`.claude/skills/${folder}/SKILL.md`);
+    const g = text ? parseGuide(text, folder) : null;
+    if (g) out.push(g);
+  }
+  return out;
+}
 
 // src/cli/git.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
@@ -8691,7 +8709,7 @@ var USAGE = [
 ].join("\n");
 var CODE_USAGE = [
   "usage: swarm <verb> [--json]        the code verbs; refused on a run whose kind has no claims",
-  "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
+  "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
   `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
@@ -8797,6 +8815,7 @@ async function caller() {
   const wt = as ? null : worktreeOf(process.cwd());
   const p = as ? await board.participant(as) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ worktree: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
+  if (p.worktree && fs11.existsSync(p.worktree)) callerWorktree = p.worktree;
   const member = { name: p.name, run: p.run };
   if (p.ended || !(await direct.runs()).some((r) => r.id === p.run)) return p;
   board = await connectBoard({ dataRoot: DATA_ROOT, member });
@@ -8991,7 +9010,12 @@ var emitHeard = async (p, json, human) => {
     if (next) console.log(next);
   });
 };
-var guidesHere = (p) => discoverGuides(toolRoot(), p.worktree ?? worktreeOf(process.cwd()));
+var slashed = (s) => s.replace(/\\/g, "/");
+var guidesHere = (p, onto) => {
+  const root = p.worktree ?? worktreeOf(process.cwd());
+  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
+  return discoverGuides(toolRoot(), root, ofOnto);
+};
 var guidesToTell = async (p, files) => {
   const matching = guidesFor(guidesHere(p), files);
   if (!matching.length) return [];
@@ -8999,18 +9023,24 @@ var guidesToTell = async (p, files) => {
   return matching.filter((g) => untold.has(g.name));
 };
 var DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
+var callerWorktree = null;
+var pathsRoot = () => callerWorktree ?? worktreeOf(process.cwd());
+var inside = (root, dir) => {
+  const rel = path11.relative(path11.resolve(root), path11.resolve(dir));
+  return !rel.startsWith("..") && !path11.isAbsolute(rel);
+};
 function resolveClaimPath(file, about = false) {
   if (path11.isAbsolute(file)) return file;
-  const here = path11.resolve(file);
+  const root = pathsRoot();
+  const here = root && !inside(root, process.cwd()) ? path11.resolve(root, file) : path11.resolve(file);
   if (fs11.existsSync(here)) return here;
-  const root = worktreeOf(process.cwd());
   const fromRoot = root ? path11.resolve(root, file) : null;
   if (fromRoot && fs11.existsSync(fromRoot)) return fromRoot;
   if (args.has("--new")) return here;
   return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
 }
 function repoRelative(abs) {
-  const root = worktreeOf(process.cwd());
+  const root = pathsRoot();
   const rel = root ? path11.relative(root, abs) : abs;
   return rel.split(path11.sep).join("/");
 }
@@ -9207,7 +9237,7 @@ ${USAGE}`);
       const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree) && fs11.existsSync(w.worktree));
       await board.closeRun(run3);
       if (trees.length) stopLinks(run3, trees.map((w) => w.member));
-      const swept = trees.map((w) => ({ worktree: w.worktree, member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
+      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
       const kept = swept.filter((w) => !w.removed);
       emit({ run: run3, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run3} closed`);
@@ -9498,17 +9528,23 @@ ${rearm}` : rearm;
     case "claim": {
       const p = await caller();
       if (await refusedPaused(p, "claim")) break;
-      const file = args.positional[0] ?? fail("claim: which path?");
-      const abs = resolveClaimPath(file);
-      const rel = repoRelative(abs);
-      const verdict = await board.checkEdit(p, abs, { interface: args.has("--interface") });
-      if (!verdict.allowed) process.exitCode = 3;
-      const also = verdict.allowed && verdict.notice ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} \xB7 ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ") : "";
-      const told = verdict.allowed ? await guidesToTell(p, [rel]) : [];
+      if (!args.positional.length) fail("claim: which path?");
+      const answers = [];
+      for (const file of args.positional) {
+        const abs = resolveClaimPath(file);
+        const verdict = await board.checkEdit(p, abs, { interface: args.has("--interface") });
+        if (!verdict.allowed) process.exitCode = 3;
+        const also = verdict.allowed && verdict.notice ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} \xB7 ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ") : "";
+        answers.push({ rel: repoRelative(abs), verdict, also });
+      }
+      const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
-      await emitHeard(p, told.length ? { ...verdict, guides: told } : verdict, () => {
-        if (!verdict.allowed) return console.log(verdict.refusal);
-        console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
+      const json = answers.length === 1 ? answers[0].verdict : { claims: answers.map((a) => ({ path: a.rel, ...a.verdict })) };
+      await emitHeard(p, told.length ? { ...json, guides: told } : json, () => {
+        for (const { rel, verdict, also } of answers) {
+          if (!verdict.allowed) console.log(verdict.refusal);
+          else console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
+        }
         if (guidesNow) console.log(guidesNow);
       });
       break;
@@ -9518,7 +9554,7 @@ ${rearm}` : rearm;
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       const released = [];
-      const targets = all ? (await board.heldBy(p)).map((f) => path11.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
+      const targets = all ? (await board.heldBy(p)).map((f) => path11.resolve(pathsRoot() ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
       if (all && !targets.length) {
         emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
         break;
@@ -9547,7 +9583,7 @@ ${rearm}` : rearm;
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", onto, "HEAD") ?? "HEAD") : [];
       const reflogMark = p.worktree ? headReflogLength(p.worktree) ?? void 0 : void 0;
-      const guides = guidesFor(guidesHere(p), reconciled);
+      const guides = guidesFor(guidesHere(p, onto), reconciled);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
@@ -9571,19 +9607,25 @@ ${rearm}` : rearm;
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
       }
       const guidesArg = args.flag("--guides")?.trim();
-      const unsettled = (lock?.guides ?? []).filter((g) => !guidesNamed(guidesArg ?? "").includes(g));
-      if (unsettled.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${unsettled.join(", ")}. Pass --guides "${unsettled.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
+      const listed = lock?.guides ?? [];
+      const settled = guidesSettlement(guidesArg ?? "", listed);
+      if (settled.missing.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${settled.missing.join(", ")}. Pass --guides "${settled.missing.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
+      if (settled.unknown.length) fail(`merged: --guides names ${settled.unknown.join(", ")}, which merge-lock did not list; the guides of this merge: ${listed.join(", ") || "none"}`);
+      if (settled.unjudged.length) fail(`merged: --guides gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`);
+      if (lock?.onto && p.worktree && git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`) && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+        fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.worktree)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
       const sharers = await board.merged(p, sha, files.map((f) => path11.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `
 guides: ${guidesArg}` : ""}`, { kind: "msg" });
+      const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
         (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
       );
       emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {} }, () => {
-        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
+        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
         for (const line of tell) console.log(line);
       });
       break;
@@ -9592,6 +9634,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const p = await caller();
       if ((await board.runs()).every((r) => r.id !== p.run)) {
         const line = `run ${p.run} closed: ${p.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
+        linkToStart = null;
         emit({ member: p.name, ended: true, closed: true, next: line }, line);
         break;
       }
@@ -9599,7 +9642,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree) && fs11.existsSync(p.worktree) ? p.worktree : null;
+      const mine = owned(p.worktree) && fs11.existsSync(p.worktree) ? slashed(p.worktree) : null;
       const left = mine ? leftover(mine, base) : null;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
@@ -9613,6 +9656,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
       await board.end(p);
+      linkToStart = null;
       if (mine) stopLinks(p.run, [p.name]);
       const removal = mine ? removeWorktree(mine, p.repo) : null;
       emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
@@ -9630,13 +9674,13 @@ ${USAGE}`);
       const fold2 = (s) => process.platform === "win32" ? path11.resolve(s).toLowerCase() : path11.resolve(s);
       const out = dirs.map((dir) => {
         const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);
-        if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
-        if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
-        return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+        if (!w) return { worktree: slashed(dir), removed: false, why: "no member of any run joined from it" };
+        if (w.open) return { worktree: slashed(dir), removed: false, why: `run ${w.run} is open` };
+        return { worktree: slashed(dir), ...sweep(dir, w.repo, w.base) };
       });
       const kept = out.filter((o) => !o.removed);
       emit({ root: WORKTREES_ROOT, removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
-        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${WORKTREES_ROOT} (branches kept)`);
+        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${slashed(WORKTREES_ROOT)} (branches kept)`);
         for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
       });
       break;

@@ -70,7 +70,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
 7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
    post after the merge; a task that merged nothing reports in one post to `@orchestrator`
    (`post --file` for a long one). A fix task reports per finding id what changed. Then
-   `$S release` the files you no longer touch, and back to 3.
+   `$S release <path>...` the files you no longer touch (`--all`: every claim you hold), and back to 3.
 8. **The run closes** (the closed line): `$S end`, then return one line per task you did. `end`
    refuses while your worktree holds work not merged, naming it and the merge; once it ends, it
    removes the worktree. It claims or flags what you wrote without a claim, releases your claims and the lock, and makes
