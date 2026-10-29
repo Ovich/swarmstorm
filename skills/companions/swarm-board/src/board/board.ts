@@ -2456,7 +2456,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     thread(p, name) {
       const fresh = participantById(p.id);
       const phase = name ?? phaseOf(runRow(fresh.run))?.name;
-      if (!phase) return [];
+      // board-split F5: a run with no phase (a brainstorm) gives every post of the run
+      if (!phase) return this.runThread(fresh.run);
       return phasePosts(fresh.run, phase);
     },
 

@@ -113,7 +113,7 @@ test("G33 target: thread states the phase text once", async () => {
     expect(s.call("thread", "--as", s.me), [
       "phase build: build the thing",
       "no post yet in phase build",
-      `phase build is yours: Do your part now, then: node <cli> done build --as ${s.me}`,
+      `you owe phase build: do your part, then mark it done: node <cli> done build --as ${s.me}`,
     ]);
   } finally {
     s.stop();

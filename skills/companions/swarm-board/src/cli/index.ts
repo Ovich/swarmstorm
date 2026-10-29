@@ -717,7 +717,7 @@ async function main(): Promise<void> {
       const id = args.positional[0] ?? fail(`seat: which seat?\n${verbHelp()}`);
       refuseTranscriptFlag("seat");
       // board-split D36: a seat's state is derived from its member; `seat <id> --state` is refused
-      fail(WORDING.seatStateDerived(self().join(" "), shellWord(id)));
+      fail(WORDING.seatStateDerived(self().join(" "), shellWord(id), asWord()));
     }
     case "close": {
       const run = runArg();
@@ -792,7 +792,8 @@ async function main(): Promise<void> {
     case "resume": {
       const p = await caller();
       // pause --person "<what they decide>": a pause waiting on the person (idea 2, B12)
-      const person = args.verb === "pause" ? args.flag("--person") : undefined;
+      // the text is --person's value or the positional words, either way (board-split F2, D44)
+      const person = args.verb === "pause" && args.has("--person") ? (args.flag("--person") ?? args.positional.join(" ")) : undefined;
       const text = person ?? args.positional.join(" ");
       const cli = self().join(" ");
       if (args.verb === "pause") {
@@ -858,7 +859,7 @@ async function main(): Promise<void> {
         : own
           ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
-      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord(member.name), FOREGROUND_WAIT_MS) : shared ? seatCommands(member.name) : null;
+      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord(member.name)) : shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
       // the run's current phase after the roster: a late or restarted member starts in it; then the owed phase and the

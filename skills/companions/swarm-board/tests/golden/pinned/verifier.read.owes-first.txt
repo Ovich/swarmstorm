@@ -2,4 +2,4 @@ exit 0
 #<seq> g/orchestrator (event)  <ts>
 run 1 opened: task g, T
 phase build: build the thing
-phase build is open and asks: build the thing. Do your part now, then: node <cli> done build --as g/v1
+phase build is open and asks: build the thing. Do your part now, then mark it done: node <cli> done build --as g/v1

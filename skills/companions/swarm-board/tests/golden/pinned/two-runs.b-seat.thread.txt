@@ -4,4 +4,4 @@ phase ideas: ideas for beta
 beta plain talk
 #<seq> gb/orchestrator  <ts>
 @s1 an idea for b, please
-phase ideas is yours: Do your part now, then: node <cli> done ideas --as gb/s1
+you owe phase ideas: do your part, then mark it done: node <cli> done ideas --as gb/s1

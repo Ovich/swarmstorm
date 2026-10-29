@@ -2,4 +2,4 @@ exit 0
 #<seq> g/orchestrator (event)  <ts>
 run 1 opened: brainstorm g, T
 phase build: build the thing
-phase build is open and asks: build the thing. Read the whole phase first: node <cli> thread --as g/s1. Do your part now, then: node <cli> done build --as g/s1
+phase build is open and asks: build the thing. Read the whole phase first: node <cli> thread --as g/s1. Do your part now, then mark it done: node <cli> done build --as g/s1

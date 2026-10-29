@@ -52,8 +52,9 @@ export const joinStep = (s: Situation, showedPosts: boolean): string => {
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {
   if (s.ended || s.listenerRunning) return null;
-  // S21: a verb that heard from the member names the phase it owes, never repeats its text: a wake or a read showed it
-  if (s.listens !== "foreground") return nextStep(s, true);
+  // S21, board-split F8: the owed phase is news once, at the wake or join that showed it; a verb that heard from a
+  // working member only asks for its listener
+  if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
   return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 

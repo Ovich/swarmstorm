@@ -4,4 +4,4 @@ phase build: build alpha
 alpha plain talk
 #<seq> ga/orchestrator  <ts>
 @w1 a-task-only: do it
-phase build is yours: Do your part now, then: node <cli> done build --as ga/w1
+you owe phase build: do your part, then mark it done: node <cli> done build --as ga/w1

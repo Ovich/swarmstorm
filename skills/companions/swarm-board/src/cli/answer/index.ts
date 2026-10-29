@@ -101,7 +101,7 @@ export function answer(r: VerbResult, s: Situation): Answer {
       const headers = phaseHeaders(s);
       // G33: the header above states the phase; the owed step alone, brief, its text not again
       const owes = owedLine(s, { thread: false, brief: !!headers.printed });
-      const none = r.shown.length ? [] : [W.noPostYet(r.phase ?? s.phase?.name ?? "-")];
+      const none = r.shown.length ? [] : [W.noPostYet(r.phase ?? s.phase?.name ?? null)];
       return { lines: [...(headers.printed ? [headers.printed] : []), ...none, ...shownLines(r.shown), ...(owes ? [owes] : [])], next: owes, phase: headers.full };
     }
     case "done": {

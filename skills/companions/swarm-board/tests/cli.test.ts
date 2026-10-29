@@ -793,7 +793,7 @@ test("board-split D12: the code verbs, called by a seat with no code pack, exit 
   for (const argv of [["claim", "src/x.ts"], ["release", "src/x.ts"], ["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
     const r = run(...argv, "--as", "idea/architect");
     assert.equal(r.status, 1, argv.join(" "));
-    assert.equal(r.stderr, `swarm: ${argv[0]}: refused, a seat has no code pack: ${argv[0]} is a worker's verb; your verbs are in --help
+    assert.equal(r.stderr, `swarm: ${argv[0]}: refused: ${argv[0]} is a worker's verb, and a seat holds no files; your verbs are in --help
 `);
   }
 });
@@ -1151,7 +1151,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
 
   run("phase", "ping", "say", "hi", "--as", "idea/orchestrator");
-  const owed = /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then: node \S+ done ping --as idea\/skeptic$/m;
+  const owed = /^phase ping is open and asks: say hi\. Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then mark it done: node \S+ done ping --as idea\/skeptic$/m;
   // a late join: the do-it step, then only then the wait
   const late = joinSeat(id, "skeptic");
   assert.equal(late.status, 0, late.stderr);
@@ -1161,7 +1161,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.match(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, owed);
   const posted = run("post", "hello", "--as", "idea/skeptic");
   // S21: a verb that heard from the member names the phase it owes, its text not again
-  assert.match(posted.stdout, /^phase ping is yours: Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then: node \S+ done ping --as idea\/skeptic$/m);
+  assert.match(posted.stdout, /^you owe phase ping: Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part, then mark it done: node \S+ done ping --as idea\/skeptic$/m);
   assert.doesNotMatch(posted.stdout, /say hi/);
   assert.match(run("read", seqOf(posted.stdout), "--as", "idea/skeptic").stdout, owed);
   assert.match(run("deliver", "--as", "idea/skeptic").stdout, owed);
@@ -1169,7 +1169,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   const woken = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000");
   // G7: the phase's text comes once, in its event; the owed step names the phase alone
   assert.equal(woken.stdout.split("say hi").length - 1, 1, woken.stdout);
-  assert.match(woken.stdout, /^phase ping is yours: Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part now, then: node \S+ done ping --as idea\/architect$/m);
+  assert.match(woken.stdout, /^you owe phase ping: Read the whole phase first: node \S+ thread --as idea\/architect\. Do your part, then mark it done: node \S+ done ping --as idea\/architect$/m);
   assert.match(woken.stdout, /^only then wait again, in the foreground.*: node .* wait --mentions --as idea\/architect/m);
 
   // after done: the wait step, nothing owed
@@ -1390,7 +1390,7 @@ test("seat is the verb; slice is its silent alias, accepted but never shown in -
   // board-split D36: a seat's state is derived; setting it is refused, by either name, with one answer-module line
   const set = run("slice", "S9", "--run", id, "--state", "running");
   assert.equal(set.status, 1);
-  assert.match(set.stderr, /^seat: --state is gone \(D36\): .* block S9 "<reason>" .* end --seat S9; .* park S9\n$/);
+  assert.match(set.stderr, /^seat: --state is gone: .* block S9 "<reason>" --as \S+ .* end --seat S9 --as \S+; .* park S9 --as \S+\n$/);
   const help = run("--help");
   assert.match(help.stdout, /^ {2}seat +add /m);
   assert.doesNotMatch(help.stdout, /^ {2}slice /m);

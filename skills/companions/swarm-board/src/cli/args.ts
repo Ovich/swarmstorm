@@ -59,7 +59,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     positional: rest.filter((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(rest[i - 1] ?? "") && !listed.has(i)),
     flag: (name) => {
       const i = rest.indexOf(name);
-      return i >= 0 ? rest[i + 1] : undefined;
+      const value = i >= 0 ? rest[i + 1] : undefined;
+      // a flag followed by another flag has no value: `pause "x" --person --as g/o` (board-split F2)
+      return value === undefined || value.startsWith("--") ? undefined : value;
     },
     flags: (name) => rest.flatMap((a, i) => (a === name && rest[i + 1] ? [rest[i + 1]] : [])),
     list: (name) => {

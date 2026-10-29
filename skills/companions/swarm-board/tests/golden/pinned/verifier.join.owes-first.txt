@@ -8,8 +8,7 @@ pass --as g/v1 on every call: you have no checkout of your own and hold no files
 node <cli> post --file <findings.md> --as g/v1    # your verdict and findings table, to @orchestrator
 node <cli> post "@<seat> <question>" --about <path> --as g/v1    # a question to a builder about a file
 node <cli> done <phase> --as g/v1
-node <cli> wait --mentions --as g/v1 --timeout 170000    # in the foreground, when waiting; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty
 posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>
 start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/v1
-phase build is open and asks: build the thing. Do your part now, then: node <cli> done build --as g/v1
+phase build is open and asks: build the thing. Do your part now, then mark it done: node <cli> done build --as g/v1
 start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/v1

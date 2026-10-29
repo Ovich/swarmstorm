@@ -42,10 +42,10 @@ export const WORDING = {
   phaseShort: (name: string, thread: Command) => `phase ${name} (unchanged; its text: ${thread})`,
   phasePaused: (head: string | null, why: string) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
   pauseWhy: (person: boolean, text: string) => (person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : ""),
-  owedOpen: (name: string, text: string, read: string, done: Command) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then: ${done}`,
-  owedBrief: (name: string, read: string, done: Command) => `phase ${name} is yours: ${read}Do your part now, then: ${done}`,
+  owedOpen: (name: string, text: string, read: string, done: Command) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then mark it done: ${done}`,
+  owedBrief: (name: string, read: string, done: Command) => `you owe phase ${name}: ${read}${read ? "Do" : "do"} your part, then mark it done: ${done}`,
   readWholePhase: (thread: Command) => `Read the whole phase first: ${thread}. `,
-  noPostYet: (name: string) => `no post yet in phase ${name}`,
+  noPostYet: (name: string | null) => (name === null ? "no post yet in this run" : `no post yet in phase ${name}`),
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
 
@@ -96,7 +96,7 @@ export const WORDING = {
   unparked: (member: string) => `${member} is unparked: its alerts and its share of all-done are back`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
   packVerbRefused: (verb: string, seatKind: string) =>
-    `${verb}: refused, a ${seatKind} has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
+    `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
@@ -134,11 +134,10 @@ export const WORDING = {
   /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
   verifierAs: (as: string) =>
     `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
-  verifierCommands: (cli: Command, as: string, holdMs: number) => [
+  verifierCommands: (cli: Command, as: string) => [
     `${cli} post --file <findings.md> --as ${as}    # your verdict and findings table, to @orchestrator`,
     `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
     `${cli} done <phase> --as ${as}`,
-    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
   ],
   seatCommands: (cli: Command, as: string, holdMs: number) => [
     `${cli} post "…" --about <D id> --as ${as}`,
@@ -149,8 +148,8 @@ export const WORDING = {
   // ── a lock granted, and status's forgotten run ──
   unlockWhenDone: (cli: Command, name: string, as: string) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
   // ── board-split D36: a seat's state is derived, never set ──
-  seatStateDerived: (cli: Command, seat: string) =>
-    `seat: --state is gone (D36): a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" (${cli} unblock ${seat} lifts it); finished: ${cli} end --seat ${seat}; kept with no agent: ${cli} park ${seat}`,
+  seatStateDerived: (cli: Command, seat: string, as: string) =>
+    `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 } as const;
 
