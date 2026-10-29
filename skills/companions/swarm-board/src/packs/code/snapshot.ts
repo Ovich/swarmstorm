@@ -3,6 +3,7 @@
 // the split, so the page reads the same.
 import type { DatabaseSync } from "node:sqlite";
 import type { Declared } from "../../board/board.ts";
+import type { CodeMemberFact } from "./types.ts";
 
 type Row = Record<string, unknown>;
 
@@ -24,11 +25,11 @@ export interface CodeSnapshotDeps {
   nameOf(id: number): string;
   relPath(repo: string, file: string): string | null;
 }
-/** One repository's code part of the snapshot: its fields, the member holding the merge lock (shown merging), and each
- *  member's held files. `people` are the snapshot's participant rows (id, seat, plan, files). */
+/** One repository's code part of the snapshot: its fields, what the pack says of each member (D36: merging, the merge
+ *  lock's holder), and each member's held files. `people` are the snapshot's participant rows (id, seat, plan, files). */
 export interface CodeSnapshot {
   fields: CodeSnapshotFields;
-  lockHolder: number | null;
+  factOf(id: number): CodeMemberFact | null;
   heldFilesOf(id: number): (Declared & { shared: boolean })[];
 }
 
@@ -82,7 +83,7 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
       files: [...files.values()],
       flags,
     },
-    lockHolder,
+    factOf: (id) => (id === lockHolder ? "merging" : null),
     heldFilesOf: (id) => (heldBy.all(id) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
   };
 }

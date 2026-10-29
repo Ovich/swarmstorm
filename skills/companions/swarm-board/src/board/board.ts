@@ -10,7 +10,7 @@ import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
-import type { Pack } from "../packs/types.ts";
+import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
@@ -134,6 +134,8 @@ export interface RosterEntry {
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
   /** Its state from its activity (D9), and the open or last tool. */
   state: MemberStateName;
+  /** What its pack says of it now (D36); absent when nothing. */
+  fact?: MemberFact;
   activity: string | null;
   /** Its two ages (swarm-relay D38), ms epoch: its last progress, its last sign of life by its link (null: never linked). */
   progressAt: number | null;
@@ -188,7 +190,8 @@ export type RunSummary = {
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
 /** board-split D36: the core state; a pack widens it with its own fact (T16). */
-export type SnapshotMemberState = CoreMemberState;
+/** The core's state (D36), or the fact the member's pack says instead of working or waiting. */
+export type SnapshotMemberState = CoreMemberState | MemberFact;
 export type SnapshotMember = {
   /** The run the member sat in: a group can hold several runs, its members are told apart by this; absent from a reader before it. */
   run?: number;
@@ -951,6 +954,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   /** The member's own pack, chosen at its join (D11), and its run's context for one call (D9, D10). */
   const packOf = (p: Participant) => registry.packNamed(p.pack);
   const packCtxOf = (p: Participant): PackCtx => runPackCtx(p.run);
+  /** What the member's pack says of it now (D36), as the roster's `fact`; nothing when the pack says nothing. */
+  const factEntry = (p: Participant): { fact?: MemberFact } => {
+    const fact = packOf(p)?.memberFact?.(p, packCtxOf(p)) ?? null;
+    return fact ? { fact } : {};
+  };
   /** The messages not yet delivered to `me`, oldest first: its own run's and any other's (the caller filters). */
   const unseenRows = (me: Participant): Row[] =>
     db
@@ -2345,6 +2353,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
         busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
+        ...factEntry(toParticipant(r)),
       }));
     },
 
@@ -2597,7 +2606,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const ended = r.ended_at != null;
         const runR = runById(Number(r.run));
         const owedPhase = runR ? owedNameOf(r, runR) : null;
-        const state: SnapshotMemberState = coreStateOf({
+        const core = coreStateOf({
           orchestrator,
           runOpen: runOpen.get(Number(r.run)) === true,
           ended,
@@ -2607,6 +2616,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           owes: owedPhase != null,
           inBoardWait: Number(r.waiting) === 1,
         });
+        // the pack's fact reads instead of working or waiting (D36, D18), never over parked or ended
+        const fact = core === "working" || core === "waiting" ? packPart.factOf(id) : null;
+        const state: SnapshotMemberState = fact ?? core;
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -2617,7 +2629,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...(orchestrator || s?.area == null ? {} : { area: String(s.area) }),
           doing: String(r.doing),
           state,
-          ...(state === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {}),
+          ...(core === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {}),
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),

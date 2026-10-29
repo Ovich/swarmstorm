@@ -1,6 +1,10 @@
 // The code pack's own shapes (board-split D18): what its tables, events and verbs carry, kept out of the core's types.
 import type { RunId } from "../../board/board.ts";
 
+/** What the code pack says of a member beside its core state (board-split D36, D18): `merging` while it holds the
+ *  repository's merge lock. */
+export type CodeMemberFact = "merging";
+
 /** A file written outside its writer's claim while another member holds it. */
 export type Flag = { path: string; holder: string; seq: number };
 

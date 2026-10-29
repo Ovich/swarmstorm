@@ -612,8 +612,8 @@ test("a snapshot shows two plans on one repository", () => {
   assert.equal(by["review-tool/S3"].role, "the page");
   assert.equal(by["review-tool/S3"].doing, "the page");
   assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", interface: false, shared: false }]);
-  // board-split D36: the lock is the code pack's fact (T16), never a core state: the holder works
-  assert.equal(by["swarm/S1"].state, "working");
+  // board-split D36: the lock is the code pack's fact (T16), never a core state: its holder reads merging
+  assert.equal(by["swarm/S1"].state, "merging");
   assert.deepEqual(by["swarm/S1"].files, [{ path: "src/api.ts", interface: true, shared: false }]);
   assert.deepEqual(snap.lock && snap.lock.holder, "swarm/S1");
   const last = snap.events.at(-1)!;

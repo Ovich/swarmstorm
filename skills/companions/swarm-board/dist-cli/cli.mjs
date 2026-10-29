@@ -612,7 +612,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
       files: [...files.values()],
       flags
     },
-    lockHolder,
+    factOf: (id) => id === lockHolder ? "merging" : null,
     heldFilesOf: (id) => heldBy.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) }))
   };
 }
@@ -2252,6 +2252,8 @@ var init_code = __esm({
       defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
       // a member holding a claim or the merge lock is mid-work, never idle
       busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
+      // holding the merge lock, the member is merging (D36), whatever its core state says
+      memberFact: (member, ctx) => tablesOf(ctx).heldMergeLock(member) ? "merging" : null,
       // the code tables' DDL and an older store's upkeep, then the store over them (D20)
       openTables: (deps) => {
         migrateCodeTables(deps.db);
@@ -3246,6 +3248,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const packOf = (p) => registry.packNamed(p.pack);
   const packCtxOf = (p) => runPackCtx(p.run);
+  const factEntry = (p) => {
+    const fact = packOf(p)?.memberFact?.(p, packCtxOf(p)) ?? null;
+    return fact ? { fact } : {};
+  };
   const unseenRows = (me) => db.prepare(
     `SELECT m.* FROM messages m
          WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
@@ -4349,7 +4355,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
-        busyMax: seatBusyMaxOf(Number(r.run), String(r.seat))
+        busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
+        ...factEntry(toParticipant(r))
       }));
     },
     post(p, body, opts = {}) {
@@ -4553,7 +4560,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const ended = r.ended_at != null;
         const runR = runById(Number(r.run));
         const owedPhase = runR ? owedNameOf(r, runR) : null;
-        const state = coreStateOf({
+        const core = coreStateOf({
           orchestrator,
           runOpen: runOpen.get(Number(r.run)) === true,
           ended,
@@ -4563,6 +4570,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           owes: owedPhase != null,
           inBoardWait: Number(r.waiting) === 1
         });
+        const fact = core === "working" || core === "waiting" ? packPart.factOf(id) : null;
+        const state = fact ?? core;
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -4573,7 +4582,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...orchestrator || s?.area == null ? {} : { area: String(s.area) },
           doing: String(r.doing),
           state,
-          ...state === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
+          ...core === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
@@ -9323,6 +9332,8 @@ var CODE_WORDING = {
     "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
     `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
   ].join("\n"),
+  /** board-split D36: what the code pack says of a member beside its state, on its roster line */
+  memberFact: { merging: "merging (holds the merge lock)" },
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
@@ -9348,6 +9359,10 @@ var WORDING = {
   done: (cli, phase, as) => `${cli} done ${phase} --as ${as}`,
   thread: (cli, as) => `${cli} thread --as ${as}`,
   end: (cli, as) => `${cli} end --as ${as}`,
+  // ── the run's page ──
+  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&repo=<key>`) with the run in it;
+   *  an older aiview's `/board` takes it as its hash */
+  runBoardUrl: (boardUrl, run3) => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run3}`,
   // ── the link and the listener ──
   linkStart: (link) => `start your link now, in the background (your harness's background task): ${link}`,
   listenerStart: (wait) => `start your listener now, in the background (your harness's background task): ${wait}`,
@@ -9859,7 +9874,8 @@ var rosterLine = (r, ages = false) => {
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
-  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
+  const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
+  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
 var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
@@ -10172,7 +10188,8 @@ ${verbHelp()}`);
         emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, ...next ? { next } : {} }, lines(null));
         break;
       }
-      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: doc.url, link, ...next ? { next } : {} }, lines(doc.url));
+      const runUrl = WORDING.runBoardUrl(doc.url, run3.id);
+      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: runUrl, link, ...next ? { next } : {} }, lines(runUrl));
       break;
     }
     case "slice":

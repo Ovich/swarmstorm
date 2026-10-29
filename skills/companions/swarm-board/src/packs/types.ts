@@ -8,6 +8,7 @@ import type { EventDef } from "../board/events.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
 import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
+import type { CodeMemberFact } from "./code/types.ts";
 
 /** A verb a pack adds to the CLI's dispatch (D12: listed under the pack's section of the static help). */
 export interface VerbSpec {
@@ -35,6 +36,10 @@ export type PackRefusal = { refused: { reason: "no-pack"; verb: string; seatKind
 export type PackTables = Claims;
 /** What the core gives a pack to open its tables with: its database and the core's helpers. */
 export type PackTablesDeps = ClaimsDeps;
+
+/** What a pack says of a member beside its core state (D36): it reads instead of working or waiting. One pack ships,
+ *  so its facts are the type. */
+export type MemberFact = CodeMemberFact;
 
 /** The pack's part of the page's snapshot of one repository (D18); one pack ships, so its snapshot is the type. */
 export type PackSnapshot = CodeSnapshot;
@@ -84,6 +89,8 @@ export interface Pack {
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
   busy?(member: Participant, ctx: PackCtx): boolean;
+  /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
+  memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;

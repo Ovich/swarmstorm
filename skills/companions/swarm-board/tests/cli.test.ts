@@ -155,7 +155,8 @@ test("a second repository joins the same board once; reopening either adds nothi
   assert.equal(r.status, 0, r.stderr);
   const second = JSON.parse(r.stdout) as { url: string; repo: string };
   assert.notEqual(second.repo, first.repo);
-  assert.equal(second.url, first.url);
+  // one board: the two runs' URLs differ by their run alone (D41)
+  assert.equal(second.url.replace(/&run=\d+$/, ""), first.url.replace(/&run=\d+$/, ""));
   assert.equal(openWith(launcher, other).status, 0);
   assert.equal(openWith(launcher).status, 0);
   assert.deepEqual(boardRepos(boards), [first.repo, second.repo]);

@@ -68,6 +68,8 @@ export const codePack: Pack = {
   defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
   // a member holding a claim or the merge lock is mid-work, never idle
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
+  // holding the merge lock, the member is merging (D36), whatever its core state says
+  memberFact: (member, ctx) => (tablesOf(ctx).heldMergeLock(member) ? "merging" : null),
 
   // the code tables' DDL and an older store's upkeep, then the store over them (D20)
   openTables: (deps) => {

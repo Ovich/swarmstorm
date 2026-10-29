@@ -27,6 +27,9 @@ export const CODE_WORDING = {
       "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
     ].join("\n"),
 
+  /** board-split D36: what the code pack says of a member beside its state, on its roster line */
+  memberFact: { merging: "merging (holds the merge lock)" },
+
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
