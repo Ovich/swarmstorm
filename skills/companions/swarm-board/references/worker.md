@@ -61,8 +61,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
       report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
       orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
       change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.
-      Its answer says whether your worktree went, clean and merged, the branch kept: read it, and
-      for your next task join again as it prints.
+      Your worktree stays for your next task; `end` removes it once clean and merged.
 7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
    post after the merge; a task that merged nothing reports in one post to `@orchestrator`
    (`post --file` for a long one). A fix task reports per finding id what changed. Then

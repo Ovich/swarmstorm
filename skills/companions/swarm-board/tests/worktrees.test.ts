@@ -1,5 +1,5 @@
 // The board owns a code run's worktrees: join makes one per seat under the data home, on swarm/<group>/<seat>
-// from the run's base; merged, end, close and `worktree prune` remove it once clean and merged, the branch kept.
+// from the run's base; end, close and `worktree prune` remove it once clean and merged, the branch kept.
 // A talk-only kind gets none. One real repository, the CLI spawned on a temporary data home.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -73,17 +73,14 @@ test("join on a code run makes the seat's worktree under the data home, from the
   assert.equal(fs.existsSync(wt("idea", "skeptic")), false);
 });
 
-test("merged removes the worktree once clean and merged, the branch kept", () => {
+test("merged keeps the worktree for the seat's next task", () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
   const sha = commitAndMerge(wt("g", "w1"), "b.txt", "swarm/g/w1");
   const out = ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1");
-  assert.match(out, /worktree .*g-w1 removed \(branch kept\); for your next task, join again/);
-  assert.equal(fs.existsSync(wt("g", "w1")), false);
+  assert.doesNotMatch(out, /removed/);
+  assert.ok(fs.existsSync(wt("g", "w1")));
   assert.ok(hasBranch("swarm/g/w1"));
-  // the next join makes a fresh one from the base
-  join(run, "g", "w1");
-  assert.ok(fs.existsSync(path.join(wt("g", "w1"), "b.txt")));
 });
 
 test("end refuses while the worktree holds work not merged, naming it and the merge; once merged, end removes it", () => {

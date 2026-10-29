@@ -1165,18 +1165,10 @@ ${rearm}` : rearm;
           ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report`
           : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`,
       );
-      // the board's worktree goes once clean and merged; the branch stays, and a later join makes a fresh one
-      const into = lock?.onto ?? (await runOf(p.run))?.base ?? null;
-      const tree = owned(p.worktree) && fs.existsSync(p.worktree) ? { worktree: p.worktree, ...sweep(p.worktree, p.repo, into) } : null;
-      const treeLine = !tree
-        ? null
-        : tree.removed
-          ? `worktree ${tree.worktree} removed (branch kept); for your next task, join again for a fresh one: ${[...self(), "join", "--run", String(p.run), "--seat", shellWord(p.seat), "--doing", '"<the task>"', "--as", shellWord(p.name)].join(" ")}`
-          : `worktree ${tree.worktree} kept: ${tree.why}`;
-      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}), ...(tree ? { worktree: tree.worktree, removed: tree.removed, ...(tree.why ? { kept: tree.why } : {}) } : {}) }, () => {
+      // the worktree stays for the seat's next task; end, close and prune remove it
+      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}) }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
-        if (treeLine) console.log(treeLine);
       });
       break;
     }
