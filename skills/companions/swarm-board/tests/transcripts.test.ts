@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { locate, observe } from "../src/link/transcripts.ts";
+import { commandActsAsOther, locate, observe } from "../src/link/transcripts.ts";
 import { claudeCodeJsonl } from "../src/board/liveness.ts";
 import { bashCall, jsonl, prompt, textLine, toolCall, toolResult, writeMain, writeSubagent } from "./fixtures/transcripts.ts";
 
@@ -145,4 +145,24 @@ test("observe reports a background wait --mentions as a running listener until i
   // a foreground wait --mentions is no listener
   const fg = writeMain(root, PROJECT, OTHER, [toolCall("Bash", { command: listen }, "toolu_fg2", "2026-10-22T10:00:00.000Z")]);
   assert.deepEqual(observe(fg, null).activity.listener, { running: false, endedAt: null });
+});
+
+test("S27 (board-split D25): a wait run --as another member is that member's: plain work for this link, never its wait or listener", () => {
+  const binding = { verb: "join" as const, run: 3, seat: "v1" };
+  const file = writeMain(root, PROJECT, SESSION, [
+    toolCall("Bash", { command: "swarm wait --mentions --as vb4/s1" }, "toolu_other", "2026-10-22T10:00:00.000Z"),
+  ]);
+  const other = observe(file, null, binding).activity.openTool!;
+  assert.equal(other.boardWait, undefined, "another seat's wait is work");
+  fs.appendFileSync(file, jsonl([toolResult("toolu_other"), toolCall("Bash", { command: "swarm wait --mentions --as g/v1" }, "toolu_own", "2026-10-22T10:01:00.000Z")]));
+  assert.equal(observe(file, null, binding).activity.openTool!.boardWait, true, "its own seat's wait is waiting");
+  assert.equal(commandActsAsOther("swarm wait --as g/orchestrator", { verb: "open", group: "g" }), false);
+  assert.equal(commandActsAsOther("swarm wait --as h/orchestrator", { verb: "open", group: "g" }), true);
+  assert.equal(commandActsAsOther("swarm wait --mentions", binding), false);
+});
+
+test("S22 (board-split D25): a joining subagent's transcript, written after the link first looks, is found on a later look", () => {
+  assert.equal(locate(join("S22"), env), null);
+  writeSubagent(root, PROJECT, SESSION, "late", [bashCall("swarm join --run 68 --seat S22 --doing x --as g/S22")], {}, 1_700_000_000);
+  assert.ok(locate(join("S22"), env)?.endsWith("agent-late.jsonl"));
 });

@@ -177,7 +177,7 @@ export async function runLink(opts: {
     if (exiting) return;
     transcript ??= locate(opts.binding, env);
     if (!transcript) return; // not found (yet), or a harness that keeps none: no activity
-    const read = observe(transcript, cursor);
+    const read = observe(transcript, cursor, opts.binding);
     const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
     if (grew) lastStirAt = Date.now();

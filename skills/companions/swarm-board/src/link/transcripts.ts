@@ -408,8 +408,20 @@ type TranscriptLine = {
 };
 type ContentPart = { type?: string; id?: string; name?: string; input?: unknown; tool_use_id?: string; text?: unknown; content?: unknown };
 
-/** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0. */
-export function observe(transcript: string, from: TranscriptCursor | null): { activity: MemberActivity; cursor: TranscriptCursor } {
+/** Whether a board call names another member with `--as` than the one this binding stands for (S27, board-split D25):
+ *  a session driving a second seat's waits is working for this one, never waiting. No `--as`: its own. */
+export function commandActsAsOther(command: string, binding: Binding, backslashEscapes = true): boolean {
+  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
+  if (as === undefined) return false;
+  const slash = as.lastIndexOf("/");
+  const group = slash < 0 ? null : as.slice(0, slash);
+  const seat = as.slice(slash + 1);
+  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || (group !== null && group !== binding.group);
+}
+
+/** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0.
+ *  `binding`: the member this link stands for; a board call `--as` another member is that member's, plain work here (S27). */
+export function observe(transcript: string, from: TranscriptCursor | null, binding?: Binding): { activity: MemberActivity; cursor: TranscriptCursor } {
   let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
@@ -457,17 +469,18 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
           const input = part.input as { command?: unknown; run_in_background?: unknown } | undefined;
           const command = input?.command;
           const escapes = toolEscapesBackslash(name);
+          const other = typeof command === "string" && binding !== undefined && commandActsAsOther(command, binding, escapes);
           // D45: only a shell call running the board's `wait` verb is waiting; a browser's wait_for, a sleep, are work
-          const boardWait = typeof command === "string" && commandRunsWait(command, escapes);
+          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
           // a shell call (any tool whose input holds a string command, idea 1 §3's test) has its own timeout; idea 5 bounds the rest
           const shell = typeof command === "string";
           cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...(shell ? { shell } : {}) });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
-          const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
+          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
-          if (input?.run_in_background === true && typeof command === "string" && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
+          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: (command as string).replace(/\s+/g, " ").trim(), ...kill, at };
