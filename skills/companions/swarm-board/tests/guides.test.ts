@@ -175,3 +175,19 @@ test("claim takes several paths, and resolves them in the member's worktree what
   const held = swarm(wtB, "claim", "src/a.ts");
   assert.equal(held.status, 3);
 });
+
+test("G41: a brace glob matches any of its alternatives; the shipped guides apply to source files", () => {
+  assert.ok(globRegex("**/*.{ts,tsx}").test("src/a.ts"));
+  assert.ok(globRegex("**/*.{ts,tsx}").test("a.tsx"));
+  assert.ok(!globRegex("**/*.{ts,tsx}").test("src/a.md"));
+  assert.ok(globRegex("src/{a,b/{c,d}}.ts").test("src/b/d.ts"));
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-g41-"));
+  try {
+    const shipped = discoverGuides(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), empty);
+    const names = guidesFor(shipped, ["src/board/board.ts"]).map((g) => g.name);
+    assert.ok(names.includes("complexity") && names.includes("deepen-module"), names.join(","));
+    assert.deepEqual(guidesFor(shipped, ["README.md"]).map((g) => g.name), []);
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
+});

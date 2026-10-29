@@ -8,6 +8,27 @@ import path from "node:path";
 export type Guide = { name: string; skill: string; paths: string[] };
 
 /** The frontmatter's `name` and `paths` (inline `[a, b]`, a block list, or one scalar); null without `paths`. */
+/** A flow list's items: split on the commas outside quotes and braces, so a brace glob such as `*.{ts,js}` stays one item (G41). */
+function flowItems(list: string): string[] {
+  const items: string[] = [];
+  let item = "";
+  let quote: string | null = null;
+  let braces = 0;
+  for (const c of list) {
+    if (quote) quote = c === quote ? null : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === "{") braces++;
+    else if (c === "}") braces = Math.max(0, braces - 1);
+    else if (c === "," && braces === 0) {
+      items.push(item);
+      item = "";
+      continue;
+    }
+    item += c;
+  }
+  return [...items, item];
+}
+
 export function parseGuide(text: string, folder: string): Guide | null {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
   if (!fm) return null;
@@ -21,7 +42,7 @@ export function parseGuide(text: string, folder: string): Guide | null {
     if (m[1] === "name" && m[2].trim()) skill = unquote(m[2]);
     if (m[1] !== "paths") continue;
     const v = m[2].trim();
-    if (v.startsWith("[")) paths = v.replace(/^\[|\]$/g, "").split(",").map(unquote).filter(Boolean);
+    if (v.startsWith("[")) paths = flowItems(v.replace(/^\[|\]$/g, "")).map(unquote).filter(Boolean);
     else if (v) paths = [unquote(v)];
     else {
       paths = [];
@@ -66,6 +87,7 @@ export function discoverGuides(toolRoot: string, repoRoot: string | null, alsoPr
 /** A glob as a regex over a repo-relative, forward-slashed path: `**` any depth, `*` within a segment, `?` one character. */
 export function globRegex(glob: string): RegExp {
   let re = "";
+  let depth = 0;
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
     if (c === "*" && glob[i + 1] === "*") {
@@ -74,6 +96,14 @@ export function globRegex(glob: string): RegExp {
       i += slash ? 2 : 1;
     } else if (c === "*") re += "[^/]*";
     else if (c === "?") re += "[^/]";
+    // G41: `{a,b}` is one of its alternatives, nested ones too
+    else if (c === "{") {
+      re += "(?:";
+      depth++;
+    } else if (c === "}" && depth > 0) {
+      re += ")";
+      depth--;
+    } else if (c === "," && depth > 0) re += "|";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
   return new RegExp(`^${re}$`);
