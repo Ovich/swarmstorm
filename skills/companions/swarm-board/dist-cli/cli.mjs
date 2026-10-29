@@ -2823,6 +2823,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         seat: String(r.seat),
         doing: String(r.doing),
         files: JSON.parse(String(r.files)),
+        held: db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(Number(r.id)).map((c) => ({ path: String(c.path), interface: c.kind === "interface" })),
         stale: Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
         subscriptions: subsOf(r),
         worktree: r.worktree == null ? null : String(r.worktree),
@@ -8283,23 +8284,23 @@ function registerBoard(input) {
 }
 
 // src/cli/unclaimed.ts
-var COLLAPSE_OVER = 20;
-function unclaimedLines(paths) {
-  const folderOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ".";
-  const byFolder = /* @__PURE__ */ new Map();
-  for (const p of paths) byFolder.set(folderOf(p), [...byFolder.get(folderOf(p)) ?? [], p]);
-  const lines = [];
-  const told = /* @__PURE__ */ new Set();
-  for (const p of paths) {
-    const folder = folderOf(p);
-    const inFolder = byFolder.get(folder);
-    if (inFolder.length <= COLLAPSE_OVER) lines.push(`reconciled ${p}: written without a claim`);
-    else if (!told.has(folder)) {
-      told.add(folder);
-      lines.push(`${inFolder.length} files under ${folder}/ written unclaimed`);
-    }
+var SHOWN = 3;
+function unclaimedEntries(paths, renames = []) {
+  const left = new Set(paths);
+  const entries = [];
+  for (const [from, to] of renames) {
+    if (!left.has(from) && !left.has(to)) continue;
+    left.delete(from);
+    left.delete(to);
+    entries.push(`${from} \u2192 ${to}`);
   }
-  return lines;
+  return [...paths.filter((p) => left.has(p)), ...entries];
+}
+function unclaimedLines(paths, renames = []) {
+  const entries = unclaimedEntries(paths, renames);
+  if (!entries.length) return [];
+  const shown = entries.slice(0, SHOWN).join(", ") + (entries.length > SHOWN ? ", \u2026" : "");
+  return [`reconciled ${entries.length} written without a claim: ${shown}`];
 }
 
 // src/cli/git.ts
@@ -8412,7 +8413,7 @@ var USAGE = [
 var CODE_USAGE = [
   "usage: swarm <verb> [--json]        the code verbs; refused on a run whose kind has no claims",
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
-  "  release [--as <member>] <path>...                                # gives up a claim",
+  "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
   "  merged  [--as <member>] <sha> --files <path>...                 # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict"
 ].join("\n");
@@ -8482,8 +8483,21 @@ function branchChangedIn(worktree, onto) {
   const committed = r.stdout.split("\0").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
 }
-var printReconciled = (unclaimed, flags) => {
-  const lines = unclaimedLines(unclaimed);
+function renamesIn(worktree, base) {
+  const r = spawnSync3("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
+  if (r.status !== 0) return [];
+  const parts = r.stdout.split("\0");
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (/^[RC]\d*$/.test(parts[i])) {
+      if (parts[i].startsWith("R")) out.push([parts[i + 1], parts[i + 2]]);
+      i += 2;
+    } else if (/^[A-Z]$/.test(parts[i])) i += 1;
+  }
+  return out;
+}
+var printReconciled = (unclaimed, flags, renames = []) => {
+  const lines = unclaimedLines(unclaimed, renames);
   for (const line of lines) console.log(line);
   if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
@@ -8517,8 +8531,13 @@ var ago = (at) => {
   return s < 120 ? `${s}s` : s < 7200 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`;
 };
 var stateLine = (r, ages = false) => `${r.state}${r.activity ? ` (${r.activity})` : ""}` + (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
+var HELD_SHOWN = 3;
+var heldLine = (files) => {
+  const shown = files.slice(0, HELD_SHOWN).map((f) => f.interface ? `${f.path} (interface)` : f.path).join(", ");
+  return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
+};
 var rosterLine = (r, ages = false) => {
-  const files = r.files.map((f) => f.interface ? `${f.path} (interface)` : f.path).join(", ");
+  const files = heldLine(r.held);
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
@@ -9171,10 +9190,15 @@ ${rearm}` : rearm;
     }
     case "release": {
       const p = await caller();
-      if (!args.positional.length) fail("release: which path?");
+      const all = args.has("--all");
+      if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       const released = [];
-      for (const file of args.positional) {
-        const abs = resolveClaimPath(file);
+      const targets = all ? (await board.heldBy(p)).map((f) => path9.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
+      if (all && !targets.length) {
+        emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
+        break;
+      }
+      for (const abs of targets) {
         await board.release(p, abs);
         released.push(repoRelative(abs));
       }
@@ -9196,10 +9220,11 @@ ${rearm}` : rearm;
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
+      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", onto, "HEAD") ?? "HEAD") : [];
       const reflogMark = p.worktree ? headReflogLength(p.worktree) ?? void 0 : void 0;
       const r = await board.lockMerge(p, onto, reflogMark);
       emit({ member: p.name, ...r, reconciled, flags }, () => {
-        printReconciled(unclaimed, flags);
+        printReconciled(unclaimed, flags, renames);
         console.log(r.granted ? "granted: merge, then swarm merged <sha> --files <path>..." : `held by ${r.holder}: swarm wait --mentions for its merged event`);
       });
       break;
@@ -9233,9 +9258,10 @@ ${rearm}` : rearm;
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
+      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
       await board.end(p);
       emit({ member: p.name, ended: true, reconciled, flags }, () => {
-        printReconciled(unclaimed, flags);
+        printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
       });
       break;
@@ -9317,7 +9343,7 @@ ${USAGE}`);
     }
     case "status": {
       const runs = await board.runs();
-      const membersOf = async (r) => (await board.roster(r.repo)).filter((m) => m.run === r.id).map((m) => ({ name: m.name, nick: m.nick, worktree: m.worktree, state: m.state, activity: m.activity, progressAt: m.progressAt, aliveAt: m.aliveAt }));
+      const membersOf = async (r) => (await board.roster(r.repo)).filter((m) => m.run === r.id).map((m) => ({ name: m.name, nick: m.nick, worktree: m.worktree, state: m.state, activity: m.activity, progressAt: m.progressAt, aliveAt: m.aliveAt, files: m.held }));
       const cli = self().join(" ");
       const open = await Promise.all(
         runs.map(async (r) => {
@@ -9335,7 +9361,10 @@ ${USAGE}`);
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
-          for (const m of open[i].members) console.log(`  ${m.name}  ${stateLine(m, true)}`);
+          for (const m of open[i].members) {
+            const files = heldLine(m.files);
+            console.log(`  ${m.name}  ${stateLine(m, true)}${files ? `  files: ${files}` : ""}`);
+          }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
             console.log(`  no activity for ${Math.floor(idle / 864e5)} d: likely left open; ask the person, then archive it: ${cli} close --run ${r.id}`);

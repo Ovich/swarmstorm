@@ -113,6 +113,8 @@ export interface RosterEntry {
   seat: string;
   doing: string;
   files: Declared[];
+  /** The claims it holds now (F27), repository-relative. */
+  held: Declared[];
   stale: boolean; // no tool call for ten minutes (D31)
   subscriptions: Subscription[];
   worktree: string | null; // null for a seat or an orchestrator (D64)
@@ -2192,6 +2194,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         seat: String(r.seat),
         doing: String(r.doing),
         files: JSON.parse(String(r.files)) as Declared[],
+        held: (db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(Number(r.id)) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface" })),
         stale: Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
         subscriptions: subsOf(r),
         worktree: r.worktree == null ? null : String(r.worktree),

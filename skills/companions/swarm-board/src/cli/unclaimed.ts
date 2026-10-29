@@ -1,22 +1,26 @@
-// The lines `end` and `merge-lock` print for files written without a claim (D72): more than
-// COLLAPSE_OVER paths in one folder print as one line; the store's flags are untouched.
-export const COLLAPSE_OVER = 20;
+// The line `end` and `merge-lock` print for files written without a claim (D72, F24): one summary per
+// reconcile, its count and the first few paths; a rename is one `old → new` entry. The store's flags are untouched.
+export const SHOWN = 3;
 
-/** `reconciled <path>` per path, a folder holding more than COLLAPSE_OVER of them as one line. */
-export function unclaimedLines(paths: string[]): string[] {
-  const folderOf = (p: string): string => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : ".");
-  const byFolder = new Map<string, string[]>();
-  for (const p of paths) byFolder.set(folderOf(p), [...(byFolder.get(folderOf(p)) ?? []), p]);
-  const lines: string[] = [];
-  const told = new Set<string>();
-  for (const p of paths) {
-    const folder = folderOf(p);
-    const inFolder = byFolder.get(folder)!;
-    if (inFolder.length <= COLLAPSE_OVER) lines.push(`reconciled ${p}: written without a claim`);
-    else if (!told.has(folder)) {
-      told.add(folder);
-      lines.push(`${inFolder.length} files under ${folder}/ written unclaimed`);
-    }
+export type Rename = [from: string, to: string];
+
+/** The entries written without a claim: a rename with a side unclaimed is one `old → new`. */
+export function unclaimedEntries(paths: string[], renames: Rename[] = []): string[] {
+  const left = new Set(paths);
+  const entries: string[] = [];
+  for (const [from, to] of renames) {
+    if (!left.has(from) && !left.has(to)) continue;
+    left.delete(from);
+    left.delete(to);
+    entries.push(`${from} → ${to}`);
   }
-  return lines;
+  return [...paths.filter((p) => left.has(p)), ...entries];
+}
+
+/** One line for the whole reconcile, none when every write was claimed. */
+export function unclaimedLines(paths: string[], renames: Rename[] = []): string[] {
+  const entries = unclaimedEntries(paths, renames);
+  if (!entries.length) return [];
+  const shown = entries.slice(0, SHOWN).join(", ") + (entries.length > SHOWN ? ", …" : "");
+  return [`reconciled ${entries.length} written without a claim: ${shown}`];
 }
