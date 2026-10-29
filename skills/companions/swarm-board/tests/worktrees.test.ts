@@ -47,7 +47,14 @@ const open = (kind: string, group: string, seats: string[]): string => {
   fs.writeFileSync(file, JSON.stringify(seats.map((id) => ({ id, blockers: [] }))));
   return ok("open", "--kind", kind, "--group", group, "--title", group, "--seats", file).split("\n")[0].trim();
 };
-const join = (run: string, group: string, seat: string) => ok("join", "--run", run, "--seat", seat, "--doing", "x", "--as", `${group}/${seat}`);
+const joinOnly = (run: string, group: string, seat: string) => ok("join", "--run", run, "--seat", seat, "--doing", "x", "--as", `${group}/${seat}`);
+/** A join, then a first claim: the board makes the seat's worktree at its first claim (G20). */
+const join = (run: string, group: string, seat: string): string => {
+  const out = joinOnly(run, group, seat);
+  ok("claim", "a.txt", "--as", `${group}/${seat}`);
+  ok("release", "a.txt", "--as", `${group}/${seat}`);
+  return out;
+};
 /** A commit in the worker's worktree, merged into main by a fast-forward. */
 const commitAndMerge = (dir: string, file: string, branch: string): string => {
   fs.writeFileSync(path.join(dir, file), "x\n");
@@ -59,18 +66,21 @@ const commitAndMerge = (dir: string, file: string, branch: string): string => {
 
 test("join on a code run makes the seat's worktree under the repository's git dir, from the run's base; a re-join reuses it; a talk-only kind gets none", () => {
   const run = open("task", "g", ["w1"]);
-  const out = join(run, "g", "w1");
+  const out = joinOnly(run, "g", "w1");
   const dir = wt(run, "w1");
+  // G20: the join names the place; the first claim makes it
+  assert.equal(fs.existsSync(dir), false);
+  ok("claim", "a.txt", "--as", "g/w1");
   assert.ok(fs.existsSync(path.join(dir, "a.txt")));
   assert.equal(git(dir, "rev-parse", "--abbrev-ref", "HEAD"), `swarm/${run}-g/w1`);
   const shown = wt(run, "w1").split(path.sep).join("/");
-  assert.ok(out.includes(`your worktree: ${shown} (branch swarm/${run}-g/w1 from main). Work there by absolute paths and git -C ${shown}, never cd`), out);
-  assert.match(join(run, "g", "w1"), /from main, reused\)/);
+  assert.ok(out.includes(`your worktree: ${shown} (branch swarm/${run}-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C ${shown}, never cd`), out);
+  assert.match(joinOnly(run, "g", "w1"), /from main, reused\)/);
   // the member is known by --as, and by a call from inside its worktree
   const roster = JSON.parse(spawnSync(process.execPath, [CLI, "roster", "--as", "g/w1", "--json"], { cwd: dir, encoding: "utf8", env: env() }).stdout).roster;
   assert.ok(roster.some((m: { name: string }) => m.name === "g/w1"));
   const talk = open("brainstorm", "idea", ["skeptic"]);
-  join(talk, "idea", "skeptic");
+  joinOnly(talk, "idea", "skeptic");
   assert.equal(fs.existsSync(wt(talk, "skeptic")), false);
 });
 

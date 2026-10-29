@@ -490,7 +490,7 @@ test("end releases a member's pending wait in another process", async () => {
   const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
   await new Promise((r) => setTimeout(r, 1500));
   const ended = run("end", "--as", "review-tool/S5");
-  assert.equal(ended.status, 0, ended.stderr);
+  assert.equal(ended.status, 0, ended.stderr + ended.stdout);
   const t0 = Date.now();
   assert.equal(await exited, 0);
   assert.ok(Date.now() - t0 < 5000, "end did not release the wait");
@@ -906,8 +906,9 @@ test("roster --json and status --json give each member's worktree, null for a se
   run("join", "--run", id, "--seat", "S3", "--doing", "the page");
   const roster = JSON.parse(run("roster", "--json").stdout).roster as { name: string; worktree: string | null }[];
   const s3 = roster.find((m) => m.name === "review-tool/S3")!;
-  // joined from the repository's checkout: the board made its worktree beside the repository's git data
-  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(repo, ".git", "swarm", "worktrees", String(id), "S3")), String(s3.worktree));
+  // joined from the repository's checkout: the board names its worktree beside the repository's git data, made at its first claim (G20)
+  const fold = (s: string) => path.resolve(s).toLowerCase();
+  assert.ok(s3.worktree && fold(s3.worktree) === fold(path.join(fs.realpathSync.native(path.join(repo, ".git")), "swarm", "worktrees", String(id), "S3")), String(s3.worktree));
   const seat = openBrainstorm();
   assert.equal(joinSeat(seat, "skeptic").status, 0);
   const open = JSON.parse(run("status", "--json").stdout).open as { run: number; members: { name: string; worktree: string | null }[] }[];
@@ -1095,7 +1096,7 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   const s3 = "review-tool/S3";
   assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "page").status, 0);
   // before any phase: no header
-  run("post", "@S3 before", "--as", "review-tool/orchestrator");
+  run("post", "@swarm before", "--as", "review-tool/orchestrator");
   assert.doesNotMatch(run("deliver", "--as", s3).stdout, /^phase /m);
   assert.equal(JSON.parse(run("deliver", "--as", s3, "--json").stdout).phase, null);
 

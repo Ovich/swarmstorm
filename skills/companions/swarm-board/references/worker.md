@@ -15,9 +15,9 @@ the foreground: an agent that ends its turn on a background task of its own is n
 
 1. **Join, from the repository's checkout, before anything else**, the install included, so the
    roster shows you from the start:
-   `$S join --run <run> --seat <your seat> --doing "waiting for a task" --as <group>/<seat>`. **The board makes your
-   worktree**, under the repository's git dir (`swarm/worktrees/<run>/<seat>`), never in its tree, on a branch of its own from `<target>`, or gives you back
-   the one your seat already has; its answer prints the path. **That path is where you work**:
+   `$S join --run <run> --seat <your seat> --doing "waiting for a task" --as <group>/<seat>`. **The board names your
+   worktree**, under the repository's git dir (`swarm/worktrees/<run>/<seat>`), never in its tree, on a branch of its own from `<target>`, and makes it
+   at your first `claim` or `merge-lock` (the install runs there after that), or gives you back the one your seat already has; its answer prints the path. **That path is where you work**:
    every file by its absolute path under it, every git command as `git -C <path>`, the install
    run there; never `cd` into it (a shell parked in it keeps the folder from being removed), and
    every `$S` call carries `--as`. Read the roster it prints: who is there, doing what, holding

@@ -17,7 +17,7 @@ import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesA
 import { git, gitAnswer, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
+import { baseAt, branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -141,6 +141,8 @@ function worktreeOf(dir: string): string | null {
 
 /** Paths `git status` shows changed in a worktree, as it gives them; a rename gives both (D31). */
 function changedIn(worktree: string): string[] {
+  // G20: a worktree named at join and never made holds nothing
+  if (!fs.existsSync(worktree)) return [];
   const r = spawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
@@ -660,8 +662,9 @@ const NO_MAIN = "there is no Main any more: the conversation is one; mention who
 /** An open run by id; null when closed or unknown. */
 const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id) ?? null;
 
-/** A code run's member gets the board's worktree, made or reused (the kind's profile `worktree`); a seat of a talk-only
- *  kind, an undeclared seat, or a caller already in a worktree of its own (one it made, or its harness did) gets none. */
+/** A code run's member gets the board's worktree, its place named at join and made at its first claim or merge-lock (G20),
+ *  reused when there; a seat of a talk-only kind, an undeclared seat, or a caller already in a worktree of its own (one it
+ *  made, or its harness did) gets none. */
 async function memberWorktree(runId: number, seat: string): Promise<{ path: string; branch: string; base: string; reused: boolean } | null> {
   const run = await runOf(runId);
   if (!run || !profileOf(run.kind).worktree || !run.seats.some((s) => s.id === seat)) return null;
@@ -671,10 +674,25 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
   if (!base || !worktreeOf(cwd)) return null;
   if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), run.repo)) return null;
   if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
+  const at = worktreeDir(run.repo, run.id, seat);
+  return { path: at, branch: branchFor(run.id, run.group, seat), base, reused: fs.existsSync(at) };
+}
+
+/** The caller's board worktree, made now when its join only named it (G20): a member that never claims or merges gets none. */
+async function madeWorktree(p: Participant): Promise<void> {
+  if (!p.worktree || !owned(p.worktree, p.repo) || fs.existsSync(p.worktree)) return;
+  const run = await runOf(p.run);
+  if (!run) return;
+  // any checkout of the repository adds it: the caller's, else the repository's own beside its git dir
+  const cwd = worktreeOf(process.cwd()) && repoOf(process.cwd()) === p.repo ? process.cwd() : path.dirname(p.repo);
+  const base = run.base ?? baseAt(cwd);
+  if (!base) fail(`${p.name}: no base to make the worktree from`);
   try {
-    return { ...ensureWorktree(cwd, run.repo, run.id, run.group, seat, base), base };
+    ensureWorktree(cwd, p.repo, run.id, run.group, p.seat, base as string);
+    // claim and release resolve paths in it from now on (G19)
+    callerWorktree = p.worktree;
   } catch (e) {
-    return fail(`join: ${(e as Error).message}`);
+    fail(`worktree: ${(e as Error).message}`);
   }
 }
 
@@ -888,7 +906,7 @@ ${USAGE}`);
       const as = shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
-          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
+          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
       const commands = shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
@@ -1127,6 +1145,7 @@ ${owes}` : rearm;
     case "claim": {
       const p = await caller();
       if (await refusedPaused(p, "claim")) break;
+      await madeWorktree(p);
       if (!args.positional.length) fail("claim: which path?");
       // every path given is claimed, each answered on its own line (G4)
       const answers: { rel: string; verdict: Awaited<ReturnType<typeof board.checkEdit>>; also: string }[] = [];
@@ -1176,6 +1195,7 @@ ${owes}` : rearm;
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
+      await madeWorktree(p);
       // the branch merged into: a worktree does not say which branch it left, so the member names it (D59)
       const onto = need("--onto");
       // a branch checked out in a worktree refuses the push: say where, grant nothing (validation finding 4)
