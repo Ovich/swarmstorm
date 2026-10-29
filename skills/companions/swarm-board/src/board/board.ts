@@ -1931,7 +1931,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             .prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq")
             .all(fresh.run, since, ORCHESTRATOR) as Row[]
         )
-          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`)) }))
+          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`))
+            // G43: a phase for some seats (--for) takes only the posts to those seats
+            .filter((t) => !only.length || only.includes(seatOf(t))) }))
           .filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
         const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);

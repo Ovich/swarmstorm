@@ -151,3 +151,11 @@ test("a phase names the tasks the orchestrator posted before it that its text do
   // the next phase counts only what came after this one
   assert.equal(board.phase(orchestrator, "verify", "check").body, "phase verify: check");
 });
+
+test("G43: a phase for some seats (--for) names only the tasks posted to those seats", () => {
+  const { orchestrator } = twoRuns();
+  board.post(orchestrator, "@architect a nudge during the build");
+  const toSkeptic = board.post(orchestrator, "@skeptic check the holes");
+  const m = board.phase(orchestrator, "verify", "check it", { for: ["skeptic"] });
+  assert.equal(m.body, `phase verify: check it; its tasks posted before it: #${toSkeptic.seq} skeptic`);
+});
