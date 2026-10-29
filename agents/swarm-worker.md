@@ -37,4 +37,5 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop
 the product the verifiers walk (each verifier owns its own instance), or edit the plan, unless your brief says so in those words. **One
 command per shell call**, never chained with `&&` or `;`. **Never end your turn while the run is
-open**: between tasks, wait in the foreground.
+open**: between tasks, wait in the foreground; never run `end` while it is open (it is refused).
+Only a park line from the orchestrator ends your turn, without `end`.

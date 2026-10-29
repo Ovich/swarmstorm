@@ -272,7 +272,7 @@ By group, in the order work usually happens. The folder under `skills/` is the g
 | Skill | Use case | Example ask |
 |---|---|---|
 | [aiview](skills/companions/aiview/SKILL.md) | A viewer at `localhost:4321` and an index, driven by the agent from a CLI. Called by the other skills; directly, to show a document or query the index | *"Open docs/notes/cache-idea.md in aiview, tagged payments."* |
-| [swarm-board](skills/companions/swarm-board/SKILL.md) | The board agents running together share, for a plan, a task swarm or a brainswarm: who is there, what each holds, their thread, drawn by aiview a tab per run. Called by the orchestrators and their members; directly, to read how the runs went | *"How did the swarm runs go this week?"* |
+| [swarm-board](skills/companions/swarm-board/SKILL.md) | The board agents running together share, for a plan, a task swarm or a brainswarm: who is there, what each holds, their thread, drawn by aiview a tab per run. Its core verbs serve every run; the claim and merge verbs are the code pack's, a worker's alone (`--help code`). A member never ends itself while its run is open; the orchestrator parks a seat it alone needs (`park`, `unpark`). Called by the orchestrators and their members; directly, to read how the runs went | *"How did the swarm runs go this week?"* |
 
 `write-diagrams`, `interview`, `orchestrate`, the tracker protocol in `write-plan` and the companion tools are the shared layer the others delegate to. `roadmap` sits above the loop: it names the next slot, and a board, a plan or a run finishing tells it to redraw. House rules in `AGENTS.md` win over general principles wherever the two disagree.
 

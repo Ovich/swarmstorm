@@ -69,8 +69,9 @@ verbs and their answers are the worker side's, `references/worker.md`.
 started from the line `join` (or `open`) prints first, as a background task of your own, so it
 stops when you stop. It finds your session's record itself; you pass it nothing. The board reads
 from it your state: `working` (your record grows, or your turn is still open), `busy` (a tool
-call open, or a background task you started this turn whose output still moves), `waiting` (in
-the board's own `wait`; any other tool, a browser's wait included, is work), `quiet` (none of
+call open, or a background task you started this turn whose output still moves, a board `wait`
+over it included: `busy <N> min · background <command>`), `waiting` (in the board's own `wait`
+with nothing of your own running; any other tool, a browser's wait included, is work), `quiet` (none of
 these, with its reason) or `gone` (finished without `end`, or its link lost 30 s while your record
 stopped growing). `status` and `roster` show it. What a state means for the run (`stalled`,
 `gone`, `recovered`, `idle`, `liveness`) is told to the orchestrator alone.

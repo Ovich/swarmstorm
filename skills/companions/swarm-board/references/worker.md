@@ -7,7 +7,10 @@ as long as the run is open, while other workers do theirs beside you. `$S` is th
 merges into, `<target>` below.
 
 **You never end your turn while the run is open.** A worker that ends its turn is not woken by its
-listener: it is gone. Waiting is a foreground `wait`; your turn ends only after `$S end`. **Your
+listener: it is gone. Waiting is a foreground `wait`; your turn ends only after `$S end` once the
+run is closed (while it is open your own `end` is refused), or when the orchestrator parks you:
+the park line says to end your turn **without** `end`, and the orchestrator resumes you at your
+next task. **Your
 only background tasks are your link and your listener.** A check, a test run or a build runs in
 the foreground: an agent that ends its turn on a background task of its own is not woken by it.
 

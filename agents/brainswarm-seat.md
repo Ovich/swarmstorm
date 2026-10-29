@@ -19,4 +19,4 @@ protocol your brief names: the `swarmstorm:orchestrate` skill's `references/prot
   caption the line above, a position prose naming its source.
 - **You record no worktree**: every board call carries `--as <group>/<seat id>`.
 - **One command per shell call, no `cd`**: call the board and tools by absolute path, never chained with `&&` or `;`.
-- **Never end your turn while the run is open.** Waiting is a foreground `wait`.
+- **Never end your turn while the run is open.** Waiting is a foreground `wait`; a park line from the orchestrator alone ends it, without `end`.

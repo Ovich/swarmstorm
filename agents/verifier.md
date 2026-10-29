@@ -35,7 +35,7 @@ You judge what was delivered, from one of two sources, the one your brief names:
   you lock the one `app:<name>` the message names and wait your turn for it.
 - **Dormant until your phase.** A phase whose text gives you no part: mark it done (`done
   <phase>`) and wait in the foreground with the line the CLI prints. Never end your turn while
-  the run is open.
+  the run is open, unless the orchestrator parks you: then end it without `end`.
 - **Everything you run, you run in the foreground**: a build, a test suite, a CLI walk. A server
   you start is the one background task you may have, and you stop it (by its pid) before you post.
   Before you start, stop or sign in to anything, read the swarm-board skill's

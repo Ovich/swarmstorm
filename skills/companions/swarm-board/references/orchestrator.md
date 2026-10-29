@@ -66,8 +66,10 @@ waits: in the foreground; a seat runs on the plugin's
 
 - **`$S seat <seat> --run <run> --state running`** at its dispatch; `blocked` when it waits on a
   person; `done` when the seat leaves the run.
-- **A worker stays for the whole run**, task after task. One whose context runs long is ended
-  (`end`) and a fresh worker joins the same seat.
+- **A worker stays for the whole run**, task after task; a member never ends itself while the
+  run is open (its own `end` is refused). One whose context runs long is ended by you,
+  `$S end --seat <seat> --as <group>/orchestrator` (it refuses while that seat's work is not
+  merged), and a fresh worker joins the same seat.
 - **A seat added mid-run**: `$S seat add <seat> --run <run> [--link <url>]
   [--role <role>] [--on <events>]`. It lands after the last, `ready`; an id already in the run or
   a closed run is refused. Then dispatch it like the others.
@@ -101,8 +103,8 @@ waits: in the foreground; a seat runs on the plugin's
     `call open 15 min, may be long or hung`, `waiting, not done <phase>` (it waits while owing
     its part). **Read that `next` line and make that move**: the rule says why the member is
     stuck, so it alone knows what reaches it, a mention for a member in a wait, a direct message
-    for one whose turn ended. A member waiting on a task it just started reads `busy ·
-    background <cmd>` and draws no alert.
+    for one whose turn ended. A member in a board wait over a task of its own it started reads
+    `busy <N> min · background <cmd>` and draws no alert, until the task has run 15 min.
   - **`gone <member>`**: its agent finished without `end`, or its link has been lost 30 s and
     its transcript has not grown for 30 s; once. It is not running: dispatch a fresh agent into
     its seat, or close the seat (*A gone member*).
@@ -176,11 +178,14 @@ seat between its waits, one that is `quiet`. Post it on the board too, so the th
 set the seat back to `running` and dispatch a fresh worker, which joins the same seat; repost its
 open task.
 
-**An idle member ends itself.** One that owes nothing (no phase part, no mention, no claim) and
-whose wait returned empty twice in a row is told to `end` and return; you hear it as `ended`.
-That seat is not done, only dormant: it stays in the run's phases, all-done waits for it, and
-the `phase` answer names it with how to wake it; dispatch into it again, a fresh agent that
-joins the same seat, or the ended one resumed (`SendMessage`) with the task.
+**An idle member stays; you decide whether to park it.** An idle member is only told to wait
+again. On `idle`, a member its peers may need (one holding files, a debate seat) keeps waiting;
+one only you need (a worker between tasks with nothing held, a verifier until its phase) you
+park: `$S park <seat> [--until <phase>] --as <group>/orchestrator`. It is told to end its turn
+without `end`; its card reads `dormant until <phase>`; it raises no `idle`, `stalled`, `stale`,
+`gone` or `liveness`, and all-done does not wait for it. Its own next call lifts the park, as does
+`$S unpark <seat>`: resume it (`SendMessage`) with its next task, or, where the harness has no
+resume, dispatch a fresh agent that joins the same seat.
 
 ## Close
 
