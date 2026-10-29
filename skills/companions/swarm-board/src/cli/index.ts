@@ -943,7 +943,7 @@ async function main(): Promise<void> {
         // a reader no member answers to: the message's run's phase, whole
         const ph = await board.currentPhase(m.run);
         const phase = ph ? WORDING.phaseWhole(ph.name, ph.text) : null;
-        emitAnswer({ ...m }, { lines: [...(phase ? [phase] : []), fullText(m)], next: null, phase });
+        emitAnswer({ ...m }, { lines: [fullText(m), ...(phase ? [phase] : [])], next: null, phase });
       }
       break;
     }

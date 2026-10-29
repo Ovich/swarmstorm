@@ -1118,7 +1118,10 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   const short = /^phase build \(unchanged; its text: .* thread --as review-tool\/S3\)$/;
   const delivered = run("deliver", "--as", s3).stdout.split("\n");
   assert.match(delivered[0], short);
-  assert.match(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], short);
+  // V10: the post first, then the short header
+  const readLines = run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n");
+  assert.match(readLines[0], /^#\d+ /);
+  assert.ok(readLines.some((l) => short.test(l)), readLines.join("\n"));
 
   const joined = run("join", "--run", String(id), "--seat", "S5", "--doing", "skill").stdout.split("\n");
   // G32: S5 owes the phase, so its text is stated once, on the owed line, with no header line besides it

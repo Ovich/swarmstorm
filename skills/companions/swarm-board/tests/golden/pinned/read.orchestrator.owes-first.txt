@@ -1,4 +1,4 @@
 exit 0
-phase build: build the thing
 #<seq> g/orchestrator (event)  <ts>
 run 1 opened: task g, T
+phase build: build the thing

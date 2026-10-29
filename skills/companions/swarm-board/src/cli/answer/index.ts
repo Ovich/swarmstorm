@@ -91,7 +91,8 @@ export function answer(r: VerbResult, s: Situation): Answer {
     case "read": {
       const headers = phaseHeaders(s);
       const owes = r.member ? owedLine(s) : null;
-      return { lines: [...(headers.printed ? [headers.printed] : []), r.shown.text, ...(owes ? [owes] : [])], next: owes, phase: headers.full };
+      // V10: the result first (the post), then its phase, then the owed step
+      return { lines: [r.shown.text, ...(headers.printed ? [headers.printed] : []), ...(owes ? [owes] : [])], next: owes, phase: headers.full };
     }
     case "thread": {
       const headers = phaseHeaders(s);
