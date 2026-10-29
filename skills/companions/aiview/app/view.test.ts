@@ -221,9 +221,9 @@ describe("agents (D7, D20)", () => {
   test("two runs of one group: each shows its own members, never the other's ended ones", () => {
     const runs = [run(5, "same", "SA", false), run(6, "same", "SA")];
     const roster = [
-      { ...member("same", "orchestrator", "Old Owl", "done"), run: 5 },
+      { ...member("same", "orchestrator", "Old Owl", "ended"), run: 5 },
       { ...member("same", "judge", "Old Hare", "ended"), run: 5 },
-      { ...member("same", "orchestrator", "New Owl", "watching"), run: 6 },
+      { ...member("same", "orchestrator", "New Owl", "waiting"), run: 6 },
     ];
     expect(agents(board(runs, roster), 6).map((m) => m.nick)).toEqual(["New Owl"]);
     expect(agents(board(runs, roster), 5).map((m) => m.nick)).toEqual(["Old Owl", "Old Hare"]);

@@ -9117,12 +9117,20 @@ function decode(text) {
   if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
   return f;
 }
-function bundleVersion(entry2 = process.argv[1] ?? "") {
+function builtCliOf(entry2) {
   const file = path9.resolve(entry2);
-  let v = versionsByEntry.get(file);
+  const bundle = path9.join(path9.dirname(file), "dist-cli", "cli.mjs");
+  return fs8.existsSync(bundle) ? bundle : file;
+}
+function bundleVersion(entry2) {
+  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
+  const file = builtCliOf(entry2);
+  const st = fs8.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
   if (v === void 0) {
     v = crypto.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByEntry.set(file, v);
+    versionsByBuild.set(key, v);
   }
   return v;
 }
@@ -9164,13 +9172,12 @@ function isAlive(pid) {
     return e.code === "EPERM";
   }
 }
-var RPC_METHODS, FRAME_TYPES, versionsByEntry, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
 var init_wire = __esm({
   "../swarm-board/src/wire.ts"() {
     "use strict";
     RPC_METHODS = [
       "openRun",
-      "setSeatState",
       "addSeat",
       "closeRun",
       "phase",
@@ -9193,7 +9200,7 @@ var init_wire = __esm({
       "guidesUntold",
       "setting",
       "runs",
-      "worktrees",
+      "packCall",
       "join",
       "participant",
       "identify",
@@ -9212,19 +9219,13 @@ var init_wire = __esm({
       "deliver",
       "deliverMentions",
       "wait",
-      "checkEdit",
-      "reconcileWrites",
-      "release",
-      "lockMerge",
-      "merged",
-      "heldMergeLock",
       "stats",
       "repos",
       "snapshot",
       "composition"
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
-    versionsByEntry = /* @__PURE__ */ new Map();
+    versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
   }
@@ -9787,7 +9788,7 @@ var init_board = __esm({
 
 // src/server/sse.ts
 function createSseHub(heartbeatMs = HEARTBEAT_MS, hello = () => ({})) {
-  const clients = /* @__PURE__ */ new Set();
+  const clients = /* @__PURE__ */ new Map();
   const drop = (res) => {
     if (clients.delete(res)) res.destroy();
   };
@@ -9804,29 +9805,34 @@ function createSseHub(heartbeatMs = HEARTBEAT_MS, hello = () => ({})) {
     }
   };
   const beat = setInterval(() => {
-    for (const res of [...clients]) send(res, { type: "ping" });
+    for (const res of [...clients.keys()]) send(res, { type: "ping" });
   }, heartbeatMs);
   beat.unref?.();
   return {
-    add(res) {
+    add(res, project = null) {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-store",
         connection: "keep-alive"
       });
-      clients.add(res);
+      clients.set(res, project);
       res.on("close", () => clients.delete(res));
       res.on("error", () => drop(res));
       send(res, { type: "hello", ...hello() });
     },
     // The set is copied: a write that fails drops its client from it.
     broadcast(event) {
-      for (const res of [...clients]) send(res, event);
+      for (const res of [...clients.keys()]) send(res, event);
+    },
+    broadcastTo(project, event) {
+      const onProject = [...clients].filter(([, p]) => p === project).map(([res]) => res);
+      for (const res of onProject) send(res, event);
+      return onProject.length;
     },
     size: () => clients.size,
     close() {
       clearInterval(beat);
-      for (const res of [...clients]) drop(res);
+      for (const res of [...clients.keys()]) drop(res);
     }
   };
 }
@@ -9863,7 +9869,7 @@ function openBrowser(url) {
     console.error(`could not open browser: ${e.message}`);
   }
 }
-function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry }) {
+function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser }) {
   const sse = createSseHub(heartbeatMs, () => {
     const build = servedBuild(path14.join(toolRoot, "dist"));
     return build ? { build } : {};
@@ -9886,6 +9892,23 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
+  const projectOfBoardKey = (key) => {
+    const projects = index.allProjects();
+    if (projects.some((x) => x.slug === key)) return key;
+    const checkoutOf = (repo) => repo.replace(/[\\/]+$/, "").replace(/[\\/]\.git$/i, "");
+    const named = (repo) => path14.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
+    for (const x of projects) {
+      const repo = index.boardRepos(x.slug).find(named);
+      if (repo) return projectForCwd(checkoutOf(repo), projects)?.slug ?? x.slug;
+    }
+    return null;
+  };
+  const toProjectTabs = (project, event, hash) => {
+    const tabs = sse.broadcastTo(project, event);
+    if (tabs > 0) return { tabs, opened: false };
+    openTab(`http://localhost:${server.address().port}/#${hash}`);
+    return { tabs: 0, opened: true };
+  };
   const distDir = path14.join(toolRoot, "dist");
   const useDist = fs12.existsSync(path14.join(distDir, "index.html"));
   const serveStatic = (res, p) => {
@@ -9904,7 +9927,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     const url = new URL(req.url ?? "/", "http://x");
     if (board.handle(req, res, url)) return;
     const p = url.pathname;
-    if (p === "/events") return sse.add(res);
+    if (p === "/events") return sse.add(res, url.searchParams.get("project") || null);
     if (p === "/api/documents")
       return json(res, {
         documents: index.all(),
@@ -9923,7 +9946,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       return;
     }
     if (p === "/api/project-board") {
-      const slug = url.searchParams.get("project") || index.activeProject();
+      const key = url.searchParams.get("repo");
+      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || index.activeProject();
+      if (slug === null) return json(res, { error: `no project for ${key}` }, 404);
       return json(res, { project: slug, repos: slug === ALL_PROJECTS ? [] : index.boardRepos(slug) });
     }
     if (p === "/api/pin" && req.method === "POST") {
@@ -10000,14 +10025,39 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
         } catch {
           return json(res, { error: "bad json" }, 400);
         }
-        const { id, components, variant } = asked;
+        const { id, components, variant, project } = asked;
         if (typeof id !== "number" || !index.get(id)) return json(res, { error: "no such document" }, 404);
         if (!Array.isArray(components) || !components.every((c) => typeof c === "string" && isName(c)))
           return json(res, { error: "components must be names" }, 400);
         if (variant !== void 0 && (typeof variant !== "string" || !isName(variant)))
           return json(res, { error: "variant must be a name" }, 400);
-        sse.broadcast({ type: "show", id, components, ...variant ? { variant } : {} });
+        const event = { type: "show", id, components, ...variant ? { variant } : {} };
+        if (typeof project === "string" && project) {
+          const hash = [`doc=${id}`, ...components.length ? [`show=${components.join(",")}`] : [], ...variant ? [`variant=${variant}`] : []].join("&");
+          return json(res, toProjectTabs(project, event, hash));
+        }
+        sse.broadcast(event);
         json(res, { tabs: sse.size() });
+      });
+      return;
+    }
+    if (p === "/api/open" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => {
+        body += c;
+        if (body.length > 4096) req.destroy();
+      });
+      req.on("end", () => {
+        let asked;
+        try {
+          asked = JSON.parse(body);
+        } catch {
+          return json(res, { error: "bad json" }, 400);
+        }
+        const { id, project } = asked;
+        if (typeof id !== "number" || !index.get(id)) return json(res, { error: "no such document" }, 404);
+        if (typeof project !== "string" || !project) return json(res, { error: "project required" }, 400);
+        json(res, toProjectTabs(project, { type: "open", id }, `doc=${id}`));
       });
       return;
     }
@@ -10112,6 +10162,7 @@ var init_server = __esm({
   async "src/server/index.ts"() {
     "use strict";
     await init_db();
+    init_projects();
     init_bind();
     init_paths();
     init_pointer();
@@ -10147,13 +10198,20 @@ init_bind();
 init_paths();
 init_pointer();
 init_projects();
-init_home();
-init_serverstate();
-init_collectionversion();
 import { spawn as spawn4, spawnSync as spawnSync3 } from "node:child_process";
 import fs13 from "node:fs";
 import path15 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
+
+// src/core/boardhash.ts
+function boardHash(repo, run) {
+  return `#board&repo=${encodeURIComponent(repo)}${run ? `&run=${run}` : ""}`;
+}
+
+// src/cli/index.ts
+init_home();
+init_serverstate();
+init_collectionversion();
 
 // src/cli/args.ts
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
@@ -10691,6 +10749,15 @@ function portOfInstalledServer() {
   stopServerProcess(st.pid);
   return spawnDetachedServer(st.port);
 }
+function agentProject(fallback) {
+  const index = openIndex();
+  try {
+    return projectForCwd(process.cwd(), index.allProjects())?.slug ?? fallback;
+  } finally {
+    index.close();
+  }
+}
+var movedLine = (r, project, verb) => r.opened ? `no tab showed ${project}: opened a new one` : `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
 function resolveRef(ref) {
   const index = openIndex();
   try {
@@ -10805,8 +10872,8 @@ function cmdShow() {
   const usage = "usage: aiview show <file|#id> [--component Name]... [--variant v]  |  aiview show --done";
   if (args.has("--done")) {
     const answer2 = askServer("/api/show-done", {});
-    const tabs2 = answer2 === null ? 0 : JSON.parse(answer2).tabs;
-    emit({ done: true, tabs: tabs2 }, tabs2 ? `${tabs2} open tab${tabs2 > 1 ? "s" : ""} sent back to what the person was reading` : "no tab is open: nothing to send back");
+    const tabs = answer2 === null ? 0 : JSON.parse(answer2).tabs;
+    emit({ done: true, tabs }, tabs ? `${tabs} open tab${tabs > 1 ? "s" : ""} sent back to what the person was reading` : "no tab is open: nothing to send back");
     return;
   }
   const abs = prototypeArg(usage);
@@ -10827,11 +10894,12 @@ function cmdShow() {
   const port = portOfInstalledServer();
   const pointer = { id: doc.id, components, ...variant ? { variant } : {} };
   const url = `http://localhost:${port}/#${pointerHash(pointer)}`;
-  const answer = askServer("/api/show", pointer);
-  const tabs = answer === null ? 0 : JSON.parse(answer).tabs;
-  emit({ id: doc.id, url, components, variant: variant ?? null, tabs }, () => {
+  const project = agentProject(doc.project);
+  const answer = askServer("/api/show", { ...pointer, project });
+  const moved = answer === null ? null : JSON.parse(answer);
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false }, () => {
     console.log(url);
-    console.log(tabs ? `shown in ${tabs} open tab${tabs > 1 ? "s" : ""}` : "no tab is open: give the person the link");
+    console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
   });
 }
 function cmdCheck() {
@@ -11114,17 +11182,20 @@ function cmdOpen() {
   const index = openIndex();
   const d = index.register(path15.resolve(args.positional[0]), registerOpts());
   setActive(index, d.project);
+  const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
   index.close();
   const port = portOfInstalledServer();
   const url = `http://localhost:${port}/#doc=${d.id}`;
-  if (args.has("--open")) {
+  const answer = askServer("/api/open", { id: d.id, project });
+  const moved = answer === null ? null : JSON.parse(answer);
+  if (!moved && args.has("--open")) {
     const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
     try {
       spawn4(c, a, { detached: true, stdio: "ignore" }).unref();
     } catch {
     }
   }
-  emit({ id: d.id, url, server: readServerStatus() }, url);
+  emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
 }
 function cmdBoard() {
   const index = openIndex();
@@ -11142,7 +11213,7 @@ function cmdBoard() {
     const repos = repo === void 0 ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
     setActive(index, slug);
     ensureDist();
-    const url = `http://localhost:${portOfInstalledServer()}/board`;
+    const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
     if (args.has("--open")) {
       const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
       try {

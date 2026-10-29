@@ -181,8 +181,8 @@ test("a click outside closes the archive; one inside does not", () => {
 
 test("under a closed run, its members as they ended, a card still followed", () => {
   const was = LIVE.roster.find((r) => r.state === "ended")!;
-  const member = (seat: string, state: "done" | "ended") => ({ ...was, member: `login-page/${seat}`, nick: `LP ${seat}`, plan: "login-page", seat, state });
-  show([APP], 4, [{ ...LIVE, roster: [...LIVE.roster, member("S1", "ended"), member("orchestrator", "done")] }]);
+  const member = (seat: string, state: "ended") => ({ ...was, member: `login-page/${seat}`, nick: `LP ${seat}`, plan: "login-page", seat, state });
+  show([APP], 4, [{ ...LIVE, roster: [...LIVE.roster, member("S1", "ended"), member("orchestrator", "ended")] }]);
   const cards = within(strip()!).getAllByRole("button");
   expect(cards.map((c) => c.querySelector(".seat")?.textContent)).toEqual(["orchestrator", `S1 · ${was.role}`]);
   expect(cards.every((c) => c.textContent?.includes("ended"))).toBe(true);
@@ -267,7 +267,7 @@ test("a large swarm: the search and a state chip narrow the rows; a row clicked 
 
 // ── the member's activity (swarm-relay S24, D9, D20) ─────────────────────────────
 
-const ACTIVE = LIVE.roster.find((r) => r.member.startsWith("refresh-tokens/") && r.seat !== "orchestrator" && r.state !== "ended" && r.state !== "done")!;
+const ACTIVE = LIVE.roster.find((r) => r.member.startsWith("refresh-tokens/") && r.seat !== "orchestrator" && r.state !== "ended")!;
 const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, liveness } : r)) }) as BoardSnapshot;
 const activeCard = () => within(strip()!).getAllByRole("button").find((c) => c.textContent?.includes(ACTIVE.nick))!;
 const minutesAgo = (m: number) => Date.now() - m * 60000;

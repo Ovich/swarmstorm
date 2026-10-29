@@ -140,8 +140,8 @@ export const LIVE: BoardSnapshot = {
   lockHistory: [],
   roster: [
     member(`${RT}/S3`, "The Session interface carries the refresh token", "Adding refreshToken to Session, then its two readers", "working", [["src/auth/session.ts", true], ["src/auth/session.test.ts"]], "14:02", 31),
-    member(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "watching", [], "14:00", 0),
-    member(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "watching", [], "14:05", 0),
+    member(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "waiting", [], "14:00", 0),
+    member(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "waiting", [], "14:05", 0),
     member(`${RT}/S4`, "The refresh endpoint", "Writing POST /auth/refresh against the token store", "working", [["src/routes/auth.ts"], ["src/routes/refresh.test.ts"]], "14:02", 24),
     member(`${RT}/S5`, "The client retries once on 401", "Running the client tests", "working", [["web/http/client.ts"], ["web/http/client.test.ts"]], "14:10", 12),
     member(`${AL}/S1`, "The audit table and its writer", "Writing the migration for audit_entries", "working", [["src/audit/audit.ts", true], ["migrations/0042_audit.sql"]], "14:06", 15),

@@ -747,7 +747,9 @@ describe("useDocuments: the tab's own project", () => {
     onopen: (() => void) | null = null;
     onerror: (() => void) | null = null;
     onmessage: ((e: { data: string }) => void) | null = null;
-    constructor(public url: string) {
+    url: string;
+    constructor(url: string) {
+      this.url = url;
       FakeEventSource.opened.push(this);
     }
     close() {}
