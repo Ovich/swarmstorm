@@ -275,6 +275,21 @@ const within = async <T>(c: Client, ms: number, pick: (snap: any) => T | undefin
     await new Promise((r) => setTimeout(r, 100));
   }
 };
+/** Until the server has recorded `seat`'s link lost, read off the store: the loss is timed on the server's clock when
+ *  it sees the close, which a loaded machine may run after the test has skewed that clock (S31). */
+const untilLinkLost = async (run: number, seat: string): Promise<void> => {
+  for (let i = 0; i < 100; i++) {
+    const db = new DatabaseSync(path.join(dir, "swarm.sqlite"));
+    try {
+      const row = db.prepare("SELECT lost_at FROM member_links WHERE run = ? AND member = ?").get(run, seat) as { lost_at: number | null } | undefined;
+      if (row?.lost_at != null) return;
+    } finally {
+      db.close();
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.fail(`${seat}'s link never recorded lost`);
+};
 const goneEvents = (snap: any): { body: string; mentions: string[] }[] => snap.events.filter((e: { event?: string }) => e.event === "gone");
 /** A run with S1 and S2 joined, and S1's link welcomed. */
 const linkedRun = async () => {
@@ -315,6 +330,7 @@ test("gone is posted within 35 s of a link lost and not back; never for an ended
   const link2 = await welcomed({ member: { name: s2.name, run: run.id } });
   link.socket.close();
   await link.closed;
+  await untilLinkLost(run.id, "S1");
   // S2 ends, then its link goes: never gone
   await value(c, "end", s2);
   link2.socket.close();
