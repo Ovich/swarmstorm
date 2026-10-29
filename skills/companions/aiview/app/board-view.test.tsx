@@ -272,86 +272,114 @@ const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.
 const activeCard = () => within(strip()!).getAllByRole("button").find((c) => c.textContent?.includes(ACTIVE.nick))!;
 const minutesAgo = (m: number) => Date.now() - m * 60000;
 
+const withMember = (patch: object) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, ...patch } : r)) }) as BoardSnapshot;
+const badgeOf = (card: HTMLElement) => card.querySelector('[data-component="TroubleBadge"]') as HTMLElement | null;
+const activityOfCard = (card: HTMLElement) => card.querySelector('[data-component="MemberActivity"]')?.textContent ?? null;
+
+// board-split#D35: the state word is the board's alone; trouble is a badge, its reason on hover
 test.each([
-  ["working", { state: "working", doing: "Edit", since: null }, /^working$/, "last: Edit"],
-  ["busy", { state: "busy", doing: "browser_click /jobs", since: minutesAgo(3) }, /^busy · 3 min$/, "browser_click /jobs"],
-  ["waiting", { state: "waiting", doing: "swarm wait", since: null }, /^waiting$/, "last: swarm wait"],
-  ["quiet", { state: "quiet", doing: "Bash", since: minutesAgo(12), reason: "no call since 12 min" }, /^quiet · 12 min$/, "last: Bash · no call since 12 min"],
-  ["gone", { state: "gone", doing: "Read", since: null }, /^gone$/, "last: Read"],
-])("a %s member shows its own label and its tool beside it", (state, liveness, label, tool) => {
-  show([APP], 1, [withActivity({ tokens: null, movedAt: null, ...liveness })]);
-  const card = activeCard();
-  const status = card.querySelector(".state")!;
-  expect(status.className).toBe(`state ${state}`);
-  expect(status.textContent).toMatch(label);
-  const line = card.querySelector('[data-component="MemberActivity"]')!;
-  expect(line.getAttribute("data-state")).toBe(state);
-  expect(line.textContent).toBe(tool);
+  ["working", {}, `working on ${ACTIVE.doing}`],
+  ["merging", { state: "merging" }, "merging"],
+  ["waiting", { state: "waiting" }, "waiting on the board"],
+  ["watching", { state: "watching" }, "watching"],
+  ["parked", { state: "parked" }, "parked"],
+  ["dormant", { state: "parked", parkedUntil: "P5" }, "dormant until P5"],
+  ["ended", { state: "ended", ended: "2026-10-29T14:09:00.000Z" }, /^ended \d\d:\d\d$/],
+])("a %s member's card reads the board's word", (_name, patch, word) => {
+  show([APP], 1, [withMember(patch)]);
+  const status = activeCard().querySelector(".state")!;
+  if (typeof word === "string") expect(status.textContent).toBe(word);
+  else expect(status.textContent).toMatch(word);
+  expect(badgeOf(activeCard())).toBeNull();
 });
 
-test("a gone member stays in the roster, its card marked gone", () => {
-  show([APP], 1, [withActivity({ state: "gone", doing: null, since: null, tokens: null, movedAt: null })]);
-  const card = activeCard();
-  expect(card).toBeTruthy();
-  expect(card.classList.contains("gone")).toBe(true);
+test("the liveness never takes the word: a busy or waiting activity leaves the board's working", () => {
+  for (const state of ["busy", "waiting"]) {
+    show([APP], 1, [withActivity({ state, doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null })]);
+    expect(activeCard().querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+    cleanup();
+  }
 });
 
-test("a member with no activity state renders as before it", () => {
+test("a stalled member keeps its word and carries a stalled badge, its reason on hover, never the word", () => {
+  show([APP], 1, [withActivity({ state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress for 960s, link alive; last Bash", tokens: null, movedAt: null, progressAt: minutesAgo(16), aliveAt: Date.now() - 5000 })]);
+  const card = activeCard();
+  expect(card.querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+  expect(card.querySelector(".state")!.className).not.toMatch(/stalled/);
+  const badge = badgeOf(card)!;
+  expect(badge.textContent).toBe("stalled");
+  expect(badge.title).toBe("stalled for 16 min: no progress for 960s, link alive; last Bash");
+  expect(agesOf(card)!.textContent).toBe("progress 16 min · alive 5 s");
+});
+
+test.each([
+  ["ended", "quiet"],
+  ["call", "busy"],
+  ["owing", "quiet"],
+])("a member stalled under rule %s reads by the rule: a stalled badge", (rule, state) => {
+  show([APP], 1, [withActivity({ state, rule, doing: "Bash npm test", since: minutesAgo(2), reason: "anything at all", tokens: null, movedAt: null })]);
+  expect(badgeOf(activeCard())!.textContent).toBe("stalled");
+});
+
+test("a gone or quiet member carries its own badge; a working member whose link is down carries none", () => {
+  show([APP], 1, [withActivity({ state: "gone", doing: "Read", since: null, reason: "link lost", tokens: null, movedAt: null })]);
+  expect(badgeOf(activeCard())!.textContent).toBe("gone");
+  expect(activeCard().classList.contains("gone")).toBe(true);
+  cleanup();
+  show([APP], 1, [withActivity({ state: "quiet", doing: "Read", since: minutesAgo(2), reason: "no activity yet", tokens: null, movedAt: null })]);
+  expect(badgeOf(activeCard())!.textContent).toBe("quiet");
+  cleanup();
+  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, reason: "link down", tokens: null, movedAt: null })]);
+  expect(badgeOf(activeCard())).toBeNull();
+});
+
+// board-split#D32: what the member runs now, one line per open call, newest first; nothing open, its last call
+test("the activity line names each open call, newest first, the command cleaned", () => {
+  const activity = {
+    open: { name: "Bash", target: "SWARMSTORM_HOME=/h node /x/skills/swarm.mjs wait --mentions --as g/w1", since: minutesAgo(2), boardWait: true },
+    background: { target: "npm test", since: minutesAgo(7), outputGrewAt: null },
+  };
+  show([APP], 1, [withMember({ activity, liveness: { state: "busy", doing: "Bash", since: minutesAgo(2), tokens: null, movedAt: null } })]);
+  expect(activityOfCard(activeCard())).toBe("waiting on the board · 2 min\nrunning npm test · background · 7 min");
+  cleanup();
+  show([APP], 1, [withMember({ activity: { open: { name: "Bash", target: "CI=1 npm run build", since: minutesAgo(3), boardWait: false }, background: null } })]);
+  expect(activityOfCard(activeCard())).toBe("running npm run build · foreground · 3 min");
+});
+
+test("nothing open: the activity line reads the last call; a busy activity, the call it runs", () => {
+  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, tokens: null, movedAt: null })]);
+  expect(activityOfCard(activeCard())).toBe("last: Edit");
+  cleanup();
+  show([APP], 1, [withActivity({ state: "busy", doing: "browser_click /jobs", since: minutesAgo(3), tokens: null, movedAt: null })]);
+  expect(activityOfCard(activeCard())).toBe("running browser_click /jobs · foreground · 3 min");
+});
+
+test("a member with no activity renders its word and no activity line", () => {
   show([APP], 1, [withActivity(undefined)]);
   const card = activeCard();
   expect(card.querySelector('[data-component="MemberActivity"]')).toBeNull();
   expect(card.classList.contains("gone")).toBe(false);
-  expect(card.querySelector(".state")!.className).not.toMatch(/\b(busy|gone)\b/);
 });
 
 // ── the member's two ages (swarm-relay S43, D36, D38) ──────────────────────────
 
 const agesOf = (card: HTMLElement) => card.querySelector('[data-component="MemberAges"]');
 
-test("each card shows progress <age> and alive <age> beside the state", () => {
-  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, tokens: null, movedAt: null, progressAt: minutesAgo(4), aliveAt: Date.now() - 20000 })]);
+test("each card shows progress <age> and alive <age>, also in its hover title with the activity", () => {
+  show([APP], 1, [withActivity({ state: "busy", doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null, progressAt: minutesAgo(4), aliveAt: Date.now() - 20000 })]);
   const card = activeCard();
-  expect(card.querySelector(".state")!.textContent).toMatch(/^working$/);
   expect(agesOf(card)!.textContent).toBe("progress 4 min · alive 20 s");
+  expect(card.title).toContain("progress 4 min · alive 20 s");
+  expect(card.title).toContain("running Bash · foreground · 3 min");
 });
 
-test("a card without the two ages renders as before", () => {
+test("a card without the two ages renders without them", () => {
   show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, tokens: null, movedAt: null })]);
   expect(agesOf(activeCard())).toBeNull();
 });
 
-test("a stalled member's card reads as stalled with its missing signal", () => {
-  show([APP], 1, [withActivity({ state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress for 960s, link alive; last Bash",tokens: null, movedAt: null, progressAt: minutesAgo(16), aliveAt: Date.now() - 5000 })]);
-  const card = activeCard();
-  const status = card.querySelector(".state")!;
-  expect(status.className).toBe("state stalled");
-  expect(status.textContent).toMatch(/^stalled · 16 min$/);
-  expect(card.querySelector('[data-component="MemberActivity"]')!.textContent).toBe("last: Bash · no progress for 960s, link alive; last Bash");
-  expect(agesOf(card)!.textContent).toBe("progress 16 min · alive 5 s");
-});
-
-test("a gone member's card reads as gone, its lost link named", () => {
-  show([APP], 1, [withActivity({ state: "gone", doing: "Read", since: null, reason: "no progress for 120s, link lost; last Read", tokens: null, movedAt: null, progressAt: minutesAgo(2), aliveAt: Date.now() - 40000 })]);
-  const card = activeCard();
-  expect(card.classList.contains("gone")).toBe(true);
-  expect(card.querySelector(".state")!.textContent).toMatch(/^gone$/);
-  expect(card.querySelector('[data-component="MemberActivity"]')!.textContent).toBe("last: Read · no progress for 120s, link lost; last Read");
-  expect(agesOf(card)!.textContent).toBe("progress 2 min · alive 40 s");
-});
-
-test("a card shows its state's duration, ages and tool on its face, and in its hover title", () => {
-  show([APP], 1, [withActivity({ state: "busy", doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null, progressAt: minutesAgo(4), aliveAt: Date.now() - 20000 })]);
-  const card = activeCard();
-  expect((agesOf(card) as HTMLElement).hidden).toBe(false);
-  expect((card.querySelector('[data-component="MemberActivity"]') as HTMLElement).hidden).toBe(false);
-  expect(card.title).toContain("progress 4 min · alive 20 s");
-  expect(card.title).toContain("Bash");
-  expect(card.querySelector(".state")!.textContent).toBe("busy · 3 min");
-  expect(card.querySelector(".doing")).toBeTruthy();
-});
-
 test("a waiting card keeps its doing line on its face", () => {
-  show([APP], 1, [withActivity({ state: "waiting", doing: "swarm wait", since: null, tokens: null, movedAt: null })]);
+  show([APP], 1, [withMember({ state: "waiting" })]);
   expect(activeCard().querySelector(".doing")).toBeTruthy();
 });
 
@@ -500,42 +528,6 @@ test("a run that names a protocol shows it on its tab's hover, the kind otherwis
   expect(tabOf("Audit log").getAttribute("title")).toContain("· plan run ·");
   expect(tabOf("Audit log").querySelector(".kind")).toBeNull();
   expect(tabOf("Audit log").querySelector('[data-component="RunState"]')!.getAttribute("aria-label")).toBe("live");
-});
-
-// ── idea 1: a stall named by its rule (agent-ergonomics, build 1.4: V1, V3) ──────────
-
-test.each([
-  ["ended", "quiet", 'turn ended; last: "I will report once the build is green"'],
-  ["in-turn", "quiet", 'in turn, no line for 2 min (its model may be hung); last: "Bash ls"'],
-  ["background", "quiet", 'background npm test silent 60 s; last: "working"'],
-  ["call", "busy", 'call open 15 min, may be long or hung; last: "mcp__browser__browser_wait_for"'],
-  ["owing", "quiet", 'waiting, not done p1; last: "Bash node swarm.mjs wait"'],
-])("a member stalled under rule %s reads stalled, its reason once, one last: on the card", (rule, state, reason) => {
-  show([APP], 1, [withActivity({ state, rule, doing: "Bash npm test", since: minutesAgo(2), reason, tokens: null, movedAt: null })]);
-  const card = activeCard();
-  expect(card.querySelector(".state")!.className).toBe("state stalled");
-  const said = card.querySelector('[data-component="MemberActivity"]')!.textContent!;
-  expect(said).toBe(reason);
-  expect(said.match(/last:/g)).toHaveLength(1);
-});
-
-test("the stall is read from the rule, not the wording: a reworded reason under a rule is still stalled", () => {
-  show([APP], 1, [withActivity({ state: "quiet", rule: "ended", doing: "Read", since: minutesAgo(2), reason: "anything at all", tokens: null, movedAt: null })]);
-  expect(activeCard().querySelector(".state")!.className).toBe("state stalled");
-});
-
-test("a quiet member with no rule and no 'link alive' is quiet, not stalled; its last tool is shown", () => {
-  show([APP], 1, [withActivity({ state: "quiet", doing: "Read", since: minutesAgo(2), reason: "no activity yet", tokens: null, movedAt: null })]);
-  const card = activeCard();
-  expect(card.querySelector(".state")!.className).not.toMatch(/stalled/);
-  expect(card.querySelector('[data-component="MemberActivity"]')!.textContent).toBe("last: Read · no activity yet");
-});
-
-test("a working member whose link is down reads working, not stalled nor gone", () => {
-  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, reason: "link down", tokens: null, movedAt: null })]);
-  const card = activeCard();
-  expect(card.querySelector(".state")!.textContent).toMatch(/^working$/);
-  expect(card.classList.contains("gone")).toBe(false);
 });
 
 // ── idea 2, B12 (F10): a paused run says so on the conversation's head ──────────────

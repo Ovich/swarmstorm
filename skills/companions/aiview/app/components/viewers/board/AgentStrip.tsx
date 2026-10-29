@@ -1,6 +1,8 @@
 // A picked run's members, a closed run's as they ended, a column left of the conversation, the orchestrator first (D7, D20):
-// each card its member (code, then nick), its status, the seat, what it does. A card clicked
-// follows the member and narrows the conversation; clicked again, released.
+// each card its member (code, then nick), its state word, the seat, what it does. A card clicked
+// follows the member and narrows the conversation; clicked again, released. Two layers (board-split#D35): the state
+// word is the board's alone; what the agent runs now is the activity line (D32); trouble (stalled, gone, quiet) is a
+// badge with its reason on hover, never the word.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
 import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
 import { hhmm, ORCHESTRATOR } from "../../../lib/board/view.ts";
@@ -31,41 +33,83 @@ function ageSince(at: number, now: number): string {
   return `${Math.round(secs / 3600)} h`;
 }
 
-/** What the card's right side says: ended, the member's activity state (busy and quiet with how long), or as before it. */
-function statusOf(p: SnapshotMember, activity: MemberActivity | null, now: number): { text: string; className: string } {
-  if (p.state === "ended" || p.state === "done") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
+/** What the board may tell beyond today's reader type: a parked seat and the phase it is dormant until (D34), and the
+ *  member's open calls (D31, D32). Absent from an older board: the card reads as without them. */
+type MemberOnBoard = SnapshotMember & {
+  parkedUntil?: string | null;
+  activity?: {
+    open: { name: string; target: string; since: number; boardWait: boolean } | null;
+    background: { target: string; since: number; outputGrewAt: number | null } | null;
+  };
+};
+
+/** The state word, the board's alone (D35): working on its task, merging, waiting on the board, parked or dormant until
+ *  a phase, watching, ended. `className` is the board's state. */
+export function stateWordOf(p: MemberOnBoard): { text: string; className: string } {
+  const state = p.state as string;
+  if (state === "ended" || state === "done") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
+  if (state === "parked") return { text: p.parkedUntil ? `dormant until ${p.parkedUntil}` : "parked", className: "parked" };
+  if (state === "waiting") return { text: "waiting on the board", className: "waiting" };
+  if (state === "working") return { text: p.doing ? `working on ${p.doing}` : "working", className: "working" };
+  return { text: state, className: state };
+}
+
+/** The trouble the board reads in the member's activity (D35): a badge, its reason on hover; null when none. */
+export function troubleOf(p: MemberOnBoard, activity: MemberActivity | null, now: number): { kind: "stalled" | "gone" | "quiet"; reason: string } | null {
   if (activity) {
-    const label = isStalled(activity) ? "stalled" : activity.state;
-    const timed = (activity.state === "busy" || activity.state === "quiet") && activity.since !== null;
-    return { text: timed ? `${label} · ${minutesSince(activity.since!, now)}` : label, className: label };
+    const kind = isStalled(activity) ? "stalled" : activity.state === "gone" || activity.state === "quiet" ? activity.state : null;
+    if (!kind) return null;
+    const held = activity.since !== null ? ` for ${minutesSince(activity.since, now)}` : "";
+    return { kind, reason: `${kind}${held}${activity.reason ? `: ${activity.reason}` : ""}` };
   }
-  if (p.stale) return { text: `quiet ${Math.max(1, Math.round((now - Date.parse(p.lastCall)) / 60000))} min`, className: "quiet" };
-  const doing = p.listening && p.seat !== ORCHESTRATOR ? "listening" : p.state;
-  return { text: `${doing} · ${hhmm(p.joined)}`, className: p.state };
+  if (p.stale) return { kind: "quiet", reason: `quiet: no call for ${minutesSince(Date.parse(p.lastCall), now)}` };
+  return null;
 }
 
-/** How long a busy or quiet member has been so, for the hover title; null for the other states. */
-function stateHeldFor(activity: MemberActivity, now: number): string | null {
-  const timed = (activity.state === "busy" || activity.state === "quiet") && activity.since !== null;
-  return timed ? `${isStalled(activity) ? "stalled" : activity.state} for ${minutesSince(activity.since!, now)}` : null;
+/** The trouble badge beside the state word (D35). */
+function TroubleBadge({ trouble }: { trouble: { kind: string; reason: string } | null }) {
+  if (!trouble) return null;
+  return (
+    <span className={`badge ${trouble.kind}`} title={trouble.reason} data-component="TroubleBadge">
+      {trouble.kind}
+    </span>
+  );
 }
 
-/** The tool the member has open (busy) or called last, and why it is quiet or stalled when the server says. A reason
- *  under a stall rule ends on the member's own last line, so the last tool is left out: one `last:` per card. */
-function activityText(activity: MemberActivity): string {
-  const reasonShown = activity.state === "quiet" || activity.state === "gone" || !!activity.rule;
-  const reasonCarriesLast = !!activity.rule && !!activity.reason;
-  const tool = activity.doing && !reasonCarriesLast ? (activity.state === "busy" ? activity.doing : `last: ${activity.doing}`) : null;
-  return [tool, reasonShown ? activity.reason : null].filter(Boolean).join(" · ");
+/** A command as the card shows it (D32): no env prefix, the CLI's path dropped (a board call named by its verb), cut to the card. */
+export function cleanCall(command: string): string {
+  const words = command.trim().split(/\s+/);
+  while (words.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) words.shift();
+  const board = words.findIndex((w) => /(^|[\\/])swarm(\.mjs)?$/.test(w));
+  const shown = board >= 0 ? ["swarm", ...words.slice(board + 1)] : words;
+  const line = shown.join(" ");
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+}
+
+/** What the member runs now (D32), one line per open call, newest first: `running <command> · background|foreground ·
+ *  <N> min`, `waiting on the board · <N> min`; nothing open, its last call. From the board's open calls when it sends
+ *  them, else from its activity. */
+export function activityLines(p: MemberOnBoard, activity: MemberActivity | null, now: number): string[] {
+  const open = p.activity?.open ?? null;
+  const background = p.activity?.background ?? null;
+  if (p.activity) {
+    const lines = [
+      ...(open ? [{ since: open.since, text: open.boardWait ? `waiting on the board · ${minutesSince(open.since, now)}` : `running ${cleanCall(open.target)} · foreground · ${minutesSince(open.since, now)}` }] : []),
+      ...(background ? [{ since: background.since, text: `running ${cleanCall(background.target)} · background · ${minutesSince(background.since, now)}` }] : []),
+    ].sort((a, b) => b.since - a.since);
+    if (lines.length) return lines.map((l) => l.text);
+  }
+  if (!activity?.doing) return [];
+  if (activity.state === "busy") return [`running ${cleanCall(activity.doing)} · foreground${activity.since !== null ? ` · ${minutesSince(activity.since, now)}` : ""}`];
+  return [`last: ${cleanCall(activity.doing)}`];
 }
 
 /** The activity line on the card face; its text also reads in the hover title. */
-function ActivityLine({ activity }: { activity: MemberActivity }) {
-  const text = activityText(activity);
-  if (!text) return null;
+function ActivityLine({ lines, state }: { lines: string[]; state: string }) {
+  if (!lines.length) return null;
   return (
-    <span className="activity" data-component="MemberActivity" data-state={activity.state}>
-      {text}
+    <span className="activity" data-component="MemberActivity" data-state={state}>
+      {lines.join("\n")}
     </span>
   );
 }
@@ -104,11 +148,11 @@ function useNow(): number {
 function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue: number; followed: boolean; onFollow: () => void; now: number }) {
   const orch = p.seat === ORCHESTRATOR;
   const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
-  const status = statusOf(p, activity, now);
-  const ended = p.state === "ended" || p.state === "done";
-  // the face shows the doing line, ages and tool; the hover title repeats them
-  const showsDoing = !ended && !!p.doing;
-  const hoverTitle = [p.doing, activity && stateHeldFor(activity, now), activity && agesText(activity, now), activity && activityText(activity)].filter(Boolean).join("\n");
+  const status = stateWordOf(p);
+  const trouble = troubleOf(p, activity, now);
+  const lines = p.state === "ended" || p.state === "done" ? [] : activityLines(p, activity, now);
+  // the face shows the ages and the activity line; the hover title repeats them, the trouble's reason with them
+  const hoverTitle = [p.doing, trouble?.reason, activity && agesText(activity, now), ...lines].filter(Boolean).join("\n");
   return (
     <button
       title={hoverTitle || undefined}
@@ -125,12 +169,14 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
           <i />
           {status.text}
         </span>
+        <TroubleBadge trouble={trouble} />
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       {!!p.unread && <span className="unread" data-component="UnreadCount">{p.unread} unread</span>}
-      {showsDoing && <span className="doing">{p.doing}</span>}
+      {/* working carries its task in the word; any other live state keeps the doing line */}
+      {p.state !== "working" && p.state !== "ended" && p.state !== "done" && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      {activity && <ActivityLine activity={activity} />}
+      <ActivityLine lines={lines} state={activity?.state ?? p.state} />
     </button>
   );
 }
@@ -147,18 +193,18 @@ const BUCKETS = [
 ] as const;
 type Bucket = (typeof BUCKETS)[number]["id"];
 
+/** The member's section: the ended by the board's word, the attention by its badge (D35), waiting by the board's word. */
 function bucketOf(p: SnapshotMember): Bucket {
   if (p.state === "ended" || p.state === "done") return "ended";
-  const a = activityOf(p);
-  if (a) return a.state === "quiet" || a.state === "gone" || isStalled(a) ? "attention" : a.state === "waiting" ? "waiting" : "active";
-  if (p.stale) return "attention";
-  return p.listening ? "waiting" : "active";
+  if (troubleOf(p, activityOf(p), Date.now())) return "attention";
+  return p.state === "waiting" ? "waiting" : "active";
 }
 
 /** One member on one line: its stripe, name, seat and state; clicked, followed and drawn as its card. */
 function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; onFollow: () => void; now: number }) {
   const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
-  const status = statusOf(p, activity, now);
+  const status = stateWordOf(p);
+  const trouble = troubleOf(p, activity, now);
   return (
     <button
       className={["row", p.state, activity?.state === "gone" && "gone"].filter(Boolean).join(" ")}
@@ -180,6 +226,7 @@ function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; o
         <i />
         {status.text}
       </span>
+      <TroubleBadge trouble={trouble} />
     </button>
   );
 }
@@ -295,14 +342,15 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
     <div className="agent-rail" data-component="AgentRail" onMouseLeave={() => setHover(null)}>
       {agents.map((p) => {
         const activity = p.state === "ended" || p.state === "done" ? null : activityOf(p);
-        const status = statusOf(p, activity, now);
+        const status = stateWordOf(p);
+        const trouble = troubleOf(p, activity, now);
         return (
           <button
             key={p.member}
             className={["rail-agent", p.state, activity?.state === "gone" && "gone"].filter(Boolean).join(" ")}
             style={{ "--h": hue, "--s": 60 } as CSSProperties}
             aria-pressed={follow === p.member}
-            aria-label={`${p.member}: ${status.text}`}
+            aria-label={`${p.member}: ${status.text}${trouble ? ` · ${trouble.kind}` : ""}`}
             onMouseEnter={show(p.member)}
             onFocus={show(p.member)}
             onBlur={() => setHover(null)}
@@ -310,6 +358,7 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
           >
             <AgentMark name={p.member} />
             <span className={`state ${status.className}`}><i /></span>
+            {trouble && <span className={`badge-dot ${trouble.kind}`} title={trouble.reason} />}
             {!!p.unread && <span className="unread-dot" />}
           </button>
         );
@@ -323,7 +372,9 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
   const orch = p.seat === ORCHESTRATOR;
   const ended = p.state === "ended" || p.state === "done";
   const activity = ended ? null : activityOf(p);
-  const status = statusOf(p, activity, now);
+  const status = stateWordOf(p);
+  const trouble = troubleOf(p, activity, now);
+  const lines = ended ? [] : activityLines(p, activity, now);
   return (
     <div
       className={["hovercard", "card", orch && "orch", p.state].filter(Boolean).join(" ")}
@@ -338,12 +389,13 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
           <i />
           {status.text}
         </span>
+        <TroubleBadge trouble={trouble} />
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       {!!p.unread && <span className="unread">{p.unread} unread</span>}
-      {!ended && p.doing && <span className="doing">{p.doing}</span>}
+      {!ended && p.state !== "working" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      {activity && <ActivityLine activity={activity} />}
+      <ActivityLine lines={lines} state={activity?.state ?? p.state} />
     </div>
   );
 }

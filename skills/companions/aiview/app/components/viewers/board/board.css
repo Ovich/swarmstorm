@@ -257,7 +257,15 @@
 .board .state.stalled { color: var(--amber); font-weight: 600; }
 .board .state.stalled i { background: var(--amber); }
 .board .card .ages { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: nowrap; }
-.board .card .activity { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board .card .activity { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+/* board-split#D35: the state word's own classes; trouble a badge beside it, its reason on hover */
+.board .state.parked { color: var(--muted-foreground); }
+.board .state.parked i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+.board .badge { flex: none; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10.5px; font-weight: 600; line-height: 16px; cursor: help; }
+.board .badge.stalled, .board .badge.quiet { color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+.board .badge.gone { color: var(--faint-foreground); box-shadow: inset 0 0 0 1px var(--faint-foreground); }
+.board .rail-agent .badge-dot { position: absolute; bottom: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+.board .rail-agent .badge-dot.gone { background: var(--faint-foreground); }
 .board .claims-row { flex: none; border-top: 1px solid var(--border); padding: 6px 0 0; }
 .board .claims-row[data-expanded="true"] { max-height: 30vh; overflow-y: auto; }
 .board .claims-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted-foreground); padding: 4px 0; }
