@@ -132,3 +132,32 @@ test("G38: an empty wait --mentions prints the re-arm line; an ended member's, w
     s.stop();
   }
 });
+
+// S1: a task posted to a seat before it (re-)joins is shown at its join, whole, the result before the next step;
+// marked delivered there, so neither a second join nor a later wait brings it again (D2, D8)
+test("S1 target: join shows the unread task posted before it", async () => {
+  const s = await scene("worker", "idle");
+  try {
+    s.must("post", "@w1 the task: build the thing", "--as", O);
+    const wt = "<home>/repo/.git/swarm/worktrees/1/w1";
+    expect(s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me), [
+      "you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you",
+      "orchestrator <nick:orchestrator>: joined",
+      "w1 <nick:w1>: joined",
+      `${O}  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined, done (carried), joined (carried), idle (carried)`,
+      "<nick:w1> · g/w1  run 1  quiet  <n> unread  doing: x",
+      // the result: the task, whole, as a wait would deliver it
+      `#<seq> ${O}  <ts>`,
+      "@w1 the task: build the thing",
+      `your worktree: ${wt} (branch swarm/1-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C ${wt}, never cd into it; pass --as g/w1 on every call`,
+      "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>",
+      "start your link now, in the background (your harness's background task): SWARMSTORM_HOME=<home> node <cli> link --run 1 --as g/w1",
+      "start your listener now, in the background (your harness's background task): SWARMSTORM_HOME=<home> node <cli> wait --mentions --as g/w1",
+    ]);
+    const again = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
+    assert.doesNotMatch(again.text, /the task: build the thing/);
+    assert.doesNotMatch(s.call("wait", "--mentions", "--as", s.me, "--timeout", "300").text, /the task: build the thing/);
+  } finally {
+    s.stop();
+  }
+});
