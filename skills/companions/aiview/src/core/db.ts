@@ -231,7 +231,12 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
     if (!row) return [];
     const seen = new Set<string>();
     const repos: string[] = [];
-    for (const r of [...(JSON.parse(row.board_repos) as string[]), ...(JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : [])]) {
+    // a worktree's own `.git` (a file), stored before G6, reads as its repository's common git dir
+    const keyed = (r: string): string => {
+      const g = /[\\/]\.git$/i.test(r) ? r : path.join(r, ".git");
+      return fs.existsSync(g) && fs.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
+    };
+    for (const r of [...(JSON.parse(row.board_repos) as string[]).map(keyed), ...(JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : [])]) {
       const folder = path.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
       if (seen.has(key) || !fs.existsSync(folder)) continue;

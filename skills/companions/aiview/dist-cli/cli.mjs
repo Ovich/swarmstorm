@@ -238,7 +238,11 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
     if (!row) return [];
     const seen = /* @__PURE__ */ new Set();
     const repos = [];
-    for (const r of [...JSON.parse(row.board_repos), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
+    const keyed = (r) => {
+      const g = /[\\/]\.git$/i.test(r) ? r : path5.join(r, ".git");
+      return fs4.existsSync(g) && fs4.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
+    };
+    for (const r of [...JSON.parse(row.board_repos).map(keyed), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
       const folder = path5.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
       if (seen.has(key) || !fs4.existsSync(folder)) continue;

@@ -331,3 +331,22 @@ test("a project path that is a git worktree registers its repository's common gi
   index.upsertProject("w", { addPaths: [wt] });
   assert.deepEqual(index.boardRepos("w"), [common.split("\\").join("/")]);
 });
+
+test("a worktree's own .git stored before G6 is read as its repository's common git dir, once beside it", () => {
+  const common = path.join(tmp, "main", ".git");
+  const own = path.join(common, "worktrees", "wt");
+  fs.mkdirSync(own, { recursive: true });
+  fs.writeFileSync(path.join(own, "commondir"), "../..\n");
+  const wt = path.join(tmp, "wt");
+  fs.mkdirSync(wt);
+  fs.writeFileSync(path.join(wt, ".git"), `gitdir: ${own}\n`);
+  const dbPath = path.join(tmp, "test.sqlite");
+  index.close();
+  const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite");
+  const raw = new DatabaseSync(dbPath);
+  raw.prepare("INSERT INTO projects (slug, title, paths, board_repos) VALUES ('w', NULL, ?, ?)")
+    .run(JSON.stringify([wt, path.join(tmp, "main")]), JSON.stringify([path.join(wt, ".git").split("\\").join("/"), common]));
+  raw.close();
+  index = openIndex(dbPath, root);
+  assert.deepEqual(index.boardRepos("w"), [common.split("\\").join("/")]);
+});
