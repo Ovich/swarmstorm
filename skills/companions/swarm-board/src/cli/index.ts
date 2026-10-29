@@ -497,7 +497,6 @@ export const DELIVERED_LINE = "these lines are delivered; the task-end notice is
 
 /** The file a relative path means (D6): from the current folder when it exists there, else from
  *  the repository root when it exists there; neither refuses, unless `--new` creates it here. */
-
 function resolveClaimPath(file: string, about = false): string {
   if (path.isAbsolute(file)) return file;
   const here = path.resolve(file);
