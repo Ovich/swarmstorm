@@ -3,7 +3,7 @@
 import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
+import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
@@ -44,7 +44,7 @@ const CODE_USAGE = CODE_WORDING.usage(CLI);
 /** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
 const EXAMPLES: Record<string, (as: string) => string> = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat w1 --run 3 --state running",
+  seat: () => "seat add w1 --run 3",
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
@@ -710,12 +710,9 @@ async function main(): Promise<void> {
         break;
       }
       const id = args.positional[0] ?? fail(`seat: which seat?\n${verbHelp()}`);
-      const run = runArg();
       refuseTranscriptFlag("seat");
-      const state = need("--state") as SeatState;
-      await board.setSeatState(run, id, state);
-      emit({ run, seat: id, state }, `${id} ${state}`);
-      break;
+      // board-split D36: a seat's state is derived from its member; `seat <id> --state` is refused
+      fail(WORDING.seatStateDerived(self().join(" "), shellWord(id)));
     }
     case "close": {
       const run = runArg();

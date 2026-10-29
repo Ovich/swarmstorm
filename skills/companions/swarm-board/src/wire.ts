@@ -12,7 +12,6 @@ export type { Flag } from "./packs/code/types.ts";
  *  memberStates, upkeepIfDue, prune and markStaleRuns, which only the server's own process runs. */
 export const RPC_METHODS = [
   "openRun",
-  "setSeatState",
   "addSeat",
   "closeRun",
   "phase",

@@ -12,7 +12,6 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
     "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
     '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
-    "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
     "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
     "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
     "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",

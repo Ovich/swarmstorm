@@ -104,3 +104,27 @@ export const OWE_WAIT_MS = 10 * 60 * 1000;
 export const CARRY_MAX_MS = 5 * 60 * 1000;
 /** A named lock others wait on, held this long since its first waiter queued, is `stalled · lock` to both orchestrators (idea 4). */
 export const LOCK_HELD_MS = 10 * 60 * 1000;
+
+/** board-split D36: a member's one state, for every kind of run. `working`: it owes its part of the open phase;
+ *  `waiting`: on the board, owing nothing (the orchestrator watching too); `parked`: its seat kept with no agent
+ *  (parked, or ended idle and dormant until a later phase); `ended`: it left, or its run closed. A pack's own fact
+ *  (the code pack's `merging`) and the badges (stalled, lost, blocked) sit beside it, never in it. */
+export type CoreMemberState = "working" | "waiting" | "parked" | "ended";
+
+/** What the core reads of a member to name its state. `owes`: the open phase is for it and it has not run `done`;
+ *  `inBoardWait`: a `wait` of its own pending on the board, read only when no phase is open, where nothing else
+ *  says whether it owes the run something. */
+export type CoreStateFacts = { orchestrator: boolean; runOpen: boolean; ended: boolean; dormant: boolean; parked: boolean; phaseOpen: boolean; owes: boolean; inBoardWait: boolean };
+
+export function coreStateOf(m: CoreStateFacts): CoreMemberState {
+  if (!m.runOpen) return "ended";
+  if (m.parked || (m.ended && m.dormant)) return "parked";
+  if (m.ended) return "ended";
+  if (m.orchestrator) return "waiting";
+  if (m.phaseOpen) return m.owes ? "working" : "waiting";
+  return m.inBoardWait ? "waiting" : "working";
+}
+
+/** board-split D36: a seat's state, derived from its member, never set: `ready` none has sat in it, `running` its
+ *  member is on the board or parked, `done` its member left. */
+export type SeatState = "ready" | "running" | "done";

@@ -243,7 +243,7 @@ test("--json on every verb parses", () => {
     ["deliver", "--as", "review-tool/S5"],
     ["wait", "--as", "review-tool/S5", "--timeout", "50"],
     ["roster"],
-    ["seat", "S3", "--run", id, "--state", "running"],
+    ["seat", "add", "S9", "--run", id],
     ["status"],
     ["end", "--seat", "S3", "--as", "review-tool/orchestrator"],
     ["close", "--run", id],
@@ -1386,9 +1386,10 @@ test("seat is the verb; slice is its silent alias, accepted but never shown in -
   const added = run("slice", "add", "S9", "--run", id);
   assert.equal(added.status, 0, added.stderr);
   assert.match(added.stdout, /S9 added/);
+  // board-split D36: a seat's state is derived; setting it is refused, by either name, with one answer-module line
   const set = run("slice", "S9", "--run", id, "--state", "running");
-  assert.equal(set.status, 0, set.stderr);
-  assert.match(set.stdout, /S9 running/);
+  assert.equal(set.status, 1);
+  assert.match(set.stderr, /^seat: --state is gone \(D36\): .* block S9 "<reason>" .* end --seat S9; .* park S9\n$/);
   const help = run("--help");
   assert.match(help.stdout, /^ {2}seat +add /m);
   assert.doesNotMatch(help.stdout, /^ {2}slice /m);

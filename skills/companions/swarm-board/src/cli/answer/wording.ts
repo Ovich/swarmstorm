@@ -132,6 +132,9 @@ export const WORDING = {
   ],
   // ── a lock granted, and status's forgotten run ──
   unlockWhenDone: (cli: Command, name: string, as: string) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
+  // ── board-split D36: a seat's state is derived, never set ──
+  seatStateDerived: (cli: Command, seat: string) =>
+    `seat: --state is gone (D36): a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" (${cli} unblock ${seat} lifts it); finished: ${cli} end --seat ${seat}; kept with no agent: ${cli} park ${seat}`,
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 } as const;
 

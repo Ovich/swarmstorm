@@ -53,8 +53,11 @@ test("opens a run and lists its slices", () => {
       ["S5", "ready", []],
     ],
   );
-  board.setSeatState(run.id, "S1", "running");
+  // board-split D36: a seat's state follows its member, never set
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "x", files: [] }).member;
   assert.equal(board.runs()[0].seats[0].state, "running");
+  board.end(s1);
+  assert.equal(board.runs()[0].seats[0].state, "done");
 });
 
 test("join returns every participant of the repository, both plans", () => {
@@ -426,12 +429,6 @@ test("end releases the claims", () => {
   assert.deepEqual(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
 });
 
-test("seat done releases a stale member's claims", () => {
-  const { run, s5 } = claimed();
-  board.setSeatState(run.id, "S3", "done");
-  assert.deepEqual(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
-});
-
 test("claims a free file written outside the claim", () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(codeVerbs(board).reconcileWrites(s5, ["src/free.ts", "src/b.ts"]), []);
@@ -604,18 +601,19 @@ test("a snapshot shows two plans on one repository", () => {
     snap.queues["review-tool"].map((q) => [q.seat, q.role, q.state, q.blockers, q.member]),
     [
       ["S1", "the board", "ready", [], null],
-      ["S3", "the page", "ready", ["S1"], "review-tool/S3"],
-      ["S5", "the skill", "ready", [], "review-tool/S5"],
+      ["S3", "the page", "running", ["S1"], "review-tool/S3"],
+      ["S5", "the skill", "running", [], "review-tool/S5"],
     ],
   );
   const by = Object.fromEntries(snap.roster.map((r) => [r.member, r]));
   assert.deepEqual(Object.keys(by).sort(), ["review-tool/S3", "review-tool/S5", "review-tool/orchestrator", "swarm/S1", "swarm/orchestrator"]);
-  assert.equal(by["review-tool/orchestrator"].state, "watching");
+  assert.equal(by["review-tool/orchestrator"].state, "waiting"); // board-split D36: watching is waiting
   assert.equal(by["review-tool/S3"].state, "working");
   assert.equal(by["review-tool/S3"].role, "the page");
   assert.equal(by["review-tool/S3"].doing, "the page");
   assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", interface: false, shared: false }]);
-  assert.equal(by["swarm/S1"].state, "merging");
+  // board-split D36: the lock is the code pack's fact (T16), never a core state: the holder works
+  assert.equal(by["swarm/S1"].state, "working");
   assert.deepEqual(by["swarm/S1"].files, [{ path: "src/api.ts", interface: true, shared: false }]);
   assert.deepEqual(snap.lock && snap.lock.holder, "swarm/S1");
   const last = snap.events.at(-1)!;
@@ -625,17 +623,17 @@ test("a snapshot shows two plans on one repository", () => {
   assert.throws(() => board.snapshot("/repos/none/.git"), /no repository \/repos\/none\/\.git/);
 });
 
-test("a member's state: ended, done, waiting", async () => {
+test("a member's state: ended, waiting", async () => {
   const { run, s3, s5 } = claimed();
   const waiting = board.wait(s5, { timeoutMs: 400 });
   const watcher = await another();
   assert.equal(watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "waiting");
   await waiting;
   board.end(s5);
-  board.setSeatState(run.id, "S3", "done");
   const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r.state]));
   assert.equal(by[s5.name], "ended");
-  assert.equal(by[s3.name], "done");
+  assert.equal(by[s3.name], "working");
+  assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "S5")!.state, "done");
 });
 
 test("a pending mentions-only wait is listening, the state still working; a plain wait is waiting", async () => {
@@ -660,7 +658,7 @@ test("a closed run stays in repos() within the retention, however many closed af
   let repos = board.repos();
   assert.deepEqual(repos.map((r) => r.repo), ["/repos/two/.git", REPO], "a repository with an open run first");
   assert.deepEqual(repos[1].runs.map((r) => [r.plan, r.open]), [["old", false]]);
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "old/orchestrator")!.state, "done");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "old/orchestrator")!.state, "ended");
   // ten later closed runs no longer push it out; the open one stays first
   for (let i = 0; i < 10; i++) board.closeRun(board.openRun({ repo: "/repos/three/.git", group: `p${i}`, title: "x", seats: SLICES }).id);
   repos = board.repos();
@@ -686,8 +684,6 @@ test("each write fires onChange once with its repository", async () => {
   await settle("join");
   board.post(s3, "hello");
   await settle("post");
-  board.setSeatState(run.id, "S3", "running");
-  await settle("seat state");
   codeVerbs(board).checkEdit(s3, "src/new.ts");
   await settle("claim widened");
   codeVerbs(board).release(s3, "src/new.ts");

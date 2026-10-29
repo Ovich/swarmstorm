@@ -24,7 +24,7 @@ test("a store from before the seat vocabulary opens: slices become seats, partic
   old.close();
   const b = await openBoard(file);
   const run = b.runs()[0];
-  assert.deepEqual(run.seats.map((s) => [s.id, s.state]), [["S1", "ready"]]);
+  assert.deepEqual(run.seats.map((s) => [s.id, s.state]), [["S1", "running"]]); // board-split D36: derived from its member, who sat in it
   assert.equal(b.participant("old-plan/S1")?.seat, "S1");
   const added = b.addSeat(run.id, { id: "S2", role: "worker", area: "the app", blockers: [] });
   assert.deepEqual([added.id, added.role, added.area], ["S2", "worker", "the app"]);

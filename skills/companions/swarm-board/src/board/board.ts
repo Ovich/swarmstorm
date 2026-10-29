@@ -13,7 +13,8 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 
 export type RunId = number;
@@ -28,7 +29,6 @@ export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, Fi
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 /** `busyMax`: the seat's bound (ms) for a non-shell call, past which it is `stalled · call` (idea 5); absent: BUSY_MAX_MS. */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
-export type SeatState = "ready" | "running" | "done" | "blocked";
 export type Seat = SeatSpec & { state: SeatState };
 /** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
 export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "gone" };
@@ -187,7 +187,8 @@ export type RunSummary = {
   paused?: { text: string; person: boolean } | null;
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
-export type SnapshotMemberState = "working" | "waiting" | "merging" | "watching" | "ended" | "done" | "parked";
+/** board-split D36: the core state; a pack widens it with its own fact (T16). */
+export type SnapshotMemberState = CoreMemberState;
 export type SnapshotMember = {
   /** The run the member sat in: a group can hold several runs, its members are told apart by this; absent from a reader before it. */
   run?: number;
@@ -199,6 +200,9 @@ export type SnapshotMember = {
   area?: string;
   doing: string;
   state: SnapshotMemberState;
+  /** board-split D36: what a working member owes: the open phase (null with none open) and the seq of the latest
+   *  orchestrator post naming it (null when none); absent unless working. */
+  owes?: { phase: string | null; task: number | null };
   stale: boolean;
   files: (Declared & { shared: boolean })[]; // shared: another live member holds it too (D40)
   joined: string;
@@ -283,7 +287,6 @@ export interface Board {
   /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall threshold, default 60000. */
   openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null; base?: string | null }): Run;
   /** `done` also releases the seat member's claims and lock: the orchestrator's way to free a stale member. */
-  setSeatState(run: RunId, seat: string, state: SeatState): void;
   /** A seat added mid-run (D60): after the last, `ready`; refused on an id already in the run, an
    *  unknown blocker or a closed run. Posts an event with the run. */
   addSeat(run: RunId, spec: SeatSpec): Seat;
@@ -440,7 +443,10 @@ export interface Board {
 /** A phase's name: one word. */
 const PHASE_NAME = /^[\w.-]+$/;
 
-const SEAT_STATES = new Set<SeatState>(["ready", "running", "done", "blocked"]);
+/** board-split D36: a seat's state from its member, never stored: the `seats.state` column predating it is left unread.
+ *  A correlated subquery over a seats row aliased `s`. */
+const SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL THEN 'ready' WHEN p.ended_at IS NULL OR p.dormant = 1 OR p.parked = 1 THEN 'running' ELSE 'done' END
+  FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
 /** The events a member receives though it is their author: the board posts them in its name. */
 const TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
 const ORCHESTRATOR = "orchestrator";
@@ -774,13 +780,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     title: String(r.title),
     link: r.link == null ? null : String(r.link),
     state: r.state === "closed" ? "closed" : "open",
-    seats: (db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(Number(r.id)) as Row[]).map((s) => ({
+    seats: (db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)) as Row[]).map((s) => ({
       id: String(s.id),
       ...(s.role == null ? {} : { role: String(s.role) }),
       ...(s.area == null ? {} : { area: String(s.area) }),
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
-      state: String(s.state) as SeatState,
+      state: String(s.derived) as SeatState,
       ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
@@ -1074,7 +1080,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       link: r.link == null ? null : String(r.link),
       open,
       members: open ? count(`SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != '${ORCHESTRATOR}' AND ended_at IS NULL`) : 0,
-      done: count("SELECT COUNT(*) AS n FROM seats WHERE run = ? AND state = 'done'"),
+      done: count(`SELECT COUNT(*) AS n FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} = 'done'`),
       of: count("SELECT COUNT(*) AS n FROM seats WHERE run = ?"),
       phase: phaseOf(r),
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
@@ -1538,19 +1544,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         return run;
       });
       return toRun(runRow(id));
-    },
-
-    setSeatState(run, seat, state) {
-      runRow(run);
-      if (!SEAT_STATES.has(state)) throw new Error(`unknown seat state ${state}`);
-      transaction(() => {
-        const r = db.prepare("UPDATE seats SET state = ? WHERE run = ? AND id = ?").run(state, run, seat);
-        if (Number(r.changes) === 0) throw new Error(`unknown seat ${seat} in run ${run}`);
-        bump(String(runRow(run).repo));
-        if (state !== "done") return;
-        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
-        if (p) packTables.releaseAll(Number(p.id));
-      });
     },
 
     addSeat(run, spec) {
@@ -2269,7 +2262,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const present = others.filter((st) => st.state !== "gone");
         // swarm-relay D44: not while a seat of the run has yet to join (a run filling up is not idle)
         const joined = new Set([...others.map((st) => st.member), ...parkedSeats]);
-        const toJoin = (db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run) as Row[]).some((s) => !joined.has(String(s.id)));
+        const toJoin = (db.prepare(`SELECT s.id FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} != 'done'`).all(run) as Row[]).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
           // the last post is kept: a member stirring for a moment does not buy a second idle within IDLE_MS (D44)
@@ -2573,7 +2566,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const marks = runIds.map(() => "?").join(", ");
 
 
-      const sliceRows = db.prepare(`SELECT * FROM seats WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds) as Row[];
+      const sliceRows = db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds) as Row[];
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds) as Row[];
       const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
@@ -2586,29 +2579,34 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const cutoff = t - STALE_MS;
       // the pack's fields of the repository: the lock and its turns, the files held, the flags (D18)
       const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
-      const lockHolder = packPart.lockHolder;
 
+      const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
+      const runById = (id: number): Row | undefined => runsById.get(id);
+      /** The latest post of the run's orchestrator naming `member`: the task it works on (D36). */
+      const latestTaskTo = (run: number, member: string): number | null => {
+        const m = db
+          .prepare("SELECT MAX(m.seq) AS seq FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.kind != 'event' AND a.seat = ? AND m.mentions LIKE ?")
+          .get(run, ORCHESTRATOR, `%"${member}"%`) as Row | undefined;
+        return m?.seq == null ? null : Number(m.seq);
+      };
       const roster: SnapshotMember[] = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
         const orchestrator = seat === ORCHESTRATOR;
         const s = sliceOf.get(`${r.run}/${seat}`);
         const ended = r.ended_at != null;
-        const state: SnapshotMemberState = orchestrator
-          ? runOpen.get(Number(r.run))
-            ? "watching"
-            : "done"
-          : s?.state === "done"
-            ? "done"
-            : ended
-              ? "ended"
-              : Number(r.parked) === 1
-                ? "parked"
-                : lockHolder === id
-                ? "merging"
-                : Number(r.waiting) === 1
-                  ? "waiting"
-                  : "working";
+        const runR = runById(Number(r.run));
+        const owedPhase = runR ? owedNameOf(r, runR) : null;
+        const state: SnapshotMemberState = coreStateOf({
+          orchestrator,
+          runOpen: runOpen.get(Number(r.run)) === true,
+          ended,
+          dormant: Number(r.dormant) === 1,
+          parked: Number(r.parked) === 1,
+          phaseOpen: runR?.phase != null && phaseIsFor(runR, seat),
+          owes: owedPhase != null,
+          inBoardWait: Number(r.waiting) === 1,
+        });
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -2619,6 +2617,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...(orchestrator || s?.area == null ? {} : { area: String(s.area) }),
           doing: String(r.doing),
           state,
+          ...(state === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {}),
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
@@ -2664,7 +2663,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             ...(s.role == null ? {} : { role: String(s.role) }),
             ...(s.area == null ? {} : { area: String(s.area) }),
             link: s.link == null ? null : String(s.link),
-            state: String(s.state),
+            state: String(s.derived),
             blockers: JSON.parse(String(s.blockers)) as string[],
             member: nameOf.get(`${run.id}/${s.id}`) ?? null,
           }));

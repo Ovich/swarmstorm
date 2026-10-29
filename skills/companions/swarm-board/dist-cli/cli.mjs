@@ -1125,12 +1125,20 @@ function decode(text) {
   if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
   return f;
 }
-function bundleVersion(entry2 = process.argv[1] ?? "") {
+function builtCliOf(entry2) {
   const file = path2.resolve(entry2);
-  let v = versionsByEntry.get(file);
+  const bundle = path2.join(path2.dirname(file), "dist-cli", "cli.mjs");
+  return fs2.existsSync(bundle) ? bundle : file;
+}
+function bundleVersion(entry2) {
+  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
+  const file = builtCliOf(entry2);
+  const st = fs2.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
   if (v === void 0) {
     v = crypto.createHash("sha256").update(fs2.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByEntry.set(file, v);
+    versionsByBuild.set(key, v);
   }
   return v;
 }
@@ -1172,13 +1180,12 @@ function isAlive(pid) {
     return e.code === "EPERM";
   }
 }
-var RPC_METHODS, FRAME_TYPES, versionsByEntry, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
 var init_wire = __esm({
   "src/wire.ts"() {
     "use strict";
     RPC_METHODS = [
       "openRun",
-      "setSeatState",
       "addSeat",
       "closeRun",
       "phase",
@@ -1226,13 +1233,21 @@ var init_wire = __esm({
       "composition"
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
-    versionsByEntry = /* @__PURE__ */ new Map();
+    versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
   }
 });
 
 // src/board/liveness.ts
+function coreStateOf(m) {
+  if (!m.runOpen) return "ended";
+  if (m.parked || m.ended && m.dormant) return "parked";
+  if (m.ended) return "ended";
+  if (m.orchestrator) return "waiting";
+  if (m.phaseOpen) return m.owes ? "working" : "waiting";
+  return m.inBoardWait ? "waiting" : "working";
+}
 var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
@@ -3117,13 +3132,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     title: String(r.title),
     link: r.link == null ? null : String(r.link),
     state: r.state === "closed" ? "closed" : "open",
-    seats: db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(Number(r.id)).map((s) => ({
+    seats: db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)).map((s) => ({
       id: String(s.id),
       ...s.role == null ? {} : { role: String(s.role) },
       ...s.area == null ? {} : { area: String(s.area) },
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)),
-      state: String(s.state),
+      state: String(s.derived),
       ...s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }
     }))
   });
@@ -3313,7 +3328,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       link: r.link == null ? null : String(r.link),
       open,
       members: open ? count(`SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != '${ORCHESTRATOR2}' AND ended_at IS NULL`) : 0,
-      done: count("SELECT COUNT(*) AS n FROM seats WHERE run = ? AND state = 'done'"),
+      done: count(`SELECT COUNT(*) AS n FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} = 'done'`),
       of: count("SELECT COUNT(*) AS n FROM seats WHERE run = ?"),
       phase: phaseOf(r),
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
@@ -3683,18 +3698,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
         return run3;
       });
       return toRun(runRow(id));
-    },
-    setSeatState(run3, seat, state) {
-      runRow(run3);
-      if (!SEAT_STATES.has(state)) throw new Error(`unknown seat state ${state}`);
-      transaction(() => {
-        const r = db.prepare("UPDATE seats SET state = ? WHERE run = ? AND id = ?").run(state, run3, seat);
-        if (Number(r.changes) === 0) throw new Error(`unknown seat ${seat} in run ${run3}`);
-        bump(String(runRow(run3).repo));
-        if (state !== "done") return;
-        const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
-        if (p) packTables.releaseAll(Number(p.id));
-      });
     },
     addSeat(run3, spec) {
       const r = runRow(run3);
@@ -4276,7 +4279,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const gone = others.filter((st) => st.state === "gone").map((st) => `${orch.plan}/${st.member}`);
         const present = others.filter((st) => st.state !== "gone");
         const joined = /* @__PURE__ */ new Set([...others.map((st) => st.member), ...parkedSeats]);
-        const toJoin = db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run3).some((s) => !joined.has(String(s.id)));
+        const toJoin = db.prepare(`SELECT s.id FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} != 'done'`).all(run3).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
           const was = idleSince.get(run3);
@@ -4524,7 +4527,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       if (!runRows.length) throw new Error(`no repository ${repo}`);
       const runIds = runRows.map((r) => Number(r.id));
       const marks = runIds.map(() => "?").join(", ");
-      const sliceRows = db.prepare(`SELECT * FROM seats WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds);
+      const sliceRows = db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds);
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds);
       const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
@@ -4536,14 +4539,30 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       };
       const cutoff = t - STALE_MS;
       const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR2);
-      const lockHolder = packPart.lockHolder;
+      const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
+      const runById = (id) => runsById.get(id);
+      const latestTaskTo = (run3, member) => {
+        const m = db.prepare("SELECT MAX(m.seq) AS seq FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.kind != 'event' AND a.seat = ? AND m.mentions LIKE ?").get(run3, ORCHESTRATOR2, `%"${member}"%`);
+        return m?.seq == null ? null : Number(m.seq);
+      };
       const roster = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
         const orchestrator = seat === ORCHESTRATOR2;
         const s = sliceOf.get(`${r.run}/${seat}`);
         const ended = r.ended_at != null;
-        const state = orchestrator ? runOpen.get(Number(r.run)) ? "watching" : "done" : s?.state === "done" ? "done" : ended ? "ended" : Number(r.parked) === 1 ? "parked" : lockHolder === id ? "merging" : Number(r.waiting) === 1 ? "waiting" : "working";
+        const runR = runById(Number(r.run));
+        const owedPhase = runR ? owedNameOf(r, runR) : null;
+        const state = coreStateOf({
+          orchestrator,
+          runOpen: runOpen.get(Number(r.run)) === true,
+          ended,
+          dormant: Number(r.dormant) === 1,
+          parked: Number(r.parked) === 1,
+          phaseOpen: runR?.phase != null && phaseIsFor(runR, seat),
+          owes: owedPhase != null,
+          inBoardWait: Number(r.waiting) === 1
+        });
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -4554,6 +4573,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...orchestrator || s?.area == null ? {} : { area: String(s.area) },
           doing: String(r.doing),
           state,
+          ...state === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
@@ -4592,7 +4612,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...s.role == null ? {} : { role: String(s.role) },
           ...s.area == null ? {} : { area: String(s.area) },
           link: s.link == null ? null : String(s.link),
-          state: String(s.state),
+          state: String(s.derived),
           blockers: JSON.parse(String(s.blockers)),
           member: nameOf.get(`${run3.id}/${s.id}`) ?? null
         }));
@@ -4692,7 +4712,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
+var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4708,7 +4728,8 @@ var init_board = __esm({
     goneSuffix = (gone) => gone.length ? ` (${gone.length} gone: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
     PHASE_NAME = /^[\w.-]+$/;
-    SEAT_STATES = /* @__PURE__ */ new Set(["ready", "running", "done", "blocked"]);
+    SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL THEN 'ready' WHEN p.ended_at IS NULL OR p.dormant = 1 OR p.parked = 1 THEN 'running' ELSE 'done' END
+  FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR2 = "orchestrator";
     WAIT_POLL_MS = 1e3;
@@ -9423,6 +9444,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ],
   // ── a lock granted, and status's forgotten run ──
   unlockWhenDone: (cli, name, as) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
+  // ── board-split D36: a seat's state is derived, never set ──
+  seatStateDerived: (cli, seat) => `seat: --state is gone (D36): a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" (${cli} unblock ${seat} lifts it); finished: ${cli} end --seat ${seat}; kept with no agent: ${cli} park ${seat}`,
   forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
@@ -9586,7 +9609,6 @@ var coreUsage = (cli, events) => [
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
-  "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
   "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
   "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
@@ -9708,7 +9730,7 @@ var USAGE = coreUsage(CLI, eventNames());
 var CODE_USAGE = CODE_WORDING.usage(CLI);
 var EXAMPLES = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat w1 --run 3 --state running",
+  seat: () => "seat add w1 --run 3",
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
@@ -10159,7 +10181,7 @@ ${verbHelp()}`);
       if (args.positional[0] === "add") {
         const id2 = args.positional[1] ?? fail(`seat add: which id?
 ${verbHelp()}`);
-        const run4 = runArg();
+        const run3 = runArg();
         const on = args.flag("--on");
         if (on !== void 0) subscriptionsArg(on);
         const role = args.flag("--role");
@@ -10167,7 +10189,7 @@ ${verbHelp()}`);
         const rawBusyMax = args.flag("--busy-max");
         const busyMax = rawBusyMax === void 0 ? void 0 : Number(rawBusyMax);
         if (busyMax !== void 0 && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
-        const added = await board.addSeat(run4, {
+        const added = await board.addSeat(run3, {
           id: id2,
           ...role ? { role } : {},
           ...area ? { area } : {},
@@ -10176,17 +10198,13 @@ ${verbHelp()}`);
           link: args.flag("--link") ?? null,
           ...on !== void 0 ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}
         });
-        emit({ run: run4, seat: added }, `${id2} added`);
+        emit({ run: run3, seat: added }, `${id2} added`);
         break;
       }
       const id = args.positional[0] ?? fail(`seat: which seat?
 ${verbHelp()}`);
-      const run3 = runArg();
       refuseTranscriptFlag("seat");
-      const state = need("--state");
-      await board.setSeatState(run3, id, state);
-      emit({ run: run3, seat: id, state }, `${id} ${state}`);
-      break;
+      fail(WORDING.seatStateDerived(self().join(" "), shellWord2(id)));
     }
     case "close": {
       const run3 = runArg();
