@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDocuments, setActiveProject as postActiveProject, type DocumentWithState } from "../lib/api.ts";
+import { fetchDocuments, recordRecentProject, type DocumentWithState } from "../lib/api.ts";
 import type { Pointer } from "../../src/core/pointer.ts";
 import { reloadOnNewBuild } from "../lib/build.ts";
 
 export type ConnectionState = "connecting" | "live" | "reconnecting";
-
-export const ALL_PROJECTS = "*";
 
 /** Nothing heard for this long means the stream is dead, whatever the browser thinks.
  *  Three server heartbeats (src/server/sse.ts), so one lost beat is not a reconnect. */
@@ -20,8 +18,8 @@ export interface DocumentsState {
   docs: DocumentWithState[];
   groups: Record<string, string>;
   projects: Record<string, string>;
-  /** This tab's project (board-split#D41): the most recently active one at its first load, then what the tab
-   *  chose; another tab's switch never moves it. `*` = All projects. */
+  /** This tab's project (board-split#D41): the one shown last at its first load (else the first project), then
+   *  what the tab chose; another tab's switch never moves it. "" until known; never All projects, there is none. */
   activeProject: string;
   /** Sets this tab's project: it declares it on `/events`, and the server records it as the most recently active. */
   chooseProject: (slug: string) => void;
@@ -52,7 +50,7 @@ export function useDocuments(): DocumentsState {
   const [docs, setDocs] = useState<DocumentWithState[]>([]);
   const [groups, setGroups] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<Record<string, string>>({});
-  const [activeProject, setActiveProject] = useState<string>(ALL_PROJECTS);
+  const [activeProject, setActiveProject] = useState<string>("");
   const [projectKnown, setProjectKnown] = useState(false);
   const [startId, setStartId] = useState<number | null>(null);
   const [version, setVersion] = useState<string | null>(null);
@@ -74,7 +72,7 @@ export function useDocuments(): DocumentsState {
     setActiveProject(slug);
     setProjectKnown(true);
     reconnect.current();
-    postActiveProject(slug).catch(() => {});
+    recordRecentProject(slug).catch(() => {});
   }, []);
 
   const reload = useCallback(() => {
@@ -83,10 +81,11 @@ export function useDocuments(): DocumentsState {
         setDocs(data.documents);
         setGroups(data.groups);
         setProjects(data.projects);
-        // a new tab takes the most recently active project, once (D41); its own choice holds after
-        if (tabProject.current === null) {
-          tabProject.current = data.activeProject;
-          setActiveProject(data.activeProject);
+        // a new tab takes the project shown last, else the first, once (D41); its own choice holds after
+        const first = data.recentProject ?? Object.keys(data.projects).sort()[0] ?? null;
+        if (tabProject.current === null && first !== null) {
+          tabProject.current = first;
+          setActiveProject(first);
           setProjectKnown(true);
           reconnect.current();
         }
@@ -151,11 +150,7 @@ export function useDocuments(): DocumentsState {
     const watchdog = setInterval(() => {
       if (!isSilent(lastSeen, Date.now())) return;
       setConnection("reconnecting");
-      reconnect.current = () => {
-      setConnection("reconnecting");
       connect();
-    };
-    connect();
       reload();
       setChanged((c) => ({ tick: c.tick + 1, id: null }));
     }, SILENCE_MS / 3);

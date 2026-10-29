@@ -63,8 +63,6 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     res.end(JSON.stringify(obj));
   };
 
-  /** The repository a request names, as swarm's page server resolved it: a run's, a repository, or
-   *  the most recently active; `missing` is the 404's message. `/api/run?id=` kept as `?run=`. */
   /** Whether two spellings name one repository: `/` or `\`, on Windows any case, a worktree's `.git` its common one (aiview stores `/`, the board keys `\`). */
   const sameRepo = (a: string, b: string): boolean => {
     const norm = (r: string) => {
@@ -75,6 +73,8 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     return norm(a) === norm(b);
   };
 
+  /** The repository a request names: a run's, or a repository; `missing` is the 404's message, never a fallback to
+   *  another repository (board-split#D41: no global scope). `/api/run?id=` kept as `?run=`. */
   const repoNamed = async (board: BoardReader, url: URL): Promise<{ repo: string } | { missing: string }> => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
     const key = url.searchParams.get("repo");
@@ -87,8 +87,7 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
       const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
       return repo ? { repo } : { missing: `no repository ${key}` };
     }
-    const repo = repos[0]?.repo; // the most recently active: repos() lists it first
-    return repo ? { repo } : { missing: "no repository on the board" };
+    return { missing: "no repository named: ask ?repo=<repository> or ?run=<id>" };
   };
 
   /** One repository's whole board. */
@@ -96,7 +95,8 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     const named = await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const [repos, snapshot] = await Promise.all([board.repos(), board.snapshot(named.repo)]);
-    json(res, { repos, snapshot });
+    // the named repository's summary alone: an answer never carries another repository's runs (D41, Q1)
+    json(res, { repos: repos.filter((r) => r.repo === named.repo), snapshot });
   };
 
   /** The figures of a scope, `BoardReader.stats()` as it answers; the scope maps the CLI's flags one to one

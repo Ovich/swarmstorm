@@ -86,10 +86,10 @@ $A init
 - **project**: manage projects — `slug`, an optional `title`, and the **working
   directories** the project covers (`--path`, repeatable). `add` also creates
   `<docs>/<slug>/`. `rm` is refused while documents still reference it.
-- **use**: set the active project (`*` = All projects). With a server running this
-  POSTs, so every open tab re-scopes over SSE; with none, it writes the row.
-- **status**: the two roots, the active project, `projectDocs` (where to write),
-  `cwdProject` (which project claims the working directory), doc count, server
+- **No global project** (board-split D41): every verb takes its project from `--project`,
+  else the working directory's; each viewer tab keeps its own. `use` and `list --all` are gone.
+- **status**: the two roots, `project` and `projectDocs` (the working directory's project and
+  where to write; null outside one), `cwdProject`, doc count, server
   up/down (stale pidfiles detected).
 - **path**: prints where a document with that name belongs, joined with this OS's
   separator under this machine's home. Agents call this instead of building a path;
@@ -107,7 +107,7 @@ document; live reload via SSE. `#doc=<id>` selects a doc. Dark mode follows the 
 
 `/events` carries three kinds: `changed` when a watched file is edited on disk,
 `index` when the document list itself moves (a document registered, moved, re-tagged or
-dropped), and `project` when the active project changes. The CLI writes sqlite in its
+dropped), and `open`/`show` sent to the tabs on the agent's project. The CLI writes sqlite in its
 own process, so `index` is what it POSTs to `/api/index-changed` after a mutating verb —
 without it a newly registered document would stay invisible until a manual refresh.
 
@@ -115,15 +115,15 @@ without it a newly registered document would stay invisible until a manual refre
 
 `aiview.sqlite` in the **data home** (not next to the tool): `documents` (one row per
 doc) + `groups` (slug → title) + `projects` (slug, title, covered working directories)
-+ `state` (the active project). Files are the truth; the index only points at them.
++ `state` (the project shown last, where a new tab opens; it scopes no verb). Files are the truth; the index only points at them.
 
 Document paths are stored **relative to the data home** when inside it — which is what
 lets a synced home carry a working index to another machine or another OS — and
 absolute anywhere else. Relative paths are stored with posix separators and re-joined
 with the local separator on read, so they mean the same thing everywhere.
 
-The index is written only by the CLI, except the active project, which the UI also sets
-through `POST /api/active`. Everything else in the UI is read-only.
+The index is written only by the CLI, except the project shown last, which the UI also records
+through `POST /api/recent-project`. Everything else in the UI is read-only.
 
 ## Development
 

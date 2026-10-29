@@ -7,7 +7,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  ALL_PROJECTS,
   openIndex,
   SQLITE_PATH,
   TOOL_ROOT,
@@ -23,7 +22,7 @@ import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
 import { boardHash } from "../core/boardhash.ts";
 import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
-import { readServerStatus, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { readServerStatus, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
 import { disciplineWarnings } from "../mermaid/discipline.ts";
@@ -43,9 +42,8 @@ const USAGE = [
   "  open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]",
   "  add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]",
   "  update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]",
-  "  list [--kind k] [--tag t]... [--project p | --all]   # defaults to the active project",
+  "  list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project",
   "  project <add|list|rm> [slug] [--title T] [--path P]...",
-  "  use <slug|*>                             # set the active project",
   "  remove <file|#id>...",
   "  move <file|#id>... [--project <slug>]    # refile: file + index together",
   "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
@@ -101,12 +99,20 @@ function askServer(route: string, body: unknown): string | null {
   return r.status === 0 ? r.stdout : null;
 }
 
-/** Set the active project through the ONE write path: POST so the server writes the
- *  row and broadcasts in the same step. With no server there is nobody to tell, so
- *  writing the row directly is correct, not a fallback hack. */
-function setActive(index: Index, slug: string): string {
-  if (!postToServer("/api/active", { project: slug })) index.setActiveProject(slug);
-  return slug;
+/** Records `slug` as the project shown last, the one a new tab starts on (board-split#D41), through the server when
+ *  one is up, else in the index directly. It moves no tab and scopes no verb. */
+function recordRecentProject(index: Index, slug: string): void {
+  if (!postToServer("/api/recent-project", { project: slug })) index.recordRecentProject(slug);
+}
+
+/** The project a verb works in (D41): `--project`, else the one claiming this directory; null when neither. */
+function projectOfVerb(index: Index): string | null {
+  return args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+}
+
+/** The refusal of a verb with no project: where to take one from. */
+function noProjectLine(known: string[]): string {
+  return `no aiview project for ${process.cwd()}: pass --project <slug>, or declare one with aiview project add <slug> --path <dir>${known.length ? `\nknown: ${known.join(", ")}` : ""}`;
 }
 
 /** Tell an open tab that one document's pending cards moved. Reuses the `changed`
@@ -148,8 +154,10 @@ function ensureDist(): void {
 
 /** Spawn a detached server and wait for its portfile. Returns the actual port. */
 function spawnDetachedServer(port: number): number {
+  // the files of an earlier server go first: a stale pid a process of another kind now holds must never read as this one
   try {
     fs.rmSync(PORT_FILE, { force: true });
+    fs.rmSync(PID_FILE, { force: true });
   } catch {}
   // re-invoke the current entry (aiview.mjs in real use, the TS source under test)
   const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
@@ -161,7 +169,8 @@ function spawnDetachedServer(port: number): number {
   const t0 = Date.now();
   for (;;) {
     const st = readServerStatus();
-    if (st.running && st.port !== null) return st.port;
+    // up once the files are the child's own: the pid recorded is the server's (Q3)
+    if (st.running && st.port !== null && st.pid === child.pid) return st.port;
     if (Date.now() - t0 > 10_000) {
       console.error(`aiview: server did not come up within 10s (port ${port} may be in use — retry with --port <n>)`);
       process.exit(1);
@@ -243,11 +252,10 @@ function resolveRef(ref: string): Document | undefined {
 function cmdStatus(): void {
   const index = openIndex();
   const documents = index.all().length;
-  const project = index.activeProject();
-  // Where the agent writes: ask, never construct (D14).
-  const projectDocs = project === ALL_PROJECTS ? DOCS_ROOT : docsDirFor(project);
-  // Which project the agent is standing in, if any project claims this directory.
+  // Which project the agent is standing in, if any project claims this directory: where it writes (D14, D41).
   const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+  const project = cwdProject;
+  const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
   index.close();
   const server = readServerStatus();
   emit(
@@ -255,9 +263,8 @@ function cmdStatus(): void {
     () => {
     console.log(`home       ${DATA_ROOT}`);
     console.log(`docs       ${DOCS_ROOT}`);
-    console.log(`project    ${project === ALL_PROJECTS ? "(all)" : project}`);
-    console.log(`write to   ${projectDocs}`);
-    if (cwdProject) console.log(`cwd is in  ${cwdProject}`);
+    console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
+    if (projectDocs) console.log(`write to   ${projectDocs}`);
     console.log(`sqlite     ${SQLITE_PATH}`);
     console.log(`tool       ${TOOL_ROOT}`);
     console.log(`documents  ${documents}`);
@@ -276,13 +283,11 @@ function cmdPath(): void {
     process.exit(1);
   }
   const index = openIndex();
-  // the project the cwd is in wins over the active one, as status computes it
-  const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
-  const slug = args.flag("--project") ?? cwdProject ?? index.activeProject();
+  const slug = projectOfVerb(index);
   const known = index.allProjects().map((p) => p.slug);
   index.close();
-  if (slug === ALL_PROJECTS) {
-    console.error(`no active project — run: aiview use <slug>, or pass --project${known.length ? `\nknown: ${known.join(", ")}` : ""}`);
+  if (slug === null) {
+    console.error(noProjectLine(known));
     process.exit(1);
   }
   if (!known.includes(slug)) {
@@ -512,14 +517,24 @@ function cmdUpdate(): void {
 function cmdList(): void {
   const want = args.flags("--tag");
   const wantKind = args.flag("--kind") ?? "";
+  if (args.has("--all")) {
+    console.error("list --all is gone (board-split D41): every list is one project's; pass --project <slug> for another");
+    process.exit(1);
+  }
   const index = openIndex();
-  // Scope defaults to the active project (D10); --all or --project override it.
-  const scope = args.has("--all") ? ALL_PROJECTS : (args.flag("--project") ?? index.activeProject());
+  // one project's documents (D41): --project, else this directory's
+  const scope = projectOfVerb(index);
+  if (scope === null) {
+    const known = index.allProjects().map((p) => p.slug);
+    index.close();
+    console.error(noProjectLine(known));
+    process.exit(1);
+  }
   const docs = index
     .all()
     .filter(
       (d) =>
-        (scope === ALL_PROJECTS || d.project === scope) &&
+        d.project === scope &&
         (!wantKind || d.kind === wantKind) &&
         (!want.length || want.every((t) => d.tags.includes(t))),
     );
@@ -560,14 +575,15 @@ function cmdProject(): void {
     if (sub === "list") {
       const projects = index.allProjects();
       const docs = index.all();
-      const active = index.activeProject();
+      // `*` marks the project of this directory (D41), the one a verb here works in
+      const here = projectForCwd(process.cwd(), projects)?.slug ?? null;
       const count = (slug: string) => docs.filter((d) => d.project === slug).length;
       emit(
-        projects.map((p) => ({ ...p, documents: count(p.slug), active: p.slug === active })),
+        projects.map((p) => ({ ...p, documents: count(p.slug), here: p.slug === here })),
         () => {
           for (const p of projects)
             console.log(
-              `${p.slug === active ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `\n    covers ${p.paths.join(", ")}` : ""}`,
+              `${p.slug === here ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `\n    covers ${p.paths.join(", ")}` : ""}`,
             );
         },
       );
@@ -603,30 +619,6 @@ function cmdProject(): void {
 
     console.error("usage: aiview project <add|list|rm> [slug] [--title T] [--path P]...");
     process.exit(1);
-  } finally {
-    index.close();
-  }
-}
-
-/** Set the active project. `*` = All projects. */
-function cmdUse(): void {
-  const slug = args.positional[0];
-  if (!slug) {
-    console.error("usage: aiview use <slug|*>");
-    process.exit(1);
-  }
-  const index = openIndex();
-  try {
-    if (slug !== ALL_PROJECTS && !index.allProjects().some((p) => p.slug === slug)) {
-      const known = index.allProjects().map((p) => p.slug);
-      console.error(`no such project: ${slug}${known.length ? `\nknown: ${known.join(", ")}` : ""}`);
-      process.exit(1);
-    }
-    setActive(index, slug);
-    emit(
-      { project: slug, docs: slug === ALL_PROJECTS ? DOCS_ROOT : docsDirFor(slug) },
-      slug === ALL_PROJECTS ? `all projects  ${DOCS_ROOT}` : `${slug}  ${docsDirFor(slug)}`,
-    );
   } finally {
     index.close();
   }
@@ -715,9 +707,8 @@ function cmdOpen(): void {
   ensureDist();
   const index = openIndex();
   const d = index.register(path.resolve(args.positional[0]), registerOpts());
-  // Opening a document moves the mode to it (D9): the selector always states where
-  // you are, and the agent never has to switch-then-open in two steps.
-  setActive(index, d.project);
+  // the project shown last, for a new tab (D41); the tabs it moves are the server's /api/open answer
+  recordRecentProject(index, d.project);
   const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
   index.close();
   const port = portOfInstalledServer();
@@ -737,7 +728,7 @@ function cmdOpen(): void {
 
 /** The project's board, aiview's /board page: `--repo` adds a repository to it (what
  *  `swarm open` does), bare reads it. The project is --project, else the one claiming this
- *  directory. Like `open`, it makes that project the active one, so the link shows its board. */
+ *  directory. Its link is the project's scoped board URL (D41). */
 function cmdBoard(): void {
   const index = openIndex();
   try {
@@ -752,7 +743,7 @@ function cmdBoard(): void {
       process.exit(1);
     }
     const repos = repo === undefined ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
-    setActive(index, slug);
+    recordRecentProject(index, slug);
     ensureDist();
     // the board's scoped URL (D41): the tab it opens shows this project, whatever another tab shows
     const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
@@ -996,7 +987,9 @@ switch (args.verb) {
     cmdProject();
     break;
   case "use":
-    cmdUse();
+    // board-split D41: no global active project; a verb takes its project from its directory or --project
+    console.error("aiview use is gone (board-split D41): each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
+    process.exit(1);
     break;
   case "open":
     cmdOpen();

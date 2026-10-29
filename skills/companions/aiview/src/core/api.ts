@@ -18,17 +18,14 @@ export interface DocumentsResponse {
   groups: Record<string, string>;
   /** slug -> display title. `paths` stays server-side: the UI has no use for it. */
   projects: Record<string, string>;
-  /** The active project slug, or `*` for All projects. */
-  activeProject: string;
+  /** The project a new tab starts on, once (D41): the one shown last, null when none. */
+  recentProject: string | null;
   start: number | null;
   /** The collection's version, from the plugin manifest the tool was installed with.
    *  null when the tool runs outside one. */
   version: string | null;
 }
 
-export interface ActiveProjectResponse {
-  project: string;
-}
 
 export interface DocumentResponse {
   document: Document;
@@ -50,12 +47,6 @@ export interface ChangedEventPayload {
 export interface DataChangedEventPayload {
   type: "data-changed";
   id: number;
-}
-
-/** Broadcast when the active project changes, from either the UI or the CLI. */
-export interface ProjectEventPayload {
-  type: "project";
-  slug: string;
 }
 
 /** Broadcast when a document's pending work changed — one started or finished. Reuses

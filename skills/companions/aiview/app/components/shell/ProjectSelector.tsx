@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "../../lib/utils.ts";
 import type { DocumentWithState } from "../../lib/api.ts";
-import { ALL_PROJECTS } from "../../hooks/useDocuments.ts";
 
 /** The project's colour square: a stable hue from its slug. */
 export function ProjectDot({ slug }: { slug: string }) {
@@ -12,7 +11,7 @@ export function ProjectDot({ slug }: { slug: string }) {
     <span
       aria-hidden="true"
       className="h-2 w-2 shrink-0 rounded-[2px]"
-      style={{ background: slug === ALL_PROJECTS ? "var(--faint-foreground)" : `hsl(${h} 62% 52%)` }}
+      style={{ background: `hsl(${h} 62% 52%)` }}
     />
   );
 }
@@ -35,8 +34,9 @@ export function ProjectSelector({
   const [find, setFind] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const slugs = Object.keys(projects).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-  const count = (slug: string) => (slug === ALL_PROJECTS ? docs.length : docs.filter((d) => d.project === slug).length);
-  const label = (slug: string) => (slug === ALL_PROJECTS ? "All projects" : (projects[slug] ?? slug));
+  // one project at a time (board-split#D41): there is no All projects
+  const count = (slug: string) => docs.filter((d) => d.project === slug).length;
+  const label = (slug: string) => projects[slug] ?? slug;
   const rows = slugs.filter((s) => !find || label(s).toLowerCase().includes(find.toLowerCase()));
 
   useEffect(() => {
@@ -69,7 +69,7 @@ export function ProjectSelector({
         onClick={() => setOpen((o) => !o)}
       >
         <ProjectDot slug={active} />
-        <span className={cn("min-w-0 truncate", active === ALL_PROJECTS && "text-muted-foreground")}>{label(active)}</span>
+        <span className="min-w-0 truncate">{label(active)}</span>
         <span className="text-[12px] font-normal text-muted-foreground">{count(active)}</span>
         <ChevronDown size={13} className="shrink-0 text-muted-foreground" />
       </button>

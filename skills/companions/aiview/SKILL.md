@@ -24,8 +24,7 @@ description: "Use whenever a document is produced for the user to read and react
 ```sh
 A="node <skill-dir>/aiview.mjs"
 $A status --json          # cwdProject: the project this working directory belongs to
-$A use <slug>             # only if cwdProject differs from the default project; it moves no tab
-F=$($A path 2026-08-24-topic.brainstorm.md)   # the absolute path, joined for this OS
+F=$($A path 2026-08-24-topic.brainstorm.md)   # the absolute path, joined for this OS; --project <slug> for another
 # write the document at $F
 $A open "$F" --tag <topic>
 ```

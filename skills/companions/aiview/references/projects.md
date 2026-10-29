@@ -28,13 +28,14 @@ removes the others.
 
 **A tab's project is its own**: the open document's, or on the board the one its address names
 (`#board&repo=<key>[&run=<id>]`, the key a project's slug or a repository on its board), so a reload
-keeps it. A tab opened without one takes the most recently active project once and writes it in.
+keeps it. A tab opened without one takes the project shown last once (else the first) and writes it in.
+There is no global project and no All projects: each tab shows one project, each verb works in one.
 Two sessions on two projects never pull each other's tabs.
 
-- **The person's pick in a tab's project switcher** changes that tab only, and sets the most
-  recently active project, the one a new tab opens on.
-- **`use`** sets that default and the CLI's last fallback (`--project`, then the working
-  directory's project, then the default). It moves no tab.
+- **The person's pick in a tab's project switcher** changes that tab only, and records the
+  project a new tab opens on.
+- **Every CLI verb takes its project from `--project <slug>`, else the working directory's**;
+  neither, it is refused, naming the known projects. `list` is one project's (no `--all`).
 - **The agent's `open` and `show` go to the tabs on the agent's project**, the one claiming the
   CLI's working directory: every such tab moves, no tab on another project does. None open there:
   aiview opens a new tab on it.

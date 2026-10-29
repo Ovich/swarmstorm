@@ -74,16 +74,16 @@ test("status --json reports sqlite path and count", () => {
 });
 
 test("add registers, list shows it, remove drops it", () => {
-  const f = write("docs/x.brainstorm.md", "# Board X\n");
+  const f = write("docs/P/x.brainstorm.md", "# Board X\n");
   const added = run("add", f, "--tag", "proj");
   assert.equal(added.status, 0, added.stderr);
   assert.match(added.stdout, /#1 {2}brainstorm \[proj\]/);
   assert.match(added.stdout, /Board X/);
 
-  const listed = run("list");
+  const listed = run("list", "--project", "P");
   assert.match(listed.stdout, /Board X/);
 
-  const filtered = run("list", "--kind", "spec");
+  const filtered = run("list", "--project", "P", "--kind", "spec");
   assert.equal(filtered.stdout.trim(), "");
 
   const removed = run("remove", "#1");
@@ -342,42 +342,57 @@ test("--project overrides where the file sits", () => {
   assert.equal(JSON.parse(run("add", f, "--project", "Roster", "--json").stdout).project, "Roster");
 });
 
-test("use: sets the active project, refuses an unknown one", () => {
-  run("project", "add", "CIIP");
-  const ok = run("use", "CIIP", "--json");
-  assert.equal(ok.status, 0, ok.stderr);
-  assert.equal(JSON.parse(ok.stdout).project, "CIIP");
-  assert.equal(JSON.parse(run("status", "--json").stdout).project, "CIIP");
+/** `argv` run from `cwd`, the CLI's working directory standing for the agent's. */
+const runIn = (cwd: string, ...argv: string[]) =>
+  spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8", cwd, env: { ...process.env, AIVIEW_ROOT: toolRoot, SWARMSTORM_HOME: toolRoot } });
 
-  const bad = run("use", "Nope");
-  assert.notEqual(bad.status, 0);
-  assert.match(bad.stderr, /no such project: Nope/);
-  assert.match(bad.stderr, /known: CIIP/);
-  // the refusal changed nothing
-  assert.equal(JSON.parse(run("status", "--json").stdout).project, "CIIP");
+test("no verb reads a global active project (board-split D41): use and list --all are refused", () => {
+  run("project", "add", "CIIP");
+  const use = run("use", "CIIP");
+  assert.equal(use.status, 1);
+  assert.match(use.stderr, /aiview use is gone .*this directory or --project <slug>/);
+  const all = run("list", "--all");
+  assert.equal(all.status, 1);
+  assert.match(all.stderr, /list --all is gone/);
 });
 
-test("list scopes to the active project; --all and --project override", () => {
+test("no verb reads a global active project (board-split D41): the project shown last scopes nothing", () => {
+  run("project", "add", "CIIP");
+  run("add", write("docs/CIIP/a.spec.md", "# A\n"));
+  // the last open recorded CIIP as the project a new tab starts on
+  const index = path.join(toolRoot, "aiview.sqlite");
+  assert.ok(fs.existsSync(index));
+  const recorded = spawnSync(process.execPath, ["--experimental-sqlite", "-e", `const {DatabaseSync}=require("node:sqlite");new DatabaseSync(${JSON.stringify(index)}).prepare("INSERT OR REPLACE INTO state (key, value) VALUES ('active_project','CIIP')").run()`], { encoding: "utf8" });
+  assert.equal(recorded.status, 0, recorded.stderr);
+  for (const verb of [["list"], ["path", "x.spec.md"]]) {
+    const r = run(...verb);
+    assert.equal(r.status, 1, `${verb[0]} answered from the recorded project: ${r.stdout}`);
+    assert.match(r.stderr, /no aiview project for .*pass --project <slug>.*\nknown: CIIP/s);
+  }
+  assert.equal(JSON.parse(run("status", "--json").stdout).project, null);
+});
+
+test("list is the project of this directory, else --project", () => {
+  const ciip = path.join(toolRoot, "repos", "ciip");
+  fs.mkdirSync(ciip, { recursive: true });
+  run("project", "add", "CIIP", "--path", ciip);
   run("add", write("docs/CIIP/a.spec.md", "# A\n"));
   run("add", write("docs/JOBS/b.spec.md", "# B\n"));
-  run("use", "CIIP");
-
-  assert.equal(JSON.parse(run("list", "--json").stdout).length, 1);
-  assert.equal(JSON.parse(run("list", "--all", "--json").stdout).length, 2);
-  assert.equal(JSON.parse(run("list", "--project", "JOBS", "--json").stdout).length, 1);
+  assert.equal(JSON.parse(runIn(ciip, "list", "--json").stdout).length, 1);
+  assert.equal(JSON.parse(runIn(ciip, "list", "--json").stdout)[0].project, "CIIP");
+  assert.equal(JSON.parse(run("list", "--project", "JOBS", "--json").stdout)[0].project, "JOBS");
 });
 
-test("status --json reports where to write, and which project the cwd is in", () => {
-  run("project", "add", "CIIP", "--path", toolRoot);
-  run("use", "CIIP");
-  const s = JSON.parse(run("status", "--json").stdout);
+test("status --json reports where to write: the project the cwd is in, none outside one", () => {
+  const ciip = path.join(toolRoot, "repos", "ciip");
+  fs.mkdirSync(ciip, { recursive: true });
+  run("project", "add", "CIIP", "--path", ciip);
+  const s = JSON.parse(runIn(ciip, "status", "--json").stdout);
   assert.equal(s.project, "CIIP");
   assert.equal(s.projectDocs, path.join(toolRoot, "docs", "CIIP"));
-  // '*' means All projects: write to the docs root itself
-  run("use", "*");
-  const all = JSON.parse(run("status", "--json").stdout);
-  assert.equal(all.project, "*");
-  assert.equal(all.projectDocs, path.join(toolRoot, "docs"));
+  const outside = JSON.parse(run("status", "--json").stdout);
+  assert.equal(outside.project, null);
+  assert.equal(outside.projectDocs, null);
 });
 
 test("project rm is refused while documents reference it", () => {
@@ -417,7 +432,7 @@ test("move --project refuses an unknown project rather than inventing one", () =
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /no such project: Ghost/);
   assert.ok(fs.existsSync(f), "a refused move leaves the file alone");
-  assert.equal(JSON.parse(run("list", "--all", "--json").stdout)[0].project, "CIIP");
+  assert.equal(JSON.parse(run("list", "--project", "CIIP", "--json").stdout)[0].project, "CIIP");
 });
 
 test("bare move pulls a stray back into its own project's directory", () => {
@@ -470,7 +485,7 @@ describe("move a workbench", () => {
     assert.ok(fs.existsSync(page));
     assert.ok(fs.existsSync(at("A", "three.workbench", "manifest.json")));
     assert.ok(!fs.existsSync(at("B", "three.workbench.html")));
-    assert.equal(JSON.parse(run("list", "--all", "--json").stdout)[0].project, "A");
+    assert.equal(JSON.parse(run("list", "--project", "A", "--json").stdout)[0].project, "A");
   });
 
   test("across volumes (EXDEV): copied, then the source removed", () => {
@@ -506,9 +521,8 @@ test("update --project points at move instead of silently doing nothing", () => 
 
 test("path: the tool joins the location, so no caller ever builds one", () => {
   run("project", "add", "CIIP");
-  run("use", "CIIP");
 
-  const p = run("path", "2026-08-25-topic.spec.md", "--json");
+  const p = run("path", "2026-08-25-topic.spec.md", "--project", "CIIP", "--json");
   assert.equal(p.status, 0, p.stderr);
   const out = JSON.parse(p.stdout);
   // joined with THIS platform's separator, under THIS machine's home
@@ -519,34 +533,27 @@ test("path: the tool joins the location, so no caller ever builds one", () => {
 
   // a caller that passes a path by mistake still gets a correctly located file
   assert.equal(
-    JSON.parse(run("path", "some/wrong/place/2026-08-25-topic.spec.md", "--json").stdout).path,
+    JSON.parse(run("path", "some/wrong/place/2026-08-25-topic.spec.md", "--project", "CIIP", "--json").stdout).path,
     out.path,
   );
 
-  // --project targets another project without switching the active one
+  // --project targets another project
   run("project", "add", "JOBS");
   assert.equal(
     JSON.parse(run("path", "x.spec.md", "--project", "JOBS", "--json").stdout).dir,
     path.join(toolRoot, "docs", "JOBS"),
   );
-  assert.equal(JSON.parse(run("status", "--json").stdout).project, "CIIP");
 });
 
-test("path: the project the cwd is in wins over the active one", () => {
+test("path: the project the cwd is in, --project over it", () => {
   const ciipRepo = path.join(toolRoot, "repos", "ciip");
   fs.mkdirSync(path.join(ciipRepo, "sub"), { recursive: true });
   run("project", "add", "CIIP", "--path", ciipRepo);
   run("project", "add", "JOBS");
-  run("use", "JOBS");
-  const inCiip = spawnSync(process.execPath, [CLI, "path", "x.spec.md", "--json"], {
-    encoding: "utf8",
-    cwd: path.join(ciipRepo, "sub"),
-    env: { ...process.env, AIVIEW_ROOT: toolRoot, SWARMSTORM_HOME: toolRoot },
-  });
+  const inCiip = runIn(path.join(ciipRepo, "sub"), "path", "x.spec.md", "--json");
   assert.equal(inCiip.status, 0, inCiip.stderr);
   assert.equal(JSON.parse(inCiip.stdout).project, "CIIP");
-  // outside any project's path, the active one
-  assert.equal(JSON.parse(run("path", "x.spec.md", "--json").stdout).project, "JOBS");
+  assert.equal(JSON.parse(runIn(ciipRepo, "path", "x.spec.md", "--project", "JOBS", "--json").stdout).project, "JOBS");
 });
 
 test("a verb's user error is one line, no stack", () => {
@@ -558,9 +565,9 @@ test("a verb's user error is one line, no stack", () => {
 });
 
 test("path refuses when there is nothing to resolve against", () => {
-  const noActive = run("path", "x.spec.md");
-  assert.notEqual(noActive.status, 0);
-  assert.match(noActive.stderr, /no active project/);
+  const noProject = run("path", "x.spec.md");
+  assert.notEqual(noProject.status, 0);
+  assert.match(noProject.stderr, /no aiview project for /);
 
   run("project", "add", "CIIP");
   const ghost = run("path", "x.spec.md", "--project", "Ghost");
@@ -668,9 +675,8 @@ test("board --repo adds the repository to the project's board once, makes the pr
     assert.deepEqual(again.repos, [one]);
     const second = JSON.parse(run("board", "--repo", two, "--project", "p", "--json").stdout) as { repos: string[] };
     assert.deepEqual(second.repos, [one, two]);
-    assert.equal((JSON.parse(run("status", "--json").stdout) as { project: string }).project, "p");
     // no document stands for the board
-    assert.deepEqual(JSON.parse(run("list", "--all", "--json").stdout), []);
+    assert.deepEqual(JSON.parse(run("list", "--project", "p", "--json").stdout), []);
   } finally {
     stopServer();
   }
@@ -692,4 +698,22 @@ test("V5: project add --path . stores the absolute path, never a literal '.'", (
   const [stored] = JSON.parse(added.stdout).paths as string[];
   assert.ok(path.isAbsolute(stored), stored);
   assert.notEqual(stored, ".");
+});
+
+test("serve --detach records the server's own pid, even over a stale pid file a live process holds (Q3)", async () => {
+  // a pid file left behind, naming a process alive and not a server: this test's own
+  write("aiview.pid", String(process.pid));
+  const r = run("serve", "--detach", "--port", "0", "--json");
+  assert.equal(r.status, 0, r.stderr);
+  const { server } = JSON.parse(r.stdout) as { server: { pid: number; port: number; running: boolean } };
+  try {
+    assert.equal(server.running, true);
+    assert.notEqual(server.pid, process.pid);
+    assert.equal(Number(fs.readFileSync(path.join(toolRoot, "aiview.pid"), "utf8")), server.pid);
+    assert.equal((await fetch(`http://127.0.0.1:${server.port}/api/documents`)).status, 200);
+  } finally {
+    stopServer();
+  }
+  // the pid recorded was the one serving: once it is stopped, the port answers no more
+  await assert.rejects(fetch(`http://127.0.0.1:${server.port}/api/documents`));
 });

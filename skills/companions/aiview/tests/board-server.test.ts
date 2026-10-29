@@ -97,25 +97,27 @@ function listen(until: (events: Event[]) => boolean, ms: number): Promise<Event[
   });
 }
 
-test("answers the most recent repository", async () => {
-  const only = (await (await fetch(`${base}/api/board`)).json()) as BoardBody;
-  assert.equal(only.snapshot.repo, REPO);
+test("answers only the repository asked: no fallback, and no run of another repository (board-split D41, Q1)", async () => {
   await writer.openRun({ repo: OTHER, group: "other", title: "Other", seats: [] });
-  const r = await fetch(`${base}/api/board`);
-  assert.equal(r.status, 200);
-  const latest = (await r.json()) as BoardBody;
-  assert.equal(latest.snapshot.repo, OTHER);
-  assert.deepEqual(latest.repos.map((x) => x.repo), [OTHER, REPO]);
-  assert.deepEqual(latest.snapshot, await writer.snapshot(OTHER));
+  const unasked = await fetch(`${base}/api/board`);
+  assert.equal(unasked.status, 404);
+  assert.deepEqual(await unasked.json(), { error: "no repository named: ask ?repo=<repository> or ?run=<id>" });
   const byKey = (await (await fetch(`${base}/api/board?repo=${encodeURIComponent(REPO)}`)).json()) as BoardBody;
   assert.equal(byKey.snapshot.repo, REPO);
+  assert.deepEqual(byKey.repos.map((x) => x.repo), [REPO]);
+  const otherRuns = (await writer.runs()).filter((x) => x.repo === OTHER).map((x) => x.id);
+  assert.ok(otherRuns.length > 0);
+  assert.ok(!byKey.snapshot.runs.some((r) => otherRuns.includes(r.run)), "repo A's answer carries no run of repo B");
+  const other = (await (await fetch(`${base}/api/board?repo=${encodeURIComponent(OTHER)}`)).json()) as BoardBody;
+  assert.deepEqual(other.repos.map((x) => x.repo), [OTHER]);
+  assert.deepEqual(other.snapshot, await writer.snapshot(OTHER));
 });
 
 test("answers a run's repository", async () => {
   const run = (await writer.runs()).find((x) => x.repo === REPO)!;
   const byRun = (await (await fetch(`${base}/api/board?run=${run.id}`)).json()) as BoardBody;
   assert.equal(byRun.snapshot.repo, REPO);
-  assert.ok(byRun.repos.some((x) => x.repo === OTHER));
+  assert.deepEqual(byRun.repos.map((x) => x.repo), [REPO]);
   // /api/run?id= is kept as an alias of ?run=
   const alias = await fetch(`${base}/api/run?id=${run.id}`);
   assert.equal(alias.status, 200);
@@ -143,7 +145,7 @@ test("404 for an unknown repository", async () => {
   assert.deepEqual(await r.json(), { error: "no repository /nowhere/.git" });
 });
 
-test("with no server running, the reader starts it: 404 with no repository, and the server stays up", async () => {
+test("with no server running, the reader starts it: 404 with no repository named, and the server stays up", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aiview-board-empty-"));
   const bare = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: home, writeState: false, boardDataRoot: home, swarmEntry: SWARM_CLI });
   const at = await listening(bare);
@@ -151,7 +153,7 @@ test("with no server running, the reader starts it: 404 with no repository, and 
     assert.equal(fs.existsSync(serverStateFile(home)), false, "no board server before the request");
     const r = await fetch(`${at}/api/board`);
     assert.equal(r.status, 404);
-    assert.deepEqual(await r.json(), { error: "no repository on the board" });
+    assert.deepEqual(await r.json(), { error: "no repository named: ask ?repo=<repository> or ?run=<id>" });
     assert.equal(fs.existsSync(serverStateFile(home)), true, "the reader started the board server");
     assert.equal((await fetch(`${at}/api/documents`)).status, 200, "the server is still up");
   } finally {

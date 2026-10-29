@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PanelLeftClose, PanelLeftOpen, Star } from "lucide-react";
 import { cn } from "../../lib/utils.ts";
 import type { DocumentWithState } from "../../lib/api.ts";
-import { ALL_PROJECTS, type ConnectionState } from "../../hooks/useDocuments.ts";
+import { type ConnectionState } from "../../hooks/useDocuments.ts";
 import { LiveIndicator } from "../docs/LiveIndicator.tsx";
 import { PinnedNav } from "./PinnedNav.tsx";
 
@@ -125,8 +125,8 @@ export function Sidebar({
   documentsShown?: boolean;
   onDocuments?: () => void;
 }) {
-  const scoped = activeProject !== ALL_PROJECTS;
-  const inScope = docs.filter((d) => !scoped || d.project === activeProject);
+  // the tab's project alone (board-split#D41): there is no All projects
+  const inScope = docs.filter((d) => d.project === activeProject);
   const listed = inScope.filter((d) => d.kind !== "swarm").length;
 
   const [kept, setKept] = useState(readKept);
@@ -232,7 +232,7 @@ export function Sidebar({
 
         <div data-component="SidebarFooter" className="flex h-10 shrink-0 items-center gap-1.5 border-t border-border px-4 text-[12px] max-md:border-t-0 max-md:px-3 text-muted-foreground">
           <span className="nav-text min-w-0 truncate">
-            {listed} documents{scoped ? "" : ` · ${Object.keys(projects).length} projects`}
+            {listed} documents
           </span>
           <span className="flex items-center gap-1.5 whitespace-nowrap group-data-[open=true]/menu:ml-auto">
             {version && (

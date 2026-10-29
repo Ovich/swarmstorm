@@ -445,18 +445,15 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       const info = db.prepare("DELETE FROM projects WHERE slug = ?").run(slug);
       return { removed: info.changes > 0, documents: 0 };
     },
-    activeProject() {
+    recentProject() {
       const row = db.prepare("SELECT value FROM state WHERE key = 'active_project'").get();
-      const slug = row?.value ?? ALL_PROJECTS;
-      if (slug === ALL_PROJECTS) return slug;
-      const exists = db.prepare("SELECT 1 FROM projects WHERE slug = ?").get(slug);
-      return exists ? slug : ALL_PROJECTS;
+      if (!row) return null;
+      return db.prepare("SELECT 1 FROM projects WHERE slug = ?").get(row.value) ? row.value : null;
     },
-    setActiveProject(slug) {
+    recordRecentProject(slug) {
       db.prepare(
         "INSERT INTO state (key, value) VALUES ('active_project', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
       ).run(slug);
-      return slug;
     },
     addPending(documentId, label, note = "") {
       const started = (/* @__PURE__ */ new Date()).toISOString();
@@ -500,7 +497,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
     }
   };
 }
-var DatabaseSync, TOOL_ROOT, SQLITE_PATH, STORE_ROOT, ALL_PROJECTS, now;
+var DatabaseSync, TOOL_ROOT, SQLITE_PATH, STORE_ROOT, now;
 var init_db = __esm({
   async "src/core/db.ts"() {
     "use strict";
@@ -516,7 +513,6 @@ var init_db = __esm({
     TOOL_ROOT = findToolRoot();
     SQLITE_PATH = path5.join(DATA_ROOT, "aiview.sqlite");
     STORE_ROOT = DATA_ROOT;
-    ALL_PROJECTS = "*";
     now = () => (/* @__PURE__ */ new Date()).toISOString();
   }
 });
@@ -9713,21 +9709,20 @@ function mountBoard(sse, opts = {}) {
     const key = url.searchParams.get("repo");
     const repos = await board.repos();
     if (run !== null) {
-      const repo2 = repos.find((r) => r.runs.some((x) => x.run === Number(run)))?.repo;
-      return repo2 ? { repo: repo2 } : { missing: `no run ${run}` };
+      const repo = repos.find((r) => r.runs.some((x) => x.run === Number(run)))?.repo;
+      return repo ? { repo } : { missing: `no run ${run}` };
     }
     if (key !== null) {
-      const repo2 = repos.find((r) => sameRepo(r.repo, key))?.repo;
-      return repo2 ? { repo: repo2 } : { missing: `no repository ${key}` };
+      const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
+      return repo ? { repo } : { missing: `no repository ${key}` };
     }
-    const repo = repos[0]?.repo;
-    return repo ? { repo } : { missing: "no repository on the board" };
+    return { missing: "no repository named: ask ?repo=<repository> or ?run=<id>" };
   };
   const answerBoard = async (board, url, res) => {
     const named = await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const [repos, snapshot] = await Promise.all([board.repos(), board.snapshot(named.repo)]);
-    json(res, { repos, snapshot });
+    json(res, { repos: repos.filter((r) => r.repo === named.repo), snapshot });
   };
   const answerStats = async (board, url, res) => {
     const q = url.searchParams;
@@ -9935,7 +9930,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
         documents: index.all(),
         groups: Object.fromEntries(index.allGroups().map((g) => [g.slug, g.title ?? g.slug])),
         projects: Object.fromEntries(index.allProjects().map((x) => [x.slug, x.title ?? x.slug])),
-        activeProject: index.activeProject(),
+        recentProject: index.recentProject(),
         start: startDoc?.id ?? null,
         version
       });
@@ -9949,9 +9944,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     }
     if (p === "/api/project-board") {
       const key = url.searchParams.get("repo");
-      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || index.activeProject();
-      if (slug === null) return json(res, { error: `no project for ${key}` }, 404);
-      return json(res, { project: slug, repos: slug === ALL_PROJECTS ? [] : index.boardRepos(slug) });
+      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || null;
+      if (slug === null) return json(res, { error: key ? `no project for ${key}` : "name a project: ?project=<slug> or ?repo=<key>" }, key ? 404 : 400);
+      return json(res, { project: slug, repos: index.boardRepos(slug) });
     }
     if (p === "/api/pin" && req.method === "POST") {
       let body = "";
@@ -9973,7 +9968,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       });
       return;
     }
-    if (p === "/api/active" && req.method === "POST") {
+    if (p === "/api/recent-project" && req.method === "POST") {
       let body = "";
       req.on("data", (c) => {
         body += c;
@@ -9987,10 +9982,8 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
           return json(res, { error: "bad json" }, 400);
         }
         if (typeof slug !== "string" || !slug) return json(res, { error: "project required" }, 400);
-        if (slug !== ALL_PROJECTS && !index.allProjects().some((x) => x.slug === slug))
-          return json(res, { error: `no such project: ${slug}` }, 404);
-        index.setActiveProject(slug);
-        sse.broadcast({ type: "project", slug });
+        if (!index.allProjects().some((x) => x.slug === slug)) return json(res, { error: `no such project: ${slug}` }, 404);
+        index.recordRecentProject(slug);
         json(res, { project: slug });
       });
       return;
@@ -10616,9 +10609,8 @@ var USAGE = [
   "  open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]",
   "  add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]",
   "  update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]",
-  "  list [--kind k] [--tag t]... [--project p | --all]   # defaults to the active project",
+  "  list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project",
   "  project <add|list|rm> [slug] [--title T] [--path P]...",
-  "  use <slug|*>                             # set the active project",
   "  remove <file|#id>...",
   "  move <file|#id>... [--project <slug>]    # refile: file + index together",
   "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
@@ -10667,9 +10659,15 @@ function askServer(route, body) {
   );
   return r.status === 0 ? r.stdout : null;
 }
-function setActive(index, slug) {
-  if (!postToServer("/api/active", { project: slug })) index.setActiveProject(slug);
-  return slug;
+function recordRecentProject(index, slug) {
+  if (!postToServer("/api/recent-project", { project: slug })) index.recordRecentProject(slug);
+}
+function projectOfVerb(index) {
+  return args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+}
+function noProjectLine(known) {
+  return `no aiview project for ${process.cwd()}: pass --project <slug>, or declare one with aiview project add <slug> --path <dir>${known.length ? `
+known: ${known.join(", ")}` : ""}`;
 }
 function notifyPendingChanged(documentId) {
   postToServer("/api/pending-changed", { id: documentId });
@@ -10698,6 +10696,7 @@ function ensureDist() {
 function spawnDetachedServer(port) {
   try {
     fs13.rmSync(PORT_FILE, { force: true });
+    fs13.rmSync(PID_FILE, { force: true });
   } catch {
   }
   const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
@@ -10709,7 +10708,7 @@ function spawnDetachedServer(port) {
   const t0 = Date.now();
   for (; ; ) {
     const st = readServerStatus();
-    if (st.running && st.port !== null) return st.port;
+    if (st.running && st.port !== null && st.pid === child.pid) return st.port;
     if (Date.now() - t0 > 1e4) {
       console.error(`aiview: server did not come up within 10s (port ${port} may be in use \u2014 retry with --port <n>)`);
       process.exit(1);
@@ -10771,9 +10770,9 @@ function resolveRef(ref) {
 function cmdStatus() {
   const index = openIndex();
   const documents = index.all().length;
-  const project = index.activeProject();
-  const projectDocs = project === ALL_PROJECTS ? DOCS_ROOT : docsDirFor(project);
   const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+  const project = cwdProject;
+  const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
   index.close();
   const server = readServerStatus();
   emit(
@@ -10781,9 +10780,8 @@ function cmdStatus() {
     () => {
       console.log(`home       ${DATA_ROOT}`);
       console.log(`docs       ${DOCS_ROOT}`);
-      console.log(`project    ${project === ALL_PROJECTS ? "(all)" : project}`);
-      console.log(`write to   ${projectDocs}`);
-      if (cwdProject) console.log(`cwd is in  ${cwdProject}`);
+      console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
+      if (projectDocs) console.log(`write to   ${projectDocs}`);
       console.log(`sqlite     ${SQLITE_PATH}`);
       console.log(`tool       ${TOOL_ROOT}`);
       console.log(`documents  ${documents}`);
@@ -10800,13 +10798,11 @@ function cmdPath() {
     process.exit(1);
   }
   const index = openIndex();
-  const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
-  const slug = args.flag("--project") ?? cwdProject ?? index.activeProject();
+  const slug = projectOfVerb(index);
   const known = index.allProjects().map((p) => p.slug);
   index.close();
-  if (slug === ALL_PROJECTS) {
-    console.error(`no active project \u2014 run: aiview use <slug>, or pass --project${known.length ? `
-known: ${known.join(", ")}` : ""}`);
+  if (slug === null) {
+    console.error(noProjectLine(known));
     process.exit(1);
   }
   if (!known.includes(slug)) {
@@ -11002,10 +10998,20 @@ function cmdUpdate() {
 function cmdList() {
   const want = args.flags("--tag");
   const wantKind = args.flag("--kind") ?? "";
+  if (args.has("--all")) {
+    console.error("list --all is gone (board-split D41): every list is one project's; pass --project <slug> for another");
+    process.exit(1);
+  }
   const index = openIndex();
-  const scope = args.has("--all") ? ALL_PROJECTS : args.flag("--project") ?? index.activeProject();
+  const scope = projectOfVerb(index);
+  if (scope === null) {
+    const known = index.allProjects().map((p) => p.slug);
+    index.close();
+    console.error(noProjectLine(known));
+    process.exit(1);
+  }
   const docs = index.all().filter(
-    (d) => (scope === ALL_PROJECTS || d.project === scope) && (!wantKind || d.kind === wantKind) && (!want.length || want.every((t) => d.tags.includes(t)))
+    (d) => d.project === scope && (!wantKind || d.kind === wantKind) && (!want.length || want.every((t) => d.tags.includes(t)))
   );
   index.close();
   emit(docs, () => {
@@ -11043,14 +11049,14 @@ function cmdProject() {
     if (sub === "list") {
       const projects = index.allProjects();
       const docs = index.all();
-      const active = index.activeProject();
+      const here = projectForCwd(process.cwd(), projects)?.slug ?? null;
       const count = (slug2) => docs.filter((d) => d.project === slug2).length;
       emit(
-        projects.map((p) => ({ ...p, documents: count(p.slug), active: p.slug === active })),
+        projects.map((p) => ({ ...p, documents: count(p.slug), here: p.slug === here })),
         () => {
           for (const p of projects)
             console.log(
-              `${p.slug === active ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `
+              `${p.slug === here ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `
     covers ${p.paths.join(", ")}` : ""}`
             );
         }
@@ -11082,29 +11088,6 @@ function cmdProject() {
     }
     console.error("usage: aiview project <add|list|rm> [slug] [--title T] [--path P]...");
     process.exit(1);
-  } finally {
-    index.close();
-  }
-}
-function cmdUse() {
-  const slug = args.positional[0];
-  if (!slug) {
-    console.error("usage: aiview use <slug|*>");
-    process.exit(1);
-  }
-  const index = openIndex();
-  try {
-    if (slug !== ALL_PROJECTS && !index.allProjects().some((p) => p.slug === slug)) {
-      const known = index.allProjects().map((p) => p.slug);
-      console.error(`no such project: ${slug}${known.length ? `
-known: ${known.join(", ")}` : ""}`);
-      process.exit(1);
-    }
-    setActive(index, slug);
-    emit(
-      { project: slug, docs: slug === ALL_PROJECTS ? DOCS_ROOT : docsDirFor(slug) },
-      slug === ALL_PROJECTS ? `all projects  ${DOCS_ROOT}` : `${slug}  ${docsDirFor(slug)}`
-    );
   } finally {
     index.close();
   }
@@ -11183,7 +11166,7 @@ function cmdOpen() {
   ensureDist();
   const index = openIndex();
   const d = index.register(path15.resolve(args.positional[0]), registerOpts());
-  setActive(index, d.project);
+  recordRecentProject(index, d.project);
   const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
   index.close();
   const port = portOfInstalledServer();
@@ -11213,7 +11196,7 @@ function cmdBoard() {
       process.exit(1);
     }
     const repos = repo === void 0 ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
-    setActive(index, slug);
+    recordRecentProject(index, slug);
     ensureDist();
     const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
     if (args.has("--open")) {
@@ -11438,7 +11421,8 @@ async function runVerb() {
       cmdProject();
       break;
     case "use":
-      cmdUse();
+      console.error("aiview use is gone (board-split D41): each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
+      process.exit(1);
       break;
     case "open":
       cmdOpen();

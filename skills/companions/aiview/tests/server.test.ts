@@ -60,7 +60,8 @@ test("GET /api/documents matches the shared shape, groups present", async () => 
   assert.equal(body.start, null);
   // every document's project has a record, so the selector can always place it
   for (const d of body.documents) assert.ok(d.project in body.projects, `${d.project} missing from projects`);
-  assert.equal(body.activeProject, "*");
+  assert.equal(body.recentProject, null);
+  assert.equal("activeProject" in body, false);
   const board = body.documents.find((d) => d.id === boardId)!;
   assert.equal(board.kind, "brainstorm");
   assert.equal(board.format, "markdown");
@@ -155,39 +156,43 @@ test("SSE /events pushes changed on file edit", async () => {
   ctrl.abort();
 });
 
-test("POST /api/active writes the row and broadcasts to open tabs", async () => {
+test("POST /api/recent-project records the project for the next new tab and moves no open tab (D41)", async () => {
   index.upsertProject("CIIP");
   const es = await fetch(`${base}/events`);
   const reader = es.body!.getReader();
   await reader.read(); // the hello frame
 
-  const post = await fetch(`${base}/api/active`, {
+  const post = await fetch(`${base}/api/recent-project`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ project: "CIIP" }),
   });
   assert.equal(post.status, 200);
   assert.deepEqual(await post.json(), { project: "CIIP" });
-
+  // nothing is broadcast: the next frame is a later event, never a project switch
+  void fetch(`${base}/api/index-changed`, { method: "POST" });
   const frame = new TextDecoder().decode((await reader.read()).value);
-  assert.match(frame, /"type":"project"/);
-  assert.match(frame, /"slug":"CIIP"/);
+  assert.doesNotMatch(frame, /"type":"project"/);
   await reader.cancel();
 
-  // the row really moved, and the next tab to load reads it
-  assert.equal(index.activeProject(), "CIIP");
+  assert.equal(index.recentProject(), "CIIP");
   const docs = (await (await fetch(`${base}/api/documents`)).json()) as DocumentsResponse;
-  assert.equal(docs.activeProject, "CIIP");
+  assert.equal(docs.recentProject, "CIIP");
 });
 
-test("POST /api/active rejects an unknown project and bad input", async () => {
-  const post = (body: string) =>
-    fetch(`${base}/api/active`, { method: "POST", headers: { "content-type": "application/json" }, body });
+test("POST /api/recent-project rejects an unknown project, All projects and bad input; /api/active is gone", async () => {
+  const post = (body: string, route = "/api/recent-project") =>
+    fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json" }, body });
   assert.equal((await post(JSON.stringify({ project: "Ghost" }))).status, 404);
+  assert.equal((await post(JSON.stringify({ project: "*" }))).status, 404);
   assert.equal((await post(JSON.stringify({}))).status, 400);
   assert.equal((await post("not json")).status, 400);
-  // '*' is always valid: All projects needs no record
-  assert.equal((await post(JSON.stringify({ project: "*" }))).status, 200);
+  assert.notEqual((await post(JSON.stringify({ project: "CIIP" }), "/api/active")).headers.get("content-type")?.startsWith("application/json"), true);
+});
+
+test("GET /api/project-board names no default project (D41)", async () => {
+  const r = await fetch(`${base}/api/project-board`);
+  assert.equal(r.status, 400);
 });
 
 test("POST /api/index-changed tells open tabs the document list moved", async () => {

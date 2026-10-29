@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ListFilter, Search } from "lucide-react";
 import { cn } from "../../lib/utils.ts";
 import type { DocumentWithState } from "../../lib/api.ts";
-import { ALL_PROJECTS } from "../../hooks/useDocuments.ts";
 import { useFilters } from "../../hooks/useFilters.ts";
 import { sidebarEntries } from "../../hooks/useSidebarEntries.ts";
 import { Input } from "../ui/input.tsx";
@@ -45,7 +44,6 @@ export function DocumentsPanel({
 }) {
   // project scope first, so the kind and tag chips below are themselves scoped
   const f = useFilters(docs, activeProject);
-  const scoped = activeProject !== ALL_PROJECTS;
   const listed = f.shown.filter((d) => d.kind !== "swarm"); // the board is the menu's Board
   // grouping happens after filtering, so a group shows only its matching members
   const entries = sidebarEntries(listed, groups);
@@ -153,9 +151,9 @@ export function DocumentsPanel({
         )}
         {entries.map((e) =>
           e.type === "doc" ? (
-            <DocItem key={`d${e.doc.id}`} doc={e.doc} active={e.doc.id === currentId} showProject={!scoped} onOpen={onOpen} />
+            <DocItem key={`d${e.doc.id}`} doc={e.doc} active={e.doc.id === currentId} showProject={false} onOpen={onOpen} />
           ) : (
-            <DocGroup key={`g${e.slug}`} title={e.title} docs={e.docs} currentId={currentId} showProject={!scoped} onOpen={onOpen} />
+            <DocGroup key={`g${e.slug}`} title={e.title} docs={e.docs} currentId={currentId} showProject={false} onOpen={onOpen} />
           ),
         )}
       </div>

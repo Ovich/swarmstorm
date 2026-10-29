@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import type { DocumentWithState } from "../lib/api.ts";
-import { ALL_PROJECTS } from "./useDocuments.ts";
 import { docActivity } from "./useSidebarEntries.ts";
 
 export interface Filters {
@@ -13,19 +12,19 @@ export interface Filters {
  *  the kind chips, the tag chips, the search — is derived from what this returns,
  *  which is what makes "everything below is scoped" true rather than decorative. */
 export function applyScope(docs: DocumentWithState[], project: string): DocumentWithState[] {
-  return project === ALL_PROJECTS ? docs : docs.filter((d) => d.project === project);
+  return docs.filter((d) => d.project === project);
 }
 
 /** The tags of the scoped documents, the most recently active first: a tag is as recent as
  *  the latest document carrying it, since the work a person is on is the work they filter by.
- *  The project's own slug is left out when a project is chosen, as the scope already applies it. */
-export function recentTags(docs: DocumentWithState[], project: string = ALL_PROJECTS): string[] {
+ *  The project's own slug is left out when a project is given, as the scope already applies it. */
+export function recentTags(docs: DocumentWithState[], project: string | null = null): string[] {
   const latest = new Map<string, string>();
   for (const d of docs) {
     const at = docActivity(d);
     for (const t of d.tags) if ((latest.get(t) ?? "") < at) latest.set(t, at);
   }
-  const slug = project === ALL_PROJECTS ? null : project.toLowerCase();
+  const slug = project === null ? null : project.toLowerCase();
   return [...latest.entries()]
     .filter(([t]) => t.toLowerCase() !== slug)
     .sort(([a, x], [b, y]) => y.localeCompare(x) || a.localeCompare(b))
@@ -43,7 +42,7 @@ export function applyFilters(docs: DocumentWithState[], f: Filters): DocumentWit
   );
 }
 
-export function useFilters(allDocs: DocumentWithState[], project: string = ALL_PROJECTS) {
+export function useFilters(allDocs: DocumentWithState[], project: string) {
   const [query, setQuery] = useState("");
   const [kinds, setKinds] = useState<Set<string>>(new Set());
   const [tags, setTags] = useState<Set<string>>(new Set());

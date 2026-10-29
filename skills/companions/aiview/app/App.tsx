@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBoardOfKey, fetchDocument, fetchProjectBoard, type DocumentResponse } from "./lib/api.ts";
 import { boardHash, hashWithBoardRepo, readBoardHash } from "../src/core/boardhash.ts";
-import { ALL_PROJECTS, useDocuments } from "./hooks/useDocuments.ts";
+import { useDocuments } from "./hooks/useDocuments.ts";
 import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
 import { Sidebar } from "./components/shell/Sidebar.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
@@ -99,7 +99,7 @@ export function App() {
   const boardRepoKey = boardKey?.repo ?? null;
   // a board tab without a project takes the tab's (the most recently active, at its first load) once, into its hash
   useEffect(() => {
-    if (!onBoard || boardRepoKey !== null || !projectKnown || activeProject === ALL_PROJECTS) return;
+    if (!onBoard || boardRepoKey !== null || !projectKnown || !activeProject) return;
     history.replaceState(history.state, "", `${location.pathname}${hashWithBoardRepo(location.hash, activeProject)}`);
     setBoardKey({ repo: activeProject });
   }, [onBoard, boardRepoKey, projectKnown, activeProject]);
@@ -156,7 +156,7 @@ export function App() {
   const showDocuments = () => {
     // a document of another project is not this project's: the view opens on its list alone
     const current = docs.find((d) => d.id === currentId);
-    if (current && activeProject !== "*" && current.project !== activeProject) {
+    if (current && activeProject !== "" && current.project !== activeProject) {
       setCurrentId(null);
       setResponse(null);
       loadedId.current = null;
@@ -188,7 +188,7 @@ export function App() {
       // Opening a document outside the active project moves the mode to it (D9),
       // so the selector never disagrees with what is on screen.
       const target = docs.find((d) => d.id === id);
-      if (target && activeProject !== "*" && target.project !== activeProject) pickProject(target.project);
+      if (target && activeProject !== "" && target.project !== activeProject) pickProject(target.project);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [docs, activeProject, pickProject, onBoard],
@@ -230,7 +230,7 @@ export function App() {
     if (initialised.current || (startId === null && docs.length === 0)) return;
     initialised.current = true;
     if (currentId !== null) return;
-    const id = startId ?? docs.find((d) => d.kind !== "swarm" && (activeProject === "*" || d.project === activeProject))?.id;
+    const id = startId ?? docs.find((d) => d.kind !== "swarm" && d.project === activeProject)?.id;
     if (id != null) setCurrentId(id);
   }, [startId, docs, currentId, activeProject]);
 
@@ -249,7 +249,7 @@ export function App() {
   const goTo = (hash: string): void => {
     location.hash = hash;
     const target = docs.find((d) => d.id === readPointer(hash)?.id);
-    if (target && activeProject !== "*" && target.project !== activeProject) pickProject(target.project);
+    if (target && activeProject !== "" && target.project !== activeProject) pickProject(target.project);
   };
 
   // The agent pointed (`aiview show`): go where the link it printed goes. The hash is the
@@ -307,7 +307,7 @@ export function App() {
   // picking another project afterwards is not undone.
   const shownDoc = response?.document;
   useEffect(() => {
-    if (!onBoard && shownDoc && activeProject !== "*" && activeProject !== "" && shownDoc.project !== activeProject) pickProject(shownDoc.project);
+    if (!onBoard && shownDoc && activeProject !== "" && shownDoc.project !== activeProject) pickProject(shownDoc.project);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownDoc?.id]);
 

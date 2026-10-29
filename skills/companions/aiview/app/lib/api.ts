@@ -19,13 +19,14 @@ export async function fetchDocument(id: number): Promise<DocumentResponse | null
 }
 
 /** The one write path for the active project — the CLI posts here too. */
-export async function setActiveProject(project: string): Promise<string> {
-  const r = await fetch("/api/active", {
+/** Records the project this tab shows as the one a new tab starts on (board-split#D41); it moves no other tab. */
+export async function recordRecentProject(project: string): Promise<string> {
+  const r = await fetch("/api/recent-project", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ project }),
   });
-  if (!r.ok) throw new Error(`POST /api/active: ${r.status}`);
+  if (!r.ok) throw new Error(`POST /api/recent-project: ${r.status}`);
   return ((await r.json()) as { project: string }).project;
 }
 

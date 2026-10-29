@@ -4,15 +4,13 @@ import { spawn } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw s
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { ALL_PROJECTS, TOOL_ROOT, type Document, type Index } from "../core/db.ts";
+import { TOOL_ROOT, type Document, type Index } from "../core/db.ts";
 import type {
-  ActiveProjectResponse,
   DocumentsResponse,
   DocumentResponse,
   PendingEventPayload,
   IndexEventPayload,
   DataChangedEventPayload,
-  ProjectEventPayload,
   ShowDoneEventPayload,
   ShowEventPayload,
   ShowResponse,
@@ -180,7 +178,7 @@ export function startServer(
         documents: index.all(),
         groups: Object.fromEntries(index.allGroups().map((g) => [g.slug, g.title ?? g.slug])),
         projects: Object.fromEntries(index.allProjects().map((x) => [x.slug, x.title ?? x.slug])),
-        activeProject: index.activeProject(),
+        recentProject: index.recentProject(),
         start: startDoc?.id ?? null,
         version,
       } satisfies DocumentsResponse);
@@ -194,12 +192,12 @@ export function startServer(
       });
       return;
     }
-    // The board page's source: the repositories the project's board reads (the active project by default).
+    // The board page's source: the repositories the project's board reads, the project named (D41: no default).
     if (p === "/api/project-board") {
       const key = url.searchParams.get("repo");
-      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || index.activeProject();
-      if (slug === null) return json(res, { error: `no project for ${key}` }, 404);
-      return json(res, { project: slug, repos: slug === ALL_PROJECTS ? [] : index.boardRepos(slug) });
+      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || null;
+      if (slug === null) return json(res, { error: key ? `no project for ${key}` : "name a project: ?project=<slug> or ?repo=<key>" }, key ? 404 : 400);
+      return json(res, { project: slug, repos: index.boardRepos(slug) });
     }
     // Pinning is the person's, from the viewer: the index stores it, every tab hears it.
     if (p === "/api/pin" && req.method === "POST") {
@@ -222,9 +220,8 @@ export function startServer(
       });
       return;
     }
-    // The one place the active project is written: the UI posts here, and so does
-    // the CLI whenever a server is up, so the broadcast is never a second path.
-    if (p === "/api/active" && req.method === "POST") {
+    // A tab's switch or an agent's open records the project shown last, for the next new tab (D41); it moves no tab.
+    if (p === "/api/recent-project" && req.method === "POST") {
       let body = "";
       req.on("data", (c) => {
         body += c;
@@ -238,11 +235,9 @@ export function startServer(
           return json(res, { error: "bad json" }, 400);
         }
         if (typeof slug !== "string" || !slug) return json(res, { error: "project required" }, 400);
-        if (slug !== ALL_PROJECTS && !index.allProjects().some((x) => x.slug === slug))
-          return json(res, { error: `no such project: ${slug}` }, 404);
-        index.setActiveProject(slug);
-        sse.broadcast({ type: "project", slug } satisfies ProjectEventPayload);
-        json(res, { project: slug } satisfies ActiveProjectResponse);
+        if (!index.allProjects().some((x) => x.slug === slug)) return json(res, { error: `no such project: ${slug}` }, 404);
+        index.recordRecentProject(slug);
+        json(res, { project: slug });
       });
       return;
     }

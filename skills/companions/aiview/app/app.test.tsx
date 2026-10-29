@@ -128,10 +128,10 @@ describe("project scope", () => {
     doc({ id: 3, project: "JOBS", kind: "brainstorm", tags: ["cv"], title: "Board" }),
   ];
 
-  test("scope narrows to one project; '*' keeps everything", () => {
+  test("scope narrows to one project; '*' is no project, so it keeps nothing (board-split D41)", () => {
     expect(applyScope(docs, "JOBS").map((d) => d.id)).toEqual([2, 3]);
     expect(applyScope(docs, "CIIP").map((d) => d.id)).toEqual([1]);
-    expect(applyScope(docs, "*")).toHaveLength(3);
+    expect(applyScope(docs, "*")).toHaveLength(0);
   });
 
   test("scope runs before the chips, so the chip lists are themselves scoped (D16)", () => {
@@ -153,10 +153,11 @@ describe("ProjectSelector", () => {
     expect(screen.getByText("2")).toBeTruthy(); // JOBS holds 2 of the 3
   });
 
-  test("All projects reads as such and counts everything", () => {
-    render(<ProjectSelector projects={projects} active="*" docs={docs} onPick={() => {}} />);
-    expect(screen.getByLabelText("Project: All projects")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+  test("the menu offers each project and no All projects (board-split D41)", () => {
+    render(<ProjectSelector projects={projects} active="JOBS" docs={docs} onPick={() => {}} />);
+    fireEvent.click(screen.getByLabelText("Project: JOBS"));
+    expect(screen.queryByText("All projects")).toBeNull();
+    expect(screen.getAllByRole("button").filter((b) => b.getAttribute("aria-current") !== null)).toHaveLength(2);
   });
 
   test("picking another project reports it; picking the active one is a no-op", () => {
@@ -696,7 +697,7 @@ describe("useDocuments: the stream is watched, not trusted", () => {
     }
   }
 
-  const documents = { documents: [], groups: {}, projects: {}, activeProject: "*", start: null };
+  const documents = { documents: [], groups: {}, projects: {}, recentProject: null, start: null };
 
   const mount = async () => {
     FakeEventSource.opened = [];
@@ -757,7 +758,7 @@ describe("useDocuments: the tab's own project", () => {
       this.onmessage?.({ data: JSON.stringify(event) });
     }
   }
-  const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => (url === "/api/active" ? { project: "beta" } : { documents: [], groups: {}, projects: {}, activeProject: "alpha", start: null }) }) as unknown as Response);
+  const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => (url === "/api/recent-project" ? { project: "beta" } : { documents: [], groups: {}, projects: { alpha: "alpha", beta: "beta" }, recentProject: "alpha", start: null }) }) as unknown as Response);
 
   const mount = async () => {
     FakeEventSource.opened = [];
@@ -785,7 +786,7 @@ describe("useDocuments: the tab's own project", () => {
     act(() => result.current.chooseProject("beta"));
     expect(result.current.activeProject).toBe("beta");
     expect(FakeEventSource.opened.at(-1)!.url).toBe("/events?project=beta");
-    expect(fetchMock.mock.calls.some(([url]) => url === "/api/active")).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/recent-project")).toBe(true);
   });
 
   test("the agent's open on this tab's project is heard", async () => {

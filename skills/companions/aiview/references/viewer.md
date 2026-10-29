@@ -4,8 +4,8 @@
 colour per kind, click to filter), tag chips (multi-select; the most recently active first, twelve shown and the rest behind "+ n more", a chosen one always in sight, the tab's project's own slug left out), grouped documents inside
 collapsible containers (display title and member count, members in reading order),
 ungrouped documents flat, missing files struck through. The tab's own project scopes the
-list; the selector at the top switches this tab only and sets where a new tab opens. The
-agent's `use` moves no tab. A project with news since the tab last visited it carries a dot.
+list (there is no All projects); the selector at the top switches this tab only and sets where a
+new tab opens. No agent verb moves a tab but `open` and `show`, on the agent's project. A project with news since the tab last visited it carries a dot.
 
 **Right, the document.** Title, absolute local path (click to copy), kind, started,
 tags, updated, then the rendered document: Markdown with GFM and mermaid, an HTML

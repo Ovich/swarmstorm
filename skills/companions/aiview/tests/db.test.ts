@@ -206,14 +206,15 @@ test("removeProject: refused while documents reference it, allowed once empty", 
   assert.deepEqual(index.allProjects(), []);
 });
 
-test("active project: defaults to All, round-trips, and never reads back as a ghost", () => {
-  assert.equal(index.activeProject(), "*");
+test("recent project (D41): none at first, round-trips, never a ghost, and no All projects", () => {
+  assert.equal(index.recentProject(), null);
   index.upsertProject("CIIP");
-  assert.equal(index.setActiveProject("CIIP"), "CIIP");
-  assert.equal(index.activeProject(), "CIIP");
-  // the project disappears behind the pointer -> All projects, not a stale name
+  index.recordRecentProject("CIIP");
+  assert.equal(index.recentProject(), "CIIP");
+  // the project disappears behind the record -> none, not a stale name
   index.removeProject("CIIP");
-  assert.equal(index.activeProject(), "*");
+  assert.equal(index.recentProject(), null);
+  assert.equal("activeProject" in index, false, "no global active project is left to read");
 });
 
 test("pending: added rows come back for that document only, in order", () => {

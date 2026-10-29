@@ -118,9 +118,6 @@ export function boardReposInText(text: string): string[] {
   return [];
 }
 
-/** `*` means All projects: no scope. */
-export const ALL_PROJECTS = "*";
-
 interface Row {
   id: number;
   file_path: string;
@@ -166,9 +163,10 @@ export interface Index {
   upsertProject(slug: string, patch?: { title?: string; addPaths?: string[] }): Project;
   /** Refused while documents still reference it: `documents` reports how many. */
   removeProject(slug: string): { removed: boolean; documents: number };
-  /** The active project slug, or `*` for All projects. */
-  activeProject(): string;
-  setActiveProject(slug: string): string;
+  /** The project a tab with none in its hash starts on, once (board-split#D41): the one a tab or an agent's
+   *  `open` showed last, null when none or it was removed. Never a scope: no verb reads it. */
+  recentProject(): string | null;
+  recordRecentProject(slug: string): void;
   remove(id: number): boolean;
   touch(id: number): void;
   /** Pin or unpin a document; false when there is no such document. */
@@ -466,23 +464,17 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
       return { removed: info.changes > 0, documents: 0 };
     },
 
-    activeProject() {
-      const row = db.prepare("SELECT value FROM state WHERE key = 'active_project'").get() as
-        | { value: string }
-        | undefined;
-      const slug = row?.value ?? ALL_PROJECTS;
-      if (slug === ALL_PROJECTS) return slug;
-      // A project removed behind the active pointer reads as All projects, never as a
-      // stale name the selector cannot explain.
-      const exists = db.prepare("SELECT 1 FROM projects WHERE slug = ?").get(slug);
-      return exists ? slug : ALL_PROJECTS;
+    recentProject() {
+      // the store key predates D41's widening, kept so an existing data home reads its last project
+      const row = db.prepare("SELECT value FROM state WHERE key = 'active_project'").get() as { value: string } | undefined;
+      if (!row) return null;
+      return db.prepare("SELECT 1 FROM projects WHERE slug = ?").get(row.value) ? row.value : null;
     },
 
-    setActiveProject(slug) {
+    recordRecentProject(slug) {
       db.prepare(
         "INSERT INTO state (key, value) VALUES ('active_project', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       ).run(slug);
-      return slug;
     },
 
     addPending(documentId, label, note = "") {
