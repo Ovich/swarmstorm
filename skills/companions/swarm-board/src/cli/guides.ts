@@ -118,16 +118,37 @@ export function guidesFor(guides: Guide[], files: string[]): Guide[] {
 export const guidesLine = (guides: Guide[]): string | null =>
   guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
 
-/** How `merged --guides` settles the guides merge-lock listed: those left out, names it never listed,
- *  and entries whose verdict is neither `ok` nor `n/a <why>`. */
-export function guidesSettlement(arg: string, listed: string[]): { missing: string[]; unknown: string[]; unjudged: string[] } {
-  const entries = arg
-    .split(/,(?=\s*[^\s:,]+\s*:)/)
-    .map((e) => /^\s*([^:\s]+)\s*:\s*(.*)$/s.exec(e))
+/** A guide as `merged --guides` names it: its own name, or its skill's (`guide-<name>`), both taken (S4). */
+const guideName = (token: string): string => token.replace(/^guide-/, "");
+
+/** How `merged --guides` settles the guides merge-lock listed: a separator other than a comma before a listed
+ *  guide (`separator`, with `corrected`, the argument with commas), a token that is no `<name>:<verdict>`
+ *  (`malformed`), those left out, names it never listed, and entries whose verdict is neither `ok` nor `n/a <why>`. */
+export function guidesSettlement(
+  arg: string,
+  listed: string[],
+): { separator: string | null; corrected: string; malformed: string[]; missing: string[]; unknown: string[]; unjudged: string[] } {
+  // a ";" (or "|", "&", a newline) before "<listed guide>:" separates guides: refused, never read as a verdict's text
+  const wrongSeparator = /\s*([;&|\n])\s*((?:guide-)?[^\s:,;&|]+)\s*:/g;
+  let separator: string | null = null;
+  const corrected = arg.replace(wrongSeparator, (whole, sep: string, name: string) => {
+    if (!listed.includes(guideName(name))) return whole;
+    separator ??= sep;
+    return `, ${name}:`;
+  });
+  const tokens = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((t) => t.trim()).filter(Boolean);
+  // a token with no colon, or a comma-piece opening on a listed guide's name with no colon after it ("ui ok")
+  const bare = arg.split(",").map((t) => t.trim()).filter((t) => !t.includes(":") && listed.includes(guideName(t.split(/\s+/)[0])));
+  const malformed = [...tokens.filter((t) => !/^[^:\s]+\s*:/.test(t)), ...bare];
+  const entries = tokens
+    .map((e) => /^([^:\s]+)\s*:\s*(.*)$/s.exec(e))
     .filter((m): m is RegExpExecArray => !!m)
-    .map((m) => ({ name: m[1], verdict: m[2].trim() }));
+    .map((m) => ({ name: guideName(m[1]), verdict: m[2].trim() }));
   const named = entries.map((e) => e.name);
   return {
+    separator,
+    corrected,
+    malformed,
     missing: listed.filter((g) => !named.includes(g)),
     unknown: named.filter((n) => !listed.includes(n)),
     unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name),

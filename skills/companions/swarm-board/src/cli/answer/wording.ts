@@ -43,9 +43,13 @@ export const WORDING = {
   doneNone: "no phase is open: nothing to mark",
 
   // ── the merge (V12: every command runnable as printed) ──
-  mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`,
-  mergeGranted: (cli: Command, as: string, guides: boolean) =>
-    `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
+  mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
+  /** S4: the --guides form filled with this merge's guides, as merged takes it */
+  guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
+  mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
+    `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+  /** D2: an argument error names what is wrong, then usage, then one corrected form */
+  guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
 
   // ── agree ──
