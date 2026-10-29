@@ -54,13 +54,20 @@ questions are rows with status open and an owner. A departure from a rule is a r
 what is owed for it. The status line names the `agent default` rows the person confirmed;
 `aiview plan check <plan>` warns on an approved plan whose defaults it does not name.
 
+## 9. Guides
+The project's guides that apply: the shipped `guide-*` skills and the project's own under
+`<repo>/.claude/skills/guide-*`. One row per guide, with the decision this plan takes under it:
+`guide-deepen-module`: `<X>` is the one entry point, `<Y>` stays hidden. A guide that applies
+and has no decision yet is an open row in Decisions. How a seat is held to them while it works
+is the `swarm-board` skill's `references/worker.md`.
+
 # Execution
 
-## 9. The phases
+## 10. The phases
 One heading per phase: what it waits on, its goal, every seat's role and area, its check,
 its mark, and its tasks once posted at its open.
 
-## 10. The mandate
+## 11. The mandate
 The orchestrator's mandate, as answered.
 
 ## Interview log
