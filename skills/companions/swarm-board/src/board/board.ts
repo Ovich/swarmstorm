@@ -456,6 +456,8 @@ const ORCHESTRATOR = "orchestrator";
 /** A watch event can be missed (a coalesced write, a platform quirk); the store is re-read
  *  this often regardless, so a missed event costs at most this much. */
 const WAIT_POLL_MS = 1000;
+/** D4: how long after its listener returned a member is still taken to be re-arming it, the answer that returned having said so. */
+const LISTENER_REARM_GRACE_MS = 60 * 1000;
 const LINE_WIDTH = 100;
 const STALE_MS = 10 * 60 * 1000;
 /** A pending wait's looks are logged in call_log at most this often: well under STALE_MS, never a row per tick. */
@@ -782,6 +784,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the owing span (idea 1, rule 5): since when the member waits while owing the phase, and when its last wait returned
   upkeep("member_activity", "owe_since", "owe_since INTEGER");
   upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
+  // D4 (G16): the link's report of the member's background listener; null from an older link, which leaves the in-wait column
+  upkeep("member_activity", "listener_running", "listener_running INTEGER");
+  upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
   const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
@@ -896,7 +901,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       ...(x.carry === true ? { carry: true as const } : {}),
     }));
 
-  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind FROM participants p JOIN runs r ON r.id = p.run`;
+  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
+    LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
+  /** D4 (G16): the member has a listener when its link reports one running, or one that returned so lately that its own
+   *  answer told the member to re-arm it; with no report, the in-wait column. */
+  const listensNow = (r: Row): boolean => {
+    if (r.listener_running == null) return Number(r.listening) === 1;
+    if (Number(r.listener_running) === 1) return true;
+    return r.listener_ended_at != null && Date.now() - Number(r.listener_ended_at) < LISTENER_REARM_GRACE_MS;
+  };
 
   const toParticipant = (r: Row): Participant => ({
     id: Number(r.id),
@@ -909,7 +922,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     nick: nickOf(r),
     ended: r.ended_at != null,
     worktree: r.worktree == null ? null : String(r.worktree),
-    listening: Number(r.listening) === 1,
+    listening: listensNow(r),
     subscriptions: subsOf(r),
   });
 
@@ -2058,6 +2071,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           bg?.since ?? null,
           bg?.outputGrewAt ?? null,
           act.transcript ?? null,
+          run,
+          member,
+        );
+        const listener = act.listener ?? null;
+        db.prepare("UPDATE member_activity SET listener_running = ?, listener_ended_at = ? WHERE run = ? AND member = ?").run(
+          listener == null ? null : listener.running ? 1 : 0,
+          listener?.endedAt ?? null,
           run,
           member,
         );

@@ -1685,6 +1685,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "transcript", "transcript TEXT");
   upkeep("member_activity", "owe_since", "owe_since INTEGER");
   upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
+  upkeep("member_activity", "listener_running", "listener_running INTEGER");
+  upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   const claimKey = db.prepare("PRAGMA table_info(claims)").all().find((c) => c.name === "participant");
   if (claimKey && claimKey.pk === 0) {
@@ -1777,7 +1779,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     scope: x.scope === "run" ? "run" : "any",
     ...x.carry === true ? { carry: true } : {}
   }));
-  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind FROM participants p JOIN runs r ON r.id = p.run`;
+  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
+    LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
+  const listensNow = (r) => {
+    if (r.listener_running == null) return Number(r.listening) === 1;
+    if (Number(r.listener_running) === 1) return true;
+    return r.listener_ended_at != null && Date.now() - Number(r.listener_ended_at) < LISTENER_REARM_GRACE_MS;
+  };
   const toParticipant = (r) => ({
     id: Number(r.id),
     run: Number(r.run),
@@ -1789,7 +1797,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     nick: nickOf(r),
     ended: r.ended_at != null,
     worktree: r.worktree == null ? null : String(r.worktree),
-    listening: Number(r.listening) === 1,
+    listening: listensNow(r),
     subscriptions: subsOf(r)
   });
   const participantById = (id) => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id));
@@ -2689,6 +2697,13 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           run3,
           member
         );
+        const listener = act.listener ?? null;
+        db.prepare("UPDATE member_activity SET listener_running = ?, listener_ended_at = ? WHERE run = ? AND member = ?").run(
+          listener == null ? null : listener.running ? 1 : 0,
+          listener?.endedAt ?? null,
+          run3,
+          member
+        );
         db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run3, member, at.toISOString(), act.tokens);
         const kill = act.breach ?? null;
         const me = kill ? db.prepare("SELECT id, joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member) : null;
@@ -3251,7 +3266,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, SHARES_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS2;
+var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, LISTENER_REARM_GRACE_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, SHARES_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS2;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -3271,6 +3286,7 @@ var init_board = __esm({
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR2 = "orchestrator";
     WAIT_POLL_MS = 1e3;
+    LISTENER_REARM_GRACE_MS = 60 * 1e3;
     LINE_WIDTH = 100;
     STALE_MS = 10 * 60 * 1e3;
     WAIT_LOG_EVERY_MS = 60 * 1e3;
@@ -7584,7 +7600,9 @@ var freshCursor = () => ({
   endedTurns: 0,
   background: /* @__PURE__ */ new Map(),
   boardsOwn: /* @__PURE__ */ new Set(),
-  breach: null
+  breach: null,
+  listeners: /* @__PURE__ */ new Set(),
+  listenerEndedAt: null
 });
 var KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
 var WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
@@ -7658,10 +7676,14 @@ function textOf(content) {
   if (!Array.isArray(content)) return "";
   return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
 }
-function closeNotified(cursor, text) {
+function closeNotified(cursor, text, at) {
   if (!text.includes("<task-notification>")) return;
-  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) cursor.background.delete(m[1]);
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
+    cursor.background.delete(m[1]);
+    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
+  }
 }
+var commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
 function awaitedBackground(cursor) {
   const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
   let oldest = null;
@@ -7677,7 +7699,7 @@ function awaitedBackground(cursor) {
   return { target: oldest.target, since: oldest.since, outputGrewAt };
 }
 function observe(transcript, from) {
-  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null } : freshCursor();
+  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
@@ -7705,7 +7727,7 @@ function observe(transcript, from) {
       } catch {
         continue;
       }
-      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt);
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
       if (line.type !== "assistant" && line.type !== "user") continue;
       const at = timeOf(line, mtime);
       const content = Array.isArray(line.message?.content) ? line.message.content : [];
@@ -7731,6 +7753,7 @@ function observe(transcript, from) {
           const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          if (input?.run_in_background === true && typeof command === "string" && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
         }
@@ -7738,9 +7761,9 @@ function observe(transcript, from) {
         if (cursor.inTurn && !inTurn) cursor.endedTurns++;
         cursor.inTurn = inTurn;
       } else {
-        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content);
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
         for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text);
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
           if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
           const result = textOf(part.content);
           const call = cursor.open.get(part.tool_use_id);
@@ -7782,7 +7805,8 @@ function observe(transcript, from) {
       inTurn: cursor.inTurn,
       lastLine: cursor.lastLine,
       background: awaitedBackground(cursor),
-      breach: cursor.breach
+      breach: cursor.breach,
+      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
     },
     cursor
   };

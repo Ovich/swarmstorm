@@ -1384,3 +1384,31 @@ test("G3: on a home other than the default, every printed command carries SWARMS
   assert.ok(commands.length >= 2, r.stdout);
   for (const l of commands) assert.match(l, /: SWARMSTORM_HOME=\S+ node \S+ /, l);
 });
+
+test("the listener line follows the link's report of the member's listener, not its in-wait column (D4, G16)", async () => {
+  const id = Number(openRun());
+  run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
+  const as = ["--as", "review-tool/S5"];
+  const report = async (listener: { running: boolean; endedAt: number | null }): Promise<void> => {
+    const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
+    try {
+      board.recordActivity(id, "S5", { grewAt: Date.now(), tokens: 1, context: null, openTool: null, lastTool: null, finished: false, listener }, new Date());
+    } finally {
+      board.close();
+    }
+  };
+  const ends = (r: { stdout: string }): boolean => r.stdout.trimEnd().split("\n").at(-1) === LISTEN("review-tool/S5");
+  // running: no line after post, claim or agree
+  await report({ running: true, endedAt: null });
+  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/a.ts"), run("agree", ...as, "S5 edits all of it", "--about", "src/a.ts", "--with", "S3")])
+    assert.equal(r.status === 0 && !ends(r), true, r.stdout + r.stderr);
+  // none: the line
+  await report({ running: false, endedAt: null });
+  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/b.ts")]) assert.equal(ends(r), true, r.stdout);
+  // just returned: its own answer said to re-arm it, no line
+  await report({ running: false, endedAt: Date.now() - 5_000 });
+  assert.equal(ends(run("post", ...as, "again")), false);
+  // returned long ago: the line
+  await report({ running: false, endedAt: Date.now() - 10 * 60_000 });
+  assert.equal(ends(run("post", ...as, "later")), true);
+});

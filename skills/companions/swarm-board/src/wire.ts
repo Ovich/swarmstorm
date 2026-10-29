@@ -95,6 +95,9 @@ export type MemberActivity = {
   /** the member's last kill that was not by PID (idea 4): by name or pattern always a breach; by a port lookup a breach
    *  only for a port whose lock it does not hold, which the board checks. Null or absent when none was seen. */
   breach?: { command: string; kind: "pattern" | "port"; ports?: number[]; at: number } | null;
+  /** the member's background listener (D4, G16): `running` while a background `wait --mentions` it started is not yet
+   *  notified; `endedAt` when the last one was. Absent from an older link: the board falls back to its in-wait column. */
+  listener?: { running: boolean; endedAt: number | null } | null;
 };
 
 // up: a link (or a CLI with no member) to the server
