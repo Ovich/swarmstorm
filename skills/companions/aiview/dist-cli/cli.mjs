@@ -9650,6 +9650,13 @@ function mountBoard(sse, opts = {}) {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify(obj));
   };
+  const sameRepo = (a, b) => {
+    const norm2 = (r) => {
+      const g = fs10.existsSync(r) && fs10.statSync(r).isFile() ? commonGitDir(r) : r;
+      return process.platform === "win32" ? path12.resolve(g).toLowerCase() : path12.resolve(g);
+    };
+    return norm2(a) === norm2(b);
+  };
   const repoNamed = async (board, url) => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
     const key = url.searchParams.get("repo");
@@ -9659,7 +9666,7 @@ function mountBoard(sse, opts = {}) {
       return repo2 ? { repo: repo2 } : { missing: `no run ${run}` };
     }
     if (key !== null) {
-      const repo2 = repos.find((r) => r.repo === key)?.repo;
+      const repo2 = repos.find((r) => sameRepo(r.repo, key))?.repo;
       return repo2 ? { repo: repo2 } : { missing: `no repository ${key}` };
     }
     const repo = repos[0]?.repo;
@@ -9674,7 +9681,8 @@ function mountBoard(sse, opts = {}) {
   const answerStats = async (board, url, res) => {
     const q = url.searchParams;
     const key = q.get("repo");
-    const named = key !== null ? (await board.repos()).some((r) => r.repo === key) ? { repo: key } : { missing: `no repository ${key}` } : await repoNamed(board, url);
+    const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : void 0;
+    const named = key !== null ? known ? { repo: known } : { missing: `no repository ${key}` } : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");
     const since = q.get("since");
@@ -9723,6 +9731,7 @@ var init_board = __esm({
     init_reader();
     await init_db();
     init_home();
+    init_place();
     DEFAULT_SWARM_ENTRY = path12.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
     SERVER_STATE_FILE = "swarm-server.json";
   }

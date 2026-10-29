@@ -130,6 +130,13 @@ test("404 for an unknown run", async () => {
   }
 });
 
+test("a repository asked in another spelling (/ for \\, aiview's stored form) answers the board's own", async () => {
+  const other = process.platform === "win32" ? REPO.split("\\").join("/").toUpperCase() : REPO.split("/").join("//");
+  const r = await fetch(`${base}/api/board?repo=${encodeURIComponent(other)}`);
+  assert.equal(r.status, 200);
+  assert.equal(((await r.json()) as BoardBody).snapshot.repo, REPO);
+});
+
 test("404 for an unknown repository", async () => {
   const r = await fetch(`${base}/api/board?repo=${encodeURIComponent("/nowhere/.git")}`);
   assert.equal(r.status, 404);

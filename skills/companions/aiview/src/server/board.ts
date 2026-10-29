@@ -10,6 +10,7 @@ import { openBoardReader, type BoardReader, type Kind, type StatsScope } from ".
 import type { BoardChangedEventPayload } from "../core/api.ts";
 import { TOOL_ROOT } from "../core/db.ts";
 import { DATA_ROOT } from "../core/home.ts";
+import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
 import type { SseHub } from "./sse.ts";
 
 export interface BoardRoutes {
@@ -64,6 +65,16 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
 
   /** The repository a request names, as swarm's page server resolved it: a run's, a repository, or
    *  the most recently active; `missing` is the 404's message. `/api/run?id=` kept as `?run=`. */
+  /** Whether two spellings name one repository: `/` or `\`, on Windows any case, a worktree's `.git` its common one (aiview stores `/`, the board keys `\`). */
+  const sameRepo = (a: string, b: string): boolean => {
+    const norm = (r: string) => {
+      // a worktree's own `.git` (a file) names its repository's common git dir, as the board keys it (G6)
+      const g = fs.existsSync(r) && fs.statSync(r).isFile() ? commonGitDir(r) : r;
+      return process.platform === "win32" ? path.resolve(g).toLowerCase() : path.resolve(g);
+    };
+    return norm(a) === norm(b);
+  };
+
   const repoNamed = async (board: BoardReader, url: URL): Promise<{ repo: string } | { missing: string }> => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
     const key = url.searchParams.get("repo");
@@ -73,7 +84,7 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
       return repo ? { repo } : { missing: `no run ${run}` };
     }
     if (key !== null) {
-      const repo = repos.find((r) => r.repo === key)?.repo;
+      const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
       return repo ? { repo } : { missing: `no repository ${key}` };
     }
     const repo = repos[0]?.repo; // the most recently active: repos() lists it first
@@ -95,7 +106,8 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     const key = q.get("repo");
     // a named repository is read as `swarm stats --repo` reads it, its run whatever its age, pruned with its summary
     // kept or not in the board's list (plan D40); a run named alone is found among the runs the board lists
-    const named = key !== null ? ((await board.repos()).some((r) => r.repo === key) ? { repo: key } : { missing: `no repository ${key}` }) : await repoNamed(board, url);
+    const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : undefined;
+    const named = key !== null ? (known ? { repo: known } : { missing: `no repository ${key}` }) : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");
     const since = q.get("since");
