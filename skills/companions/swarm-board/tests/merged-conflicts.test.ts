@@ -81,35 +81,32 @@ const rebaseStartSecond = (r: Repo, wt: string): number => {
     .find((l) => /\trebase \(start\):/.test(l))!;
   return Number(line.match(/@\{(\d+)\}/)![1]);
 };
-/** Waits, busily, until a second has just begun. */
-const atSecondStart = (): void => {
-  while (Date.now() % 1000 > 30) {
-    /* the second's start */
-  }
+/** Sets every rebase entry of the worktree's HEAD reflog to `second`: the test's own clock for the rebase, so it shares
+ *  the grant's second however slow the machine (a reflog line ends `<unix> <tz>` before its tab and subject). */
+const rebaseAt = (r: Repo, wt: string, second: number): void => {
+  const log = path.resolve(wt, r.git(wt, "rev-parse", "--git-path", "logs/HEAD").trim());
+  const lines = fs.readFileSync(log, "utf8").split("\n");
+  const dated = lines.map((l) => (/\trebase/.test(l) ? l.replace(/ \d+ ([+-]\d{4})\t/, ` ${second} $1\t`) : l));
+  fs.writeFileSync(log, dated.join("\n"));
 };
 
 test("a rebase in the grant's own second, before the grant, is not replayed (D36)", () => {
-  // the rebase and the grant must share one second: arranged at a second's start, checked, and tried again otherwise
-  for (let attempt = 1; ; attempt++) {
-    const r = fresh();
-    const id = openTwoRunners(r);
-    r.commitFile(r.wtB, "src/a.ts", edit(0, "export const one = 'b';"));
-    r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
-    atSecondStart();
-    assert.deepEqual(r.rebaseOntoMain(r.wtB, { "src/a.ts": edit(0, "export const one = 'both';") }).conflicted, ["src/a.ts"]);
-    r.cli(r.wtB, "merge-lock", "--onto", "main");
-    const out = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
-    const run = runStats(r, id);
-    const granted = run.members.find((m) => m.member === "review-tool/S5")!.intervals.find((i) => i.what === "merging")!;
-    if (Math.floor(Date.parse(granted.from) / 1000) !== rebaseStartSecond(r, r.wtB)) {
-      assert.ok(attempt < 5, "the rebase and the grant never shared a second");
-      continue;
-    }
-    assert.deepEqual(tellLines(out), []);
-    assert.deepEqual(conflictMarks(run, "review-tool/S5"), [], "files: []");
-    assert.deepEqual(run.plan.conflicts, { known: 0, inShared: 0, unknownMerges: 0 });
-    return;
-  }
+  const r = fresh();
+  const id = openTwoRunners(r);
+  r.commitFile(r.wtB, "src/a.ts", edit(0, "export const one = 'b';"));
+  r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
+  assert.deepEqual(r.rebaseOntoMain(r.wtB, { "src/a.ts": edit(0, "export const one = 'both';") }).conflicted, ["src/a.ts"]);
+  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  // the rebase and the grant share one second: the rebase's entries dated at the grant's second, before the merged call
+  const granted = runStats(r, id).members.find((m) => m.member === "review-tool/S5")!.intervals.find((i) => i.what === "merging")!;
+  const grantSecond = Math.floor(Date.parse(granted.from) / 1000);
+  rebaseAt(r, r.wtB, grantSecond);
+  assert.equal(rebaseStartSecond(r, r.wtB), grantSecond);
+  const out = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
+  const run = runStats(r, id);
+  assert.deepEqual(tellLines(out), []);
+  assert.deepEqual(conflictMarks(run, "review-tool/S5"), [], "files: []");
+  assert.deepEqual(run.plan.conflicts, { known: 0, inShared: 0, unknownMerges: 0 });
 });
 
 test("a conflicted file nobody else held prints no tell line (D5)", () => {

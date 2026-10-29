@@ -64,7 +64,10 @@ export function normalise(text: string, home: string, nicks: Map<string, string>
     // a roster row's unread count moves with the liveness events the board posts on its own clock
     .replace(/  \d+ unread  /g, "  <n> unread  ")
     // the idle event comes on the server's tick, before or after a verb: dropped, it is no answer's line
-    .replace(/^#<seq> \S+ \(event\): idle .*\n/gm, "");
+    .replace(/^#<seq> \S+ \(event\): idle .*\n/gm, "")
+    // likewise the liveness tick's "no transcript found" (30 s after a join with no link, as a scene with none has): it
+    // comes on the server's clock, inside a long scene under load or not at all, never as a verb's answer
+    .replace(/^#<seq> \S+ \(event\): no transcript found for .*\n/gm, "");
 }
 
 /** One scene: a fresh data home and repository, a run of the role's kind, its member joined, the situation set up. */

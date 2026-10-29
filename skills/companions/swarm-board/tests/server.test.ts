@@ -290,7 +290,7 @@ const untilLinkLost = async (run: number, seat: string): Promise<void> => {
   }
   assert.fail(`${seat}'s link never recorded lost`);
 };
-const goneEvents = (snap: any): { body: string; mentions: string[] }[] => snap.events.filter((e: { event?: string }) => e.event === "gone");
+const goneEvents = (snap: any): { body: string; mentions: string[]; at: string }[] => snap.events.filter((e: { event?: string }) => e.event === "gone");
 /** A run with S1 and S2 joined, and S1's link welcomed. */
 const linkedRun = async () => {
   const c = await welcomed();
@@ -339,8 +339,12 @@ test("gone is posted within 35 s of a link lost and not back; never for an ended
   await new Promise((r) => setTimeout(r, 1500));
   assert.equal(goneEvents(await value(c, "snapshot", REPO)).length, 0, "not before 30 s");
   skew += 2_000;
-  const gone = await within(c, 4000, (snap) => goneEvents(snap)[0]);
+  // past 30 s on the server's clock: the gone is posted at its next tick. Waited for as the event, and timed by the
+  // event's own time on that clock, never by how fast this loaded process reads snapshots (S31, T14)
+  const crossedAt = Date.now() + skew;
+  const gone = await within(c, 60_000, (snap) => goneEvents(snap)[0]);
   assert.equal(gone.body, `gone ${s1.name}: its link was lost`);
+  assert.ok(Date.parse(gone.at) - crossedAt <= 4000, `gone posted ${Date.parse(gone.at) - crossedAt} ms after 31 s on the server's clock`);
   await new Promise((r) => setTimeout(r, 1500));
   assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`gone ${s1.name}: its link was lost`]);
 });

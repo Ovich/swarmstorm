@@ -11,6 +11,7 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectBoard } from "../src/client/remote.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import { linkPipe } from "../src/link/link.ts";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
@@ -151,30 +152,30 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   assert.doesNotMatch(verb.stdout, /start your link now/, "the verb went through the agent's link");
   link.kill();
   await exited;
-  const killedAt = Date.now();
-  // the page's reading, straight to the server: no link of S3 is started by it
+  // the page's reading, straight to the server: no link of S3 is started by it. The gone event is waited for as itself
+  // and timed on the server's own clock, from when it saw the link lost to the event's time: never by how fast this
+  // loaded machine runs the test's reads (S31, T14)
   const reader = await connectBoard({ dataRoot: h.r.home });
+  let gone: { at: string } | undefined;
   let state = "";
-  let goneEvent = false;
   try {
     const repo = (await reader.participant(h.member.name))!.repo;
-    while (Date.now() - killedAt < 35000) {
-      state = (await reader.roster(repo)).find((e) => e.name === h.member.name)?.state ?? "";
-      if (state === "gone") break;
-      await new Promise((res) => setTimeout(res, 250));
+    for (const end = Date.now() + 55_000; !gone && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
+      gone = (await reader.snapshot(repo)).events.find((e) => e.event === "gone" && e.body.startsWith("gone harness-plan/S3"));
     }
-    // the gone event follows at the server's next tick: waited for in the store, as the roster was, not by a timer
-    // of the verb's own (a loaded machine runs few `deliver` spawns in a few seconds, S31)
-    for (const end = Date.now() + 10000; state === "gone" && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
-      goneEvent = (await reader.snapshot(repo)).events.some((e) => e.event === "gone" && e.body.startsWith("gone harness-plan/S3"));
-      if (goneEvent) break;
-    }
+    state = (await reader.roster(repo)).find((e) => e.name === h.member.name)?.state ?? "";
   } finally {
     reader.close();
   }
-  assert.equal(state, "gone", `S3 reads ${state} ${Date.now() - killedAt} ms after its link was killed`);
+  assert.ok(gone, "the server's tick posted gone harness-plan/S3");
+  assert.equal(state, "gone");
+  const db = openRawStore(path.join(h.r.home, "swarm.sqlite"), { readOnly: true });
+  const lost = db.prepare("SELECT lost_at FROM member_links WHERE run = ? AND member = 'S3'").get(h.run) as { lost_at: number | null } | undefined;
+  db.close();
+  assert.ok(lost?.lost_at != null, "the server recorded S3's link lost");
+  const afterLoss = Date.parse(gone.at) - lost.lost_at;
+  assert.ok(afterLoss >= 30_000 && afterLoss <= 35_000, `gone posted ${afterLoss} ms after the server saw the link lost`);
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
-  assert.ok(goneEvent, "the server's tick posted gone harness-plan/S3");
   const told = h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
   assert.match(told, /gone harness-plan\/S3/);
   assert.doesNotMatch(told, /stalled/);
