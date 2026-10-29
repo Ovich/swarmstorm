@@ -10,7 +10,7 @@ import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { claimsOf, type HeldMergeLock } from "./claims.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type Stats } from "../packs/registry.ts";
+import { registry, type PackCtx, type Stats } from "../packs/registry.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -1090,6 +1090,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const doingOf = (id: number): string => String((db.prepare("SELECT doing FROM participants WHERE id = ?").get(id) as Row).doing) || "no note";
   const claims = claimsOf({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf });
+  /** The member's pack (its kind's, phase 3's switch point is w1's) and its context for one call (D9, D10). */
+  const packOf = (p: Participant) => registry.packNamed(p.kindPack);
+  const packCtxOf = (p: Participant): PackCtx => ({ run: p.run, repo: p.repo, tables: claims, insertMessage: (author, body, about) => insertMessage(author, body, about, "msg") });
   /** The messages not yet delivered to `me`, oldest first: its own run's and any other's (the caller filters). */
   const unseenRows = (me: Participant): Row[] =>
     db
@@ -1113,10 +1116,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
    *  `mentionsOnly`: only what mentions `p` or is urgent is taken and marked; the rest stays. */
   const deliverTo = (p: Participant, fromWait: boolean, mentionsOnly = false): Delivery => {
     const me = participantById(p.id);
-    // from any run, an agreement or endorsement about a path the caller holds is for it too (D26, plan D2)
-    const named = (m: Message): boolean =>
-      mentionsMe(m, me) ||
-      ((m.kind === "agreement" || m.kind === "endorsement") && m.about != null && claims.holds(me, m.about));
+    // a mention, or what the caller's pack says is for it too (the code pack: an agreement about a path it holds)
+    const pack = packOf(me);
+    const named = (m: Message): boolean => mentionsMe(m, me) || (pack?.alsoFor?.(me, m, packCtxOf(me)) ?? false);
     const whole = profileOf(me.kind).wholeThread;
     // a post of the caller's own run, not an event, in a whole-thread run: everyone's in full
     const ownPost = (m: Message): boolean => whole && m.run === me.run && m.kind !== "event";
@@ -2513,7 +2515,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
         const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
-        const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
+        const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
         named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
         if (!named.length && fresh.kindPack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
@@ -2568,9 +2570,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
-      // a member holding the merge lock is mid-merge, never idle
-      if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== undefined) return false;
-      if (db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== undefined) return false;
+      // a member its pack calls busy (the code pack: holding a claim or the merge lock) is never idle
+      const fresh = participantById(p.id);
+      if (packOf(fresh)?.busy?.(fresh, packCtxOf(fresh))) return false;
       // rechecked at answer time: a mention landed since the wait returned empty means work
       return unreadOf(p.id) === 0;
     },

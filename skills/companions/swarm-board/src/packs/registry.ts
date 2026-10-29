@@ -49,3 +49,4 @@ export type Totals = Omit<CoreStats.Totals, "series"> &
   CodeTotals & { series: CoreStats.Totals["series"] & Record<"slicesMerged" | "sliceTimeP50" | "lockWaitP50" | "sharedAgreed" | "flags" | "conflicts", (number | null)[]> };
 export type Stats = Omit<CoreStats.Stats, "runs" | "totals" | "files"> & { runs: RunStats[]; totals: Totals; files: FileAcrossRuns[] };
 export type { FileAcrossRuns, PlanRunStats, SharedFile };
+export type { PackCtx } from "./types.ts";

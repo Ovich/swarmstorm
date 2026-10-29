@@ -47,6 +47,8 @@ export interface Claims {
   heldInOtherRun(p: Participant, rel: string): boolean;
   /** `p` holds `about` (a path, or its tail) now. */
   holds(p: Participant, about: string): boolean;
+  /** `p` holds a claim or the merge lock now: mid-work, never idle. */
+  holdsAny(p: Participant): boolean;
   /** The live holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
   holderNames(repo: string, about: string): string[];
 }
@@ -238,6 +240,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         .map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
 
+    holdsAny(p) {
+      return (
+        db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== undefined ||
+        db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== undefined
+      );
+    },
+
     holds(p, about) {
       const f = fold(relPath(p.repo, about) ?? slashes(about));
       if (!f) return false;
@@ -419,11 +428,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         // D7: the other party of an agreement about a merged file hears of the merge, claim or not
         const agreed = new Set<string>();
         const foldedWanted = new Set(rels.map(fold));
-        const live = new Set((db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo) as Row[]).map((o) => `${o.plan}/${o.seat}`));
-        for (const a of db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo) as Row[]) {
+        // S25: a live member by name, with the seq it joined at: an agreement made before it joined was another member's
+        // of the same name (a seat's earlier run), never its own
+        const joinedAt = new Map((db.prepare("SELECT p.since_seq, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo) as Row[]).map((o) => [`${o.plan}/${o.seat}`, Number(o.since_seq)]));
+        for (const a of db.prepare("SELECT seq, author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo) as Row[]) {
           if (!foldedWanted.has(fold(slashes(String(a.about))))) continue;
           const parties = [participantById(Number(a.author)).name, ...(JSON.parse(String(a.mentions)) as string[])];
-          for (const n of parties) if (n !== me.name && live.has(n) && !told.has(n)) agreed.add(n);
+          for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
         // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
