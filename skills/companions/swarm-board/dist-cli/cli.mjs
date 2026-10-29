@@ -1287,7 +1287,7 @@ var init_liveness = __esm({
       }
     };
     IDLE_MS = 15 * 60 * 1e3;
-    NO_TRANSCRIPT_MS = 30 * 1e3;
+    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     STALL_MS_DEFAULT = 6e4;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
@@ -1304,6 +1304,12 @@ var init_liveness = __esm({
 import fs3 from "node:fs";
 import os2 from "node:os";
 import path3 from "node:path";
+function callWordsOf(input) {
+  const fields = input && typeof input === "object" ? input : {};
+  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
+  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
+  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
+}
 function shellWords(command, backslashEscapes = true) {
   const words = [];
   let word = "";
@@ -1500,7 +1506,7 @@ function awaitedBackground(cursor) {
     } catch {
     }
   }
-  return { target: oldest.target, since: oldest.since, outputGrewAt };
+  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
 }
 function commandActsAsOther(command, binding, backslashEscapes = true) {
   const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
@@ -1560,12 +1566,13 @@ function observe(transcript, from, binding) {
           const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
           const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
           const shell = typeof command === "string";
-          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {} });
+          const words = callWordsOf(part.input);
+          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {}, ...words });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
           const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
-          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
           if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
@@ -1585,7 +1592,7 @@ function observe(transcript, from, binding) {
             const task = cursor.background.get(part.tool_use_id);
             if (task) cursor.background.set(part.tool_use_id, { ...task, output });
             else if (call && !cursor.boardsOwn.has(part.tool_use_id))
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, label: call.label ?? null, command: call.command ?? null });
           }
           cursor.open.delete(part.tool_use_id);
           cursor.boardsOwn.delete(part.tool_use_id);
@@ -1624,11 +1631,13 @@ function observe(transcript, from, binding) {
     cursor
   };
 }
-var TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
+var LABEL_CHARS, COMMAND_CHARS, TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
 var init_transcripts = __esm({
   "src/link/transcripts.ts"() {
     "use strict";
     init_liveness();
+    LABEL_CHARS = 80;
+    COMMAND_CHARS = 500;
     TARGET_CHARS = 50;
     SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
     isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
@@ -3082,6 +3091,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "bg_since", "bg_since INTEGER");
   upkeep("member_activity", "bg_grew_at", "bg_grew_at INTEGER");
   upkeep("member_activity", "transcript", "transcript TEXT");
+  upkeep("member_activity", "open_label", "open_label TEXT");
+  upkeep("member_activity", "open_command", "open_command TEXT");
+  upkeep("member_activity", "bg_label", "bg_label TEXT");
+  upkeep("member_activity", "bg_command", "bg_command TEXT");
   upkeep("member_activity", "owe_since", "owe_since INTEGER");
   upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
@@ -3451,8 +3464,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const activityShown = (run3, seat) => {
     const a = activityOf(run3, seat);
     if (!a) return {};
-    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1 };
-    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) };
+    const text = (v) => v == null ? null : String(v);
+    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: text(a.open_label), command: text(a.open_command) };
+    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: text(a.bg_label), command: text(a.bg_command) };
     return { activity: { open, background } };
   };
   const setParked = (p, seat, parked, until) => {
@@ -4189,6 +4203,14 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           bg?.since ?? null,
           bg?.outputGrewAt ?? null,
           act.transcript ?? null,
+          run3,
+          member
+        );
+        db.prepare("UPDATE member_activity SET open_label = ?, open_command = ?, bg_label = ?, bg_command = ? WHERE run = ? AND member = ?").run(
+          o?.label ?? null,
+          o?.command ?? null,
+          bg?.label ?? null,
+          bg?.command ?? null,
           run3,
           member
         );

@@ -90,7 +90,7 @@ test("observe reports the open tool call with its name, a 50-character target an
   const command = "x".repeat(80);
   const file = writeMain(root, PROJECT, SESSION, [toolCall("Bash", { command }, "toolu_open", "2026-10-22T10:00:00.000Z")]);
   const a = observe(file, null);
-  assert.deepEqual(a.activity.openTool, { name: "Bash", target: "x".repeat(50), since: Date.parse("2026-10-22T10:00:00.000Z"), shell: true });
+  assert.deepEqual(a.activity.openTool, { name: "Bash", target: "x".repeat(50), since: Date.parse("2026-10-22T10:00:00.000Z"), shell: true, label: null, command });
   fs.appendFileSync(file, jsonl([toolResult("toolu_open")]));
   assert.equal(observe(file, a.cursor).activity.openTool, null);
 });

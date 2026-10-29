@@ -9283,7 +9283,7 @@ var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
     IDLE_MS = 15 * 60 * 1e3;
-    NO_TRANSCRIPT_MS = 30 * 1e3;
+    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
     STALLED_AGAIN_MS = 15 * 60 * 1e3;
