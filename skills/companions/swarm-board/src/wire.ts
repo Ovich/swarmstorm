@@ -21,6 +21,8 @@ export const RPC_METHODS = [
   "pause",
   "resume",
   "pausedOf",
+  "park",
+  "unpark",
   "done",
   "phaseProgress",
   "lastActivity",

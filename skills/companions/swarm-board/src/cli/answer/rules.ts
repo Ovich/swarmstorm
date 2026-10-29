@@ -95,6 +95,9 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
     }
     case "resume":
       return orchestrator || own ? null : W.resumeGoOn;
+    case "park":
+      // board-split D30: the parked member ends its turn, never `end`; the orchestrator resumes it at its next task
+      return m.mentions.includes(me.name) ? W.parkedStop : null;
     case "all-done":
       return orchestrator ? W.openNextPhase(cli, as, m.run) : null;
     case "idle":

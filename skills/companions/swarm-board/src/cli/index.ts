@@ -743,6 +743,21 @@ async function main(): Promise<void> {
       });
       break;
     }
+    case "park":
+    case "unpark": {
+      // board-split D30: the orchestrator parks a seat only it needs, or lifts the park
+      const p = await caller();
+      const seat = args.positional[0] ?? usageError(`${args.verb}: which seat?`, `${args.verb} <seat> --as <group>/orchestrator`, `${args.verb} w2 --as ${asWord()}`);
+      // --until <phase>: the phase the seat sleeps until, shown on its card (D34); the board keeps no list of phases
+      const m = args.verb === "park" ? await board.park(p, seat, args.flag("--until")) : await board.unpark(p, seat);
+      const member = `${p.plan}/${seat}`;
+      const next = args.verb === "park" ? WORDING.parked(member, self().join(" "), shellWord(seat), shellWord(p.name)) : WORDING.unparked(member);
+      emit({ seq: m.seq, run: m.run, member, parked: args.verb === "park", next }, () => {
+        console.log(seqLine(m));
+        console.log(next);
+      });
+      break;
+    }
     case "pause":
     case "resume": {
       const p = await caller();

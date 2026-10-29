@@ -84,6 +84,14 @@ export const WORDING = {
   pauseStop: (person: string | null, wait: Command) =>
     `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
+  // board-split D30: parked by the orchestrator; ending the turn is the member's, `end` the orchestrator's alone
+  parkedStop: "you are parked: end your turn now, without end; the orchestrator resumes you at your next task",
+  parked: (member: string, cli: Command, seat: string, as: string) =>
+    `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
+  unparked: (member: string) => `${member} is unparked: its alerts and its share of all-done are back`,
+  /** board-split D30, D38: a member's own end while its run is open */
+  endRefused: (run: number, wait: Command) =>
+    `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
   swarmQuiet: (cli: Command, as: string) => `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,

@@ -3,7 +3,7 @@
 // that posts it by its constant.
 import type { Message, Participant } from "./board.ts";
 
-export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
+export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
 /** `carry`: the event never ends a wait by itself; it rides on the next wake, or wakes once due (idea 2). */
@@ -45,6 +45,10 @@ export const EVENTS: Record<EventName, EventDef> = {
   pause: { name: "pause" },
   // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
   resume: { name: "resume" },
+  // board-split D30: the orchestrator parks a seat (`park <seat>`): mentions it, which ends its turn without `end`;
+  // `unpark <seat>` lifts it (so does the member's own next call)
+  park: { name: "park" },
+  unpark: { name: "unpark" },
   // a member finished the current phase (`done <name>`); mentions the orchestrator
   done: { name: "done" },
   // every member of the run is done with the current phase: one event to the orchestrator

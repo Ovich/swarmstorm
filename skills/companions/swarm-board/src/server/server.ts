@@ -71,7 +71,7 @@ async function takeStartLock(dataRoot: string): Promise<void> {
   for (let emptyReads = 0; ; ) {
     try {
       // exclusive create: of the servers racing on one data home, one takes it (D40)
-      fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs.writeFileSync(lock, String(process.pid), { flag: "wx" }); // AGENTS EXCEPTION (D24): node's open flag, not the code pack's
       return;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
@@ -99,7 +99,7 @@ const BREAKER_STALE_MS = 5_000;
 async function removeStaleStartLock(dataRoot: string, seen: number | null): Promise<void> {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs.writeFileSync(breaker, String(process.pid), { flag: "wx" }); // AGENTS EXCEPTION (D24): node's open flag, not the code pack's
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
     // another server is replacing it: read the lock again after it

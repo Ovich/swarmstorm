@@ -145,7 +145,7 @@ test("f: a background listener returning is not progress that hides a stall of a
   assert.ok(after.length > 0 && after[0].s <= 201 + 61, `told after the return: ${r.events}`);
 });
 
-test("G39: a member owing its phase that waits on a background task of its own (its tests) is waiting, never stalled owing", async () => {
+test("G39, board-split D31: a member owing its phase that waits on a background task of its own (its tests) is busy on it, never stalled owing", async () => {
   const { run, m, orch } = setup(["a"]);
   board.phase(orch, "p1", "@a your part");
   board.deliver(m.a);
@@ -156,7 +156,8 @@ test("G39: a member owing its phase that waits on a background task of its own (
     board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: true, openTool: { name: "Bash", target: "swarm wait", since: base, boardWait: true, shell: true }, background: { target: "npm test", since: base, outputGrewAt: base + s * 1000 } }), at(base, s));
     board.livenessTick(run.id, at(base, s), presence);
   }
-  assert.equal(board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")?.state, "waiting");
+  // D31 (S37) flipped it on purpose: waiting on the board with its own suite running is busy, not waiting
+  assert.equal(board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")?.state, "busy");
   assert.deepEqual(stalled(run.id).map((e) => e.body), []);
   board.post(orch, "@a go");
   await held;

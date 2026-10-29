@@ -198,7 +198,7 @@ export type RunSummary = {
   paused?: { text: string; person: boolean } | null;
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
-export type SnapshotMemberState = "working" | "waiting" | "merging" | "watching" | "ended" | "done";
+export type SnapshotMemberState = "working" | "waiting" | "merging" | "watching" | "ended" | "done" | "parked";
 export type SnapshotMember = {
   /** The run the member sat in: a group can hold several runs, its members are told apart by this; absent from a reader before it. */
   run?: number;
@@ -218,6 +218,14 @@ export type SnapshotMember = {
   calls: number;
   /** A background `wait --mentions` is pending: the member hears the board while it works (D49). */
   listening: boolean;
+  /** board-split D34: the phase a parked seat sleeps until (`park --until`); absent when parked with none, or not parked. */
+  parkedUntil?: string;
+  /** board-split D31, D32: what the member runs now, from its link: its oldest open call and its awaited background
+   *  task; absent from a server before it, or with no activity. Times ms epoch. */
+  activity?: {
+    open: { name: string; target: string; since: number; boardWait: boolean } | null;
+    background: { target: string; since: number; outputGrewAt: number | null } | null;
+  };
   /** Its subscriptions, as `formatSubscriptions` writes each (D59). */
   on: string[];
   /** Its last call to the board, else when it joined (D20: quiet n min). */
@@ -333,6 +341,12 @@ export interface Board {
   resume(p: Participant, text?: string): Message & { held: string[] };
   /** The run's pause reason ("" when none was given), null when it is not paused. Throws on an unknown run. */
   pausedOf(run: RunId): string | null;
+  /** board-split D30: the orchestrator parks a seat of its run: the member is dormant, told to end its turn without
+   *  `end`; it raises no idle, stalled, stale, gone or liveness event and all-done does not wait for it, until its next
+   *  call or `unpark`. Refused to anyone else, on a closed run and on a seat with no live member. */
+  park(p: Participant, seat: string, until?: string): Message;
+  /** The orchestrator lifts a park; refused on a seat not parked. */
+  unpark(p: Participant, seat: string): Message;
   /** A member finished the current phase `name`: stored once per run, member and phase, a `done` event to the
    *  orchestrator; when every member is done, one `all-done` event to it. Refused to the orchestrator, before any
    *  phase and on a phase that is not the current one. `already`: it had run done for it before (no event). */
@@ -786,6 +800,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   // ended on an idle answer: the seat stays in the run's later phases, owing until a member is dispatched into it again
   upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
+  // board-split D30: parked by the orchestrator (`park <seat>`): dormant, no alert of any kind, out of all-done, until
+  // its next call or `unpark`
+  upkeep("participants", "parked", "parked INTEGER NOT NULL DEFAULT 0");
+  // D34: the phase `park --until` named; null when none was
+  upkeep("participants", "parked_until", "parked_until TEXT");
   // the architecture guides already named to a member, each once
   db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   // idea 2: a carried message past CARRY_MAX_MS for a member, marked by the tick: it wakes that member's wait
@@ -1325,6 +1344,31 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
     return s?.busy_max == null ? null : Number(s.busy_max);
   };
+  /** board-split D31, D32: the snapshot's `activity` of a live member, from its link's last report; {} with none. */
+  const activityShown = (run: RunId, seat: string): { activity?: SnapshotMember["activity"] } => {
+    const a = activityOf(run, seat);
+    if (!a) return {};
+    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1 };
+    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) };
+    return { activity: { open, background } };
+  };
+  /** board-split D30: park or unpark a seat of the orchestrator's run, one event mentioning the seat. */
+  const setParked = (p: Participant, seat: string, parked: boolean, until?: string): Message => {
+    const fresh = live(p);
+    const verb = parked ? "park" : "unpark";
+    if (fresh.seat !== ORCHESTRATOR) throw new Error(`${verb}: only the orchestrator parks a seat; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
+    if (runRow(fresh.run).state !== "open") throw new Error(`run ${fresh.run} is closed`);
+    const row = db.prepare("SELECT id, parked FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(fresh.run, seat) as Row | undefined;
+    if (!row || seat === ORCHESTRATOR) throw new Error(`${verb}: no live member in seat ${seat} of run ${fresh.run}`);
+    if ((Number(row.parked) === 1) === parked) throw new Error(`${verb}: ${fresh.plan}/${seat} is ${parked ? "already parked" : "not parked"}`);
+    return transaction(() => {
+      // D33, D34 (S35, S38): the park is the member's latest fact; a parked seat says until which phase it sleeps
+      const until_ = until?.trim() || null;
+      const shown = parked ? (until_ ? `dormant until ${until_}` : "dormant until its next task") : "unparked";
+      db.prepare("UPDATE participants SET parked = ?, parked_until = ?, doing = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, shown, Number(row.id));
+      return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
+    });
+  };
   /** `withHolder`: a lock wait names its holder's state, read with this false so a holder's own wait does not recurse. */
   const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
     const member = String(p.seat);
@@ -1357,6 +1401,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // idea 4 (D9): a member waiting on a lock is blocked, not late: its state names the lock and its holder, never owing
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      // board-split D31 (S37): a board wait over an un-notified background task of its own (its suite) is busy on that
+      // task, never idle, stalled or quiet; BUSY_MAX_MS from the task's start still flags it as maybe hung
+      if (a.bg_target != null) {
+        const bgSince = Number(a.bg_since);
+        const doing = `${minutes(t - bgSince)} min · background ${String(a.bg_target)}`;
+        const capped = t - bgSince >= BUSY_MAX_MS;
+        return { member, state: "busy", doing, since: bgSince, ...(capped ? { reason: `background open ${minutes(BUSY_MAX_MS)} min, may be long or hung${said}`, rule: "call" as const } : {}) };
+      }
       // idea 1, rule 5: a wait while owing the phase is quiet once the owing span is long enough
       // G39: a member waiting on a background task of its own (its tests) is waiting, not owing
       const owing = a.bg_target == null ? owingOf(p, run, a, t, stallMs) : null;
@@ -1559,7 +1611,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (phase == null) return null;
     const rows = db
       .prepare(
-        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, p.parked, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}'`,
       )
@@ -1571,7 +1623,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const named = (seat: string): boolean => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
     const live = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
     const gone = live.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
-    const counted = live.filter((r) => !gone.includes(r));
+    // board-split D30: a parked member not done is out of the count until resumed
+    const counted = live.filter((r) => !gone.includes(r) && !(Number(r.parked) === 1 && Number(r.done) !== 1));
     const dormant = counted.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
     return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), dormant };
   };
@@ -1774,7 +1827,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const flagged: RunId[] = [];
         for (const r of db.prepare("SELECT id, plan FROM runs WHERE state = 'open' AND paused IS NULL AND stale_flagged = 0 ORDER BY id").all() as Row[]) {
           const id = Number(r.id);
-          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL").all(id) as Row[];
+          // board-split D30: a parked member's silence is no staleness
+          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 0").all(id) as Row[];
           if (!members.length || members.some((m) => Date.parse(String(m.last_call ?? m.joined_at)) >= silentBefore)) continue;
           const author = members.find((m) => String(m.seat) === ORCHESTRATOR) ?? members[0];
           const group = String(r.plan);
@@ -2060,6 +2114,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       });
     },
 
+    park(p, seat, until) {
+      return setParked(p, seat, true, until);
+    },
+
+    unpark(p, seat) {
+      return setParked(p, seat, false);
+    },
+
     resume(p, text = "") {
       const fresh = live(p);
       if (fresh.seat !== ORCHESTRATOR) throw new Error(`resume: only the orchestrator resumes its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
@@ -2112,6 +2174,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const progress = progressOf(fresh.run, name)!;
         const all = progress.of > 0 && progress.done === progress.of;
         if (!added) return { progress, all, already: true, late: false, message: null };
+        // board-split D33 (S35): the done is the member's latest fact, shown over an older doing
+        db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         // idea 2: the done wakes the orchestrator only in the person's cases, named in its body; otherwise it is carried
         const wakeCase = doneWakeCase(fresh, name, progress);
         const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
@@ -2219,7 +2283,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           if (a) keepOwingSpan(r, p, a, t);
         }
         const states = statesOf(run, t);
-        const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR);
+        // board-split D30: a parked member raises nothing: no gone, liveness, stalled or idle line, and is not waited on
+        const parkedSeats = new Set((db.prepare("SELECT seat FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 1").all(run) as Row[]).map((x) => String(x.seat)));
+        const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR && !parkedSeats.has(st.member));
         const orch = orchestratorIn(run);
         let progress = progressOf(run, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
@@ -2345,7 +2411,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const gone = others.filter((st) => st.state === "gone").map((st) => `${orch.plan}/${st.member}`);
         const present = others.filter((st) => st.state !== "gone");
         // swarm-relay D44: not while a seat of the run has yet to join (a run filling up is not idle)
-        const joined = new Set(others.map((st) => st.member));
+        const joined = new Set([...others.map((st) => st.member), ...parkedSeats]);
         const toJoin = (db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run) as Row[]).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
@@ -2686,7 +2752,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             ? "done"
             : ended
               ? "ended"
-              : lockHolder === id
+              : Number(r.parked) === 1
+                ? "parked"
+                : lockHolder === id
                 ? "merging"
                 : Number(r.waiting) === 1
                   ? "waiting"
@@ -2711,6 +2779,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           lastCall: String(r.last_call ?? r.joined_at),
           liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
           unread: ended ? 0 : unreadOf(id),
+          ...(Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {}),
+          ...(ended ? {} : activityShown(Number(r.run), seat)),
         };
       });
 
@@ -2835,6 +2905,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const PROGRESS_VERBS: ReadonlySet<string> = new Set(["post", "done", "setDoing", "endorse", "merged"]);
   const countCall = (p: Participant, verb: string): void => {
     const at = now();
+    // board-split D30: a parked member's own call resumes it
+    db.prepare("UPDATE participants SET parked = 0 WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     // D36: a post, `done` or `doing` is progress, a look at the board is not
     if (PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
@@ -2863,6 +2935,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   board.post = counted("post", board.post);
   board.phase = counted("phase", board.phase);
   board.pause = counted("pause", board.pause);
+  board.park = counted("park", board.park);
+  board.unpark = counted("unpark", board.unpark);
   board.resume = counted("resume", board.resume);
   board.done = counted("done", board.done);
   board.endorse = counted("endorse", board.endorse);

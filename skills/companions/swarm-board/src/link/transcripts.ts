@@ -95,7 +95,7 @@ function shellWords(command: string, backslashEscapes = true): string[] {
 const isSwarmTool = (word: string): boolean => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
 
 /** The value of `--name v` or `--name=v` among a command's words. */
-function flagValue(words: string[], names: string[]): string | undefined {
+function optionValue(words: string[], names: string[]): string | undefined {
   for (let i = 0; i < words.length; i++) {
     for (const n of names) {
       if (words[i] === n && i + 1 < words.length) return words[i + 1];
@@ -135,8 +135,8 @@ export function commandRunsBinding(command: string, binding: Binding, backslashE
     if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
     const args = segment.slice(at + 1);
     if (binding.verb === "join") {
-      if (flagValue(args, ["--run"]) === String(binding.run) && flagValue(args, ["--seat"]) === binding.seat) return true;
-    } else if (flagValue(args, ["--group", "--plan"]) === binding.group) return true;
+      if (optionValue(args, ["--run"]) === String(binding.run) && optionValue(args, ["--seat"]) === binding.seat) return true;
+    } else if (optionValue(args, ["--group", "--plan"]) === binding.group) return true;
   }
   return false;
 }
