@@ -1,8 +1,9 @@
 // CLI dispatch — the agent-facing surface. `open` is the standard gesture:
 // ensure registered, ensure server, print URL. Unknown verbs fall to legacy
 // (dies in Phase 8 cutover).
-import { spawn, spawnSync } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starters of the lines marked so
+import { spawnSync } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starter of the line marked so
 import { hiddenSpawn, hiddenSpawnSync } from "../proc.ts";
+import { openBrowser } from "../core/browser.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -717,11 +718,7 @@ function cmdOpen(): void {
   const answer = askServer("/api/open", { id: d.id, project });
   const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
   if (!moved && args.has("--open")) {
-    const [c, a] =
-      process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-    try {
-      spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
-    } catch {}
+    openBrowser(url);
   }
   emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
 }
@@ -748,11 +745,7 @@ function cmdBoard(): void {
     // the board's scoped URL (D41): the tab it opens shows this project, whatever another tab shows
     const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
     if (args.has("--open")) {
-      const [c, a] =
-        process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-      try {
-        spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
-      } catch {}
+      openBrowser(url);
     }
     emit({ project: slug, repos, url, server: readServerStatus() }, [url, ...repos.map((x) => `  ${x}`)].join("\n"));
   } finally {

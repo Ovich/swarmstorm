@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build && node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.app.json",
-    "test": "node --test \"tests/**/*.test.ts\"",
+    "test": "node --import ./tests/no-browser.preload.ts --test \"tests/**/*.test.ts\"",
     "test:app": "vitest run"
   },
   "devDependencies": {

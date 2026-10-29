@@ -9390,6 +9390,8 @@ var CODE_WORDING = {
     `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
   ].join("\n"),
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
+  /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
+  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; claim it once free`,
   memberFact: { merging: "merging (holds the merge lock)" },
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
@@ -9496,8 +9498,6 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
   eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
-  /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
-  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; claim it once free`,
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
   restartLink: (member, cli, run3, as) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run3} --as ${as}`,
   /** a stall's move, by the rule that badged its member stalled (idea 1, rule 6) */
@@ -9947,7 +9947,7 @@ var rosterLine = (r, roster, ages = false) => {
   const holderOf = (file) => roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
   const mine = new Set(r.held.map((h) => h.path.toLowerCase()));
   const unclaimed = r.files.map((f) => f.path.split("\\").join("/")).filter((f) => !mine.has(f.toLowerCase())).flatMap((f) => holderOf(f) ? [`${f} (${holderOf(f)})`] : []);
-  const declared = unclaimed.length ? WORDING.declaredNotClaimed(unclaimed) : "";
+  const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";

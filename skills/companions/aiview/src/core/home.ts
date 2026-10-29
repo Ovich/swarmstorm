@@ -14,6 +14,11 @@ import path from "node:path";
 const homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
 const NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
 const OLD_HOME = path.join(os.homedir(), "charrette_appdata");
+/** Whether `root` is the person's own data home (either default name), not a scratch, test or dev one. */
+export const isPersonHome = (root: string): boolean => {
+  const fold = (p: string) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+  return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
+};
 export const DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
 
 /** The default home's port; another data home gets its own, so two homes' servers never clash (G22). */

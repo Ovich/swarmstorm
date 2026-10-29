@@ -26,38 +26,10 @@ var init_proc = __esm({
   }
 });
 
-// ../swarm-board/src/proc.ts
-import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
-var hiddenSpawn2;
-var init_proc2 = __esm({
-  "../swarm-board/src/proc.ts"() {
-    "use strict";
-    hiddenSpawn2 = (command, args2, options = {}) => spawn2(command, args2, { ...options, windowsHide: true });
-  }
-});
-
-// ../swarm-board/src/place/place.ts
-import fs from "node:fs";
-import path from "node:path";
-function commonGitDir(dotGit) {
-  if (!fs.statSync(dotGit).isFile()) return dotGit;
-  const own = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, "utf8"))?.[1]?.trim();
-  if (!own) return dotGit;
-  const dir = path.resolve(path.dirname(dotGit), own);
-  const common = path.join(dir, "commondir");
-  return fs.existsSync(common) ? path.resolve(dir, fs.readFileSync(common, "utf8").trim()) : dir;
-}
-var init_place = __esm({
-  "../swarm-board/src/place/place.ts"() {
-    "use strict";
-    init_proc2();
-  }
-});
-
 // src/core/home.ts
-import fs2 from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
-import path2 from "node:path";
+import path from "node:path";
 function defaultPort(root = DATA_ROOT) {
   const home = normalHome(root);
   if (home === normalHome(NEW_HOME) || home === normalHome(OLD_HOME)) return HOME_PORT;
@@ -66,9 +38,9 @@ function defaultPort(root = DATA_ROOT) {
   return 4400 + hash % 500;
 }
 function normalHome(root) {
-  let p = path2.resolve(root);
+  let p = path.resolve(root);
   try {
-    p = fs2.realpathSync.native(p);
+    p = fs.realpathSync.native(p);
   } catch {
   }
   return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -80,27 +52,86 @@ function firstFreePort(from) {
   return Number.isInteger(port) && port > 0 ? port : from;
 }
 function ensureHome() {
-  fs2.mkdirSync(DOCS_ROOT, { recursive: true });
+  fs.mkdirSync(DOCS_ROOT, { recursive: true });
 }
 function adoptLegacyIndex(toolRoot, sqlitePath) {
-  if (fs2.existsSync(sqlitePath)) return;
-  const legacy = path2.join(toolRoot, "aiview.sqlite");
-  if (!fs2.existsSync(legacy)) return;
-  fs2.copyFileSync(legacy, sqlitePath);
+  if (fs.existsSync(sqlitePath)) return;
+  const legacy = path.join(toolRoot, "aiview.sqlite");
+  if (!fs.existsSync(legacy)) return;
+  fs.copyFileSync(legacy, sqlitePath);
   console.error(`aiview: adopted the index from ${legacy} (the original is left in place, unused)`);
 }
-var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
+var homeFromEnv, NEW_HOME, OLD_HOME, isPersonHome, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
 var init_home = __esm({
   "src/core/home.ts"() {
     "use strict";
     init_proc();
     homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME = path2.join(os.homedir(), "swarmstorm_appdata");
-    OLD_HOME = path2.join(os.homedir(), "charrette_appdata");
-    DATA_ROOT = homeFromEnv ? path2.resolve(homeFromEnv) : !fs2.existsSync(NEW_HOME) && fs2.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
+    NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
+    OLD_HOME = path.join(os.homedir(), "charrette_appdata");
+    isPersonHome = (root) => {
+      const fold = (p) => process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p);
+      return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
+    };
+    DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
     HOME_PORT = 4321;
-    DOCS_ROOT = path2.join(DATA_ROOT, "docs");
-    docsDirFor = (projectSlug) => path2.join(DOCS_ROOT, projectSlug);
+    DOCS_ROOT = path.join(DATA_ROOT, "docs");
+    docsDirFor = (projectSlug) => path.join(DOCS_ROOT, projectSlug);
+  }
+});
+
+// src/core/browser.ts
+import { spawn as spawn2 } from "node:child_process";
+function browserRefusal(env = process.env, dataRoot = DATA_ROOT) {
+  if (env.AIVIEW_NO_BROWSER === "1") return "AIVIEW_NO_BROWSER=1";
+  if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
+  return null;
+}
+function openBrowser(url) {
+  const refused = browserRefusal();
+  if (refused) {
+    console.error(`aiview: no browser opened for ${url} (${refused})`);
+    return;
+  }
+  const [c, args2] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
+  try {
+    spawn2(c, args2, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  } catch (e) {
+    console.error(`could not open browser: ${e.message}`);
+  }
+}
+var init_browser = __esm({
+  "src/core/browser.ts"() {
+    "use strict";
+    init_home();
+  }
+});
+
+// ../swarm-board/src/proc.ts
+import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
+var hiddenSpawn2;
+var init_proc2 = __esm({
+  "../swarm-board/src/proc.ts"() {
+    "use strict";
+    hiddenSpawn2 = (command, args2, options = {}) => spawn3(command, args2, { ...options, windowsHide: true });
+  }
+});
+
+// ../swarm-board/src/place/place.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
+function commonGitDir(dotGit) {
+  if (!fs2.statSync(dotGit).isFile()) return dotGit;
+  const own = /^gitdir:\s*(.+)$/m.exec(fs2.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+  if (!own) return dotGit;
+  const dir = path2.resolve(path2.dirname(dotGit), own);
+  const common = path2.join(dir, "commondir");
+  return fs2.existsSync(common) ? path2.resolve(dir, fs2.readFileSync(common, "utf8").trim()) : dir;
+}
+var init_place = __esm({
+  "../swarm-board/src/place/place.ts"() {
+    "use strict";
+    init_proc2();
   }
 });
 
@@ -9847,7 +9878,6 @@ __export(server_exports, {
   servedBuild: () => servedBuild,
   startServer: () => startServer
 });
-import { spawn as spawn3 } from "node:child_process";
 import fs12 from "node:fs";
 import http from "node:http";
 import path14 from "node:path";
@@ -9856,14 +9886,6 @@ function servedBuild(distDir) {
     return /assets\/(index-[\w-]+\.js)/.exec(fs12.readFileSync(path14.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
   } catch {
     return null;
-  }
-}
-function openBrowser(url) {
-  const [c, args2] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-  try {
-    spawn3(c, args2, { detached: true, stdio: "ignore" }).unref();
-  } catch (e) {
-    console.error(`could not open browser: ${e.message}`);
   }
 }
 function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser }) {
@@ -10156,6 +10178,7 @@ var MIME;
 var init_server = __esm({
   async "src/server/index.ts"() {
     "use strict";
+    init_browser();
     await init_db();
     init_projects();
     init_bind();
@@ -10188,12 +10211,13 @@ var init_server = __esm({
 
 // src/cli/index.ts
 init_proc();
+init_browser();
 await init_db();
 init_bind();
 init_paths();
 init_pointer();
 init_projects();
-import { spawn as spawn4, spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import fs13 from "node:fs";
 import path15 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
@@ -11174,11 +11198,7 @@ function cmdOpen() {
   const answer = askServer("/api/open", { id: d.id, project });
   const moved = answer === null ? null : JSON.parse(answer);
   if (!moved && args.has("--open")) {
-    const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-    try {
-      spawn4(c, a, { detached: true, stdio: "ignore" }).unref();
-    } catch {
-    }
+    openBrowser(url);
   }
   emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
 }
@@ -11200,11 +11220,7 @@ function cmdBoard() {
     ensureDist();
     const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
     if (args.has("--open")) {
-      const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-      try {
-        spawn4(c, a, { detached: true, stdio: "ignore" }).unref();
-      } catch {
-      }
+      openBrowser(url);
     }
     emit({ project: slug, repos, url, server: readServerStatus() }, [url, ...repos.map((x) => `  ${x}`)].join("\n"));
   } finally {
