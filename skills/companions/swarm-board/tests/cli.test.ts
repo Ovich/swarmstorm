@@ -303,7 +303,7 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   // line to run again, always at the foreground --timeout 170000 whatever the caller gave (v1-c)
   const again = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50");
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(again.stdout, `nothing yet; wait again (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 170000\n`);
+  assert.equal(again.stdout, `nothing yet; wait, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 170000\n`);
 });
 
 const LISTEN = (member: string): string =>
@@ -1158,7 +1158,9 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.match(lines.at(-1)!, /^only then wait, in the foreground .*empty\): node \S+ wait --mentions --as idea\/skeptic --timeout 170000$/);
   assert.match(JSON.parse(run("deliver", "--as", "idea/skeptic", "--json").stdout).next, owed);
   const posted = run("post", "hello", "--as", "idea/skeptic");
-  assert.match(posted.stdout, owed);
+  // S21: a verb that heard from the member names the phase it owes, its text not again
+  assert.match(posted.stdout, /^phase ping is yours: Read the whole phase first: node \S+ thread --as idea\/skeptic\. Do your part now, then: node \S+ done ping --as idea\/skeptic$/m);
+  assert.doesNotMatch(posted.stdout, /say hi/);
   assert.match(run("read", seqOf(posted.stdout), "--as", "idea/skeptic").stdout, owed);
   assert.match(run("deliver", "--as", "idea/skeptic").stdout, owed);
   // a member woken by the phase event is told to do it before it waits again
@@ -1232,7 +1234,7 @@ test("a printed wait line ends on its bare command, and that command, run as cop
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   run("deliver", "--as", "review-tool/S5");
   const empty = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50").stdout.trimEnd();
-  assert.match(empty, /^nothing yet; wait again \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node /);
+  assert.match(empty, /^nothing yet; wait, in the foreground \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node /);
   const command = empty.slice(empty.lastIndexOf(": ") + 2);
   assert.doesNotMatch(command, /[()]/, "no prose after the command");
   assert.match(command, / --timeout 170000$/, "v1-c: the foreground re-arm, whatever the caller gave");

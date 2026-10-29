@@ -8,7 +8,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Delivery, type Participant, type Presence } from "../src/board/board.ts";
-import { EVENTS } from "../src/board/events.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { SCENARIOS, play, steps } from "./fixtures/yardstick.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";

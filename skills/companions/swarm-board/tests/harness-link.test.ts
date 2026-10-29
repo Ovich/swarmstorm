@@ -95,16 +95,20 @@ test("in a harness session, join, the link started in the background, then a ver
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), true);
 });
 
-test("in a harness session with no link started, the verb answers within 10 s through the server, its output ending on the link line (D39)", () => {
+test("in a harness session with no link started, the verb answers within 10 s through the server, the link line before the listener line (D39, S29)", () => {
   const h = joinedInHarness();
   const started = Date.now();
   const r = spawnSync(process.execPath, [CLI, "doing", "the client"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   const took = Date.now() - started;
   assert.equal(r.status, 0, r.stderr);
   assert.ok(took < 12000, `answered in ${took} ms`); // 10 s of waiting, and a node start
-  const last = r.stdout.trimEnd().split(/\r?\n/).at(-1)!;
-  assert.match(last, LINK_LINE);
-  assert.ok(last.endsWith(`link --run ${h.run} --as harness-plan/S3`), last);
+  const lines = r.stdout.trimEnd().split(/\r?\n/);
+  const linkAt = lines.findIndex((l) => LINK_LINE.test(l));
+  assert.ok(linkAt >= 0, r.stdout);
+  assert.ok(lines[linkAt].endsWith(`link --run ${h.run} --as harness-plan/S3`), lines[linkAt]);
+  // S29: the link starts before the listener, as join orders them
+  const listenerAt = lines.findIndex((l) => l.startsWith("start your listener now"));
+  assert.ok(listenerAt === -1 || listenerAt > linkAt, r.stdout);
   // the call was made: the server has it
   assert.match(h.r.cli(h.r.repo, "roster"), /doing: the client/);
   // V11: told once per member, not on every call

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
-import { EVENTS, FOREGROUND_NOTE, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
+import { EVENTS, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
@@ -290,7 +290,6 @@ const markLinkTold = (member: BoardMember): void => {
 };
 const clearLinkTold = (member: BoardMember): void => fs.rmSync(linkToldFile(member), { force: true });
 const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord)].join(" "));
-const SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
 const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
 const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";

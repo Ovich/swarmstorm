@@ -404,7 +404,7 @@ test("a mention of a member who has ended says so", () => {
   running();
   cli(wtB, "end");
   const out = cli(wtA, "post", "@review-tool/S5 I resolved it");
-  assert.match(out, /^@review-tool\/S5 has ended: the post stays on the thread, but they will not read it$/m);
+  assert.match(out, /^@review-tool\/S5 has ended: the post stays on the thread, read at the seat's next join$/m);
 });
 
 test("a plan runs in phases: the orchestrator opens one, each member's done counts, all-done told", () => {

@@ -272,3 +272,12 @@ test("repos() lists every closed run within the retention, beyond ten, and none 
   const listed = board.repos().flatMap((r) => r.runs.map((x) => x.run));
   assert.deepEqual(listed, kept);
 });
+
+test("S24: a seat joined again reads fresh in the roster, never stale from its last member's calls", () => {
+  const { run, s1 } = runWithMembers("rejoin");
+  board.end(s1);
+  raw.prepare("UPDATE participants SET joined_at = ?, last_call = ? WHERE id = ?").run(ago(DAY), ago(DAY), s1.id);
+  board.join({ run: run.id, seat: "S1", doing: "back", files: [] });
+  const row = board.roster(REPO).find((r) => r.name === "rejoin/S1")!;
+  assert.equal(row.stale, false);
+});

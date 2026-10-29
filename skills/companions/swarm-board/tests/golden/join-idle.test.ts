@@ -14,7 +14,7 @@ test("S15 target: an idle worker's join ends on the foreground wait", async () =
   try {
     s.must("deliver", "--as", s.me);
     const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
-    assert.equal(lastLine(joined.text), `nothing yet; wait again (${FOREGROUND}): node <cli> wait --mentions --as ${s.me} --timeout 170000`);
+    assert.equal(lastLine(joined.text), `nothing yet; wait, in the foreground (${FOREGROUND}): node <cli> wait --mentions --as ${s.me} --timeout 170000`);
   } finally {
     s.stop();
   }

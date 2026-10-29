@@ -49,13 +49,13 @@ test("G10 target: a wake in an unchanged phase carries no phase line", async () 
   }
 });
 
-// G14: the idle answer says first that the seat stays, so it never reads as the end of the run
-test("G14 target: the idle answer says the seat stays before it says end", async () => {
+// G14, S26 (board-split D30): the idle answer says the seat stays, and only to wait again: never to end
+test("G14, S26 target: the idle answer says the seat stays, then waits again, never end", async () => {
   const s = await scene("worker", "idle");
   try {
     s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");
     expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200"), [
-      `nothing for you now; the run is open and your seat stays in it, the orchestrator may dispatch you to it again: run node <cli> end --as ${s.me} and return`,
+      `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND}): ${WAIT(s.me)}`,
     ]);
   } finally {
     s.stop();
@@ -125,7 +125,7 @@ test("G38: an empty wait --mentions prints the re-arm line; an ended member's, w
   const s = await scene("worker", "owes-again");
   try {
     const empty = s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");
-    assert.equal(empty.text, `nothing yet; wait again (${FOREGROUND}): ${WAIT(s.me)}\n`);
+    assert.equal(empty.text, `nothing yet; wait, in the foreground (${FOREGROUND}): ${WAIT(s.me)}\n`);
     s.must("end", "--as", s.me);
     assert.match(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200").text, /^you have ended in run \d+: this listener stops; nothing to re-arm\n$/);
   } finally {
@@ -145,7 +145,8 @@ test("S1 target: join shows the unread task posted before it", async () => {
       "orchestrator <nick:orchestrator>: joined",
       "w1 <nick:w1>: joined",
       `${O}  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined, done (carried), joined (carried), idle (carried)`,
-      "<nick:w1> · g/w1  run 1  quiet  <n> unread  doing: x",
+      // S20: the roster is read after the join delivered the task: nothing unread on its own row
+      "<nick:w1> · g/w1  run 1  quiet  doing: x",
       // the result: the task, whole, as a wait would deliver it
       `#<seq> ${O}  <ts>`,
       "@w1 the task: build the thing",

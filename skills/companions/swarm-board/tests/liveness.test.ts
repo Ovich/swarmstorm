@@ -7,7 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { EVENTS } from "../src/board/events.ts";
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
