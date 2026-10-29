@@ -1,0 +1,14 @@
+exit 0
+start this listener again, in the background while you work, in the foreground when you are waiting (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000
+#<seq> g/orchestrator (event)  <ts>
+phase build: build the thing
+when your part of build is posted: node <cli> done build --as g/w1
+#<seq> g/orchestrator (event)  <ts>
+parked @g/w1
+you are parked: end your turn now, without end; the orchestrator resumes you at your next task
+#<seq> g/orchestrator (event)  <ts>
+unparked @g/w1
+#<seq> g/orchestrator (event)  <ts>
+parked @g/w1
+you are parked: end your turn now, without end; the orchestrator resumes you at your next task
+these lines are delivered; the task-end notice is the same event

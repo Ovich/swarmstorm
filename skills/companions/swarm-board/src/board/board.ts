@@ -2958,7 +2958,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const countCall = (p: Participant, verb: string): void => {
     const at = now();
     // board-split D30: a parked member's own call resumes it
-    db.prepare("UPDATE participants SET parked = 0 WHERE id = ? AND parked = 1").run(p.id);
+    db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, doing = 'unparked' WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     // D36: a post, `done` or `doing` is progress, a look at the board is not
     if (PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
