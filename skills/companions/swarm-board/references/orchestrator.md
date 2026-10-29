@@ -21,7 +21,7 @@ except `open`, `seat`, `close` and `status`.
 
      ```json
      [{ "id": "skeptic", "role": "<the role>", "link": "<brainstorm board URL>", "on": ["agreement"] },
-      { "id": "builder", "title": "<…>", "role": "<…>", "link": "<…>" }]
+      { "id": "builder", "role": "<…>", "link": "<…>" }]
      ```
 
    - **`on`**, on any row: the events that wake that member's `wait --mentions` besides
