@@ -51,7 +51,7 @@ export type MentionCtx = { groups: string[]; names: ReadonlyMap<string, string> 
 export const mentionCtx = (snap: BoardSnapshot): MentionCtx => ({
   groups: [...new Set(snap.runs.map((r) => r.group))],
   names: new Map(
-    snap.roster.filter((r) => r.seat !== ORCHESTRATOR && r.state !== "ended" && r.state !== "done").map((r) => [nameHandle(r.nick), r.member]),
+    snap.roster.filter((r) => r.seat !== ORCHESTRATOR && r.state !== "ended" && (r.state as string) !== "done").map((r) => [nameHandle(r.nick), r.member]),
   ),
 });
 
@@ -278,8 +278,8 @@ export const TIPS = {
   liveness: "Liveness: the board cannot read this member's transcript, so the stall check cannot see whether it works.",
   stalledMember: "Stalled: this member owes a move it is not making. The rule says why (turn ended, in turn with no line, a background task, a long call, waiting while owing a phase), and the orchestrator is told the move that reaches it.",
   linkDown: "Link down: this member's link to the board is lost, but its transcript still grows, so it is working. The orchestrator asks it to restart its link.",
-  recovered: "Recovered: a member the board had told gone reads alive again. Its seat needs no new agent.",
-  gone: "Gone: this member's agent finished without ending, or its link is lost and its transcript has stopped growing. The orchestrator dispatches it again or closes its seat.",
+  recovered: "Recovered: a member the board had told lost reads alive again. Its seat needs no new agent.",
+  gone: "Lost: this member's agent finished without ending, or its link is lost and its transcript has stopped growing. The orchestrator dispatches it again or closes its seat.",
 } as const;
 
 /** What a stall says, by its rule (idea 1, rule 6): the word on the row. */
@@ -427,7 +427,8 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     return isLinkDown(e) ? said("liveness", "wait", "liveness · link down", TIPS.linkDown, "link-down") : said("liveness", "wait", "liveness · blind", TIPS.liveness);
   }
   if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", "↺ recovered", TIPS.recovered);
-  if (e.kind === "event" && e.event === "gone") return said("gone", "act", "✕ gone", TIPS.gone);
+  // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
+  if (e.kind === "event" && (e.event === "lost" || e.event === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
@@ -504,8 +505,13 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   // V4: a stall has passed once the member's liveness reads neither quiet, gone nor under a rule, without a post
   const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
   const livenessOf = new Map(snap.roster.map((r) => [r.member, r.liveness]));
+  // board-split#D36: the board's badge, when it sends one, says the trouble; else the older liveness words do
+  const badgeOf = new Map(snap.roster.map((r) => [r.member, (r as { badge?: { name: string } | null }).badge]));
   const stallPassed = (i: Item, member: string): boolean => {
-    const l = livenessOf.get(`${groupOf.get(i.run)}/${member}`);
+    const key = `${groupOf.get(i.run)}/${member}`;
+    const badge = badgeOf.get(key);
+    if (badge !== undefined) return badge === null;
+    const l = livenessOf.get(key);
     return !!l && l.state !== "quiet" && l.state !== "gone" && !l.rule;
   };
   // F9: a link-down row leaves once the member's link reads it again after the row; a gone row once a
@@ -516,8 +522,11 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   };
   const recoveredSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.kind === "recovered" && toldOf.get(x.seq) === member);
   const goneHolds = (i: Item, member: string): boolean => {
+    if (recoveredSince(i, member)) return false;
+    const badge = badgeOf.get(member);
+    if (badge !== undefined) return badge?.name === "lost";
     const l = livenessOf.get(member);
-    return !recoveredSince(i, member) && (!l || l.state === "gone");
+    return !l || l.state === "gone";
   };
   return items.filter((i) => {
     const member = toldOf.get(i.seq);
@@ -541,7 +550,7 @@ export function pausedText(run: RunSummary): string | null {
 
 /** The board's events that tell of one member (stalled, liveness, gone, recovered): its member in the event's data or
  *  at the head of its body (`gone <group>/<id>: …`), so following that member keeps them (V5). */
-const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "gone", "recovered"]);
+const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "lost", "gone", "recovered"]);
 /** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
 function memberEventMember(e: SnapshotEvent, run: RunSummary): string | null {
   if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;

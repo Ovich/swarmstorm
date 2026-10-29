@@ -239,7 +239,7 @@ test("up to twelve members every one is a card; past it, a row each, the orchest
   expect(strip()!.querySelectorAll('[data-component="AgentRow"]').length).toBeGreaterThan(100);
 });
 
-test("a large swarm: gone members first under Needs attention, the ended folded until opened", () => {
+test("a large swarm: lost members under Needs attention, the ended folded until opened", () => {
   show([APP], 1, [swarmOf(200)]);
   const groups = Array.from(strip()!.querySelectorAll('[data-component="RosterGroup"]'));
   expect(groups[0].className).toContain("attention");
@@ -281,7 +281,7 @@ test.each([
   ["working", {}, `working on ${ACTIVE.doing}`],
   ["merging", { state: "merging" }, "merging"],
   ["waiting", { state: "waiting" }, "waiting on the board"],
-  ["watching", { state: "watching" }, "watching"],
+  ["an older board's watching", { state: "watching" }, "waiting on the board"],
   ["parked", { state: "parked" }, "parked"],
   ["dormant", { state: "parked", parkedUntil: "P5" }, "dormant until P5"],
   ["ended", { state: "ended", ended: "2026-10-29T14:09:00.000Z" }, /^ended \d\d:\d\d$/],
@@ -321,15 +321,39 @@ test.each([
   expect(badgeOf(activeCard())!.textContent).toBe("stalled");
 });
 
-test("a gone or quiet member carries its own badge; a working member whose link is down carries none", () => {
+test("an older board's gone reads as a lost badge, its quiet as stalled; a working member whose link is down carries none", () => {
   show([APP], 1, [withActivity({ state: "gone", doing: "Read", since: null, reason: "link lost", tokens: null, movedAt: null })]);
-  expect(badgeOf(activeCard())!.textContent).toBe("gone");
-  expect(activeCard().classList.contains("gone")).toBe(true);
+  expect(badgeOf(activeCard())!.textContent).toBe("lost");
+  expect(activeCard().classList.contains("lost")).toBe(true);
   cleanup();
   show([APP], 1, [withActivity({ state: "quiet", doing: "Read", since: minutesAgo(2), reason: "no activity yet", tokens: null, movedAt: null })]);
-  expect(badgeOf(activeCard())!.textContent).toBe("quiet");
+  expect(badgeOf(activeCard())!.textContent).toBe("stalled");
   cleanup();
   show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, reason: "link down", tokens: null, movedAt: null })]);
+  expect(badgeOf(activeCard())).toBeNull();
+});
+
+// board-split#D36: the board's own badge, its reason on hover, beside the word; none on a parked or ended member
+test.each([
+  ["stalled", "no progress for 16 min"],
+  ["lost", "its agent finished without end"],
+  ["blocked", "waits on the person: the API key"],
+] as const)("the board's %s badge reads beside the word, its reason on hover, the member under Needs attention", (name, reason) => {
+  show([APP], 1, [withMember({ badge: { name, reason, since: minutesAgo(3) } })]);
+  const card = activeCard();
+  expect(card.querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+  expect(badgeOf(card)!.textContent).toBe(name);
+  expect(badgeOf(card)!.title).toBe(`${name} for 3 min: ${reason}`);
+  expect(card.classList.contains("lost")).toBe(name === "lost");
+});
+
+test("the board's badge wins over the liveness words: a null badge on a quiet liveness shows none", () => {
+  show([APP], 1, [withMember({ badge: null, liveness: { state: "quiet", doing: "Read", since: minutesAgo(2), reason: "x", tokens: null, movedAt: null } })]);
+  expect(badgeOf(activeCard())).toBeNull();
+});
+
+test("a parked member carries no badge, whatever the board sends (D30)", () => {
+  show([APP], 1, [withMember({ state: "parked", badge: { name: "lost", reason: "x", since: null } })]);
   expect(badgeOf(activeCard())).toBeNull();
 });
 
@@ -358,7 +382,7 @@ test("a member with no activity renders its word and no activity line", () => {
   show([APP], 1, [withActivity(undefined)]);
   const card = activeCard();
   expect(card.querySelector('[data-component="MemberActivity"]')).toBeNull();
-  expect(card.classList.contains("gone")).toBe(false);
+  expect(card.classList.contains("lost")).toBe(false);
 });
 
 // ── the member's two ages (swarm-relay S43, D36, D38) ──────────────────────────
