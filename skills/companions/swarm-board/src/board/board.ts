@@ -8,9 +8,9 @@ import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
 import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { claimsOf, type HeldMergeLock } from "./claims.ts";
-import { statsOf, summarize, type Stats, type StatsScope } from "./stats.ts";
+import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry } from "../packs/registry.ts";
+import { registry, type Stats } from "../packs/registry.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -23,7 +23,8 @@ export type { HeldMergeLock } from "./claims.ts";
 /** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
  *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */
 export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
-export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
+export type { StatsScope, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
+export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns } from "../packs/registry.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 /** `busyMax`: the seat's bound (ms) for a non-shell call, past which it is `stalled · call` (idea 5); absent: BUSY_MAX_MS. */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
@@ -2608,7 +2609,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     },
 
     stats(scope) {
-      return statsOf(db, scope, STALE_MS);
+      // the core's shape with every pack's fields, as the registry types it (D15)
+      return statsOf(db, scope, STALE_MS) as Stats;
     },
 
     repos() {

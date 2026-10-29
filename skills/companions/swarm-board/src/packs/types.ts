@@ -4,6 +4,7 @@
 // no module-level state, every call scoped to one run through its `PackCtx` (D10). The fact types are open records
 // until phase 3 moves the pack's work behind these methods and gives each its fields.
 import type { Kind, Message, Participant, RunId } from "../board/board.ts";
+import type { StatsFigures } from "../board/stats.ts";
 
 /** A verb a pack adds to the CLI's dispatch (D12: listed under the pack's section of the static help). */
 export interface VerbSpec {
@@ -18,8 +19,6 @@ export type PostFacts = Record<string, unknown>;
 export type Refusal = { reason: string } & Record<string, unknown>;
 /** What `afterEnd` released. */
 export type EndFacts = Record<string, unknown>;
-/** A pack's figures of one run, beside the core's (D15). */
-export type PackStats = Record<string, unknown>;
 
 /** The pack's own tables (board-split#D20), reached through the run's context only. */
 export type PackTables = unknown;
@@ -43,7 +42,8 @@ export interface Pack {
   busy?(member: Participant, ctx: PackCtx): boolean;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   afterEnd?(member: Participant, ctx: PackCtx): EndFacts;
-  stats?(run: RunId, ctx: PackCtx): PackStats;
+  /** Its part of `swarm stats`: fields on runs, members and totals, read from the store (D15). */
+  stats?: StatsFigures;
 }
 
 /** What a member is given at join (D11, D22): its pack, none for core only, and whether it carries the verify setting. */

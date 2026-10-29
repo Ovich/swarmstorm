@@ -5,14 +5,14 @@
 // The client loads only when a reader opens: the board page imports this module for its types and
 // pure helpers, and a browser cannot evaluate the client's node modules.
 import type { BoardSnapshot, RepoSummary } from "../board/board.ts";
-import type { Stats, StatsScope } from "../board/stats.ts";
+import type { Stats, StatsScope } from "../board/board.ts";
 import type { Frame, RpcMethod } from "../wire.ts";
 
 export type { BoardSnapshot, LockTurn, Liveness, Phase, PhaseProgress, RepoSummary, RunSummary, SnapshotMember, SnapshotEvent } from "../board/board.ts";
 // The pure helpers the board page needs, so the page too reaches swarm through this door (D18).
 export { planCode, nameHandle, parseMentions } from "../board/mentions.ts";
 export type { Kind } from "../board/kinds.ts";
-export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "../board/stats.ts";
+export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "../board/board.ts";
 
 export interface BoardReader {
   /** Most recently active first, as Board.repos(). */
