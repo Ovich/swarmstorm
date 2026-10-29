@@ -155,11 +155,11 @@ test("`stats` is absent from the members' USAGE, from `--help` and from `--help 
   const STATS = /\bstats\b/;
   const bare = r.swarm(r.repo, []);
   assert.equal(bare.status, 1);
-  assert.match(bare.stderr, /^usage: swarm <verb>/);
+  assert.match(bare.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
   assert.doesNotMatch(bare.stderr, STATS);
   const help = r.swarm(r.repo, ["--help"]);
   assert.equal(help.status, 0);
-  assert.match(help.stdout, /^usage: swarm <verb>/);
+  assert.match(help.stdout, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
   assert.doesNotMatch(help.stdout, STATS);
   const code = r.swarm(r.repo, ["--help", "code"]);
   assert.equal(code.status, 0);
@@ -167,6 +167,6 @@ test("`stats` is absent from the members' USAGE, from `--help` and from `--help 
   assert.doesNotMatch(code.stdout, STATS);
   const own = r.swarm(r.repo, ["stats", "--help"]);
   assert.equal(own.status, 0);
-  assert.match(own.stdout, /^usage: swarm stats /);
+  assert.match(own.stdout, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ stats /);
   assert.match(own.stdout, /--run <id>/);
 });

@@ -139,6 +139,12 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     members.set(member, link);
     logged("recordLink", () => board.recordLink(run, member, link));
   };
+  /** D7, G18: a join starts the seat's presence afresh: an earlier member's lost link and transcript never carry into
+   *  it (no 'link lost' the moment it re-joins); a link of it already connected stays. */
+  const freshPresence = ({ member }: { member: { run: number; seat: string } }): void => {
+    transcripts.get(member.run)?.delete(member.seat);
+    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null });
+  };
   const linked = (m: NonNullable<Speaker["member"]>, connected: boolean): void =>
     keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
   /** Per run, per member: the transcript path its link last sent (idea 1, rule 4). */
@@ -223,6 +229,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (calls.get(call.id) !== rec) return; // cancelled meanwhile
       answer(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === undefined ? null : value }));
       if (call.method === "closeRun") closed(Number(args[0]));
+      if (call.method === "join") freshPresence(value as { member: { run: number; seat: string } });
     };
     if (out instanceof Promise) out.then(settle, (e: Error) => calls.get(call.id) === rec && fail(e.message));
     else settle(out);

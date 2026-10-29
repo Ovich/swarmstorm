@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+merged: you do not hold the merge lock; run node <cli> merge-lock --onto <branch> --as g/w1 first, then merge, then merged again

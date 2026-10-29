@@ -1,0 +1,5 @@
+exit 1
+--- stderr
+seat: which seat?
+usage: node <cli> seat    <id> --run <id> --state ready|running|done|blocked
+e.g. node <cli> seat w1 --run 3 --state running

@@ -685,3 +685,11 @@ test("board with no project for the directory and none named exits 1 saying how 
   assert.equal(r.status, 1);
   assert.match(r.stderr, /no aiview project for .*aiview project add/);
 });
+
+test("V5: project add --path . stores the absolute path, never a literal '.'", () => {
+  const added = run("project", "add", "dotted", "--path", ".", "--json");
+  assert.equal(added.status, 0, added.stderr);
+  const [stored] = JSON.parse(added.stdout).paths as string[];
+  assert.ok(path.isAbsolute(stored), stored);
+  assert.notEqual(stored, ".");
+});

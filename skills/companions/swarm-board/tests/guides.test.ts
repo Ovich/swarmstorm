@@ -94,7 +94,7 @@ test("merge-lock lists the branch's guides; merged refuses until every one is se
   const sha = git(wtA, "rev-parse", "HEAD").trim();
   const missing = swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits");
   assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /missing: ui/);
+  assert.match(missing.stderr, /leaves out ui, which merge-lock listed/);
   git(wtA, "push", "-q", ".", "HEAD:main");
   const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits, ui:n/a no screen, only a constant");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
@@ -132,8 +132,8 @@ test("guides: frontmatter forms, globs, shipped and project sources, settled nam
   // the project's guide-all stands in for the shipped one of the same name
   assert.deepEqual(found.map((g) => `${g.name}:${g.skill}`), ["layers:guide-layers", "all:guide-all", "ui:guide-ui"]);
   assert.deepEqual(guidesFor(found, ["docs/x.md"]).map((g) => g.name), ["all"]);
-  assert.deepEqual(guidesSettlement("a:ok, b:n/a why, with comma, c: ok", ["a", "b", "c"]), { missing: [], unknown: [], unjudged: [] });
-  assert.deepEqual(guidesSettlement("a:fine, b:n/a, x:ok", ["a", "b", "c"]), { missing: ["c"], unknown: ["x"], unjudged: ["a", "b"] });
+  assert.deepEqual(guidesSettlement("a:ok, b:n/a why, with comma, c: ok", ["a", "b", "c"]), { separator: null, corrected: "a:ok, b:n/a why, with comma, c: ok", malformed: [], missing: [], unknown: [], unjudged: [] });
+  assert.deepEqual(guidesSettlement("a:fine, b:n/a, x:ok", ["a", "b", "c"]), { separator: null, corrected: "a:fine, b:n/a, x:ok", malformed: [], missing: ["c"], unknown: ["x"], unjudged: ["a", "b"] });
   // the target's tree, read through git: only guide-* folders
   const tree: Record<string, string> = { ".claude/skills/guide-t/SKILL.md": '---\nname: guide-t\npaths: ["lib/**"]\n---\n' };
   assert.deepEqual(projectGuidesAt((spec) => tree[spec] ?? null, "guide-t\nother"), [{ name: "t", skill: "guide-t", paths: ["lib/**"] }]);
@@ -174,4 +174,72 @@ test("claim takes several paths, and resolves them in the member's worktree what
   // the other member is held on both
   const held = swarm(wtB, "claim", "src/a.ts");
   assert.equal(held.status, 3);
+});
+
+test("G41: a brace glob matches any of its alternatives; the shipped guides apply to source files", () => {
+  assert.ok(globRegex("**/*.{ts,tsx}").test("src/a.ts"));
+  assert.ok(globRegex("**/*.{ts,tsx}").test("a.tsx"));
+  assert.ok(!globRegex("**/*.{ts,tsx}").test("src/a.md"));
+  assert.ok(globRegex("src/{a,b/{c,d}}.ts").test("src/b/d.ts"));
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-g41-"));
+  try {
+    const shipped = discoverGuides(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."), empty);
+    const names = guidesFor(shipped, ["src/board/board.ts"]).map((g) => g.name);
+    assert.ok(names.includes("complexity") && names.includes("deepen-module"), names.join(","));
+    assert.deepEqual(guidesFor(shipped, ["README.md"]).map((g) => g.name), []);
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
+});
+
+test("D11: merged refuses a sha git does not know, and takes a long report from --report-file (V1, G25)", () => {
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 3;\n");
+  commit(wtA, "a");
+  cli(wtA, "merge-lock", "--onto", "main");
+  const unknown = swarm(wtA, "merged", "deadbeef", "--files", "src/a.ts", "--report", "-", "--guides", "all:ok");
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /deadbeef is no commit git knows/);
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  const sha = git(wtA, "rev-parse", "HEAD").trim();
+  const file = path.join(home, "report.md");
+  fs.writeFileSync(file, "a long report\nover two lines\n");
+  const out = cli(wtA, "merged", sha, "--files", "src/a.ts", "--report-file", file, "--guides", "all:ok");
+  const seq = /reported as #(\d+)/.exec(out)?.[1];
+  assert.ok(seq, out);
+  assert.match(cli(repo, "read", seq!), /a long report\nover two lines/);
+});
+
+test("G28: a build output another member holds is claimed at merge-lock without a flag; a source file still flags", () => {
+  fs.mkdirSync(path.join(repo, "dist-cli"), { recursive: true });
+  cli(wtB, "claim", "--new", "dist-cli/cli.mjs");
+  cli(wtB, "claim", "src/a.ts");
+  fs.mkdirSync(path.join(wtA, "dist-cli"), { recursive: true });
+  fs.writeFileSync(path.join(wtA, "dist-cli", "cli.mjs"), "built\n");
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 4;\n");
+  commit(wtA, "build");
+  const lock = cli(wtA, "merge-lock", "--onto", "main");
+  assert.doesNotMatch(lock, /dist-cli\/cli\.mjs.*flag|flag.*dist-cli\/cli\.mjs/);
+  assert.match(cli(wtA, "roster"), /dist-cli\/cli\.mjs/);
+  assert.match(lock, /flagged: you wrote src\/a\.ts outside your claim/);
+  assert.doesNotMatch(lock, /dist-cli/);
+});
+
+// S4 targets (D3): merge-lock prints the exact --guides form merged takes; merged takes a guide by its name or its
+// skill's; a bad separator or a token that is no <name>:<verdict> is refused naming it, with usage and one corrected form
+test("S4 target: merge-lock prints the --guides form merged takes; either name form is accepted", () => {
+  fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 3;\n");
+  commit(wtA, "page");
+  const lock = cli(wtA, "merge-lock", "--onto", "main").split("\n");
+  assert.ok(lock.includes("guides of this merge: all (guide-all), ui (guide-ui); check your change against each, then settle each in merged's --guides below"), lock.join("\n"));
+  assert.ok(lock.some((l) => l.startsWith("granted: merge, then ") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
+  const sha = git(wtA, "rev-parse", "HEAD").trim();
+  const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
+  const usage = 'usage: --guides "<name>:ok|n/a <why>, ..."';
+  assert.equal(merged("all:ok; ui:ok").stderr.trim(), `merged: --guides separates guides with ";"; ${usage}; corrected: --guides "all:ok, ui:ok"`);
+  assert.equal(merged("all:ok, ui ok").stderr.trim(), `merged: --guides has "ui ok", which is no <name>:<verdict>; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);
+  assert.equal(merged("all:ok, ui:ok, bogus:ok").stderr.trim(), `merged: --guides names bogus, which merge-lock did not list; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);
+  assert.equal(merged("all:ok").stderr.trim(), `merged: --guides leaves out ui, which merge-lock listed; ${usage}; corrected: --guides "all:ok, ui:ok|n/a <why>"`);
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", "guide-all:ok, guide-ui:ok");
+  assert.match(out, /guides recorded as #\d+/);
 });

@@ -16,7 +16,7 @@ test("aiview reads a run through the reader", async () => {
   try {
     const { writer } = board;
     const repo = "/repos/one/.git";
-    const run = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats: [{ id: "S1", title: "the board", blockers: [] }] });
+    const run = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats: [{ id: "S1", blockers: [] }] });
     const s1 = (await writer.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
     await writer.post(s1, "@orchestrator the schema is in");
 
@@ -41,8 +41,8 @@ test("`BoardReader.stats` deep-equals `Board.stats` for a run, the across scopes
     const { writer } = board;
     const repo = "/repos/one/.git";
     const seats = [
-      { id: "S1", title: "the schema", blockers: [] },
-      { id: "S2", title: "the page", blockers: [] },
+      { id: "S1", blockers: [] },
+      { id: "S2", blockers: [] },
     ];
     const plan = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats });
     const s1 = (await writer.join({ run: plan.id, seat: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).member;
@@ -63,8 +63,8 @@ test("`BoardReader.stats` deep-equals `Board.stats` for a run, the across scopes
       group: "idea",
       title: "An idea",
       seats: [
-        { id: "skeptic", title: "the skeptic", role: "skeptic", blockers: [] },
-        { id: "builder", title: "the builder", role: "builder", blockers: [] },
+        { id: "skeptic", role: "skeptic", blockers: [] },
+        { id: "builder", role: "builder", blockers: [] },
       ],
     });
     const skeptic = (await writer.join({ run: idea.id, seat: "skeptic", doing: "doubting", files: [] })).member;

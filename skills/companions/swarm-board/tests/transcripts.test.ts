@@ -128,3 +128,21 @@ test("no CLAUDE_CODE_SESSION_ID: locate returns null without reading", () => {
   }
   assert.equal(reads, 0);
 });
+
+test("observe reports a background wait --mentions as a running listener until its notification, then when it ended (D4)", () => {
+  const listen = "node swarm.mjs wait --mentions --as p/S1";
+  const file = writeMain(root, PROJECT, SESSION, [
+    toolCall("Bash", { command: "node swarm.mjs wait --as p/S1" }, "toolu_fg", "2026-10-22T10:00:00.000Z"),
+    toolResult("toolu_fg"),
+    toolCall("Bash", { command: listen, run_in_background: true }, "toolu_listen", "2026-10-22T10:00:02.000Z"),
+  ]);
+  const first = observe(file, null);
+  assert.deepEqual(first.activity.listener, { running: true, endedAt: null });
+  const notified = "<task-notification>\n<task-id>x</task-id>\n<tool-use-id>toolu_listen</tool-use-id>\n<status>completed</status>\n</task-notification>";
+  fs.appendFileSync(file, jsonl([{ type: "user", timestamp: "2026-10-22T10:01:00.000Z", message: { role: "user", content: notified } }]));
+  const second = observe(file, first.cursor);
+  assert.deepEqual(second.activity.listener, { running: false, endedAt: Date.parse("2026-10-22T10:01:00.000Z") });
+  // a foreground wait --mentions is no listener
+  const fg = writeMain(root, PROJECT, OTHER, [toolCall("Bash", { command: listen }, "toolu_fg2", "2026-10-22T10:00:00.000Z")]);
+  assert.deepEqual(observe(fg, null).activity.listener, { running: false, endedAt: null });
+});

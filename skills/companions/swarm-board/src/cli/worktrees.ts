@@ -53,6 +53,14 @@ export function inLinkedWorktree(cwd: string): boolean {
 const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 
+/** The base as a full ref git cannot guess from (G36): the local branch, else `origin/<base>`, else the base as given
+ *  (a commit). A bare branch name that exists only on origin makes `git worktree add -b <seat> <dir> <base>` create and
+ *  check out the base itself instead of the seat branch. */
+export const baseRef = (cwd: string, base: string): string => {
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  return base;
+};
+
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
 export function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
   const at = worktreeDir(repo, runId, seat);
@@ -64,7 +72,8 @@ export function ensureWorktree(cwd: string, repo: string, runId: number, group: 
   run(cwd, "worktree", "prune");
   fs.mkdirSync(path.dirname(at), { recursive: true });
   // a branch left by an earlier worktree of the seat: reset to the base when merged, kept as it is when not
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
+  const from = baseRef(cwd, base);
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
@@ -78,7 +87,7 @@ export function leftover(wt: string, into: string | null): string | null {
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
   if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
   if (!into) return "no base branch recorded for its run";
-  if (!isAncestor(wt, "HEAD", into)) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
+  if (!isAncestor(wt, "HEAD", baseRef(wt, into))) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
   return null;
 }
 
@@ -140,4 +149,37 @@ export function stopLinks(runId: number, members: string[]): void {
 export function sweep(wt: string, repo: string, into: string | null): { removed: boolean; why: string | null } {
   const why = leftover(wt, into) ?? removeWorktree(wt, repo);
   return { removed: why === null, why };
+}
+
+/** Where the board made worktrees before D6: under the data home. */
+export const LEGACY_ROOT = path.join(DATA_ROOT, "worktrees");
+const LEGACY_SWEPT = path.join(LEGACY_ROOT, ".swept");
+
+/** D6: the legacy data-home root, swept once as a migration, never by prune: each clean worktree in it is removed
+ *  (its branch kept, so no commit is lost), one with uncommitted changes is kept and named. The root goes when empty;
+ *  else a marker keeps the sweep from running again. Returns one line per kept worktree; [] when nothing was there. */
+export function sweepLegacyRoot(): string[] {
+  if (!fs.existsSync(LEGACY_ROOT) || fs.existsSync(LEGACY_SWEPT)) return [];
+  const kept: string[] = [];
+  const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
+  for (const wt of sub(LEGACY_ROOT).flatMap(sub)) {
+    const common = git(wt, "rev-parse", "--git-common-dir");
+    if (!common) {
+      // not a worktree any more: an empty folder goes, anything else stays
+      if (!fs.readdirSync(wt).length) fs.rmdirSync(wt);
+      else kept.push(`${wt}: not a git worktree, left as it is`);
+      continue;
+    }
+    const status = run(wt, "status", "--porcelain", "--untracked-files=all");
+    if (!status.ok || status.out) {
+      kept.push(`${wt}: uncommitted changes, kept`);
+      continue;
+    }
+    const why = removeWorktree(wt, path.resolve(wt, common));
+    if (why) kept.push(`${wt}: ${why}`);
+  }
+  for (const runDir of sub(LEGACY_ROOT)) if (!fs.readdirSync(runDir).length) fs.rmdirSync(runDir);
+  if (!fs.readdirSync(LEGACY_ROOT).length) fs.rmdirSync(LEGACY_ROOT);
+  else fs.writeFileSync(LEGACY_SWEPT, `${new Date().toISOString()}\n`);
+  return kept;
 }

@@ -122,6 +122,8 @@ test("open ends on the command that starts the member's link, join prints it bef
   assert.match(opened.at(-1)!, /^next: /);
   assert.match(opened.at(-2)!, linkLine);
   assert.ok(opened.at(-2)!.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.at(-2)!);
+  // S15: a task unread, so the join ends on the background listener
+  r.cli(r.repo, "post", "@S3 your task", "--as", "link-plan/orchestrator");
   const joined = r.cli(r.wtA, "join", "--run", String(run), "--seat", "S3", "--doing", "x").trimEnd().split(/\r?\n/);
   const [, entry, verb] = joined.at(-2)!.match(linkLine)!;
   assert.equal(verb, `link --run ${run} --as link-plan/S3`);

@@ -32,6 +32,10 @@ export type TranscriptCursor = {
   boardsOwn: Set<string>;
   /** the last kill seen that was not by PID (idea 4) */
   breach: NonNullable<MemberActivity["breach"]> | null;
+  /** background `wait --mentions` calls not yet notified, by tool_use id: the member's listeners (D4) */
+  listeners: Set<string>;
+  /** when the last listener's notification came */
+  listenerEndedAt: number | null;
 };
 
 /** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
@@ -269,6 +273,8 @@ const freshCursor = (): TranscriptCursor => ({
   background: new Map(),
   boardsOwn: new Set(),
   breach: null,
+  listeners: new Set(),
+  listenerEndedAt: null,
 });
 
 // ── kills (idea 4): the patterns are data, Claude Code's shells' words; a kill by PID is never a breach ──
@@ -366,10 +372,16 @@ function textOf(content: unknown): string {
 }
 
 /** Closes every background task a `<task-notification>` in this text names (either notification form, addendum F1). */
-function closeNotified(cursor: TranscriptCursor, text: string): void {
+function closeNotified(cursor: TranscriptCursor, text: string, at: number): void {
   if (!text.includes("<task-notification>")) return;
-  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) cursor.background.delete(m[1]);
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
+    cursor.background.delete(m[1]);
+    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
+  }
 }
+
+/** Whether this command runs the board's `wait --mentions`: a listener when run in the background (D4). */
+const commandRunsListener = (command: string, backslashEscapes: boolean): boolean => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
 
 /** The latest turn's oldest awaited background task, its output stat'd now; a task from an earlier turn is a service, never awaited. */
 function awaitedBackground(cursor: TranscriptCursor): MemberActivity["background"] {
@@ -398,7 +410,7 @@ type ContentPart = { type?: string; id?: string; name?: string; input?: unknown;
 
 /** Reads what was appended to the transcript since `from` (all of it when null); a vanished or truncated file starts over from 0. */
 export function observe(transcript: string, from: TranscriptCursor | null): { activity: MemberActivity; cursor: TranscriptCursor } {
-  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null } : freshCursor();
+  let cursor: TranscriptCursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
@@ -427,7 +439,7 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
         continue;
       }
       // a mid-turn notification arrives as an attachment line: it closes its task, never counts for the turn (F1)
-      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt);
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
       if (line.type !== "assistant" && line.type !== "user") continue;
       const at = timeOf(line, mtime);
       const content = Array.isArray(line.message?.content) ? (line.message.content as ContentPart[]) : [];
@@ -455,6 +467,7 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
           const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          if (input?.run_in_background === true && typeof command === "string" && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: (command as string).replace(/\s+/g, " ").trim(), ...kill, at };
@@ -464,9 +477,9 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
         if (cursor.inTurn && !inTurn) cursor.endedTurns++;
         cursor.inTurn = inTurn;
       } else {
-        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content);
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
         for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text);
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
           if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
           const result = textOf(part.content);
           const call = cursor.open.get(part.tool_use_id);
@@ -510,6 +523,7 @@ export function observe(transcript: string, from: TranscriptCursor | null): { ac
       lastLine: cursor.lastLine,
       background: awaitedBackground(cursor),
       breach: cursor.breach,
+      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt },
     },
     cursor,
   };

@@ -47,6 +47,8 @@ const sw = (...a) => {
 };
 // a code run merges under the merge lock, onto a branch no checkout holds
 const lockMerge = (as) => sw("merge-lock", "--onto", "trunk", "--as", as);
+// merged takes only a sha git knows on the branch (V1): trunk's own head stands in for each merge
+const trunkSha = () => spawnSync("git", ["rev-parse", "--short", "trunk"], { cwd: REPO, encoding: "utf8" }).stdout.trim();
 const probe = (as, timeout = 8000) => {
   const t0 = Date.now();
   const p = spawn(process.execPath, [CLI, "wait", "--mentions", "--as", as, "--timeout", String(timeout)], { cwd: REPO, env });
@@ -129,7 +131,7 @@ else record({ id: "B1e @Nick", status: "FAIL", detail: "no funny name for ra/s i
 await kase("B3a subscribed any:merged (another seat's merge)", "wake", "rs/sub", () => {
   sw("claim", "--as", "rs/m", "src/b3a.txt", "--new");
   lockMerge("rs/m");
-  return sw("merged", "--report", "-", "--as", "rs/m", "cafe001", "--files", "src/b3a.txt");
+  return sw("merged", "--report", "-", "--as", "rs/m", trunkSha(), "--files", "src/b3a.txt");
 }, 5000);
 await kase("B4 agreement on file it holds", "wake", "ra/s", () => {
   sw("claim", "--as", "ra/s", "README.md");
@@ -140,11 +142,11 @@ await kase("B5a pause wakes member", "wake", "ra/s", () => sw("pause", "stop", "
 await kase("B5b resume wakes member", "wake", "ra/s", () => sw("resume", "go on", "--as", "ra/orchestrator"));
 await kase("B5c phase wakes member", "wake", "ra/s", () => sw("phase", "p1", "do it", "--as", "ra/orchestrator"));
 lockMerge("ra/w1");
-await kase("B8 agreement party: merged of the agreed file", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", "deadbeef", "--files", "README.md"));
+await kase("B8 agreement party: merged of the agreed file", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", trunkSha(), "--files", "README.md"));
 // D7: the party to an agreement hears the merge without holding a claim
 sw("release", "--as", "ra/s", "README.md");
 lockMerge("ra/w1");
-await kase("D7 agreement party with no claim woken by merged", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", "deadbee2", "--files", "README.md"));
+await kase("D7 agreement party with no claim woken by merged", "wake", "ra/s", () => sw("merged", "--report", "-", "--as", "ra/w1", trunkSha(), "--files", "README.md"));
 
 // D8: a paused run holds a mention; the resume brings it
 {

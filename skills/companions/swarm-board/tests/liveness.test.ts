@@ -339,3 +339,18 @@ test("no idle while a seat of the run has yet to join: a run filling up is not i
   assert.equal(events("idle").length, 0);
   await held;
 });
+
+test("G31: alerts due within the window after one told are held and told together at its end, one wake", () => {
+  const { run } = setup();
+  const base = Date.now() + 60_000;
+  board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
+  board.livenessTick(run.id, at(base, 1), presence);
+  assert.equal(events("gone").length, 1, "the first at once");
+  board.recordActivity(run.id, "b", act({ grewAt: base, finished: true }), at(base, 2));
+  board.livenessTick(run.id, at(base, 3), presence);
+  assert.equal(events("gone").length, 1, "the second held inside the window");
+  board.livenessTick(run.id, at(base, 10), presence);
+  assert.equal(events("gone").length, 1);
+  board.livenessTick(run.id, at(base, 11), presence);
+  assert.deepEqual(events("gone").map((e) => e.body), ["gone idea/a: its agent finished without end", "gone idea/b: its agent finished without end"]);
+});

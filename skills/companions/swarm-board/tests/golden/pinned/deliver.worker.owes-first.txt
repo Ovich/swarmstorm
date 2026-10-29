@@ -1,0 +1,2 @@
+exit 0
+phase build is open and asks: build the thing. Do your part now, then: node <cli> done build --as g/w1

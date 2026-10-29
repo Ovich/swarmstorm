@@ -26,8 +26,10 @@ the foreground: an agent that ends its turn on a background task of its own is n
    roster, `join` prints `start your link now, in the background …`: run that command, as
    printed, as a background task (the harness's own background feature; `references/setup.md`
    says which harnesses have one). It carries your calls to the board while you work. `join`
-   ends on `start your listener now, in the background …`: run it the same way. `claim`, `post`
-   and `doing` end on the listener line while no listener of yours is pending: start it then.
+   shows, in full, any post for you made before you joined. With such a task, it ends on `start
+   your listener now, in the background …`: run it the same way and start the task; with
+   nothing for you, it ends on the foreground wait of step 3. `claim`, `post` and `doing` end on
+   the listener line while no listener of yours is pending: start it then.
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it

@@ -74,7 +74,8 @@ afterEach(() => {
 test("no verb prints usage and exits 1", () => {
   const r = run();
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /^usage: swarm <verb>/);
+  // V1: the usage names the real invocation
+  assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
 });
 
 test("open then join prints the roster", () => {
@@ -313,6 +314,9 @@ const START_LINK = (member: string, run: string): string =>
 
 test("join prints the link line, then the line that starts the listener, the exact command with --as, last; --json carries them as link then next (D61, D32, swarm-relay D33)", () => {
   const id = String(openRun());
+  // S15: a worker with a task unread is working, so its join ends on the background listener
+  run("post", "@S5 your task", "--as", "review-tool/orchestrator");
+  run("post", "@S3 your task", "--as", "review-tool/orchestrator");
   const r = run("join", "--run", id, "--seat", "S5", "--doing", "y");
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.trimEnd().split("\n");
@@ -368,18 +372,20 @@ test("merged carries the worker's report: refused without --report, naming it an
   const s5 = ["--as", "review-tool/S5"];
   const orch = ["--as", "review-tool/orchestrator"];
   run("deliver", ...orch);
-  const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts");
+  // V1: merged takes only a sha git knows on the branch: the repository's HEAD, trunk once locked, stands in for the merge
+  const sha = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+  const bare = run("merged", ...s5, sha, "--files", "src/a.ts");
   assert.notEqual(bare.status, 0);
   assert.match(bare.stderr, /--report "<what you did>".*--report - merges silently/);
   lock(s5);
-  const r = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
+  const r = run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(typeof JSON.parse(r.stdout).reported, "number");
   const heard = run("deliver", ...orch).stdout;
-  assert.match(heard, /^@orchestrator merged abc123: T1 done, tests green$/m);
+  assert.match(heard, new RegExp(`^@orchestrator merged ${sha}: T1 done, tests green$`, "m"));
   lock(s5);
-  assert.equal(run("merged", ...s5, "def456", "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], "merged def456: lock released");
-  assert.equal(/@orchestrator merged def456/.test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
+  assert.equal(run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], `merged ${sha}: lock released`);
+  assert.equal(new RegExp(`@orchestrator merged ${sha}`).test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
 });
 
 test("merged on a code run is refused without the merge lock, naming merge-lock; --unlocked is the orchestrator's alone, its why posted in the run", () => {
@@ -494,7 +500,8 @@ test("end releases a member's pending wait in another process", async () => {
   const t0 = Date.now();
   assert.equal(await exited, 0);
   assert.ok(Date.now() - t0 < 5000, "end did not release the wait");
-  assert.equal(out, "");
+  // G26: an ended member's listener says why it stopped, never an empty answer
+  assert.match(out, /you have ended in run [0-9]+: this listener stops; nothing to re-arm/);
 });
 
 test("two worktrees of one repository share one thread", () => {
@@ -556,7 +563,7 @@ test("the launcher has no hook verb: usage, exit 1, and the usage never names a 
   for (const kind of ["pre", "post"]) {
     const r = spawnSync(process.execPath, [launcher, "hook", kind], { cwd: repo, input: "{}", encoding: "utf8", env: env() });
     assert.equal(r.status, 1, kind);
-    assert.match(r.stderr, /^usage: swarm <verb>/);
+    assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
     assert.doesNotMatch(r.stderr, /hook/i);
     assert.equal(r.stdout, "");
   }
@@ -896,9 +903,10 @@ test("a mention of a declared seat not joined yet is not 'matched nobody': it wa
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!r.stdout.includes("matched nobody"), r.stdout);
   assert.match(r.stdout, /^@S5 has not joined yet: the post waits for it, read at its join$/m);
-  run("join", "--run", id, "--seat", "S5", "--doing", "joining");
-  const delivered = run("deliver", "--as", "review-tool/S5").stdout;
-  assert.ok(delivered.includes("@S5 the header is yours"), delivered);
+  // S1: shown at the join itself, and delivered there
+  const joined = run("join", "--run", id, "--seat", "S5", "--doing", "joining").stdout;
+  assert.ok(joined.includes("@S5 the header is yours"), joined);
+  assert.ok(!run("deliver", "--as", "review-tool/S5").stdout.includes("@S5 the header is yours"));
 });
 
 test("roster --json and status --json give each member's worktree, null for a seat (D64)", () => {
@@ -1042,7 +1050,10 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
   assert.match(orch, /start this listener again, in the background: node .* wait --mentions --as idea\/orchestrator/);
-  const member = run("join", "--run", String(openRun()), "--seat", "S3", "--doing", "x").stdout.trimEnd().split("\n");
+  const planRun = String(openRun());
+  // S15: a task unread, so the worker's join ends on the background listener
+  run("post", "@S3 your task", "--as", "review-tool/orchestrator");
+  const member = run("join", "--run", planRun, "--seat", "S3", "--doing", "x").stdout.trimEnd().split("\n");
   assert.match(member.at(-1)!, /^start your listener now, in the background/);
 });
 
@@ -1114,11 +1125,15 @@ test("on a plan run too: the current phase heads wait, deliver and read, follows
   const short = /^phase build \(unchanged; its text: .* thread --as review-tool\/S3\)$/;
   const delivered = run("deliver", "--as", s3).stdout.split("\n");
   assert.match(delivered[0], short);
-  assert.match(run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n")[0], short);
+  // V10: the post first, then the short header
+  const readLines = run("read", seqOf(posted.stdout), "--as", s3).stdout.split("\n");
+  assert.match(readLines[0], /^#\d+ /);
+  assert.ok(readLines.some((l) => short.test(l)), readLines.join("\n"));
 
   const joined = run("join", "--run", String(id), "--seat", "S5", "--doing", "skill").stdout.split("\n");
-  const lastRoster = joined.map((l) => / run \d+ {2}\w+ .*doing: /.test(l)).lastIndexOf(true);
-  assert.equal(joined[lastRoster + 1], header);
+  // G32: S5 owes the phase, so its text is stated once, on the owed line, with no header line besides it
+  assert.ok(!joined.includes(header), joined.join("\n"));
+  assert.equal(joined.join("\n").split("the first wave").length - 1, 1, joined.join("\n"));
 
   assert.match(run("roster").stdout, new RegExp(`^run ${id} {2}A plan {2}phase build: the first wave {2}0/2 done$`, "m"));
   assert.match(run("status").stdout, new RegExp(`run ${id} {2}plan {2}review-tool {2}A plan {2}phase build: the first wave {2}0/2 done`));
@@ -1258,10 +1273,9 @@ test("C2: open with no protocol ends on next: no protocol, workers on call, and 
   assert.match(last, PHASE_CMD("c2"));
 });
 
-test("C3: the orchestrator's first post of a task run with no phase open ends on next:; its second does not; with a phase open, never; a brainstorm, never", () => {
+test("C3, V4: open says next: once; no post repeats it, the first included; with a phase open, never; a brainstorm, never", () => {
   run("open", "--kind", "task", "--group", "c3", "--title", "T", "--seats", seatsFile("c3", ["w1"]));
-  const first = run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout.trimEnd().split("\n");
-  assert.match(first.at(-1)!, /^next: no protocol/);
+  assert.doesNotMatch(run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout, /^next:/m);
   assert.doesNotMatch(run("post", "@w1 task T2", "--as", "c3/orchestrator").stdout, /^next:/m);
   run("open", "--kind", "task", "--group", "c3b", "--title", "T", "--seats", seatsFile("c3b", ["w1"]));
   run("phase", "build", "go", "--as", "c3b/orchestrator");
@@ -1271,12 +1285,12 @@ test("C3: the orchestrator's first post of a task run with no phase open ends on
   assert.doesNotMatch(run("post", "@a an idea", "--as", "c3c/orchestrator").stdout, /^next:/m);
 });
 
-test("C4: --json carries the line as next, on open and on that first post", () => {
+test("C4, V4: --json carries the line as next on open, never on the first post", () => {
   const opened = JSON.parse(run("open", "--kind", "task", "--group", "c4", "--title", "T", "--seats", seatsFile("c4", ["w1"]), "--protocol", "build-verify", "--json").stdout);
   assert.match(opened.next, /^next: open build-verify's first phase/);
-  const text = run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"])).stdout.trimEnd().split("\n").at(-1)!;
+  run("open", "--kind", "task", "--group", "c4b", "--title", "T", "--seats", seatsFile("c4b", ["w1"]));
   const posted = JSON.parse(run("post", "@w1 task", "--as", "c4b/orchestrator", "--json").stdout);
-  assert.equal(posted.next, text, "the first post's next is open's last line");
+  assert.doesNotMatch(String(posted.next), /^next:/);
 });
 
 test("idea 3's addition: open --protocol none ends on next: phaseless, with no phase command, and its first post carries no next:", () => {
@@ -1383,4 +1397,50 @@ test("G3: on a home other than the default, every printed command carries SWARMS
   const commands = r.stdout.split("\n").filter((l) => /: (SWARMSTORM_HOME=\S+ )?node \S+ /.test(l));
   assert.ok(commands.length >= 2, r.stdout);
   for (const l of commands) assert.match(l, /: SWARMSTORM_HOME=\S+ node \S+ /, l);
+});
+
+test("the listener line follows the link's report of the member's listener, not its in-wait column (D4, G16)", async () => {
+  const id = Number(openRun());
+  run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
+  const as = ["--as", "review-tool/S5"];
+  const report = async (listener: { running: boolean; endedAt: number | null }): Promise<void> => {
+    const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
+    try {
+      board.recordActivity(id, "S5", { grewAt: Date.now(), tokens: 1, context: null, openTool: null, lastTool: null, finished: false, listener }, new Date());
+    } finally {
+      board.close();
+    }
+  };
+  const ends = (r: { stdout: string }): boolean => r.stdout.trimEnd().split("\n").at(-1) === LISTEN("review-tool/S5");
+  // running: no line after post, claim or agree
+  await report({ running: true, endedAt: null });
+  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/a.ts"), run("agree", ...as, "S5 edits all of it", "--about", "src/a.ts", "--with", "S3")])
+    assert.equal(r.status === 0 && !ends(r), true, r.stdout + r.stderr);
+  // none: the line
+  await report({ running: false, endedAt: null });
+  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/b.ts")]) assert.equal(ends(r), true, r.stdout);
+  // V3: a listener whose task ended without a re-arm is no listener, however lately: the line
+  await report({ running: false, endedAt: Date.now() - 5_000 });
+  assert.equal(ends(run("post", ...as, "again")), true);
+});
+
+test("V3: a foreground wait --mentions counts as listening even when the link reports no background listener", async () => {
+  const id = Number(openRun());
+  run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
+  const as = ["--as", "review-tool/S5"];
+  const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
+  try {
+    board.recordActivity(id, "S5", { grewAt: Date.now(), tokens: 1, context: null, openTool: null, lastTool: null, finished: false, listener: { running: false, endedAt: null } }, new Date());
+  } finally {
+    board.close();
+  }
+  const child = spawn(process.execPath, [CLI, "wait", "--mentions", ...as, "--timeout", "15000"], { cwd: repo, env: env() });
+  const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
+  try {
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.doesNotMatch(run("post", ...as, "hello").stdout, /start your listener/);
+  } finally {
+    run("end", ...as);
+    await exited;
+  }
 });

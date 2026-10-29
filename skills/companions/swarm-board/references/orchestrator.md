@@ -12,16 +12,16 @@ except `open`, `seat`, `close` and `status`.
      plan's aiview URL as `link`. Tasks are posts, never rows:
 
      ```json
-     [{ "id": "w1", "title": "worker", "role": "builder · the api", "link": "<plan URL>" },
-      { "id": "v1", "title": "verifier · the app", "role": "verifier", "link": "<plan URL>", "busyMax": 300000 }]
+     [{ "id": "w1", "role": "builder · the api", "link": "<plan URL>" },
+      { "id": "v1", "role": "verifier", "link": "<plan URL>", "busyMax": 300000 }]
      ```
 
    - **A brainstorm**: every seat, with its `role` and the brainstorm board's URL as `link`;
      the seat's row on that board is named in its brief:
 
      ```json
-     [{ "id": "skeptic", "title": "<the seat's title>", "role": "<the role>", "link": "<brainstorm board URL>", "on": ["agreement"] },
-      { "id": "builder", "title": "<…>", "role": "<…>", "link": "<…>" }]
+     [{ "id": "skeptic", "role": "<the role>", "link": "<brainstorm board URL>", "on": ["agreement"] },
+      { "id": "builder", "role": "<…>", "link": "<…>" }]
      ```
 
    - **`on`**, on any row: the events that wake that member's `wait --mentions` besides

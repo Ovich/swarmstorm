@@ -1,0 +1,4 @@
+exit 0
+phase build (unchanged; its text: node <cli> thread --as g/orchestrator)  PAUSED: hold on
+#<seq> g/w1 (event): joined: x · + w1 <nick:w1>
+#<seq> g/w1 (event): all joined: 1 seat

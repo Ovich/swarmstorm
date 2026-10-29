@@ -396,6 +396,9 @@ export interface Board {
   /** Every post of `p`'s run since its phase `name` was last opened (its current phase when omitted), events left
    *  out: the whole discussion a member reads before it decides or adds to it. Empty before the first phase. */
   thread(p: Participant, name?: string): Message[];
+  /** A run read from outside it, open or closed, by no member (G30): its phase `name`, or every post of the run when
+   *  omitted, events left out. Reads only; counts no call. */
+  runThread(run: RunId, name?: string): Message[];
   deliver(p: Participant): Delivery; // own run's items + what wakes p from any run (plan D2); undelivered since last time; marks them delivered; stamps the last call
   /** The first delivery, or empty on timeout or once `p` has ended (D49). `mentionsOnly`: only a
    *  message that mentions `p`, is urgent, or is an event `p` subscribed to (D59) ends it, and only those are marked delivered; the rest
@@ -414,7 +417,7 @@ export interface Board {
   checkEdit(p: Participant, path: string, opts?: { interface?: boolean }): EditAllowed | EditHeld;
   // checkEdit, reconcileWrites, release, lockMerge, merged: refused when the caller's kind has no claims
   /** Paths written outside the claim: a free one is claimed, a held one flagged on the thread. */
-  reconcileWrites(p: Participant, changed: string[]): Flag[];
+  reconcileWrites(p: Participant, changed: string[], generated?: string[]): Flag[];
   release(p: Participant, path: string): void;
   /** `reflogMark`: the length of the caller's HEAD reflog at the call, kept with a new grant so `merged` replays only a later rebase (D36). */
   /** `guides`: the guides the branch's changes fall under, which `merged --guides` must settle. */
@@ -456,6 +459,8 @@ const ORCHESTRATOR = "orchestrator";
 /** A watch event can be missed (a coalesced write, a platform quirk); the store is re-read
  *  this often regardless, so a missed event costs at most this much. */
 const WAIT_POLL_MS = 1000;
+/** G31: liveness alerts due within this window after one told are held and told together. */
+const ALERT_WINDOW_MS = 10 * 1000;
 const LINE_WIDTH = 100;
 const STALE_MS = 10 * 60 * 1000;
 /** A pending wait's looks are logged in call_log at most this often: well under STALE_MS, never a row per tick. */
@@ -782,6 +787,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the owing span (idea 1, rule 5): since when the member waits while owing the phase, and when its last wait returned
   upkeep("member_activity", "owe_since", "owe_since INTEGER");
   upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
+  // D4 (G16): the link's report of the member's background listener; null from an older link, which leaves the in-wait column
+  upkeep("member_activity", "listener_running", "listener_running INTEGER");
+  upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
   const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
@@ -846,6 +854,20 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     else touch();
   };
 
+  /** Every post of `run` since its phase `phase` was last opened, to the next phase event or to now, events left out. */
+  const phasePosts = (run: RunId, phase: string): Message[] => {
+    const opened = db
+      .prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?")
+      .get(run, EVENTS.phase.name, phase) as Row;
+    if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${run}`);
+    const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(run, EVENTS.phase.name, Number(opened.s)) as Row;
+    return (
+      db
+        .prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq")
+        .all(run, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)) as Row[]
+    ).map(toMessage);
+  };
+
   const runRow = (id: RunId): Row => {
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
     if (!r) throw new Error(`unknown run ${id}`);
@@ -896,7 +918,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       ...(x.carry === true ? { carry: true as const } : {}),
     }));
 
-  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind FROM participants p JOIN runs r ON r.id = p.run`;
+  const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
+    LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
+  /** D4 (G16), V3: the member listens while its link reports a background listener running, or while a `wait --mentions`
+   *  of its own is held (a foreground one too); a listener whose task ended without a re-arm is no listener. */
+  const listensNow = (r: Row): boolean => Number(r.listening) === 1 || Number(r.listener_running) === 1;
 
   const toParticipant = (r: Row): Participant => ({
     id: Number(r.id),
@@ -909,7 +935,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     nick: nickOf(r),
     ended: r.ended_at != null,
     worktree: r.worktree == null ? null : String(r.worktree),
-    listening: Number(r.listening) === 1,
+    listening: listensNow(r),
     subscriptions: subsOf(r),
   });
 
@@ -1052,13 +1078,21 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // for a member other than the orchestrator), and nothing is carried; what came meanwhile stays for the resume
       const silentWhilePaused = runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
+      // G27: an agreement answering the caller's own post about its path; G35: an endorsement, to the orchestrator.
+      // Both ride on the caller's next wake instead of waking it
+      const asked = db.prepare("SELECT 1 FROM messages WHERE author = ? AND about = ? AND kind = 'msg' AND seq < ? LIMIT 1");
+      const ridesOn = (m: Message): boolean =>
+        m.from !== me.name &&
+        ((m.kind === "agreement" && m.about != null && asked.get(me.id, m.about, m.seq) != null) || (m.kind === "endorsement" && me.seat === ORCHESTRATOR));
       // idea 2: carried to the caller, riding on its next wake; one the tick marked due wakes by itself
-      const carried = (r: Row): boolean => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
+      const carried = (r: Row): boolean => !silentWhilePaused && (ridesOn(toMessage(r)) || carries(toMessage(r), me, me.subscriptions));
       // a wake (D59): a mention, an urgent post, or an event the caller subscribed to in its scope
       const woken = (r: Row): boolean =>
         silentWhilePaused
           ? eventOf(toMessage(r)) === "urgent" || (me.seat !== ORCHESTRATOR && eventOf(toMessage(r)) === "pause")
-          : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
+          : ridesOn(toMessage(r))
+            ? due.get(me.id, Number(r.seq)) != null
+            : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
       // of its own run, everything; of another run, only what wakes the caller (plan D2)
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried(r));
       // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone; a wake
@@ -1101,6 +1135,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       full: messages.filter(full),
       lines: messages.filter((m) => !full(m)).map(messageLine),
     };
+  };
+
+  /** G23: a member done with a phase has had the event that opened it; a later wait never brings it back as news. */
+  const markPhaseOpenDelivered = (p: Participant, phase: string): void => {
+    const opened = (db.prepare("SELECT seq, meta FROM messages WHERE run = ? AND event = ?").all(p.run, EVENTS.phase.name) as Row[]).filter(
+      (r) => r.meta != null && (JSON.parse(String(r.meta)) as { phase?: string }).phase === phase,
+    );
+    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
+    for (const r of opened) mark.run(p.id, Number(r.seq));
   };
 
   const retentionDays = (): number => {
@@ -1209,6 +1252,27 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // ── liveness: member states from activity (swarm-relay D9, D11, D12, D31) ─────────────
   /** Since when every member of a run (the orchestrator aside) has been waiting, and when its last idle was posted. */
   /** `postedSeq`: the run's last post (idles aside) when the idle was told; `stirred`: a member left its wait since. */
+  /** G31: the liveness alerts (gone, liveness, stalled) of a run. The first goes out at once; those due within
+   *  ALERT_WINDOW_MS after it are held and told together as one wake when the window ends. */
+  type DueAlert = { body: string; event: EventName; meta?: MessageMeta };
+  const alertsDue = new Map<RunId, { lastToldAt: number | null; items: DueAlert[] }>();
+  const raiseAlert = (run: RunId, item: DueAlert): void => {
+    const due = alertsDue.get(run) ?? { lastToldAt: null, items: [] };
+    due.items.push(item);
+    alertsDue.set(run, due);
+  };
+  /** One tick's end: the held alerts, together, once the window allows. */
+  const flushAlerts = (run: RunId, t: number, orch: Participant): void => {
+    const due = alertsDue.get(run);
+    if (!due || !due.items.length) return;
+    if (due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
+    const items = due.items.splice(0);
+    due.lastToldAt = t;
+    // posted at one moment, they reach a waiting orchestrator in one wake, each line its own event
+    for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...(i.meta ? { meta: i.meta } : {}) });
+  };
+  /** G40: the stalled set last told per run, and when. */
+  const stalledToldOf = new Map<RunId, { set: string; at: number }>();
   const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean; postedSeq: number; stirred: boolean }>();
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
@@ -1267,7 +1331,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
       // idea 1, rule 5: a wait while owing the phase is quiet once the owing span is long enough
-      const owing = owingOf(p, run, a, t, stallMs);
+      // G39: a member waiting on a background task of its own (its tests) is waiting, not owing
+      const owing = a.bg_target == null ? owingOf(p, run, a, t, stallMs) : null;
       if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
@@ -1737,6 +1802,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             existing.nick == null ? fresh() : null,
             Number(existing.id),
           );
+          // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link
+          // with its transcript) and the alerts told of it never carry into the new one
+          db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run, seat);
+          db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run, seat);
+          db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run, seat);
           return Number(existing.id);
         }
         // a post that already names this seat (a task posted before the member joined) is still
@@ -1861,7 +1931,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             .prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq")
             .all(fresh.run, since, ORCHESTRATOR) as Row[]
         )
-          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`)) }))
+          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`))
+            // G43: a phase for some seats (--for) takes only the posts to those seats
+            .filter((t) => !only.length || only.includes(seatOf(t))) }))
           .filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
         const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
@@ -2008,6 +2080,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const wakeCase = doneWakeCase(fresh, name, progress);
         const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
+        markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
         return { progress, all, already: false, late: false, message };
       });
@@ -2058,6 +2131,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           bg?.since ?? null,
           bg?.outputGrewAt ?? null,
           act.transcript ?? null,
+          run,
+          member,
+        );
+        const listener = act.listener ?? null;
+        db.prepare("UPDATE member_activity SET listener_running = ?, listener_ended_at = ? WHERE run = ? AND member = ?").run(
+          listener == null ? null : listener.running ? 1 : 0,
+          listener?.endedAt ?? null,
           run,
           member,
         );
@@ -2120,7 +2200,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
                 postComposition(orch, st.member, "+", "back");
               }
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
-            insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            raiseAlert(run, { body: `gone ${orch.plan}/${st.member}: ${st.reason}`, event: EVENTS.gone.name });
             postComposition(orch, st.member, "-", "gone");
             // idea 4: a gone member's named locks are released, their waiters woken (a listener it left may still live)
             const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
@@ -2161,28 +2241,36 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         }
         if (livenessLines.length === 1) {
           const [l] = livenessLines;
-          insertMessage(orch, l.linkDown ? `liveness ${l.body}` : l.body, null, "event", [orch.name], { event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
+          raiseAlert(run, { body: l.linkDown ? `liveness ${l.body}` : l.body, event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
         } else if (livenessLines.length > 1) {
           const downs = livenessLines.flatMap((l) => (l.linkDown ? [l.linkDown] : []));
-          insertMessage(orch, `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`, null, "event", [orch.name], {
+          raiseAlert(run, {
+            body: `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`,
             event: EVENTS.liveness.name,
             ...(downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}),
           });
         }
         // D11: the stalled set is told when a member joins it, or again after STALLED_AGAIN_MS: one line naming each
         // stalled member, its rule and its move (the members told within the 15 min ride along, their time renewed)
-        if (stalledNow.some((x) => x.due)) {
+        // G40: the very set told last, again within STALLED_AGAIN_MS and with no progress since, is not news
+        // (each member with its rule and the moment it last progressed: progress in between makes a new episode, told again)
+        const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
+        const lastTold = stalledToldOf.get(run);
+        const sameSetTold = lastTold != null && lastTold.set === stalledSet && t - lastTold.at < STALLED_AGAIN_MS;
+        if (stalledNow.some((x) => x.due) && !sameSetTold) {
+          stalledToldOf.set(run, { set: stalledSet, at: t });
           if (stalledNow.length === 1) {
             const [{ st, meta }] = stalledNow;
-            insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
+            raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
           } else {
             const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
             const ruled = stalledNow.find((x) => x.meta)?.meta;
             const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
-            insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
+            raiseAlert(run, { body, event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
           }
           for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
         }
+        flushAlerts(run, t, orch);
         // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
         // waiting or quiet for stall_ms: `stalled · lock` to this run's orchestrator and to the holder's, once per hold
         if (r.paused == null) {
@@ -2340,22 +2428,20 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const fresh = participantById(p.id);
       const phase = name ?? phaseOf(runRow(fresh.run))?.name;
       if (!phase) return [];
-      // the phase event that opened it last: the thread runs from it to the next phase event, or to now
-      const opened = db
-        .prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.phase') = ?")
-        .get(fresh.run, EVENTS.phase.name, phase) as Row;
-      if (opened.s == null) throw new Error(`thread: phase ${phase} was never opened in run ${fresh.run}`);
-      const next = db.prepare("SELECT MIN(seq) AS s FROM messages WHERE run = ? AND event = ? AND seq > ?").get(fresh.run, EVENTS.phase.name, Number(opened.s)) as Row;
-      return (
-        db
-          .prepare("SELECT * FROM messages WHERE run = ? AND seq > ? AND seq < ? AND kind != 'event' ORDER BY seq")
-          .all(fresh.run, Number(opened.s), next.s == null ? Number.MAX_SAFE_INTEGER : Number(next.s)) as Row[]
-      ).map(toMessage);
+      return phasePosts(fresh.run, phase);
     },
 
-    read(seq) {
+    runThread(run, name) {
+      runRow(run);
+      if (name !== undefined) return phasePosts(run, name);
+      return (db.prepare("SELECT * FROM messages WHERE run = ? AND kind != 'event' ORDER BY seq").all(run) as Row[]).map(toMessage);
+    },
+
+    read(seq, by) {
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row | undefined;
       if (!r) throw new Error(`unknown message #${seq}`);
+      // G23, V6: a member that read a message in full has had it; its next wait never brings it again
+      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)").run(by.id, seq);
       return toMessage(r);
     },
 
@@ -2464,8 +2550,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return claims.checkEdit(gated(live(p), "claim"), file, opts);
     },
 
-    reconcileWrites(p, changed) {
-      return claims.reconcileWrites(gated(live(p), "reconcile"), changed);
+    reconcileWrites(p, changed, generated) {
+      return claims.reconcileWrites(gated(live(p), "reconcile"), changed, generated);
     },
 
     release(p, file) {
@@ -2749,7 +2835,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   board.merged = counted("merged", board.merged);
   const read = board.read;
   board.read = (seq, by) => {
-    const m = read(seq);
+    const m = read(seq, by);
     if (by) transaction(() => countCall(by, "read"));
     return m;
   };

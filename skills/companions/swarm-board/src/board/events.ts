@@ -63,7 +63,8 @@ export const EVENTS: Record<EventName, EventDef> = {
   agreement: {
     name: "agreement",
     next: (m, me, cli) =>
-      profileOf(me.kind).member === "seat" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null,
+      // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
+      profileOf(me.kind).member === "seat" && me.seat !== "orchestrator" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null,
   },
   endorsement: { name: "endorsement" },
   merged: { name: "merged" },
@@ -85,7 +86,15 @@ export const EVENTS: Record<EventName, EventDef> = {
     next: (m, me, cli) => {
       const name = m.meta && "phase" in m.meta ? m.meta.phase : null;
       if (!name || me.seat === "orchestrator" || m.from === me.name) return null;
-      return `when your part of ${name} is posted: ${cli} done ${word(name)} --as ${word(me.name)}`;
+      // G17: the member's own tasks posted before the phase, as its text names them (`its tasks posted before it: #12 w1, #13 w2 w3`)
+      const listed = /; its tasks posted before it: (.+)$/.exec(m.body)?.[1] ?? "";
+      const mine = listed
+        .split(", ")
+        .map((t) => t.split(" "))
+        .filter(([, ...seats]) => seats.includes(me.seat))
+        .map(([seq]) => seq);
+      const tasks = mine.length ? ` (your task${mine.length > 1 ? "s" : ""} ${mine.join(", ")})` : "";
+      return `when your part of ${name}${tasks} is posted: ${cli} done ${word(name)} --as ${word(me.name)}`;
     },
   },
   // the orchestrator pauses its run (`pause [text]`): mentions `<group>/*`, every member stops and waits for the resume

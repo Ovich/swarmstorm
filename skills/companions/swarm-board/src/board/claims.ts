@@ -23,7 +23,8 @@ export interface ClaimsDeps {
 
 export interface Claims {
   checkEdit(p: Participant, file: string, opts?: { interface?: boolean }): EditAllowed | EditHeld;
-  reconcileWrites(p: Participant, changed: string[]): Flag[];
+  /** `generated`: build outputs among `changed`, claimed (shared when held) and never flagged: whoever merges second rebuilds them (G28). */
+  reconcileWrites(p: Participant, changed: string[], generated?: string[]): Flag[];
   release(p: Participant, file: string): void;
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
@@ -71,9 +72,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     ).run();
   };
 
-  /** Every live holder of `rel`, in claim order. */
+  /** Every live holder of `rel`, in claim order: of the path itself, or of a directory it is under (G42). */
   const holdersOf = (repo: string, rel: string): ClaimRow[] =>
-    (db.prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND path = ? ORDER BY rowid").all(repo, rel) as Row[])
+    (
+      db
+        .prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid")
+        .all(repo, rel, rel) as Row[]
+    )
       .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
       .filter((c) => isLive(c.participant));
   /** `p` holds `rel` (alongside whoever else does); `interface` widens an inside claim, never the reverse.
@@ -282,7 +287,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       });
     },
 
-    reconcileWrites(me, changed) {
+    reconcileWrites(me, changed, generated = []) {
+      const built = new Set(generated.map((f) => relPath(me.repo, f)).filter((r): r is string => !!r));
       const flags: Flag[] = [];
       // one transaction: the page sees one change however many files
       return transaction(() => {
@@ -298,6 +304,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             continue;
           }
           const { held: others, taken } = take(me, rel, "inside");
+          if (built.has(rel)) continue;
           // written outside the writer's claim: free and claimed now, or held by another (D39)
           if (taken || others.length) flag.run(me.repo, rel, me.id);
           if (!others.length) continue;

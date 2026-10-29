@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+swarm: merged: a brainstorm run has no claims

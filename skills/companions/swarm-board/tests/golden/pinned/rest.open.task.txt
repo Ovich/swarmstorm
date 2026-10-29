@@ -1,0 +1,6 @@
+exit 0
+2
+start your link now, in the background (your harness's background task): node <cli> link --run 2 --as h/orchestrator
+next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task (its protocol.md's phase table names them): node <cli> phase <name> "<its message>" --as h/orchestrator
+--- stderr
+swarm: aiview not found: the run is open; its board is read in aiview once aiview is installed and knows this project

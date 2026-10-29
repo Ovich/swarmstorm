@@ -13,40 +13,80 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/core/home.ts
+// ../swarm-board/src/place/place.ts
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+function commonGitDir(dotGit) {
+  if (!fs.statSync(dotGit).isFile()) return dotGit;
+  const own = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+  if (!own) return dotGit;
+  const dir = path.resolve(path.dirname(dotGit), own);
+  const common = path.join(dir, "commondir");
+  return fs.existsSync(common) ? path.resolve(dir, fs.readFileSync(common, "utf8").trim()) : dir;
+}
+var init_place = __esm({
+  "../swarm-board/src/place/place.ts"() {
+    "use strict";
+  }
+});
+
+// src/core/home.ts
+import { spawnSync } from "node:child_process";
+import fs2 from "node:fs";
+import os from "node:os";
+import path2 from "node:path";
+function defaultPort(root = DATA_ROOT) {
+  const home = normalHome(root);
+  if (home === normalHome(NEW_HOME) || home === normalHome(OLD_HOME)) return HOME_PORT;
+  let hash = 2166136261;
+  for (const ch of home) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  return 4400 + hash % 500;
+}
+function normalHome(root) {
+  let p = path2.resolve(root);
+  try {
+    p = fs2.realpathSync.native(p);
+  } catch {
+  }
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+function firstFreePort(from) {
+  const probe = `const net=require("net");const f=(p,n)=>{if(n===0){console.log(${from});return}const s=net.createServer();s.once("error",()=>f(p+1,n-1));s.listen(p,"127.0.0.1",()=>{s.close(()=>console.log(p))})};f(${from},20)`;
+  const r = spawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
+  const port = Number(r.stdout?.trim());
+  return Number.isInteger(port) && port > 0 ? port : from;
+}
 function ensureHome() {
-  fs.mkdirSync(DOCS_ROOT, { recursive: true });
+  fs2.mkdirSync(DOCS_ROOT, { recursive: true });
 }
 function adoptLegacyIndex(toolRoot, sqlitePath) {
-  if (fs.existsSync(sqlitePath)) return;
-  const legacy = path.join(toolRoot, "aiview.sqlite");
-  if (!fs.existsSync(legacy)) return;
-  fs.copyFileSync(legacy, sqlitePath);
+  if (fs2.existsSync(sqlitePath)) return;
+  const legacy = path2.join(toolRoot, "aiview.sqlite");
+  if (!fs2.existsSync(legacy)) return;
+  fs2.copyFileSync(legacy, sqlitePath);
   console.error(`aiview: adopted the index from ${legacy} (the original is left in place, unused)`);
 }
-var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, DOCS_ROOT, docsDirFor;
+var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
 var init_home = __esm({
   "src/core/home.ts"() {
     "use strict";
     homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
-    OLD_HOME = path.join(os.homedir(), "charrette_appdata");
-    DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
-    DOCS_ROOT = path.join(DATA_ROOT, "docs");
-    docsDirFor = (projectSlug) => path.join(DOCS_ROOT, projectSlug);
+    NEW_HOME = path2.join(os.homedir(), "swarmstorm_appdata");
+    OLD_HOME = path2.join(os.homedir(), "charrette_appdata");
+    DATA_ROOT = homeFromEnv ? path2.resolve(homeFromEnv) : !fs2.existsSync(NEW_HOME) && fs2.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
+    HOME_PORT = 4321;
+    DOCS_ROOT = path2.join(DATA_ROOT, "docs");
+    docsDirFor = (projectSlug) => path2.join(DOCS_ROOT, projectSlug);
   }
 });
 
 // src/core/projects.ts
-import path2 from "node:path";
+import path3 from "node:path";
 function isInside(child, parent) {
   if (!parent) return false;
   const c = norm(child);
   const p = norm(parent);
-  return c === p || c.startsWith(p + path2.sep);
+  return c === p || c.startsWith(p + path3.sep);
 }
 function projectForCwd(dir, projects) {
   let best = null;
@@ -64,8 +104,8 @@ function projectForCwd(dir, projects) {
   return best;
 }
 function projectFromDocsPath(absFile, docsRoot) {
-  if (!isInside(path2.dirname(absFile), docsRoot)) return null;
-  const [first, ...rest] = path2.relative(docsRoot, absFile).split(/[\\/]/);
+  if (!isInside(path3.dirname(absFile), docsRoot)) return null;
+  const [first, ...rest] = path3.relative(docsRoot, absFile).split(/[\\/]/);
   return rest.length > 0 && first ? first : null;
 }
 function resolveProject({ explicit, absFile, docsRoot, existing, fallback }) {
@@ -77,20 +117,20 @@ var init_projects = __esm({
   "src/core/projects.ts"() {
     "use strict";
     norm = (p) => {
-      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path2.sep);
+      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path3.sep);
       return process.platform === "win32" ? unified.toLowerCase() : unified;
     };
   }
 });
 
 // src/core/paths.ts
-import fs2 from "node:fs";
-import path3 from "node:path";
+import fs3 from "node:fs";
+import path4 from "node:path";
 function repoRootOf(start) {
   let dir = start;
   for (; ; ) {
-    if (fs2.existsSync(path3.join(dir, ".git"))) return dir;
-    const parent = path3.dirname(dir);
+    if (fs3.existsSync(path4.join(dir, ".git"))) return dir;
+    const parent = path4.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
@@ -99,17 +139,17 @@ function sidecarOf(absPath) {
   return /\.workbench\.html$/i.test(absPath) ? absPath.replace(/\.html$/i, "") : null;
 }
 function kindFromName(file) {
-  const parts = path3.basename(file).split(".");
+  const parts = path4.basename(file).split(".");
   return parts.length >= 3 ? currentKind(parts[parts.length - 2]) : "";
 }
 function titleOf(text, file) {
-  if (isSwarm(file)) return path3.basename(file);
+  if (isSwarm(file)) return path4.basename(file);
   const m = isHtml(file) ? text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? text.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1] : text.match(/^#\s+(.+)$/m)?.[1];
-  return (m ?? path3.basename(file)).trim();
+  return (m ?? path4.basename(file)).trim();
 }
 function toStored(abs, root) {
-  const rel = path3.relative(root, abs);
-  return rel && !rel.startsWith("..") && !path3.isAbsolute(rel) ? rel.split(path3.sep).join("/") : abs;
+  const rel = path4.relative(root, abs);
+  return rel && !rel.startsWith("..") && !path4.isAbsolute(rel) ? rel.split(path4.sep).join("/") : abs;
 }
 var isHtml, isPdf, isSwarm, formatOf, RENAMED_KINDS, currentKind, projectRoot, readDoc, toAbs;
 var init_paths = __esm({
@@ -121,22 +161,22 @@ var init_paths = __esm({
     formatOf = (file) => isHtml(file) ? "html" : isPdf(file) ? "pdf" : isSwarm(file) ? "swarm" : "markdown";
     RENAMED_KINDS = { mockup: "prototype" };
     currentKind = (kind) => RENAMED_KINDS[kind.toLowerCase()] ?? kind.toLowerCase();
-    projectRoot = (file) => path3.basename(repoRootOf(path3.dirname(file)));
-    readDoc = (p) => fs2.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
-    toAbs = (stored, root) => path3.isAbsolute(stored) ? stored : path3.resolve(root, ...stored.split("/"));
+    projectRoot = (file) => path4.basename(repoRootOf(path4.dirname(file)));
+    readDoc = (p) => fs3.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+    toAbs = (stored, root) => path4.isAbsolute(stored) ? stored : path4.resolve(root, ...stored.split("/"));
   }
 });
 
 // src/core/db.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
+import fs4 from "node:fs";
+import path5 from "node:path";
 import { fileURLToPath } from "node:url";
 function findToolRoot() {
   if (process.env.AIVIEW_ROOT) return process.env.AIVIEW_ROOT;
-  let dir = path4.dirname(fileURLToPath(import.meta.url));
+  let dir = path5.dirname(fileURLToPath(import.meta.url));
   for (; ; ) {
-    if (fs3.existsSync(path4.join(dir, "package.json"))) return dir;
-    const parent = path4.dirname(dir);
+    if (fs4.existsSync(path5.join(dir, "package.json"))) return dir;
+    const parent = path5.dirname(dir);
     if (parent === dir) return dir;
     dir = parent;
   }
@@ -192,24 +232,16 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
   if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
-  const commonGitDir = (dotGit) => {
-    if (!fs3.statSync(dotGit).isFile()) return dotGit;
-    const own = /^gitdir:\s*(.+)$/m.exec(fs3.readFileSync(dotGit, "utf8"))?.[1]?.trim();
-    if (!own) return dotGit;
-    const dir = path4.resolve(path4.dirname(dotGit), own);
-    const common = path4.join(dir, "commondir");
-    return fs3.existsSync(common) ? path4.resolve(dir, fs3.readFileSync(common, "utf8").trim()) : dir;
-  };
-  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path4.join(path4.resolve(p), ".git")).filter((g) => fs3.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
+  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path5.join(path5.resolve(p), ".git")).filter((g) => fs4.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
   const boardReposOf = (slug) => {
     const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
     if (!row) return [];
     const seen = /* @__PURE__ */ new Set();
     const repos = [];
     for (const r of [...JSON.parse(row.board_repos), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
-      const folder = path4.resolve(r).replace(/[\\/]\.git$/i, "");
+      const folder = path5.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
-      if (seen.has(key) || !fs3.existsSync(folder)) continue;
+      if (seen.has(key) || !fs4.existsSync(folder)) continue;
       seen.add(key);
       repos.push(r);
     }
@@ -235,7 +267,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   for (const row of db.prepare("SELECT id, file_path, project FROM documents WHERE kind = 'swarm'").all()) {
     let text = "";
     try {
-      text = fs3.readFileSync(toAbs(row.file_path, root), "utf8");
+      text = fs4.readFileSync(toAbs(row.file_path, root), "utf8");
     } catch {
     }
     for (const repo of boardReposInText(text)) addRepo(row.project, repo);
@@ -274,7 +306,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   };
   return {
     register(absFile, { kind = "", tags: extraTags = [], started = "", group = "", groupTitle = "", project = "" } = {}) {
-      if (!fs3.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
+      if (!fs4.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
       const file = toStored(absFile, root);
       const content = isPdf(absFile) ? "" : readDoc(absFile);
       const existing = db.prepare("SELECT * FROM documents WHERE file_path = ?").get(file);
@@ -353,7 +385,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       return db.prepare("SELECT * FROM documents ORDER BY created_at DESC, id DESC").all().map(parse2).map((d) => {
         let stat = null;
         try {
-          stat = fs3.statSync(d.abs_path);
+          stat = fs4.statSync(d.abs_path);
         } catch {
           stat = null;
         }
@@ -444,6 +476,7 @@ var DatabaseSync, TOOL_ROOT, SQLITE_PATH, STORE_ROOT, ALL_PROJECTS, now;
 var init_db = __esm({
   async "src/core/db.ts"() {
     "use strict";
+    init_place();
     init_home();
     init_projects();
     init_paths();
@@ -453,7 +486,7 @@ var init_db = __esm({
     });
     ({ DatabaseSync } = await import("node:sqlite"));
     TOOL_ROOT = findToolRoot();
-    SQLITE_PATH = path4.join(DATA_ROOT, "aiview.sqlite");
+    SQLITE_PATH = path5.join(DATA_ROOT, "aiview.sqlite");
     STORE_ROOT = DATA_ROOT;
     ALL_PROJECTS = "*";
     now = () => (/* @__PURE__ */ new Date()).toISOString();
@@ -8832,21 +8865,21 @@ var init_pointer = __esm({
 });
 
 // src/core/serverstate.ts
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import path6 from "node:path";
 function writeServerFiles(port, version) {
   ensureHome();
-  if (version === null) fs4.rmSync(VERSION_FILE, { force: true });
-  else fs4.writeFileSync(VERSION_FILE, version);
-  fs4.writeFileSync(PID_FILE, String(process.pid));
-  fs4.writeFileSync(PORT_FILE, String(port));
+  if (version === null) fs5.rmSync(VERSION_FILE, { force: true });
+  else fs5.writeFileSync(VERSION_FILE, version);
+  fs5.writeFileSync(PID_FILE, String(process.pid));
+  fs5.writeFileSync(PORT_FILE, String(port));
 }
 function clearServerFiles() {
   if (readInt(PID_FILE) === process.pid) {
     try {
-      fs4.rmSync(PID_FILE, { force: true });
-      fs4.rmSync(PORT_FILE, { force: true });
-      fs4.rmSync(VERSION_FILE, { force: true });
+      fs5.rmSync(PID_FILE, { force: true });
+      fs5.rmSync(PORT_FILE, { force: true });
+      fs5.rmSync(VERSION_FILE, { force: true });
     } catch {
     }
   }
@@ -8865,12 +8898,12 @@ var init_serverstate = __esm({
   "src/core/serverstate.ts"() {
     "use strict";
     init_home();
-    PID_FILE = path5.join(DATA_ROOT, "aiview.pid");
-    PORT_FILE = path5.join(DATA_ROOT, "aiview.port");
-    VERSION_FILE = path5.join(DATA_ROOT, "aiview.version");
+    PID_FILE = path6.join(DATA_ROOT, "aiview.pid");
+    PORT_FILE = path6.join(DATA_ROOT, "aiview.port");
+    VERSION_FILE = path6.join(DATA_ROOT, "aiview.version");
     readInt = (f) => {
       try {
-        const n = Number(fs4.readFileSync(f, "utf8").trim());
+        const n = Number(fs5.readFileSync(f, "utf8").trim());
         return Number.isInteger(n) && n > 0 ? n : null;
       } catch {
         return null;
@@ -8886,7 +8919,7 @@ var init_serverstate = __esm({
     };
     readText = (f) => {
       try {
-        const t = fs4.readFileSync(f, "utf8").trim();
+        const t = fs5.readFileSync(f, "utf8").trim();
         return t === "" ? null : t;
       } catch {
         return null;
@@ -8896,20 +8929,20 @@ var init_serverstate = __esm({
 });
 
 // src/core/collectionversion.ts
-import fs5 from "node:fs";
-import path6 from "node:path";
+import fs6 from "node:fs";
+import path7 from "node:path";
 function collectionVersion(toolRoot) {
-  for (let dir = path6.dirname(path6.resolve(toolRoot)); ; dir = path6.dirname(dir)) {
-    const manifest = path6.join(dir, ".claude-plugin", "plugin.json");
-    if (fs5.existsSync(manifest)) {
+  for (let dir = path7.dirname(path7.resolve(toolRoot)); ; dir = path7.dirname(dir)) {
+    const manifest = path7.join(dir, ".claude-plugin", "plugin.json");
+    if (fs6.existsSync(manifest)) {
       try {
-        const parsed = JSON.parse(fs5.readFileSync(manifest, "utf8"));
+        const parsed = JSON.parse(fs6.readFileSync(manifest, "utf8"));
         return typeof parsed.version === "string" ? parsed.version : null;
       } catch {
         return null;
       }
     }
-    if (path6.dirname(dir) === dir) return null;
+    if (path7.dirname(dir) === dir) return null;
   }
 }
 var init_collectionversion = __esm({
@@ -8920,8 +8953,8 @@ var init_collectionversion = __esm({
 
 // src/core/watcher.ts
 import { EventEmitter } from "node:events";
-import fs6 from "node:fs";
-import path7 from "node:path";
+import fs7 from "node:fs";
+import path8 from "node:path";
 var SIDECAR_MANIFEST, DocWatcher;
 var init_watcher = __esm({
   "src/core/watcher.ts"() {
@@ -8946,17 +8979,17 @@ var init_watcher = __esm({
         this.debounceMs = debounceMs;
       }
       ensureWatch(doc) {
-        const dir = path7.dirname(doc.abs_path);
+        const dir = path8.dirname(doc.abs_path);
         const sidecar = sidecarOf(doc.abs_path);
         if (sidecar) {
           let inDir = this.benches.get(dir);
           if (!inDir) this.benches.set(dir, inDir = /* @__PURE__ */ new Map());
-          inDir.set(path7.basename(sidecar), doc);
+          inDir.set(path8.basename(sidecar), doc);
           this.ensureSidecarWatch(doc);
         }
         if (this.watched.has(dir)) return;
         try {
-          const w = fs6.watch(dir, (_event, name) => {
+          const w = fs7.watch(dir, (_event, name) => {
             if (!name) return;
             const bench = this.benches.get(dir)?.get(String(name));
             if (bench) {
@@ -8965,7 +8998,7 @@ var init_watcher = __esm({
             }
             const hit = this.resolve(dir, String(name));
             if (hit) this.schedule(hit.id);
-            for (const id of this.hostsOf(path7.resolve(dir, String(name)))) this.schedule(id);
+            for (const id of this.hostsOf(path8.resolve(dir, String(name)))) this.schedule(id);
           });
           this.watched.set(dir, w);
         } catch (e) {
@@ -8977,12 +9010,12 @@ var init_watcher = __esm({
         const dir = sidecarOf(doc.abs_path);
         if (!dir || this.sidecars.has(dir)) return;
         try {
-          if (!fs6.statSync(dir).isDirectory()) return;
+          if (!fs7.statSync(dir).isDirectory()) return;
         } catch {
           return;
         }
         try {
-          const w = fs6.watch(dir, (_event, name) => {
+          const w = fs7.watch(dir, (_event, name) => {
             if (name && String(name) === SIDECAR_MANIFEST) this.scheduleData(doc.id);
           });
           w.on("error", () => {
@@ -8997,11 +9030,11 @@ var init_watcher = __esm({
       /** Replace (never merge) the set of files `hostId` depends on. An empty list clears it. */
       setSources(hostId, absPaths) {
         if (absPaths.length === 0) this.sources.delete(hostId);
-        else this.sources.set(hostId, new Set(absPaths.map((p) => path7.resolve(p))));
+        else this.sources.set(hostId, new Set(absPaths.map((p) => path8.resolve(p))));
       }
       /** The hosts composed from `absPath`. */
       hostsOf(absPath) {
-        const key = path7.resolve(absPath);
+        const key = path8.resolve(absPath);
         const ids = [];
         for (const [id, set] of this.sources) if (set.has(key)) ids.push(id);
         return ids;
@@ -9045,8 +9078,8 @@ var init_mentions = __esm({
 
 // ../swarm-board/src/wire.ts
 import crypto from "node:crypto";
-import fs7 from "node:fs";
-import path8 from "node:path";
+import fs8 from "node:fs";
+import path9 from "node:path";
 function encode(f) {
   return JSON.stringify(f);
 }
@@ -9057,26 +9090,26 @@ function decode(text) {
   return f;
 }
 function bundleVersion(entry2 = process.argv[1] ?? "") {
-  const file = path8.resolve(entry2);
+  const file = path9.resolve(entry2);
   let v = versionsByEntry.get(file);
   if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs7.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByEntry.set(file, v);
   }
   return v;
 }
 function serverStateFile(dataRoot) {
-  return path8.join(dataRoot, "swarm-server.json");
+  return path9.join(dataRoot, "swarm-server.json");
 }
 function serverLogFile(dataRoot) {
-  return path8.join(dataRoot, "swarm-server.log");
+  return path9.join(dataRoot, "swarm-server.log");
 }
 function serverStartLock(dataRoot) {
-  return path8.join(dataRoot, "swarm-server.lock");
+  return path9.join(dataRoot, "swarm-server.lock");
 }
 function serverLockHolder(dataRoot) {
   try {
-    const pid = Number(fs7.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    const pid = Number(fs8.readFileSync(serverStartLock(dataRoot), "utf8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
@@ -9086,11 +9119,11 @@ function liveStartLockHolder(dataRoot) {
   const holder = serverLockHolder(dataRoot);
   if (holder === null || !isAlive(holder)) return null;
   try {
-    if (JSON.parse(fs7.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+    if (JSON.parse(fs8.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
   } catch {
   }
   try {
-    return Date.now() - fs7.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+    return Date.now() - fs8.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
   }
@@ -9145,6 +9178,7 @@ var init_wire = __esm({
       "endorse",
       "read",
       "thread",
+      "runThread",
       "deliver",
       "deliverMentions",
       "wait",
@@ -9195,11 +9229,11 @@ var init_transcripts = __esm({
 // ../swarm-board/src/link/link.ts
 import crypto2 from "node:crypto";
 import os2 from "node:os";
-import path9 from "node:path";
+import path10 from "node:path";
 function linkPipe(dataRoot, run, member) {
-  const home = crypto2.createHash("sha256").update(path9.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto2.createHash("sha256").update(path10.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path9.join(os2.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path10.join(os2.tmpdir(), `${name}.sock`);
 }
 var DEFAULT_TIMING;
 var init_link = __esm({
@@ -9227,9 +9261,9 @@ __export(remote_exports, {
 });
 import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import net from "node:net";
-import path10 from "node:path";
+import path11 from "node:path";
 function isAlive2(pid) {
   try {
     process.kill(pid, 0);
@@ -9240,7 +9274,7 @@ function isAlive2(pid) {
 }
 function readServerState(dataRoot) {
   try {
-    const s = JSON.parse(fs8.readFileSync(serverStateFile(dataRoot), "utf8"));
+    const s = JSON.parse(fs9.readFileSync(serverStateFile(dataRoot), "utf8"));
     return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
   } catch {
     return null;
@@ -9261,16 +9295,16 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs8.mkdirSync(dataRoot, { recursive: true });
-      fs8.writeFileSync(serverLogFile(dataRoot), "");
-      log = fs8.openSync(serverLogFile(dataRoot), "a");
+      fs9.mkdirSync(dataRoot, { recursive: true });
+      fs9.writeFileSync(serverLogFile(dataRoot), "");
+      log = fs9.openSync(serverLogFile(dataRoot), "a");
     } catch {
     }
     const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs8.closeSync(log);
+    if (typeof log === "number") fs9.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = readServerState(dataRoot);
@@ -9280,7 +9314,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const lines = fs8.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = fs9.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
   }
@@ -9310,7 +9344,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs8.rmSync(marker, { force: true });
+      fs9.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -9318,15 +9352,15 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs8.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs9.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs8.mkdirSync(path10.dirname(marker), { recursive: true });
-      fs8.writeFileSync(marker, String(Date.now()));
+      fs9.mkdirSync(path11.dirname(marker), { recursive: true });
+      fs9.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
@@ -9483,7 +9517,7 @@ var init_remote = __esm({
     linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
     HARNESS_LINK_WAIT_MS = 1e4;
     LINK_DOWN_WAIT_MS = 1e3;
-    linkDownMarker = (dataRoot, member) => path10.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+    linkDownMarker = (dataRoot, member) => path11.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
     inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
   }
 });
@@ -9575,8 +9609,8 @@ var init_reader = __esm({
 });
 
 // src/server/board.ts
-import fs9 from "node:fs";
-import path11 from "node:path";
+import fs10 from "node:fs";
+import path12 from "node:path";
 function mountBoard(sse, opts = {}) {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
   const swarmEntry = opts.swarmEntry ?? DEFAULT_SWARM_ENTRY;
@@ -9605,7 +9639,7 @@ function mountBoard(sse, opts = {}) {
     );
     return opening;
   };
-  if (fs9.existsSync(path11.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
+  if (fs10.existsSync(path12.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
   });
   const json = (res, obj, status = 200) => {
     if (res.headersSent) return;
@@ -9685,7 +9719,7 @@ var init_board = __esm({
     init_reader();
     await init_db();
     init_home();
-    DEFAULT_SWARM_ENTRY = path11.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
+    DEFAULT_SWARM_ENTRY = path12.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
     SERVER_STATE_FILE = "swarm-server.json";
   }
 });
@@ -9750,12 +9784,12 @@ __export(server_exports, {
   startServer: () => startServer
 });
 import { spawn as spawn2 } from "node:child_process";
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import http from "node:http";
-import path12 from "node:path";
+import path13 from "node:path";
 function servedBuild(distDir) {
   try {
-    return /assets\/(index-[\w-]+\.js)/.exec(fs10.readFileSync(path12.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
+    return /assets\/(index-[\w-]+\.js)/.exec(fs11.readFileSync(path13.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
   } catch {
     return null;
   }
@@ -9770,13 +9804,13 @@ function openBrowser(url) {
 }
 function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry }) {
   const sse = createSseHub(heartbeatMs, () => {
-    const build = servedBuild(path12.join(toolRoot, "dist"));
+    const build = servedBuild(path13.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
   const board = mountBoard(sse, { dataRoot: boardDataRoot, swarmEntry });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(
-    (dir, name) => index.all().find((d) => path12.dirname(d.abs_path) === dir && path12.basename(d.abs_path) === name)
+    (dir, name) => index.all().find((d) => path13.dirname(d.abs_path) === dir && path13.basename(d.abs_path) === name)
   );
   watcher.on("changed", ({ id }) => {
     index.touch(id);
@@ -9791,19 +9825,19 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
-  const distDir = path12.join(toolRoot, "dist");
-  const useDist = fs10.existsSync(path12.join(distDir, "index.html"));
+  const distDir = path13.join(toolRoot, "dist");
+  const useDist = fs11.existsSync(path13.join(distDir, "index.html"));
   const serveStatic = (res, p) => {
     if (!useDist)
       return send(res, 404, `aiview UI not built. Run: npm install && npm run build  (in ${toolRoot})`, "text/plain");
-    const f = path12.resolve(distDir, "." + p.replaceAll("..", ""));
-    const indexHtml = path12.join(distDir, "index.html");
-    if (f !== indexHtml && f.startsWith(distDir) && fs10.existsSync(f) && fs10.statSync(f).isFile()) {
-      const hashed = f.startsWith(path12.join(distDir, "assets") + path12.sep);
-      const mime = MIME[path12.extname(f).toLowerCase()] ?? "application/octet-stream";
-      return send(res, 200, fs10.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
+    const f = path13.resolve(distDir, "." + p.replaceAll("..", ""));
+    const indexHtml = path13.join(distDir, "index.html");
+    if (f !== indexHtml && f.startsWith(distDir) && fs11.existsSync(f) && fs11.statSync(f).isFile()) {
+      const hashed = f.startsWith(path13.join(distDir, "assets") + path13.sep);
+      const mime = MIME[path13.extname(f).toLowerCase()] ?? "application/octet-stream";
+      return send(res, 200, fs11.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
     }
-    return send(res, 200, fs10.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
+    return send(res, 200, fs11.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
   };
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -9928,48 +9962,48 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     if (a) {
       const doc = index.get(Number(a[1]));
       if (!doc) return send(res, 404, "not found", "text/plain");
-      const dir = path12.dirname(doc.abs_path);
-      const asked = path12.resolve(dir, decodeURIComponent(a[2]));
-      if (asked !== dir && !asked.startsWith(dir + path12.sep)) return send(res, 403, "forbidden", "text/plain");
+      const dir = path13.dirname(doc.abs_path);
+      const asked = path13.resolve(dir, decodeURIComponent(a[2]));
+      if (asked !== dir && !asked.startsWith(dir + path13.sep)) return send(res, 403, "forbidden", "text/plain");
       let base;
       let f;
       try {
-        base = fs10.realpathSync(dir);
-        f = fs10.realpathSync(asked);
+        base = fs11.realpathSync(dir);
+        f = fs11.realpathSync(asked);
       } catch {
         return send(res, 404, "not found", "text/plain");
       }
-      if (f !== base && !f.startsWith(base + path12.sep)) return send(res, 403, "forbidden", "text/plain");
-      if (!fs10.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
-      return send(res, 200, fs10.readFileSync(f), MIME[path12.extname(f).toLowerCase()] ?? "application/octet-stream");
+      if (f !== base && !f.startsWith(base + path13.sep)) return send(res, 403, "forbidden", "text/plain");
+      if (!fs11.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
+      return send(res, 200, fs11.readFileSync(f), MIME[path13.extname(f).toLowerCase()] ?? "application/octet-stream");
     }
     const r = p.match(/^\/api\/raw\/(\d+)$/);
     if (r) {
       const doc = index.get(Number(r[1]));
-      if (!doc || !fs10.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
+      if (!doc || !fs11.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
       watcher.ensureWatch(doc);
       const type = isPdf(doc.file_path) ? "application/pdf" : isHtml(doc.file_path) ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
-      return send(res, 200, fs10.readFileSync(doc.abs_path), type);
+      return send(res, 200, fs11.readFileSync(doc.abs_path), type);
     }
     const m = p.match(/^\/api\/document\/(\d+)$/);
     if (m) {
       const doc = index.get(Number(m[1]));
       if (!doc) return json(res, { error: "not found" }, 404);
       const pending = index.pendingFor(doc.id);
-      if (!fs10.existsSync(doc.abs_path))
+      if (!fs11.existsSync(doc.abs_path))
         return json(res, { document: doc, content: null, pending });
       watcher.ensureWatch(doc);
       if (isPdf(doc.file_path))
         return json(res, { document: doc, format: "pdf", content: null, pending });
       if (isHtml(doc.file_path)) {
-        const dir = path12.dirname(doc.abs_path);
+        const dir = path13.dirname(doc.abs_path);
         const reader = (name) => {
           if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-          const f = path12.join(dir, name);
-          return fs10.existsSync(f) && fs10.statSync(f).isFile() ? readDoc(f) : void 0;
+          const f = path13.join(dir, name);
+          return fs11.existsSync(f) && fs11.statSync(f).isFile() ? readDoc(f) : void 0;
         };
         const { html, sources, errors, warnings } = resolveBindings(readDoc(doc.abs_path), reader);
-        watcher.setSources(doc.id, sources.map((s) => path12.join(dir, s)));
+        watcher.setSources(doc.id, sources.map((s) => path13.join(dir, s)));
         return json(res, {
           document: doc,
           format: "html",
@@ -10054,9 +10088,9 @@ init_projects();
 init_home();
 init_serverstate();
 init_collectionversion();
-import { spawn as spawn3, spawnSync } from "node:child_process";
-import fs11 from "node:fs";
-import path13 from "node:path";
+import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
+import fs12 from "node:fs";
+import path14 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/cli/args.ts
@@ -10465,7 +10499,7 @@ var USAGE = [
   "  use <slug|*>                             # set the active project",
   "  remove <file|#id>...",
   "  move <file|#id>... [--project <slug>]    # refile: file + index together",
-  "  serve [file] [--port 4321] [--open] [--detach]",
+  "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
   "  pending add <file|#id> --label L [--note N]   # work the reader is waiting on",
   "  pending done <#pendingId>                     # the work landed; the card goes away",
   "  pending list [<file|#id>] | clear <file|#id>",
@@ -10497,7 +10531,7 @@ function askServer(route, body) {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
-  const r = spawnSync(
+  const r = spawnSync2(
     process.execPath,
     [
       "-e",
@@ -10529,11 +10563,11 @@ var emit = (json, human) => {
   else human();
 };
 function ensureDist() {
-  if (fs11.existsSync(path13.join(TOOL_ROOT, "dist", "index.html"))) return;
-  if (!fs11.existsSync(path13.join(TOOL_ROOT, "app", "index.html"))) return;
+  if (fs12.existsSync(path14.join(TOOL_ROOT, "dist", "index.html"))) return;
+  if (!fs12.existsSync(path14.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) {
     console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -10541,7 +10575,7 @@ function ensureDist() {
 }
 function spawnDetachedServer(port) {
   try {
-    fs11.rmSync(PORT_FILE, { force: true });
+    fs12.rmSync(PORT_FILE, { force: true });
   } catch {
   }
   const child = spawn3(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
@@ -10562,7 +10596,7 @@ function spawnDetachedServer(port) {
   }
 }
 var pause2 = (ms) => {
-  spawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+  spawnSync2(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
 };
 var isAlive3 = (pid) => {
   try {
@@ -10587,9 +10621,9 @@ function stopServerProcess(pid) {
   }
 }
 function portOfInstalledServer() {
-  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321);
+  const asked = args.flag("--port") ?? process.env.AIVIEW_PORT;
   const st = readServerStatus();
-  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(requested);
+  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(asked !== void 0 ? Number(asked) : firstFreePort(defaultPort()));
   const installed = collectionVersion(TOOL_ROOT);
   if (installed === null || st.version === installed) return st.port;
   stopServerProcess(st.pid);
@@ -10598,7 +10632,7 @@ function portOfInstalledServer() {
 function resolveRef(ref) {
   const index = openIndex();
   try {
-    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
+    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
   } finally {
     index.close();
   }
@@ -10650,8 +10684,8 @@ known: ${known.join(", ")}` : ""}`);
     process.exit(1);
   }
   const dir = docsDirFor(slug);
-  fs11.mkdirSync(dir, { recursive: true });
-  const full = path13.join(dir, path13.basename(name));
+  fs12.mkdirSync(dir, { recursive: true });
+  const full = path14.join(dir, path14.basename(name));
   emit({ path: full, dir, project: slug }, full);
 }
 function prototypeArg(usage) {
@@ -10660,8 +10694,8 @@ function prototypeArg(usage) {
     console.error(usage);
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
-  if (!fs11.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
+  if (!fs12.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
@@ -10675,7 +10709,7 @@ function cmdComponents() {
   const abs = prototypeArg("usage: aiview components <file|#id>");
   const r = listComponents(readDoc(abs));
   const vocabulary = pageVocabulary(abs);
-  emit({ file: path13.basename(abs), ...r, ...vocabulary }, () => {
+  emit({ file: path14.basename(abs), ...r, ...vocabulary }, () => {
     if (!r.offers.length) console.log("offers   nothing: no data-component in this file");
     for (const o of r.offers)
       console.log(
@@ -10688,11 +10722,11 @@ function cmdComponents() {
   });
 }
 function composed(abs) {
-  const dir = path13.dirname(abs);
+  const dir = path14.dirname(abs);
   const reader = (name) => {
     if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-    const f = path13.join(dir, name);
-    return fs11.existsSync(f) && fs11.statSync(f).isFile() ? readDoc(f) : void 0;
+    const f = path14.join(dir, name);
+    return fs12.existsSync(f) && fs12.statSync(f).isFile() ? readDoc(f) : void 0;
   };
   return resolveBindings(readDoc(abs), reader);
 }
@@ -10741,7 +10775,7 @@ function cmdShow() {
 function cmdCheck() {
   const abs = prototypeArg("usage: aiview check <file|#id>");
   const r = composed(abs);
-  emit({ file: path13.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
+  emit({ file: path14.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
     console.log(`${r.bound} bound from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}${r.sources.length ? `: ${r.sources.join(", ")}` : ""}`);
     for (const e of r.errors) console.log(`error    ${e.ref}: ${e.message}`);
     for (const w of r.warnings) console.log(`warning  ${w.ref}: ${w.message}`);
@@ -10755,19 +10789,19 @@ async function cmdMermaidCheck() {
     console.error("usage: aiview mermaid-check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
-  if (!fs11.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
+  if (!fs12.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const here = path13.dirname(fileURLToPath2(import.meta.url));
-  const bundle = [path13.join(here, "mermaid-check.mjs"), path13.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs11.existsSync(f));
+  const here = path14.dirname(fileURLToPath2(import.meta.url));
+  const bundle = [path14.join(here, "mermaid-check.mjs"), path14.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs12.existsSync(f));
   if (!bundle) {
     console.error(`aiview: the mermaid checker is not built. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
   }
   const { blocksOf, checkBlocks } = await import(pathToFileURL(bundle).href);
-  const content = fs11.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
+  const content = fs12.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
   const markdown = /\.(md|markdown)$/i.test(abs);
   const lines = content.split("\n");
   const blocks = blocksOf(content, markdown);
@@ -10777,7 +10811,7 @@ async function cmdMermaidCheck() {
   }));
   const failed = results.filter((r) => !r.ok).length;
   const warned = results.reduce((n, r) => n + r.warnings.length, 0);
-  emit({ file: path13.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
+  emit({ file: path14.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
     if (!results.length) return console.log("no mermaid block in this document");
     for (const r of results) {
       console.log(r.ok ? `ok     line ${r.line}  ${r.type}` : `FAIL   line ${r.line}  ${r.error}`);
@@ -10792,7 +10826,7 @@ function cmdInit() {
   adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
   emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
     console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
-    console.log(`documents  ${path13.join(DOCS_ROOT, "<project>")}`);
+    console.log(`documents  ${path14.join(DOCS_ROOT, "<project>")}`);
     console.log(`tool       ${TOOL_ROOT}      (the checkout: rebuildable, safe to delete)`);
   });
 }
@@ -10802,7 +10836,7 @@ function cmdAdd() {
     process.exit(1);
   }
   const index = openIndex();
-  const d = index.register(path13.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path14.resolve(args.positional[0]), registerOpts());
   index.close();
   emit(d, docLine(d));
 }
@@ -10858,7 +10892,7 @@ function cmdRemove() {
   const index = openIndex();
   const removed = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
@@ -10897,8 +10931,8 @@ function cmdProject() {
       process.exit(1);
     }
     if (sub === "add") {
-      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path") });
-      fs11.mkdirSync(docsDirFor(slug), { recursive: true });
+      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path14.resolve(p2)) });
+      fs12.mkdirSync(docsDirFor(slug), { recursive: true });
       emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
   covers ${p.paths.join(", ")}` : ""}`);
       return;
@@ -10945,11 +10979,11 @@ known: ${known.join(", ")}` : ""}`);
 }
 function moveAcrossVolumes(from, to) {
   try {
-    fs11.renameSync(from, to);
+    fs12.renameSync(from, to);
   } catch (e) {
     if (e.code !== "EXDEV") throw e;
-    fs11.cpSync(from, to, { recursive: true });
-    fs11.rmSync(from, { recursive: true });
+    fs12.cpSync(from, to, { recursive: true });
+    fs12.rmSync(from, { recursive: true });
   }
 }
 function cmdMove() {
@@ -10968,35 +11002,35 @@ known: ${known.join(", ")}` : ""}`);
   }
   const moved = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path13.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
     }
     const from = row.abs_path;
     const dir = docsDirFor(target ?? row.project);
-    const dest = path13.join(dir, path13.basename(from));
+    const dest = path14.join(dir, path14.basename(from));
     if (dest === from) {
       console.error(`already there: ${from}`);
       continue;
     }
     const sidecarFrom = sidecarOf(from);
     const sidecarDest = sidecarOf(dest);
-    const carriesSidecar = sidecarFrom !== null && fs11.existsSync(sidecarFrom);
-    const orphaned = !fs11.existsSync(from) && fs11.existsSync(dest);
-    if (!fs11.existsSync(from) && !orphaned) {
+    const carriesSidecar = sidecarFrom !== null && fs12.existsSync(sidecarFrom);
+    const orphaned = !fs12.existsSync(from) && fs12.existsSync(dest);
+    if (!fs12.existsSync(from) && !orphaned) {
       console.error(`missing file, not moved: ${from}`);
       continue;
     }
     if (!orphaned) {
-      const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs11.existsSync(p));
+      const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs12.existsSync(p));
       if (taken.length) {
         const named = carriesSidecar ? `${dest} and ${sidecarDest}` : dest;
         console.error(`target exists (${taken.join(", ")}), skipped: ${named}`);
         continue;
       }
     }
-    fs11.mkdirSync(dir, { recursive: true });
+    fs12.mkdirSync(dir, { recursive: true });
     if (!orphaned) {
       moveAcrossVolumes(from, dest);
       if (carriesSidecar) moveAcrossVolumes(sidecarFrom, sidecarDest);
@@ -11016,7 +11050,7 @@ function cmdOpen() {
   }
   ensureDist();
   const index = openIndex();
-  const d = index.register(path13.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path14.resolve(args.positional[0]), registerOpts());
   setActive(index, d.project);
   index.close();
   const port = portOfInstalledServer();
@@ -11064,7 +11098,7 @@ async function cmdServe() {
     ensureDist();
     if (args.positional[0]) {
       const index2 = openIndex();
-      index2.register(path13.resolve(args.positional[0]), registerOpts());
+      index2.register(path14.resolve(args.positional[0]), registerOpts());
       index2.close();
     }
     const port = portOfInstalledServer();
@@ -11074,9 +11108,9 @@ async function cmdServe() {
   ensureDist();
   const { startServer: startServer2 } = await init_server().then(() => server_exports);
   const index = openIndex();
-  const startDoc = args.positional[0] ? index.register(path13.resolve(args.positional[0]), registerOpts()) : null;
+  const startDoc = args.positional[0] ? index.register(path14.resolve(args.positional[0]), registerOpts()) : null;
   startServer2(index, {
-    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? 4321),
+    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
     open: args.has("--open"),
     startDoc
   });
@@ -11149,16 +11183,16 @@ function cmdTracker() {
     console.error("usage: aiview tracker <check|sync> <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
-  if (!fs11.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
+  if (!fs12.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const raw = fs11.readFileSync(abs, "utf8");
+  const raw = fs12.readFileSync(abs, "utf8");
   const body = raw.split(CRLF).join(LF);
   const tracker = findTracker(body);
   if (!tracker) {
-    console.error(`no tracker in ${path13.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
+    console.error(`no tracker in ${path14.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
     process.exit(1);
   }
   if (mode === "sync") {
@@ -11166,22 +11200,22 @@ function cmdTracker() {
     const { text, changed } = sync(body, tracker);
     if (changed) {
       const tmp = `${abs}.aiview-${process.pid}`;
-      fs11.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
-      fs11.renameSync(tmp, abs);
+      fs12.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
+      fs12.renameSync(tmp, abs);
     }
     const after = findTracker(text);
     const left = after ? check(after) : [];
     emit(
-      { file: path13.basename(abs), changed, findings: left.length },
+      { file: path14.basename(abs), changed, findings: left.length },
       () => console.log(
-        changed ? `synced ${path13.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
+        changed ? `synced ${path14.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
       )
     );
     if (left.length) process.exit(1);
     return;
   }
   const findings = check(tracker);
-  emit({ file: path13.basename(abs), nodes: tracker.nodes.length, findings }, () => {
+  emit({ file: path14.basename(abs), nodes: tracker.nodes.length, findings }, () => {
     if (!findings.length) return console.log(`ok  ${tracker.nodes.length} steps, glyphs and classes agree`);
     for (const f of findings) console.log(`line ${f.line}  ${f.text}`);
     console.log(`${findings.length} finding(s) in ${tracker.nodes.length} steps`);
@@ -11194,16 +11228,16 @@ function cmdPlan() {
     console.error("usage: aiview plan check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
-  if (!fs11.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
+  if (!fs12.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const plan = readApproval(fs11.readFileSync(abs, "utf8").split(CRLF).join(LF));
+  const plan = readApproval(fs12.readFileSync(abs, "utf8").split(CRLF).join(LF));
   const findings = check2(plan);
   emit(
     {
-      file: path13.basename(abs),
+      file: path14.basename(abs),
       approved: plan.approved,
       decisions: plan.decisions.length,
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),

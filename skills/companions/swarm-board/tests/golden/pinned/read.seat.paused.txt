@@ -1,0 +1,5 @@
+exit 0
+#<seq> g/orchestrator (event)  <ts>
+run 1 opened: brainstorm g, T
+phase build: build the thing  PAUSED: hold on
+run 1 is paused: hold on. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/s1 --timeout 170000
