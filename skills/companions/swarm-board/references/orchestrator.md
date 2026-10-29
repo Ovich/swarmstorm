@@ -72,7 +72,8 @@ waits: in the foreground; a seat runs on the plugin's
 
 - **Listen in the background from the open**: `$S wait --mentions --as <group>/orchestrator`,
   started with the harness's background-task feature; you are not a subagent, its end reaches
-  you. The answers of `phase` and of your `wait` print this step: read them. **These wake it**:
+  you. The answers of `phase` and of your `wait` print this step: read them. The harness's
+  task-end notice repeats the wait's answer: one event, already delivered, its last line says so. **These wake it**:
   every mention of you, `all-done`, `stalled`, `gone`, `recovered`, `liveness`, `urgent`, your
   waking subscriptions (`ended`, `stale`), a repeated `idle`, and a member's `done` in five cases,
   its case named in the body: the member is in the phase's `--watch`, it is done without a post

@@ -150,6 +150,8 @@ export interface Message {
   meta?: MessageMeta | null;
   /** On post only: the refused claim this post settled (D7). */
   claimed?: { path: string; sharedWith: string[] };
+  /** An agreement that names no other party: nobody hears of the agreed file's merge (F25). */
+  noParty?: boolean;
 }
 
 /** Mentions in full, the rest one line each. `superseded`: a newer `wait` of the same member
@@ -363,7 +365,8 @@ export interface Board {
   heldBy(p: Participant): string[];
 
   /** Stored with the author's run, always (plan D1, D13). */
-  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind }): Message;
+  /** `with`: an agreement's explicit parties, as seats or `<plan>/<seat>` (F25). */
+  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind; with?: string[] }): Message;
   /** An agreement backed; throws on a message that is not an agreement, or on one's own. */
   endorse(p: Participant, seq: number): Message;
   /** `by`: the member reading, when known, counted as a call of its own (D66). */
@@ -915,9 +918,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     about: string | null,
     kind: MessageKind,
     named?: string[],
-    extra: { endorses?: number; event?: EventName; meta?: MessageMeta } = {},
+    extra: { endorses?: number; event?: EventName; meta?: MessageMeta; parties?: string[] } = {},
   ): Message => {
-    const mentions = named ?? (kind === "event" ? [] : parseMentions(body, p.plan, openPlans(p.repo), activeNames(p.repo)));
+    const mentions = named ?? extra.parties ?? (kind === "event" ? [] : parseMentions(body, p.plan, openPlans(p.repo), activeNames(p.repo)));
     // every item is stored with its author's run (plan D1, D13)
     const run = p.run;
     // a closed run is read-only (D19)
@@ -2202,7 +2205,17 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     post(p, body, opts = {}) {
       const fresh = live(p);
-      const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg");
+      let named: string[] | undefined;
+      if (opts.kind === "agreement") {
+        // an agreement's parties (F25): its mentions, then --with, else the other holders of the file it is about
+        const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
+        const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
+        const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
+        const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
+        named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
+      }
+      const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
+      if (named && !named.length) return { ...m, noParty: true };
       // posting is claiming (D7), on a kind with claims
       const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;

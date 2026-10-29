@@ -46,6 +46,8 @@ export interface Claims {
   heldInOtherRun(p: Participant, rel: string): boolean;
   /** `p` holds `about` (a path, or its tail) now. */
   holds(p: Participant, about: string): boolean;
+  /** The live holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
+  holderNames(repo: string, about: string): string[];
 }
 
 /** What a post settled: the claimed path and its other holders' names. */
@@ -220,6 +222,15 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const x = fold(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       });
+    },
+
+    holderNames(repo, about) {
+      const f = fold(relPath(repo, about) ?? slashes(about));
+      if (!f) return [];
+      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo) as Row[];
+      return [...new Set(rows
+        .filter((r) => { const x = fold(String(r.path)); return x === f || x.endsWith(`/${f}`); })
+        .map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
 
     holds(p, about) {

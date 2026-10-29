@@ -41,7 +41,7 @@ const USAGE = [
   "  unsubscribe [--as <member>] <events>",
   "  doing   [--as <member>] <text>",
   "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
-  "  agree   [--as <member>] <terms> [--about <path|decision id>]  # prints the seq",
+  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
   "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
@@ -472,6 +472,9 @@ const emitHeard = async (p: Participant, json: object, human: string | (() => vo
 
 /** The file a relative path means (D6): from the current folder when it exists there, else from
  *  the repository root when it exists there; neither refuses, unless `--new` creates it here. */
+/** The last line of a `wait --mentions` that delivered (F28). */
+export const DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
+
 function resolveClaimPath(file: string, about = false): string {
   if (path.isAbsolute(file)) return file;
   const here = path.resolve(file);
@@ -820,20 +823,25 @@ ${USAGE}`);
       const body = (file ? fs.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
+      if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
       if (urgent && p.seat !== "orchestrator") fail("--urgent is the orchestrator's: it wakes every waiter of the run, even in a pause; ask @orchestrator on the thread instead");
       const m = await board.post(p, body, {
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
+        ...(args.verb === "agree" && args.flag("--with") ? { with: args.flag("--with")!.split(",") } : {}),
       });
+      // F25: an agreement with no other party wakes nobody when its file merges
+      const noParty = m.noParty ? "no other party: name one with @<seat> or --with <seat>" : null;
       const unmatched = await unmatchedLines(p, body);
       // the orchestrator's first task post into a run with no phase open ends on the first-phase line, once (idea 3)
       const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(noParty ? { warning: noParty } : {}), ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
       const human = () => {
         console.log(seqLine(m));
         // posting is claiming (D7)
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
+        if (noParty) console.log(noParty);
       };
       if (phaseNext) {
         // its own last line: a listener line, when one is due, comes before it
@@ -964,10 +972,13 @@ only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLin
 ${rearm}` : rearm;
       // the run's phase first, so a member always knows which phase it answers in
       const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p, !pausedNow);
-      emit({ phase: phaseFull, next, ...d }, () => {
+      // F28: a background listener's end is also announced by the harness; the same event, already delivered here
+      const delivered = mentionsOnly ? DELIVERED_LINE : null;
+      emit({ phase: phaseFull, next, ...d, ...(delivered ? { delivered } : {}) }, () => {
         if (phase) console.log(phase);
         console.log(next);
         printDelivery(d);
+        if (delivered) console.log(delivered);
       });
       break;
     }
