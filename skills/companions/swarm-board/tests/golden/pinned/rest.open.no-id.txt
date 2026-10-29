@@ -1,3 +1,4 @@
 exit 1
 --- stderr
 <seats>\no-id.json: a seat without an id
+e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]

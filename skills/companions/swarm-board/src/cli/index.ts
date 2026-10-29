@@ -87,6 +87,29 @@ const CODE_USAGE = [
   "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
 ].join("\n");
 
+/** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
+const EXAMPLES: Record<string, (as: string) => string> = {
+  open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
+  seat: () => "seat w1 --run 3 --state running",
+  phase: (as) => `phase build "build the slices" --as ${as}`,
+  join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
+  "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
+  merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
+  lock: (as) => `lock port:4399 --as ${as}`,
+  unlock: (as) => `unlock port:4399 --as ${as}`,
+  config: () => "config retention 30",
+  worktree: () => "worktree prune",
+  close: () => "close --run 3",
+};
+/** V9: the usage of the verb being called alone, from the help's own lines, and one corrected form; never the whole help. */
+const verbHelp = (verb = args.verb ?? ""): string => {
+  const line = [...USAGE.split("\n"), ...CODE_USAGE.split("\n")].find((l) => l.startsWith(`  ${verb} `));
+  if (!line) return USAGE;
+  const usage = `usage: ${CLI} ${line.trim().replace(/\s+#.*$/, "")}`;
+  const example = EXAMPLES[verb]?.(asWord());
+  return example ? `${usage}\ne.g. ${CLI} ${example}` : usage;
+};
+
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
 const STATS_USAGE = [
   `usage: ${CLI} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
@@ -131,7 +154,7 @@ const emit = (json: unknown, human: string | (() => void)): void => {
 
 /** The flag D24 removed: no member, and no orchestrator, ever names a transcript; the link finds it. */
 const refuseTranscriptFlag = (verb: string): void => {
-  if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript\n${USAGE}`);
+  if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript\n${verbHelp()}`);
 };
 
 /** The repository (D29): its common git dir, so every worktree of one repository is one (Place, D5). */
@@ -193,7 +216,7 @@ const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] =
 /** The tool's folder (swarm.mjs's), the aiview skill beside it. */
 const toolRoot = (): string => process.env.SWARM_ROOT ?? path.dirname(path.resolve(process.argv[1]));
 
-const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${USAGE}`);
+const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
 
 const runArg = (): number => {
   const raw = need("--run");
@@ -510,22 +533,26 @@ const declaredPath = (file: string): string => {
   return missing.length && root ? path.resolve(root, file) : abs;
 };
 
+/** V13: a seats file the CLI cannot take: what is wrong, then a seats file it takes. */
+const seatsFail = (what: string): never =>
+  fail(`${what}\ne.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]`);
+
 function readSeats(file: string): SeatSpec[] {
   let raw: unknown;
   try {
     raw = JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
   } catch (e) {
-    return fail(`cannot read seats from ${file}: ${(e as Error).message}`);
+    return seatsFail(`cannot read seats from ${file}: ${(e as Error).message}`);
   }
   const list = Array.isArray(raw) ? raw : (raw as { seats?: unknown }).seats;
-  if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, role, area, blockers}`);
+  if (!Array.isArray(list)) return seatsFail(`${file}: expected an array of {id, role, area, blockers}`);
   return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
-    if (typeof s.id !== "string") fail(`${file}: a seat without an id`);
+    if (typeof s.id !== "string") seatsFail(`${file}: a seat without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
-    if ("title" in s) fail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
-    if ("transcript" in s) fail(`${file}: unknown field transcript in ${s.id}`);
+    if ("title" in s) seatsFail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
+    if ("transcript" in s) seatsFail(`${file}: unknown field transcript in ${s.id}`);
     // busyMax: the seat's bound on a non-shell call (idea 5), validated as seat add --busy-max is
-    if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) fail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
+    if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) seatsFail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
       ...(s.busyMax !== undefined ? { busyMax: s.busyMax as number } : {}),
       id: String(s.id),
@@ -549,14 +576,14 @@ function openKindAndGroup(): { kind: Kind; group: string } {
   }
   const plan = args.flag("--plan");
   if (plan !== undefined && kind !== "plan") fail(`open: --plan means --kind plan; a ${kind} run takes --group <slug>`);
-  const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)\n${USAGE}`);
+  const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)\n${verbHelp()}`);
   return { kind, group };
 }
 
 /** `join`'s member id: `--seat`. */
 function joinedSeat(): string {
   const seat = args.flag("--seat");
-  return seat ?? fail(`--seat is required\n${USAGE}`);
+  return seat ?? fail(`--seat is required\n${verbHelp()}`);
 }
 
 /** What a seat's join tells it of its posts, before the listener line (D2). */
@@ -634,7 +661,7 @@ async function main(): Promise<void> {
   switch (args.verb) {
     case "config": {
       const setting = args.positional[0];
-      if (setting !== "retention") fail(`config: the one setting is retention\n${USAGE}`);
+      if (setting !== "retention") fail(`config: the one setting is retention\n${verbHelp()}`);
       const raw = args.positional[1];
       const value = raw === undefined ? undefined : Number(raw);
       const days = await board.setting("retention-days", value);
@@ -644,7 +671,7 @@ async function main(): Promise<void> {
     case "open": {
       const { kind, group } = openKindAndGroup();
       const plan = group;
-      const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${USAGE}`);
+      const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${verbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === undefined ? undefined : Number(rawStall);
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
@@ -690,7 +717,7 @@ async function main(): Promise<void> {
     case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
     case "seat": {
       if (args.positional[0] === "add") {
-        const id = args.positional[1] ?? fail(`seat add: which id?\n${USAGE}`);
+        const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
         const run = runArg();
         const on = args.flag("--on");
         if (on !== undefined) subscriptionsArg(on);
@@ -712,7 +739,7 @@ async function main(): Promise<void> {
         emit({ run, seat: added }, `${id} added`);
         break;
       }
-      const id = args.positional[0] ?? fail(`seat: which seat?\n${USAGE}`);
+      const id = args.positional[0] ?? fail(`seat: which seat?\n${verbHelp()}`);
       const run = runArg();
       refuseTranscriptFlag("seat");
       const state = need("--state") as SeatState;
@@ -739,8 +766,7 @@ async function main(): Promise<void> {
     case "phase": {
       const p = await caller();
       const [name, ...said] = args.positional;
-      if (!name) fail(`phase: which phase?
-${USAGE}`);
+      if (!name) fail(`phase: which phase?\n${verbHelp()}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
       const watch = args.list("--watch");
@@ -1216,7 +1242,7 @@ ${USAGE}`);
       break;
     }
     case "worktree": {
-      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${USAGE}`);
+      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${verbHelp()}`);
       const known = await board.worktrees();
       // each repository the board knows a run of: its worktrees folder is the only one walked
       const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
@@ -1268,7 +1294,7 @@ ${USAGE}`);
     case "lock": {
       const p = await caller();
       if (await refusedPaused(p, "lock")) break;
-      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${USAGE}`);
+      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${verbHelp()}`);
       const r = await board.lock(p, name, args.flag("--note"));
       const cli = self().join(" ");
       const who = shellWord(p.name);
@@ -1301,7 +1327,7 @@ ${USAGE}`);
     }
     case "unlock": {
       const p = await caller();
-      const name = args.positional[0] ?? fail(`unlock: which resource?\n${USAGE}`);
+      const name = args.positional[0] ?? fail(`unlock: which resource?\n${verbHelp()}`);
       const r = await board.unlock(p, name);
       emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
       break;
