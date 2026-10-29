@@ -44,7 +44,9 @@ test("F14: post and agree --about a path not on disk are refused naming --new, a
     assert.notEqual(refused.status, 0);
     assert.match(refused.stderr, /pass --new if you are creating it \(--about takes a file not yet on disk with --new\)/);
     const ok = run(verb, "text", "--about", "docs/new.md", "--new");
-    assert.equal(ok.status, 0, ok.stderr);
+    // --new is taken; a lone member's agreement then has no other party and is refused for that (F25)
+    if (verb === "agree") assert.match(ok.stderr, /agree needs another party/);
+    else assert.equal(ok.status, 0, ok.stderr);
   }
 });
 

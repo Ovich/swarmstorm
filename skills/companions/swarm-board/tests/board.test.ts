@@ -712,7 +712,7 @@ test("calls counts every board call of a member, one each, a wait's looks none (
   };
   step("claim", () => board.checkEdit(s3, path.join(wt("s3"), "src/c.ts")));
   step("post", () => board.post(s3, "@S5 a word"));
-  step("agree", () => board.post(s3, "S3 changes c.ts", { kind: "agreement" }));
+  step("agree", () => board.post(s3, "S3 changes c.ts", { kind: "agreement", with: ["orchestrator"] }));
   step("doing", () => board.setDoing(s3, "the tests"));
   step("deliver", () => board.deliver(s3));
   const seq = board.post(s5, "@S3 hello").seq;
@@ -833,7 +833,7 @@ test("the hard rule: run A's plain post reaches run B neither in full nor as a l
   assert.deepEqual(board.deliver(far).full.map((x) => x.seq), [mention.seq]);
 
   assert.equal(board.checkEdit(far, "src/x.ts").allowed, true);
-  const agreement = board.post(s3, "S1 first, then S3", { about: "src/x.ts", kind: "agreement" });
+  const agreement = board.post(s3, "S1 first, then S3", { about: "src/x.ts", kind: "agreement", with: ["orchestrator"] });
   assert.deepEqual(board.deliver(far).full.map((x) => x.seq), [agreement.seq]);
 
   board.subscribe(far, [{ event: "ended", scope: "any" }]);
@@ -890,7 +890,7 @@ test("a closed run refuses a post", () => {
 
 test("endorse backs an agreement: a mention of its author, its about copied", () => {
   const { s3, s5 } = twoRuns();
-  const a = board.post(s3, "S3 changes the header, S5 the footer", { about: "src/page.ts", kind: "agreement" });
+  const a = board.post(s3, "S3 changes the header, S5 the footer", { about: "src/page.ts", kind: "agreement", with: ["orchestrator"] });
   const e = board.endorse(s5, a.seq);
   assert.equal(e.kind, "endorsement");
   assert.equal(e.body, `endorses #${a.seq}`);
@@ -909,7 +909,7 @@ test("an agreement about a path held by members of two runs keeps its author's r
   assert.equal(board.checkEdit(far, "src/x.ts").allowed, true);
   board.post(s3, "@swarm/S1 I add a helper to src/x.ts", { about: "src/x.ts" });
   assert.equal(board.checkEdit(s3, "src/x.ts").allowed, true);
-  const a = board.post(far, "S1 first, then S3", { about: "src/x.ts", kind: "agreement" });
+  const a = board.post(far, "S1 first, then S3", { about: "src/x.ts", kind: "agreement", with: ["orchestrator"] });
   assert.equal(a.run, other.id);
   assert.ok(board.deliver(s3).full.some((x) => x.seq === a.seq));
   const e = board.endorse(s3, a.seq);
@@ -1009,7 +1009,7 @@ test("subscribe and unsubscribe return the member's set", () => {
 
 test("the board's events store their name; an agreement maps by kind, with no name stored", () => {
   const { s3, s5 } = twoRunners();
-  const agreement = board.post(s3, "we agree", { kind: "agreement" });
+  const agreement = board.post(s3, "we agree", { kind: "agreement", with: ["orchestrator"] });
   assert.equal(agreement.event, null);
   board.end(s3);
   const names = board.deliver(s5).lines.join("\n");

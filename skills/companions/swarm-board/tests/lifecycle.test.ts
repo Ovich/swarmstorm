@@ -67,7 +67,7 @@ test("a closed run refuses a post; its messages stay readable", () => {
   // a member woken behind the board's back still finds the run archived
   raw.prepare("UPDATE participants SET ended_at = NULL WHERE id IN (?, ?)").run(s1.id, s2.id);
   assert.throws(() => board.post(s1, "late"), new RegExp(`run ${run.id} is closed`));
-  assert.throws(() => board.post(s1, "late", { kind: "agreement" }), new RegExp(`run ${run.id} is closed`));
+  assert.throws(() => board.post(s1, "late", { kind: "agreement", with: ["orchestrator"] }), new RegExp(`run ${run.id} is closed`));
   assert.equal(board.read(m.seq).body, "before the close");
   assert.ok(board.snapshot(REPO).events.some((e) => e.seq === m.seq));
 });
@@ -141,7 +141,7 @@ test("prune reaches only old rows stored before runs (run null): plain talk goes
   const alpha = runWithMembers("alpha");
   const beta = runWithMembers("beta");
   const plain = board.post(alpha.s1, "old news");
-  const agreement = board.post(alpha.s1, "alpha owns the header", { kind: "agreement" });
+  const agreement = board.post(alpha.s1, "alpha owns the header", { kind: "agreement", with: ["orchestrator"] });
   const endorsement = board.endorse(beta.s1, agreement.seq);
   const recentOld = board.post(alpha.s2, "old row, recent");
   storedBeforeRuns([plain.seq, agreement.seq, endorsement.seq], 40 * DAY);
@@ -164,7 +164,7 @@ test("prune reaches only old rows stored before runs (run null): plain talk goes
 
 test("a second prune removes nothing", () => {
   const old = runWithMembers("old");
-  board.post(old.s1, "an agreement of the run", { kind: "agreement" });
+  board.post(old.s1, "an agreement of the run", { kind: "agreement", with: ["orchestrator"] });
   closedAgo(old.run.id, 31 * DAY);
   const first = board.prune();
   assert.ok(first.runs === 1 && first.messages > 0);

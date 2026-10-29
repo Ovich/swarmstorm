@@ -2843,9 +2843,9 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
         const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
         named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
+        if (!named.length && profileOf(fresh.kind).claims) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
-      if (named && !named.length) return { ...m, noParty: true };
       const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
@@ -9026,16 +9026,14 @@ ${USAGE}`);
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         ...args.verb === "agree" && args.flag("--with") ? { with: args.flag("--with").split(",") } : {}
       });
-      const noParty = m.noParty ? "no other party: name one with @<seat> or --with <seat>" : null;
       const unmatched = await unmatchedLines(p, body);
       const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...noParty ? { warning: noParty } : {}, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
       const human = () => {
         console.log(seqLine(m));
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
-        if (noParty) console.log(noParty);
-        if (args.verb === "agree" && !noParty && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
+        if (args.verb === "agree" && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
       };
       if (phaseNext) {
         const listen2 = await heardStep(p);

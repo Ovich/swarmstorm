@@ -152,8 +152,6 @@ export interface Message {
   meta?: MessageMeta | null;
   /** On post only: the refused claim this post settled (D7). */
   claimed?: { path: string; sharedWith: string[] };
-  /** An agreement that names no other party: nobody hears of the agreed file's merge (F25). */
-  noParty?: boolean;
 }
 
 /** Mentions in full, the rest one line each. `superseded`: a newer `wait` of the same member
@@ -2216,9 +2214,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
         const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
         named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
+        // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
+        if (!named.length && profileOf(fresh.kind).claims) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
-      if (named && !named.length) return { ...m, noParty: true };
       // posting is claiming (D7), on a kind with claims
       const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;

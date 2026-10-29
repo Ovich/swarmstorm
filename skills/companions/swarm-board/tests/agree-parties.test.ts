@@ -31,7 +31,6 @@ test("F25: --with names the agreement's party, and the merge of its file wakes i
   const [w1, w2] = setup({ w1: [], w2: [] });
   const m = board.post(w2, "you merge first", { kind: "agreement", about: "docs/notes.md", with: ["w1"] });
   assert.deepEqual(m.mentions, ["g/w1"]);
-  assert.equal(m.noParty, undefined);
   board.deliver(w1);
   board.deliver(w2);
   const waiting = board.wait(w2, { mentionsOnly: true, timeoutMs: 3000 });
@@ -46,12 +45,10 @@ test("F25: with no mention and no --with, the other holders of the --about file 
   assert.deepEqual(m.mentions, ["g/w1"]);
 });
 
-test("F25: no party at all is flagged", () => {
+test("F25: an agreement with no other party is refused, nothing recorded", () => {
   const [w1] = setup({ w1: [], w2: [] });
-  const m = board.post(w1, "agreed", { kind: "agreement", about: "docs/x.md" });
-  assert.deepEqual(m.mentions, []);
-  assert.equal(m.noParty, true);
-  assert.equal(board.post(w1, "plain").noParty, undefined);
+  assert.throws(() => board.post(w1, "agreed", { kind: "agreement", about: "docs/x.md" }), /agree needs another party: @<seat> or --with <seat>; to inform, use post/);
+  assert.ok(board.post(w1, "plain").seq > 0);
 });
 
 test("F28: what a wait --mentions answered is delivered; deliver does not repeat it", async () => {
