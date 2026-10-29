@@ -93,6 +93,7 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   board.livenessTick(run.id, new Date(Date.now() + 3_000), linked);
   assert.equal(alerts().length, 0, "silence counts from the resume");
   board.livenessTick(run.id, new Date(Date.now() + 6_000), linked);
-  // per member (D11): a and b are each quiet past the threshold
-  assert.deepEqual(alerts().map((e) => e.event), ["stalled", "stalled"]);
+  // a and b both quiet past the threshold at one tick: one stalled naming each
+  assert.deepEqual(alerts().map((e) => e.event), ["stalled"]);
+  assert.match(alerts()[0].body, /a.*b/);
 });

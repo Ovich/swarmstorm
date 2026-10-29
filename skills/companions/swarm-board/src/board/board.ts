@@ -211,7 +211,7 @@ export type PhaseMeta = { phase: string };
 export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing" | "lock";
 /** A stalled event's data: its rule, the member's id, for `owing` the phase it owes, for `lock` the lock and its
  *  holder as a cross-run handle (`<CODE>·<id>`). */
-export type StalledMeta = { rule: StallRule; member: string; phase?: string; lock?: string; holder?: string };
+export type StalledMeta = { rule: StallRule; member: string; phase?: string; lock?: string; holder?: string; members?: (Omit<StalledMeta, "rule" | "members"> & { rule?: StallRule })[] };
 /** An unlocked event's data (idea 4): the lock's name. */
 export type UnlockedMeta = { unlocked: string };
 /** A breach event's data (idea 4): the member, `<group>/<id>`, that killed by name, pattern or an unlocked port. */
@@ -223,7 +223,7 @@ export type NamedLock = { name: string; member: string; run: RunId; since: strin
 /** Who holds a lock a caller was refused (idea 4): enough to find it and judge whether it is stuck. */
 export type LockHolder = { member: string; nick: string; run: RunId; code: string; since: string; state: MemberStateName; doing: string | null };
 /** A link-down liveness's data: the member, `<group>/<id>`, whose link is lost while its transcript grows. */
-export type LinkDownMeta = { linkDown: string };
+export type LinkDownMeta = { linkDown: string; linkDowns?: string[] };
 /** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
 export type PauseMeta = { person: boolean; text: string };
 /** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
@@ -1170,7 +1170,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   // ── liveness: member states from activity (swarm-relay D9, D11, D12, D31) ─────────────
   /** Since when every member of a run (the orchestrator aside) has been waiting, and when its last idle was posted. */
-  const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean }>();
+  /** `postedSeq`: the run's last post (idles aside) when the idle was told; `stirred`: a member left its wait since. */
+  const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean; postedSeq: number; stirred: boolean }>();
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
@@ -2033,6 +2034,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         let progress = progressOf(run, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
+        // one tick's liveness and stalled lines go out as one wake each (several members at once: one line naming each)
+        const livenessLines: { body: string; linkDown?: string }[] = [];
+        const stalledNow: { st: MemberState; meta?: StalledMeta; due: boolean }[] = [];
         for (const st of others) {
           // D12: gone, once while it lasts, told in the store so a restarted server never tells it again (D37);
           // an ended member is not live, so never gone
@@ -2053,7 +2057,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
           if (st.reason === "link down" && st.state === "working") {
             if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run, st.member).changes) === 1)
-              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name, meta: { linkDown: `${orch.plan}/${st.member}` } });
+              livenessLines.push({ body: `${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, linkDown: `${orch.plan}/${st.member}` });
           } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run, st.member);
           // D11: stalled per member, to the orchestrator alone; never while paused
           const a = activityOf(run, st.member);
@@ -2063,7 +2067,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
               const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run, st.member);
               if (Number(warned.changes) === 1)
-                insertMessage(orch, `no transcript found for ${orch.plan}/${st.member}: its state is presence only`, null, "event", [orch.name], { event: EVENTS.liveness.name });
+                livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
             }
             continue;
           }
@@ -2080,10 +2084,32 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             }
             continue;
           }
-          if (a.stalled_at != null && t - Number(a.stalled_at) < STALLED_AGAIN_MS) continue;
           const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
-          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
-          db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
+          stalledNow.push({ st, meta, due: a.stalled_at == null || t - Number(a.stalled_at) >= STALLED_AGAIN_MS });
+        }
+        if (livenessLines.length === 1) {
+          const [l] = livenessLines;
+          insertMessage(orch, l.linkDown ? `liveness ${l.body}` : l.body, null, "event", [orch.name], { event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
+        } else if (livenessLines.length > 1) {
+          const downs = livenessLines.flatMap((l) => (l.linkDown ? [l.linkDown] : []));
+          insertMessage(orch, `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`, null, "event", [orch.name], {
+            event: EVENTS.liveness.name,
+            ...(downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}),
+          });
+        }
+        // D11: the stalled set is told when a member joins it, or again after STALLED_AGAIN_MS: one line naming each
+        // stalled member, its rule and its move (the members told within the 15 min ride along, their time renewed)
+        if (stalledNow.some((x) => x.due)) {
+          if (stalledNow.length === 1) {
+            const [{ st, meta }] = stalledNow;
+            insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
+          } else {
+            const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
+            const ruled = stalledNow.find((x) => x.meta)?.meta;
+            const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
+            insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
+          }
+          for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
         }
         // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
         // waiting or quiet for stall_ms: `stalled · lock` to this run's orchestrator and to the holder's, once per hold
@@ -2127,14 +2153,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (!allWaiting) {
           // the last post is kept: a member stirring for a moment does not buy a second idle within IDLE_MS (D44)
           const was = idleSince.get(run);
-          if (was) idleSince.set(run, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false });
+          if (was) idleSince.set(run, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false, postedSeq: was.postedSeq, stirred: true });
         } else {
           // D34: once when it begins, then only after IDLE_MS while it lasts
           const kept = idleSince.get(run);
-          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false };
+          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false, postedSeq: kept?.postedSeq ?? 0, stirred: kept?.stirred ?? false };
           idleSince.set(run, idle);
           const held = t - idle.since;
-          if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS) {
+          // told once; again only when the board changed since (a post, a member leaving its wait), and IDLE_MS after the last
+          const lastSeq = Number((db.prepare("SELECT MAX(m.seq) AS s FROM messages m JOIN participants p ON p.id = m.author WHERE p.run = ? AND (m.event IS NULL OR m.event != 'idle')").get(run) as Row).s ?? 0);
+          if (idle.postedAt == null || (t - idle.postedAt >= IDLE_MS && (idle.stirred || lastSeq > idle.postedSeq))) {
             // idea 2: a spell's first idle after the current phase's all-done was told is carried (its deadline still
             // wakes); with no phase open, a member still owing, or a repeat within the spell, it wakes
             const allDoneTold =
@@ -2142,6 +2170,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             const carriedIdle = !idle.spellPosted && allDoneTold;
             idle.postedAt = t;
             idle.spellPosted = true;
+            idle.postedSeq = lastSeq;
+            idle.stirred = false;
             insertMessage(orch, `idle ${Math.floor(held / 1000)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
           }
         }

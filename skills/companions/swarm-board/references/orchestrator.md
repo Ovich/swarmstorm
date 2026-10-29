@@ -88,8 +88,10 @@ waits: in the foreground; a seat runs on the plugin's
   makes it return.
 - **Five events reach you alone**; no member is woken by them, and `stalled` and `idle` never
   fire while the run is paused. Each ends on the step it asks for.
-  - **`stalled <member>`**: that member owes a move it is not making; once, then every 15 min
-    while it lasts. It names its rule, the member's last line and, on the line after it, the
+  - **`stalled <member>`**: that member owes a move it is not making; never carried. Members
+    stalled at one tick come in one line, `stalled <group>: N members: …`, each with its rule,
+    and the `next` line gives each member's move after its name. Told again when the set of
+    stalled members changes, or every 15 min for the same set, still one line. It names its rule, the member's last line and, on the line after it, the
     move that rule asks for: `turn ended` (a post does not wake it), `in turn, no line for 2 min`
     (its model may be hung), `background <cmd> silent 60 s` or `15 min` (a task it awaits),
     `call open 15 min, may be long or hung`, `waiting, not done <phase>` (it waits while owing
@@ -102,10 +104,12 @@ waits: in the foreground; a seat runs on the plugin's
     its seat, or close the seat (*A gone member*).
   - **`recovered <member>`**: a member told `gone` reads alive again; once. Do not dispatch into
     its seat; if you already did, close one of the two.
-  - **`idle`**: every member is `waiting` in a board wait; once when it begins, then every
-    15 min while it holds. The swarm waits on you: open the next phase if all are done, else
+  - **`idle`**: every member is `waiting` in a board wait; once when it begins, then again
+    only if something changed on the board since (a post, a member leaving its wait), at most
+    every 15 min. The swarm waits on you: open the next phase if all are done, else
     answer whoever waits on you, else wait again.
-  - **`liveness`**: no transcript was found for a member 30 s after its join; once. Its state
+  - **`liveness`**: no transcript was found for a member 30 s after its join; once. Several
+    due at one tick come in one line, each member named. Its state
     is presence only (`waiting` or `quiet`, never `working`) and `stalled` never names it: judge
     it by its posts and its doing, and mention it when it falls silent.
     Or its link was lost while its transcript still grows (`link lost, transcript still

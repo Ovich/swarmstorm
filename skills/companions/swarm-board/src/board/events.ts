@@ -36,6 +36,9 @@ const foregroundWait = (cli: string, me: Participant): string => `${cli} wait --
  *  stalled stored before the rules gives the general move. */
 function stalledMove(m: Message, me: Participant, cli: string): string {
   const meta = m.meta && "rule" in m.meta ? m.meta : null;
+  // several members stalled at one tick: one line, each member's move after its name
+  if (meta?.members && meta.members.length > 1)
+    return meta.members.map((one) => `${one.member}: ${(one.rule ? stalledMove({ ...m, meta: { ...one, rule: one.rule } }, me, cli) : stalledMove({ ...m, meta: null }, me, cli))}`).join("; ");
   const id = meta?.member ?? "<member>";
   switch (meta?.rule) {
     case "ended":
@@ -157,6 +160,8 @@ export const EVENTS: Record<EventName, EventDef> = {
     next: (m, me, cli) => {
       const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
       if (!member || me.seat !== "orchestrator") return null;
+      const all = m.meta && "linkDowns" in m.meta && m.meta.linkDowns ? m.meta.linkDowns : [member];
+      if (all.length > 1) return all.map((one) => `SendMessage ${one} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(one)}`).join("; ");
       return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
     },
   },

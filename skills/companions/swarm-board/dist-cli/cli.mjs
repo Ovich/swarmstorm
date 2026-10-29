@@ -174,6 +174,8 @@ var init_kinds = __esm({
 // src/board/events.ts
 function stalledMove(m, me, cli) {
   const meta = m.meta && "rule" in m.meta ? m.meta : null;
+  if (meta?.members && meta.members.length > 1)
+    return meta.members.map((one) => `${one.member}: ${one.rule ? stalledMove({ ...m, meta: { ...one, rule: one.rule } }, me, cli) : stalledMove({ ...m, meta: null }, me, cli)}`).join("; ");
   const id = meta?.member ?? "<member>";
   switch (meta?.rule) {
     case "ended":
@@ -337,6 +339,8 @@ var init_events = __esm({
         next: (m, me, cli) => {
           const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
           if (!member || me.seat !== "orchestrator") return null;
+          const all = m.meta && "linkDowns" in m.meta && m.meta.linkDowns ? m.meta.linkDowns : [member];
+          if (all.length > 1) return all.map((one) => `SendMessage ${one} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(one)}`).join("; ");
           return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
         }
       },
@@ -2696,6 +2700,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         let progress = progressOf(run2, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
+        const livenessLines = [];
+        const stalledNow = [];
         for (const st of others) {
           if (st.state !== "gone") {
             if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run2, st.member).changes) === 1) {
@@ -2710,7 +2716,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           }
           if (st.reason === "link down" && st.state === "working") {
             if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run2, st.member).changes) === 1)
-              insertMessage(orch, `liveness ${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, null, "event", [orch.name], { event: EVENTS.liveness.name, meta: { linkDown: `${orch.plan}/${st.member}` } });
+              livenessLines.push({ body: `${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, linkDown: `${orch.plan}/${st.member}` });
           } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run2, st.member);
           const a = activityOf(run2, st.member);
           if (!a) {
@@ -2718,7 +2724,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
               const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run2, st.member);
               if (Number(warned.changes) === 1)
-                insertMessage(orch, `no transcript found for ${orch.plan}/${st.member}: its state is presence only`, null, "event", [orch.name], { event: EVENTS.liveness.name });
+                livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
             }
             continue;
           }
@@ -2731,10 +2737,30 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
             }
             continue;
           }
-          if (a.stalled_at != null && t - Number(a.stalled_at) < STALLED_AGAIN_MS) continue;
           const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
-          insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...meta ? { meta } : {} });
-          db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run2, st.member);
+          stalledNow.push({ st, meta, due: a.stalled_at == null || t - Number(a.stalled_at) >= STALLED_AGAIN_MS });
+        }
+        if (livenessLines.length === 1) {
+          const [l] = livenessLines;
+          insertMessage(orch, l.linkDown ? `liveness ${l.body}` : l.body, null, "event", [orch.name], { event: EVENTS.liveness.name, ...l.linkDown ? { meta: { linkDown: l.linkDown } } : {} });
+        } else if (livenessLines.length > 1) {
+          const downs = livenessLines.flatMap((l) => l.linkDown ? [l.linkDown] : []);
+          insertMessage(orch, `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`, null, "event", [orch.name], {
+            event: EVENTS.liveness.name,
+            ...downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}
+          });
+        }
+        if (stalledNow.some((x) => x.due)) {
+          if (stalledNow.length === 1) {
+            const [{ st, meta }] = stalledNow;
+            insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...meta ? { meta } : {} });
+          } else {
+            const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
+            const ruled = stalledNow.find((x) => x.meta)?.meta;
+            const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
+            insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
+          }
+          for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run2, st.member);
         }
         if (r.paused == null) {
           const waited = db.prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name").all(run2);
@@ -2769,17 +2795,20 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
           const was = idleSince.get(run2);
-          if (was) idleSince.set(run2, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false });
+          if (was) idleSince.set(run2, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false, postedSeq: was.postedSeq, stirred: true });
         } else {
           const kept = idleSince.get(run2);
-          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false };
+          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false, postedSeq: kept?.postedSeq ?? 0, stirred: kept?.stirred ?? false };
           idleSince.set(run2, idle);
           const held = t - idle.since;
-          if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS) {
+          const lastSeq2 = Number(db.prepare("SELECT MAX(m.seq) AS s FROM messages m JOIN participants p ON p.id = m.author WHERE p.run = ? AND (m.event IS NULL OR m.event != 'idle')").get(run2).s ?? 0);
+          if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS && (idle.stirred || lastSeq2 > idle.postedSeq)) {
             const allDoneTold = r.phase != null && db.prepare("SELECT 1 FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").get(run2, ORCHESTRATOR2, `all-done ${String(r.phase)}`) != null;
             const carriedIdle = !idle.spellPosted && allDoneTold;
             idle.postedAt = t;
             idle.spellPosted = true;
+            idle.postedSeq = lastSeq2;
+            idle.stirred = false;
             insertMessage(orch, `idle ${Math.floor(held / 1e3)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
           }
         }
