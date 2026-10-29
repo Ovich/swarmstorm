@@ -81,7 +81,7 @@ You never write the run's record or dossier.
 
 ## Along the way
 
-- **One command per shell call**, never chained with `&&`, `;` or pipes into git: a worktree guard refuses what it cannot verify stays in your worktree.
+- **One command per shell call**, as the swarm-board skill's `references/worker.md` says (*Along the way*).
 - **`$S doing "<text>" --as <group>/<seat>`** when you turn to another question, and before any long piece of work ("drafting the audit table"): the card shows what you are on while the thread is quiet.
 - **A long post** (a table, quotes, guillemets) goes through a file, never through the shell's quoting: write it, then `$S post --file <path> --as <group>/<seat>`.
 - **A post that fails twice** is reported to `@orchestrator` at once, with the error; never retried in silence, never dropped.
