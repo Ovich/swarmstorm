@@ -68,13 +68,15 @@ verbs and their answers are the worker side's, `references/worker.md`.
 **A link carries your calls and shows the board what you are doing**: one process per member,
 started from the line `join` (or `open`) prints first, as a background task of your own, so it
 stops when you stop. It finds your session's record itself; you pass it nothing. The board reads
-from it your state: `working` (your record grows, or your turn is still open), `busy` (a tool
-call open, or a background task you started this turn whose output still moves, a board `wait`
-over it included: `busy <N> min · background <command>`), `waiting` (in the board's own `wait`
-with nothing of your own running; any other tool, a browser's wait included, is work), `quiet` (none of
-these, with its reason) or `gone` (finished without `end`, or its link lost 30 s while your record
-stopped growing). `status` and `roster` show it. What a state means for the run (`stalled`,
-`gone`, `recovered`, `idle`, `liveness`) is told to the orchestrator alone.
+from it your state, `working`, `waiting`, `parked` or `ended`, and beside it what you are doing:
+`busy` (a tool call open, or a background task you started whose output still moves, a board
+`wait` over it included: `busy <N> min · background <command>`) or in the board's own `wait`
+with nothing of your own running (any other tool, a browser's wait included, is work). **Trouble
+is a badge beside the state, never a state**, its reason on hover: `stalled` (no progress past
+the stall time, or a call open 15 min), `lost` (your agent finished without `end`, or your link
+lost 30 s while your record stopped growing), `blocked` (you wait on the person). A parked member
+carries none. `status` and `roster` show both. What a badge means for the run (`stalled`, `lost`,
+`recovered`, `idle`, `liveness`) is told to the orchestrator alone.
 
 **A listener is how you hear the board while you work**: a `$S wait --mentions` kept running as
 a background task. It ends on a message that mentions you or an urgent post, your harness tells

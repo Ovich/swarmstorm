@@ -45,14 +45,14 @@ test("D31 (S37): a board wait over its own un-notified background suite reads bu
   const waitCall = { name: "Bash", target: "swarm wait --mentions", since: base, boardWait: true, shell: true };
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: waitCall, background: { target: "npm test", since: base - 3 * 60_000, outputGrewAt: base } }), at(base, 0));
   const st = board.memberStates(run.id, at(base, 1)).find((s) => s.member === "a")!;
-  assert.deepEqual([st.state, st.doing, st.reason], ["busy", "3 min · background npm test", undefined]);
+  assert.deepEqual([st.state, st.doing, st.badge], ["busy", "3 min · background npm test", null]);
   // the card's activity carries both the open wait and the background task (D32)
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
   assert.deepEqual([card.activity?.open?.boardWait, card.activity?.background?.target], [true, "npm test"]);
   // past BUSY_MAX_MS from the task's start it stays busy and says it may be hung
   const long = board.memberStates(run.id, new Date(base + 13 * 60_000)).find((s) => s.member === "a")!;
   assert.equal(long.state, "busy");
-  assert.match(long.reason ?? "", /background open 15 min, may be long or hung/);
+  assert.match(long.badge?.reason ?? "", /background open 15 min, may be long or hung/);
   await held;
 });
 
@@ -72,7 +72,7 @@ test("D30: a parked member draws no gone, stalled or idle, all-done does not wai
   const base = Date.now();
   board.recordActivity(run.id, "b", act({ grewAt: base - 600_000, inTurn: false }), at(base, 0));
   board.livenessTick(run.id, at(base, 120), (m) => (m === "b" ? lost(base - 600_000)(m) : linked(m)));
-  assert.deepEqual([...eventsOf("gone"), ...eventsOf("stalled"), ...eventsOf("liveness")].filter((e) => e.body.includes("g/b")), []);
+  assert.deepEqual([...eventsOf("lost"), ...eventsOf("stalled"), ...eventsOf("liveness")].filter((e) => e.body.includes("g/b")), []);
   // all-done counts a alone
   const done = board.done(a, "p1");
   assert.deepEqual([done.progress.done, done.progress.of, done.all], [1, 1, true]);

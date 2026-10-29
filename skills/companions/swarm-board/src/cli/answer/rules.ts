@@ -116,8 +116,13 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       // G2: the orchestrator's own kill is its own to correct, never a message to itself
       return member === me.name ? W.breachOwn : W.breachOther(member);
     }
-    case "gone":
-      return orchestrator ? W.goneMove : null;
+    case "lost":
+      return orchestrator ? W.lostMove : null;
+    case "block":
+      // board-split D44: the blocked seat waits on the person, in the foreground, until unblock
+      return m.mentions.includes(me.name) ? W.blockedWait : null;
+    case "unblock":
+      return m.mentions.includes(me.name) ? W.unblockedGoOn : null;
     case "liveness": {
       // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
       const member = meta && "linkDown" in meta ? meta.linkDown : null;
@@ -138,7 +143,7 @@ const tasksOf = (body: string, seat: string): string[] =>
     .filter(([, ...seats]) => seats.includes(seat))
     .map(([seq]) => seq);
 
-/** The move a `stalled` asks of the orchestrator, by the rule that made its member quiet (idea 1, rule 6); a stalled
+/** The move a `stalled` asks of the orchestrator, by the rule that badged its member stalled (idea 1, rule 6); a stalled
  *  stored before the rules gives the general move. */
 function stalledMove(m: Message, cli: string, as: string): string {
   const meta = m.meta && "rule" in m.meta ? m.meta : null;

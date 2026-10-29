@@ -198,10 +198,10 @@ test("a run whose every member is silent is flagged once with the run, by its or
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
   assert.deepEqual(board.markStaleRuns(later(5)), []);
   assert.deepEqual(board.markStaleRuns(later(11)), [run.id]);
-  const events = board.snapshot(REPO).events.filter((e) => e.body.includes("is stale"));
+  const events = board.snapshot(REPO).events.filter((e) => e.body.startsWith("stalled run "));
   assert.equal(events.length, 1);
   assert.equal(events[0].run, run.id);
-  assert.equal(events[0].body, `run ${run.id} (quiet) is stale: every member silent; close it or dispatch again`);
+  assert.equal(events[0].body, `stalled run ${run.id} (quiet): every member silent; close it or dispatch again`);
   assert.equal(events[0].from, "quiet/orchestrator");
   assert.deepEqual(board.read(events[0].seq).mentions, ["quiet/orchestrator"]);
   assert.deepEqual(board.markStaleRuns(later(12)), []);
@@ -209,10 +209,10 @@ test("a run whose every member is silent is flagged once with the run, by its or
   assert.deepEqual(board.markStaleRuns(later(25)), [run.id]);
   // the orchestrator authors it, so its own delivery never carries it
   const toOrchestrator = board.deliver(board.participant("quiet/orchestrator")!);
-  assert.ok(!toOrchestrator.full.some((m) => m.body.includes("is stale")));
-  assert.ok(!toOrchestrator.lines.some((l) => l.includes("is stale")));
+  assert.ok(!toOrchestrator.full.some((m) => m.body.startsWith("stalled run ")));
+  assert.ok(!toOrchestrator.lines.some((l) => l.includes("stalled run ")));
   // a member of the run hears it, as a line
-  assert.ok(board.deliver(s1).lines.some((l) => l.includes("is stale")));
+  assert.ok(board.deliver(s1).lines.some((l) => l.includes("stalled run ")));
 });
 
 test("the board's own stale flag is no activity of the run: a run idle two days stays forgotten after it (S31)", () => {
@@ -226,11 +226,11 @@ test("the board's own stale flag is no activity of the run: a run idle two days 
   assert.equal(board.lastActivity(run.id), old);
 });
 
-test("a silent orchestrator is posted quiet once, with its run; its next call posts back; a silent member gets none (D15)", () => {
+test("a silent orchestrator is posted stalled once, with its run; its next call posts back; a silent member gets none (D15)", () => {
   const { run } = runWithMembers("hush");
   const orchestrator = board.participant("hush/orchestrator")!;
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
-  const quietEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "quiet");
+  const quietEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "stalled" && e.body.startsWith(`stalled ${orchestrator.name}:`));
   const backEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "back");
   board.markStaleRuns(later(5));
   assert.equal(quietEvents().length, 0);
@@ -240,7 +240,7 @@ test("a silent orchestrator is posted quiet once, with its run; its next call po
   assert.equal(quiet.length, 1, "once per silence");
   assert.equal(quiet[0].from, orchestrator.name);
   assert.equal(quiet[0].run, run.id);
-  assert.match(quiet[0].body, /^quiet 11 min$/);
+  assert.match(quiet[0].body, /^stalled hush\/orchestrator: no call for 11 min$/);
   assert.equal(backEvents().length, 0);
   board.deliver(orchestrator);
   const back = backEvents();
@@ -248,8 +248,8 @@ test("a silent orchestrator is posted quiet once, with its run; its next call po
   assert.equal(back[0].from, orchestrator.name);
   board.deliver(orchestrator);
   assert.equal(backEvents().length, 1, "back once");
-  // no member is ever posted quiet, silent as they were
-  assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "quiet" || e.event === "back").every((e) => e.from === orchestrator.name));
+  // no member is ever posted stalled by this rule, silent as they were
+  assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "stalled" || e.event === "back").every((e) => e.from === orchestrator.name));
 });
 
 test("one live member keeps the run unflagged", () => {
@@ -279,5 +279,5 @@ test("S24: a seat joined again reads fresh in the roster, never stale from its l
   raw.prepare("UPDATE participants SET joined_at = ?, last_call = ? WHERE id = ?").run(ago(DAY), ago(DAY), s1.id);
   board.join({ run: run.id, seat: "S1", doing: "back", files: [] });
   const row = board.roster(REPO).find((r) => r.name === "rejoin/S1")!;
-  assert.equal(row.stale, false);
+  assert.equal(row.badge, null);
 });

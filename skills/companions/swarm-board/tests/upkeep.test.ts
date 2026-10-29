@@ -112,7 +112,7 @@ test("upkeepIfDue runs again after five minutes", async () => {
     assert.equal(board.upkeepIfDue(t0), true);
     // flagStale ran with the time given: eleven minutes on, the silent run is flagged
     assert.equal(board.upkeepIfDue(new Date(t0.getTime() + 11 * MINUTE)), true);
-    assert.equal(board.snapshot(REPO).events.filter((e) => e.event === "stale" && e.run === run.id).length, 1);
+    assert.equal(board.snapshot(REPO).events.filter((e) => e.event === "stalled" && e.body.startsWith("stalled run ") && e.run === run.id).length, 1);
     assert.equal(board.upkeepIfDue(new Date(t0.getTime() + 12 * MINUTE)), false);
   } finally {
     board.close();
@@ -130,19 +130,19 @@ const eventsAfterUpkeep = async (event: string) => {
 };
 
 // the upkeep runs in the board server a verb starts, no longer in the verb (swarm-relay D13)
-test("a verb after a silent ten minutes posts the quiet event", async () => {
+test("a verb after a silent ten minutes posts the orchestrator's stalled event", async () => {
   const run = openRunCli("hush");
-  assert.equal((await events("quiet")).length, 0);
+  assert.equal((await events("stalled")).length, 0);
   silentFor(run, 11 * MINUTE);
   lastUpkeepAgo(6 * MINUTE);
   const r = cli("status");
   assert.equal(r.status, 0, r.stderr);
-  const quiet = await eventsAfterUpkeep("quiet");
+  const quiet = (await eventsAfterUpkeep("stalled")).filter((e) => e.body.includes("orchestrator: no call for"));
   assert.equal(quiet.length, 1);
   assert.equal(quiet[0].run, run);
 });
 
-test("a pending wait posts the stale event of an all-silent run", async () => {
+test("a pending wait posts the stalled event of an all-silent run", async () => {
   const waiting = openRunCli("alpha");
   assert.equal(cli("join", "--run", String(waiting), "--seat", "S3", "--doing", "x").status, 0);
   const silent = openRunCli("beta");
@@ -157,7 +157,7 @@ test("a pending wait posts the stale event of an all-silent run", async () => {
     let stale: Awaited<ReturnType<typeof events>> = [];
     for (let i = 0; i < 40 && !stale.length; i++) {
       await new Promise((r) => setTimeout(r, 150));
-      stale = (await events("stale")).filter((e) => e.run === silent);
+      stale = (await events("stalled")).filter((e) => e.run === silent && e.body.startsWith("stalled run "));
     }
     assert.equal(stale.length, 1, "the pending wait ran no upkeep");
   } finally {

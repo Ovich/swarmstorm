@@ -188,7 +188,9 @@ export async function runLink(opts: {
       lastSeen = seen;
       queuedActivity = { type: "activity", at: Date.now(), activity };
     }
-    if (read.activity.finished) {
+    // S40 (board-split D31): a turn ended on a background task of its own is resumed by the harness when the task
+    // ends: the link stays, so its member reads busy on that task, never lost
+    if (read.activity.finished && !read.activity.background) {
       // the harness says the agent ended (E14): the last activity, then bye
       flushActivity(true);
       return exit({ why: "finished" }, "finished");

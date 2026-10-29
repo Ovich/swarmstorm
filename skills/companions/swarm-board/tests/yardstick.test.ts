@@ -8,7 +8,7 @@ import { SCENARIOS, play } from "./fixtures/yardstick.ts";
 /** id, the bound in s from T0, the rule (or the event) that must tell it. */
 const CORE: [string, number, string][] = [
   ["S4", 61, "ended"],
-  ["S5a", 31, "gone"],
+  ["S5a", 31, "lost"],
   ["S10", 61, "background"],
   ["S11-1a", 61, "owing"],
   ["S12", 61, "ended"],

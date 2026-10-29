@@ -6,7 +6,7 @@ import path from "node:path";
 import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
-import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
+import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, renamedIn, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
@@ -226,7 +226,7 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
   // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -559,6 +559,9 @@ const seatCommands = (as: string): string[] => WORDING.seatCommands(self().join(
 
 /** `--on`/`subscribe`'s events; an unknown name fails, listing the known ones (D59). */
 const subscriptionsArg = (spec: string): Subscription[] => {
+  // board-split D36: an old event name (gone, stale, quiet) is read as its new one, said once on stderr
+  const renamed = renamedIn(spec);
+  if (renamed.length) console.error(WORDING.eventRenamed(renamed));
   try {
     return parseSubscriptions(spec);
   } catch (e) {
@@ -765,6 +768,21 @@ async function main(): Promise<void> {
       const member = `${p.plan}/${seat}`;
       const next = args.verb === "park" ? WORDING.parked(member, self().join(" "), shellWord(seat), shellWord(p.name)) : WORDING.unparked(member);
       emit({ seq: m.seq, run: m.run, member, parked: args.verb === "park", next }, () => {
+        console.log(seqLine(m));
+        console.log(next);
+      });
+      break;
+    }
+    case "block":
+    case "unblock": {
+      // board-split D44: the orchestrator badges a seat blocked on the person, or lifts it
+      const p = await caller();
+      const seat = args.positional[0] ?? usageError(`${args.verb}: which seat?`, `${args.verb} <seat>${args.verb === "block" ? " <reason>" : ""} --as <group>/orchestrator`, `${args.verb} w2${args.verb === "block" ? ' "the person picks the schema"' : ""} --as ${asWord()}`);
+      const reason = args.positional.slice(1).join(" ");
+      const m = args.verb === "block" ? await board.block(p, seat, reason) : await board.unblock(p, seat);
+      const member = `${p.plan}/${seat}`;
+      const next = args.verb === "block" ? WORDING.blockedSet(member, self().join(" "), shellWord(seat), shellWord(p.name)) : WORDING.unblockedSet(member);
+      emit({ seq: m.seq, run: m.run, member, blocked: args.verb === "block", next }, () => {
         console.log(seqLine(m));
         console.log(next);
       });

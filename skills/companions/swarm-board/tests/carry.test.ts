@@ -218,12 +218,12 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   assert.ok(woke(await urgent), "urgent still wakes");
   const resumed = board.resume(orch, "go on");
   const held = resumed.held.join("\n");
-  for (const said of [/joined: aaa111/, /all done p/, /gone g\/w2/]) assert.match(held, said);
-  for (const said of ["joined: aaa111", "all done p", "gone g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
-  // g1: still gone after the resume, told once
-  assert.equal(board.memberStates(run.id, new Date(base + 1801_000)).find((s) => s.member === "w2")!.state, "gone");
+  for (const said of [/joined: aaa111/, /all done p/, /lost g\/w2/]) assert.match(held, said);
+  for (const said of ["joined: aaa111", "all done p", "lost g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
+  // g1: still lost after the resume, told once
+  assert.equal(board.memberStates(run.id, new Date(base + 1801_000)).find((s) => s.member === "w2")!.badge?.name, "lost");
   board.livenessTick(run.id, new Date(base + 1802_000), presence);
-  assert.equal(/gone g\/w2/.test(all(board.deliver(orch))), false, "the held gone is not told again");
+  assert.equal(/lost g\/w2/.test(all(board.deliver(orch))), false, "the held gone is not told again");
 });
 
 test("d3's guard g3: a carried message held through a pause wakes within the resume + CARRY_MAX_MS, never at once", async () => {

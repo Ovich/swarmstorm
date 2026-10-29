@@ -43,7 +43,7 @@ three ways:
 | `left running by <holder>'s release` | it started before the last release: stop it only if it is yours to stop |
 | `started by someone without the lock` | it started after the release: ask on the board before you stop it |
 
-`$S unlock <name>` releases it. `end`, `gone` and the run's `close` release it too, and each release wakes the waiters. `status` and `roster` list the held
+`$S unlock <name>` releases it. `end`, a `lost` holder and the run's `close` release it too, and each release wakes the waiters. `status` and `roster` list the held
 locks with their holder, since and waiters.
 
 The locks are store-wide, because a port belongs to the machine and not to one repository. They

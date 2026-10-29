@@ -83,7 +83,7 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   const { run, orchestrator } = setup();
   const base = Date.now() - 120_000;
   const at = (s: number) => new Date(base + s * 1000);
-  const alerts = () => board.snapshot(REPO).events.filter((e) => ["stalled", "quiet", "stale"].includes(e.event ?? ""));
+  const alerts = () => board.snapshot(REPO).events.filter((e) => ["stalled", "lost"].includes(e.event ?? ""));
   for (const m of ["a", "b"]) board.recordActivity(run.id, m, { grewAt: base, tokens: 1, context: null, openTool: null, lastTool: null, finished: false }, at(0));
   board.livenessTick(run.id, at(0), linked);
   board.pause(orchestrator);

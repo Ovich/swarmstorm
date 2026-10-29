@@ -120,8 +120,8 @@ test("A7: a link lost while the transcript grows is not gone: one liveness, work
   clean("S13");
   assert.equal(rowOf("S13").wakeAt.flatMap((w) => w.events).filter((e) => e === "liveness").length, 1);
   bound("S5a", 31, rowOf("S5a").rule!);
-  assert.equal(rowOf("S5a").alerts[0].event, "gone");
-  assert.deepEqual(rowOf("A7b").alerts.map((a) => [a.event, a.s]), [["gone", 90]]);
+  assert.equal(rowOf("S5a").alerts[0].event, "lost");
+  assert.deepEqual(rowOf("A7b").alerts.map((a) => [a.event, a.s]), [["lost", 90]]);
 });
 test("A8: a member told gone that comes back: one recovered at the next tick", () => {
   const r = rowOf("A8");

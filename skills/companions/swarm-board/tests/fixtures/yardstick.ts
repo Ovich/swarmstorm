@@ -20,8 +20,8 @@ export const SESSION = "33333333-aaaa-bbbb-cccc-000000000003";
 export const PROJECT = "C--repos-yardstick";
 /** d1: a stuck episode ends at T0 + 30 min when nothing intervenes. */
 export const EPISODE_MS = 30 * 60 * 1000;
-const ALERTS = new Set(["stalled", "gone"]);
-const WAKE_EVENTS = new Set(["stalled", "gone", "idle", "liveness", "recovered"]);
+const ALERTS = new Set(["stalled", "lost"]);
+const WAKE_EVENTS = new Set(["stalled", "lost", "idle", "liveness", "recovered"]);
 const MIN = 60;
 export const STALL_S = STALL_MS_DEFAULT / 1000;
 
@@ -140,8 +140,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
         board.recordActivity(run.id, "x", o.activity, at);
       }
       board.livenessTick(run.id, at, presence);
-      const state = board.memberStates(run.id, at).find((m) => m.member === "x")?.state;
-      if ((state === "quiet" || state === "gone") && !isStuck(s)) falseStateS++;
+      const badge = board.memberStates(run.id, at).find((m) => m.member === "x")?.badge?.name;
+      if ((badge === "stalled" || badge === "lost") && !isStuck(s)) falseStateS++;
       // what reaches the orchestrator this second, about x: one wake when any of it is a liveness event
       const all = board
         .deliver(orch)

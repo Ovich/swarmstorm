@@ -5,7 +5,7 @@ import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
 import type { Message, Participant } from "./board.ts";
 
-export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "quiet" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
+export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "lost" | "block" | "unblock" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
 export type EventName = CoreEventName | PackEventName;
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
@@ -32,9 +32,7 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   endorsement: { name: "endorsement" },
   joined: { name: "joined" },
   ended: { name: "ended" },
-  stale: { name: "stale" },
-  // an orchestrator silent STALE_MS, posted once in its run (D15); "back" when it calls again
-  quiet: { name: "quiet" },
+  // an orchestrator stalled (silent STALE_MS) calls again (D15); its silence and a run's are `stalled` (board-split D36)
   back: { name: "back" },
   // when a run opens: its kind, group and title (D69)
   opened: { name: "opened" },
@@ -58,20 +56,24 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   "all-done": { name: "all-done" },
   // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
   idle: { name: "idle", toAuthor: true },
-  // `stalled <member>`: one member quiet past the run's threshold, to the orchestrator alone, again every
-  // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken
+  // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, again every
+  // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken. board-split D36: also an orchestrator
+  // silent STALE_MS (once, in its run) and a run whose every member is silent (once, to its orchestrator)
   stalled: { name: "stalled", toAuthor: true },
-  // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
+  // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
+  block: { name: "block" },
+  unblock: { name: "unblock" },
+  // a member told lost reads present again (idea 1, rule 4): once, to the orchestrator alone
   recovered: { name: "recovered", toAuthor: true },
   // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
   unlocked: { name: "unlocked", toAuthor: true },
   // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
   breach: { name: "breach", toAuthor: true },
-  // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
-  gone: { name: "gone", toAuthor: true },
+  // a member whose agent finished without end, or whose link is lost (D12, board-split D36); to the orchestrator alone
+  lost: { name: "lost", toAuthor: true },
   // a member's transcript cannot be read, or its link is lost while it grows: mentions the orchestrator
   liveness: { name: "liveness", toAuthor: true },
-  // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 gone`, `+ w2 back`; carried to every member, waking none
+  // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 lost`, `+ w2 back`; carried to every member, waking none
   composition: { name: "composition", ambient: true },
   // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
   "all-joined": { name: "all-joined" },
@@ -81,6 +83,16 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
 let all: Record<string, EventDef> | null = null;
 const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...registry.events() });
 export const isEvent = (s: string): s is EventName => Object.hasOwn(allEvents(), s);
+/** board-split D36: the events renamed or folded into a badge's event, old name to new; a subscription or a stored
+ *  message under an old name reads as the new one (the CLI says so once, from the answer module). */
+export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost", stale: "stalled", quiet: "stalled" };
+/** The name as the board knows it now: an old name renamed, else itself. */
+export const currentEventName = (s: string): string => RENAMED_EVENTS[s] ?? s;
+/** The old names in a subscription spec, each with its new one. */
+export function renamedIn(spec: string | string[]): { old: string; now: EventName }[] {
+  const names = (Array.isArray(spec) ? spec : [spec]).flatMap((s) => s.split(",")).map((s) => s.trim().replace(/^(any|main):/, ""));
+  return [...new Set(names)].flatMap((old) => (RENAMED_EVENTS[old] ? [{ old, now: RENAMED_EVENTS[old] }] : []));
+}
 /** Every event's name, the core's then each pack's. */
 export const eventNames = (): EventName[] => Object.keys(allEvents()) as EventName[];
 /** The definition of a known event. */
@@ -88,7 +100,8 @@ export const eventDef = (name: EventName): EventDef => allEvents()[name];
 
 /** The message's event: its stored name, else what its kind is (agreement, endorsement, urgent); null for a plain post. */
 export function eventOf(m: Message): EventName | null {
-  if (m.event && isEvent(m.event)) return m.event;
+  const stored = m.event ? currentEventName(m.event) : null;
+  if (stored && isEvent(stored)) return stored;
   return m.kind === "agreement" || m.kind === "endorsement" || m.kind === "urgent" ? m.kind : null;
 }
 
@@ -98,7 +111,7 @@ export function parseSubscriptions(spec: string | string[]): Subscription[] {
   const out: Subscription[] = [];
   for (const p of parts) {
     const prefix = /^(any|main):/.exec(p)?.[0];
-    const name = prefix ? p.slice(prefix.length) : p;
+    const name = currentEventName(prefix ? p.slice(prefix.length) : p);
     if (!isEvent(name)) throw new Error(`unknown event ${name}: the events are ${Object.keys(allEvents()).join(", ")}`);
     const sub: Subscription = { event: name, scope: prefix ? "any" : "run" };
     if (!out.some((o) => o.event === sub.event && o.scope === sub.scope)) out.push(sub);

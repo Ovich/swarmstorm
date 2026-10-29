@@ -84,7 +84,7 @@ test("open then join prints the roster", () => {
   const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
-  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}quiet {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
+  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}working {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
   assert.match(r.stdout, /review-tool\/orchestrator/);
 });
 
@@ -706,7 +706,7 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   assert.doesNotMatch(r.stdout, /slice/);
   // a seat waits in the foreground, never a background listener
   assert.equal(lines.at(-2), START_LINK("idea/architect", String(id)));
-  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is gone; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
+  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is lost; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
   const json = JSON.parse(run("join", "--run", String(id), "--seat", "skeptic", "--doing", "doubting", "--json").stdout);
   assert.equal(json.as, "idea/skeptic");
   assert.equal(json.commands.length, 4);
@@ -818,7 +818,7 @@ test("join --on with an unknown event exits 1 listing the known ones; --on store
   const id = openBrainstorm();
   const bad = joinSeat(id, "architect", "--on", "agreed");
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, park, unpark, done, all-done, idle, stalled, recovered, unlocked, breach, gone, liveness, composition, all-joined, merged, flag/);
+  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, joined, ended, back, opened, closed, urgent, phase, pause, resume, park, unpark, done, all-done, idle, stalled, block, unblock, recovered, unlocked, breach, lost, liveness, composition, all-joined, merged, flag/);
   const ok = joinSeat(id, "architect", "--on", "agreement,any:merged");
   assert.equal(ok.status, 0, ok.stderr);
   const roster = run("roster");
@@ -1093,15 +1093,15 @@ test("status and roster print each member's state, what it is doing, and its two
   const id = openRun();
   const before = Date.now();
   assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "page").status, 0);
-  // no activity yet from its link: no evidence of work, so quiet, nothing open (swarm-relay D33); never linked: link never
-  assert.match(run("roster").stdout, /review-tool\/S3  run \d+  quiet  progress \d+s ago, link never  doing: page/);
+  // no activity yet from its link: no evidence of work, so working with no badge, nothing open (swarm-relay D33); never linked: link never
+  assert.match(run("roster").stdout, /review-tool\/S3  run \d+  working  progress \d+s ago, link never  doing: page/);
   const roster = JSON.parse(run("roster", "--json").stdout).roster.find((r: { name: string }) => r.name === "review-tool/S3");
-  assert.deepEqual([roster.state, roster.activity, roster.aliveAt], ["quiet", null, null]);
+  assert.deepEqual([roster.state, roster.activity, roster.aliveAt], ["working", null, null]);
   assert.ok(roster.progressAt >= before - 1000 && roster.progressAt <= Date.now(), "progress counts from the join");
-  assert.match(run("status").stdout, /^  review-tool\/S3  quiet  progress \d+s ago, link never$/m);
+  assert.match(run("status").stdout, /^  review-tool\/S3  working  progress \d+s ago, link never$/m);
   const status = JSON.parse(run("status", "--json").stdout).open.find((r: { run: number }) => r.run === id);
   const s3 = status.members.find((m: { name: string }) => m.name === "review-tool/S3");
-  assert.deepEqual([s3.state, s3.progressAt, s3.aliveAt], ["quiet", roster.progressAt, null]);
+  assert.deepEqual([s3.state, s3.progressAt, s3.aliveAt], ["working", roster.progressAt, null]);
 });
 
 test("on a plan run too: the current phase heads wait, deliver and read, follows the roster at join, and sits beside the title in roster and status", () => {

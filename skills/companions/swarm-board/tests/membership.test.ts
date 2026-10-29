@@ -35,7 +35,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const lost: Presence = () => ({ connected: false, lostAt: t - 120_000 });
   board.recordActivity(run.id, "a", act({ grewAt: t, finished: true }), new Date(t));
   board.livenessTick(run.id, new Date(t), lost);
-  assert.equal(events("gone").length, 2, "both told gone");
+  assert.equal(events("lost").length, 2, "both told lost");
   board.end(a);
   const joinedBefore = events("joined").length;
   board.join({ run: run.id, seat: "a", doing: "again", files: [] });
@@ -43,7 +43,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const fresh: Presence = (m) => (m === "a" ? { connected: false, lostAt: null } : { connected: false, lostAt: t - 120_000 });
   board.livenessTick(run.id, new Date(t + 1000), fresh);
   const st = board.memberStates(run.id, new Date(t + 1000)).find((s) => s.member === "a")!;
-  assert.notEqual(st.state, "gone");
+  assert.notEqual(st.badge?.name, "lost");
   assert.equal(events("joined").length, joinedBefore + 1, "one joined event per re-join");
   assert.equal(events("recovered").length, 0, "no recovered beside the joined event");
   assert.ok(!board.snapshot(REPO).events.some((e) => /idea\/a: link lost/.test(e.body)));

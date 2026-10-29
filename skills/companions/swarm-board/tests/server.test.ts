@@ -290,7 +290,7 @@ const untilLinkLost = async (run: number, seat: string): Promise<void> => {
   }
   assert.fail(`${seat}'s link never recorded lost`);
 };
-const goneEvents = (snap: any): { body: string; mentions: string[]; at: string }[] => snap.events.filter((e: { event?: string }) => e.event === "gone");
+const goneEvents = (snap: any): { body: string; mentions: string[]; at: string }[] => snap.events.filter((e: { event?: string }) => e.event === "lost");
 /** A run with S1 and S2 joined, and S1's link welcomed. */
 const linkedRun = async () => {
   const c = await welcomed();
@@ -321,7 +321,7 @@ test("gone is posted within 5 s of an activity with finished and no end, to the 
   link.send({ type: "activity", at: sent, activity: activity({ finished: true }) });
   const gone = await within(c, 5000, (snap) => goneEvents(snap)[0]);
   assert.ok(Date.now() - sent < 5000);
-  assert.deepEqual([gone.body, gone.mentions], ["gone g/S1: its agent finished without end", ["g/orchestrator"]]);
+  assert.deepEqual([gone.body, gone.mentions], ["lost g/S1: its agent finished without end", ["g/orchestrator"]]);
 });
 
 test("gone is posted within 35 s of a link lost and not back; never for an ended member (US3, D12)", async () => {
@@ -343,10 +343,10 @@ test("gone is posted within 35 s of a link lost and not back; never for an ended
   // event's own time on that clock, never by how fast this loaded process reads snapshots (S31, T14)
   const crossedAt = Date.now() + skew;
   const gone = await within(c, 60_000, (snap) => goneEvents(snap)[0]);
-  assert.equal(gone.body, `gone ${s1.name}: its link was lost`);
+  assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
   assert.ok(Date.parse(gone.at) - crossedAt <= 4000, `gone posted ${Date.parse(gone.at) - crossedAt} ms after 31 s on the server's clock`);
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`gone ${s1.name}: its link was lost`]);
+  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost`]);
 });
 
 test("an upkeep or tick that throws is logged to stderr, and the server goes on", async () => {
@@ -369,7 +369,7 @@ test("an upkeep or tick that throws is logged to stderr, and the server goes on"
     assert.ok(logged.some((l) => l.startsWith(`swarm server: liveness of run ${broken.id} failed`)), logged.join("\n"));
     // the other run still ticks, and the server still answers
     link.send({ type: "activity", at: Date.now(), activity: activity({ finished: true }) });
-    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "gone g/S1: its agent finished without end");
+    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "lost g/S1: its agent finished without end");
     assert.ok((await value(c, "runs")).some((r: { id: number }) => r.id === run.id));
   } finally {
     console.error = was;
@@ -392,13 +392,13 @@ test("after a restart, a member that had a link and has none 30 s later is gone,
   assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [], "not before 30 s");
   skew += 3_000;
   const gone = await within(c, 4000, (snap) => goneEvents(snap)[0]);
-  assert.equal(gone.body, `gone ${s1.name}: its link was lost`);
+  assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
   // S2 never had a link: never gone; a second restart tells S1's gone no second time
   await restart();
   const again = await welcomed();
   skew += 60_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body), [`gone ${s1.name}: its link was lost`]);
+  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost`]);
 });
 
 test("a link lost and back within 30 s, across a restart or not, is never gone (D37)", async () => {

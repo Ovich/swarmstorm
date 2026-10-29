@@ -41,7 +41,7 @@ You judge what was delivered, from one of two sources, the one your brief names:
   Before you start, stop or sign in to anything, read the swarm-board skill's
   `references/machine.md`: its rules and its locks bind you.
   **Never end your turn while the run is open**, not even on a background task of your own: the board
-  marks you gone.
+  marks you lost.
 - **Your phase**: the message names the branch, the sha and the scope (or your steps). Check that
   sha out in your detached worktree, walk it, **post the table first, then mark the phase done**
   (`done` before the table leaves the orchestrator judging nothing), and wait. Walk a copy of the

@@ -23,7 +23,7 @@ export const WORDING = {
   linkStart: (link: Command) => `start your link now, in the background (your harness's background task): ${link}`,
   listenerStart: (wait: Command) => `start your listener now, in the background (your harness's background task): ${wait}`,
   waitNow: (afterPhase: boolean, wait: Command) =>
-    `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${FOREGROUND_NOTE}): ${wait}`,
+    `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is lost; ${FOREGROUND_NOTE}): ${wait}`,
   rearmBackground: (wait: Command) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND_NOTE}): ${wait}`,
   rearmForeground: (wait: Command) => `wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   rearmOrchestrator: (wait: Command) => `act on it, then start this listener again, in the background: ${wait}`,
@@ -101,14 +101,25 @@ export const WORDING = {
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
-  swarmQuiet: (cli: Command, as: string) => `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
+  swarmQuiet: (cli: Command, as: string) => `every member waits: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   lockFree: (cli: Command, name: string, as: string) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
   breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
   breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
-  goneMove: "its agent is not running: dispatch it again, or close its seat",
+  lostMove: "its agent is not running: dispatch it again, or close its seat",
+  /** board-split D44: block and unblock, to the seat they name */
+  blockedWait: "you are blocked on the person: stop where you are, change nothing, and wait in the foreground until unblock",
+  unblockedGoOn: "unblocked: go on with your task",
+  blockedSet: (member: string, cli: Command, seat: string, as: string) =>
+    `${member} is blocked: its badge says so, it stops and waits; once the person answers, ${cli} unblock ${seat} --as ${as}`,
+  unblockedSet: (member: string) => `${member} is unblocked: told to go on`,
+  /** board-split D36: a subscription naming an event under its old name, read as the new one */
+  eventRenamed: (renamed: { old: string; now: string }[]) =>
+    `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
+  /** board-split D36: a member's badge beside its state in the roster, its reason after it */
+  badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
   restartLink: (member: string, cli: Command, run: number, as: string) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run} --as ${as}`,
-  /** a stall's move, by the rule that made its member quiet (idea 1, rule 6) */
+  /** a stall's move, by the rule that badged its member stalled (idea 1, rule 6) */
   stalledEnded: "a post does not wake it: SendMessage it, or dispatch it again",
   stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
   stalledBackground: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,

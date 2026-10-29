@@ -22,7 +22,7 @@ Read the plan's *Mandate* section. Ask what it leaves open before the first phas
 
 1. **Write its tasks now**, at most one per seat, as the `orchestrate` skill's `references/tasks.md` says, from the phase's goal, every seat's role and area, and what the run taught so far. The tracker's placeholder becomes the phase's seats, each a subgraph whose steps are its task's done-when.
 2. **Open it**: `phase <name> "<text>"`, the text naming every seat's part, then post each task to its worker. A seat with no task in this phase is told `done <name>` now.
-3. **Watch the board**: it replaces the periodic check and the digest. Each seat's state, and the `stalled`, `gone`, `idle` and `liveness` events, are read and answered as the `swarm-board` skill's orchestrator side says; a drift is answered on the board, by its interrupt.
+3. **Watch the board**: it replaces the periodic check and the digest. Each seat's state and badge, and the `stalled`, `lost`, `idle` and `liveness` events, are read and answered as the `swarm-board` skill's orchestrator side says; a drift is answered on the board, by its interrupt.
 4. **A merge**: re-run the task's done-when on the merged branch, and what the testing prompt asked for; tick its steps.
 5. **The phase closes** when every task is ticked and the full check is green on the merged branch: the board's `all-done`, then that check. Only then is the next phase's tasks written. A worker that stopped on a finding: fix the task (or the plan, for a decision) and post it again, or pause when the finding changes the phase.
 
