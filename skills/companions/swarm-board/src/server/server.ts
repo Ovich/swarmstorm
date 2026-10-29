@@ -390,13 +390,22 @@ export async function stopBoardServer(dataRoot: string): Promise<boolean> {
   return true;
 }
 
-/** Listens on `port`; a port in use is retried on another (0). */
+/** The ports the fetch standard blocks, above 1023: Node's WebSocket client (undici) refuses to connect to them, so a
+ *  server the OS bound to one answers no verb ("does not answer", S31). The list is the standard's "bad port" list. */
+const FETCH_BLOCKED_PORTS = new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+
+/** Listens on `port`; a port in use is retried on another (0), and a port the OS gave that clients cannot reach is
+ *  given back for another. */
 function listen(server: http.Server, host: string, port: number): Promise<number> {
+  return bind(server, host, port).then((bound) => (FETCH_BLOCKED_PORTS.has(bound) ? new Promise<void>((done) => server.close(() => done())).then(() => listen(server, host, 0)) : bound));
+}
+
+function bind(server: http.Server, host: string, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const onError = (e: NodeJS.ErrnoException): void => {
       if (e.code === "EADDRINUSE" && port !== 0) {
         server.off("error", onError);
-        resolve(listen(server, host, 0));
+        resolve(bind(server, host, 0));
       } else reject(e);
     };
     server.once("error", onError);
