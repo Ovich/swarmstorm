@@ -127,7 +127,10 @@ waits: in the foreground; a seat runs on the plugin's
   is done, the board tells you once, `all-done`. Each answer prints the step to run next. Phases
   belong to every kind of run: when to open which is the run's protocol (the `orchestrate` skill's
   protocols), and, for a plan, the phases it names (the `orchestrate-plan` skill). Only members
-  still in the run count toward `all-done`.
+  still in the run count toward `all-done`. **`--for <seat>[,<seat>]`** when only some seats have
+  a part: only they are woken and owe `done`, and `all-done` counts them alone; the others read
+  the phase as their first line the next time they read. A seat with nothing to do is never woken
+  for it: each wake costs its tokens.
 - **`$S roster`** (and `status`) shows each run's title, current phase and its `<n>/<m> done`,
   then each member's state with its open or last tool, its doing and its files; `(stale)` after
   ten minutes without a call to the board.
@@ -160,6 +163,11 @@ seat between its waits, one that is `quiet`. Post it on the board too, so the th
 **`$S seat <seat> --run <run> --state done`** frees its claims and the merge lock if it held it;
 set the seat back to `running` and dispatch a fresh worker, which joins the same seat; repost its
 open task.
+
+**An idle member ends itself.** One that owes nothing (no phase part, no mention, no claim) and
+whose wait returned empty twice in a row is told to `end` and return; you hear it as `ended`.
+That seat is not done: when work for it comes, dispatch into it again, a fresh agent that joins
+the same seat, or the ended one resumed (`SendMessage`) with the task.
 
 ## Close
 

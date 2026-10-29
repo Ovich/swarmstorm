@@ -876,7 +876,7 @@ test("phase opens a phase: prints its seq, then the listener and the next phase 
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /only the orchestrator opens a phase/);
   const help = run("--help").stdout;
-  assert.match(help, /^ {2}phase {3}<name> <text> \[--as <member>\] +# opens phase <name>; the current phase ends with it/m);
+  assert.match(help, /^ {2}phase {3}<name> <text> \[--for <seat>,…\] \[--watch <seat>,…\] \[--as <member>\] +# opens phase <name>; the current phase ends with it/m);
   assert.match(help, /^ {2}done {4}<phase> \[--as <member>\]/m);
   assert.doesNotMatch(help, /phase end /);
 });
