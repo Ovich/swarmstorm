@@ -681,7 +681,8 @@ async function main(): Promise<void> {
         emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, ...(next ? { next } : {}) }, lines(null));
         break;
       }
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link, ...(next ? { next } : {}) }, lines(doc.url));
+      const runUrl = WORDING.runBoardUrl(doc.url, run.id);
+      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, ...(next ? { next } : {}) }, lines(runUrl));
       break;
     }
     case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help

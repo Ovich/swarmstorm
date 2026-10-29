@@ -14,6 +14,11 @@ export const WORDING = {
   thread: (cli: Command, as: string): Command => `${cli} thread --as ${as}`,
   end: (cli: Command, as: string): Command => `${cli} end --as ${as}`,
 
+  // ── the run's page ──
+  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&repo=<key>`) with the run in it;
+   *  an older aiview's `/board` takes it as its hash */
+  runBoardUrl: (boardUrl: string, run: number): string => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run}`,
+
   // ── the link and the listener ──
   linkStart: (link: Command) => `start your link now, in the background (your harness's background task): ${link}`,
   listenerStart: (wait: Command) => `start your listener now, in the background (your harness's background task): ${wait}`,

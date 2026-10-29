@@ -111,7 +111,7 @@ else if (verb === "board") {
   if (!repos.includes(flag("--repo"))) repos.push(flag("--repo"));
   all[project] = repos;
   fs.writeFileSync(file, JSON.stringify(all));
-  console.log(JSON.stringify({ project, repos, url: "http://localhost:4321/board" }));
+  console.log(JSON.stringify({ project, repos, url: "http://localhost:4321/#board&repo=p" }));
 }
 else process.exit(1);
 `,
@@ -132,12 +132,12 @@ const openWith = (aiview: string, cwd = repo) => {
   });
 };
 
-test("open adds the run's repository to the project's board page and prints its link; no document is written", () => {
+test("open adds the run's repository to the project's board page and prints the run's scoped link (board-split D41); no document is written", () => {
   const { launcher, log, boards } = fakeAiview();
   const r = openWith(launcher);
   assert.equal(r.status, 0, r.stderr);
-  const out = JSON.parse(r.stdout) as { url: string; repo: string };
-  assert.equal(out.url, "http://localhost:4321/board");
+  const out = JSON.parse(r.stdout) as { url: string; repo: string; run: number };
+  assert.equal(out.url, `http://localhost:4321/#board&repo=p&run=${out.run}`);
   assert.deepEqual(boardRepos(boards), [out.repo]);
   const calls = aiviewCalls(log);
   assert.deepEqual(calls.find((c) => c[0] === "board"), ["board", "--repo", out.repo, "--project", "p", "--json"]);
