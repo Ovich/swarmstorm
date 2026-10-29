@@ -119,3 +119,16 @@ test("G33 target: thread states the phase text once", async () => {
     s.stop();
   }
 });
+
+// G38: a listener never returns empty: a live member's empty wait prints its re-arm, an ended member's says it ended
+test("G38: an empty wait --mentions prints the re-arm line; an ended member's, why it stopped", async () => {
+  const s = await scene("worker", "owes-again");
+  try {
+    const empty = s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");
+    assert.equal(empty.text, `nothing yet; wait again (${FOREGROUND}): ${WAIT(s.me)}\n`);
+    s.must("end", "--as", s.me);
+    assert.match(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200").text, /^you have ended in run \d+: this listener stops; nothing to re-arm\n$/);
+  } finally {
+    s.stop();
+  }
+});
