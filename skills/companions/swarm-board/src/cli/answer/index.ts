@@ -51,8 +51,10 @@ export function answer(r: VerbResult, s: Situation): Answer {
           : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
         return { lines: [next], next, phase: null };
       }
-      // G7: the phase's own event in this wake carries its text and its done line; no owed line besides it
-      const owes = r.phaseEvent && !s.wholeThread ? null : owedLine(s, { brief: true });
+      const headers = phaseHeaders(s, !pausedLine(s));
+      // G7: the phase's own event in this wake carries its text and its done line; no owed line besides it.
+      // G10: a wake in a phase the member was already shown repeats nothing of it (one fact, once per member)
+      const owes = (r.phaseEvent && !s.wholeThread) || !headers.first ? null : owedLine(s, { brief: true });
       const paused = pausedLine(s);
       const rearm = paused
         ? paused
@@ -66,7 +68,6 @@ export function answer(r: VerbResult, s: Situation): Answer {
       // G10: the re-arm line first, then the owed step
       const next = owes && !paused && s.listens !== "foreground" ? `${rearm}\n${owes}` : rearm;
       // G7: the phase heads the wake once, when new since the member's last read, and never beside its own event
-      const headers = phaseHeaders(s, !paused);
       const phase = headers.first && !r.phaseEvent ? headers.printed : null;
       const lines = [
         ...(s.listens === "foreground" && phase ? [phase] : []),

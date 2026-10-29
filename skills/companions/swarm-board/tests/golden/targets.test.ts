@@ -35,7 +35,7 @@ test("G7 target: the phase-open wake of a worker names the phase and its done on
 });
 
 // G10: a later wake in an unchanged phase repeats nothing of it: the re-arm line, then what woke it
-test("G10 target: a wake in an unchanged phase carries no phase line", { skip }, async () => {
+test("G10 target: a wake in an unchanged phase carries no phase line", async () => {
   const s = await scene("worker", "owes-again");
   try {
     s.must("post", "@w1 ping", "--as", O);
