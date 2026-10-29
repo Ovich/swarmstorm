@@ -18,7 +18,7 @@ const expect = (answer: Answer, target: string[]): void => {
 };
 
 // G7 (already holds today, after run 1's wait fix; enabled with the others in build 2): a phase-open wake shows the phase once (its own event) and one done line, never a second owed line
-test("G7 target: the phase-open wake of a worker names the phase and its done once", { skip }, async () => {
+test("G7 target: the phase-open wake of a worker names the phase and its done once", async () => {
   const s = await scene("worker", "idle");
   try {
     s.must("phase", "build", "build the thing", "--as", O);
