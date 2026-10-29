@@ -3,7 +3,7 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { nextStep, owedLine, phaseHeaders, pausedLine, waitCommand } from "./rules.ts";
+import { heardStep, nextStep, owedLine, phaseHeaders, pausedLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
@@ -25,6 +25,8 @@ export type VerbResult =
   | { verb: "thread"; phase: string | null; shown: Shown[] }
   | { verb: "done"; phase: string; none: true }
   | { verb: "done"; phase: string; none?: false; line: string }
+  /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
+  | { verb: "heard"; lines: string[] }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link */
   | { verb: "join"; head: string[]; tail: string[] };
 
@@ -102,6 +104,11 @@ export function answer(r: VerbResult, s: Situation): Answer {
       if (r.none) return { lines: [W.doneNone], next: null, phase: null };
       const next = W.doneWaitNext(waitCommand(s, true));
       return { lines: [r.line, next], next, phase: null };
+    }
+    case "heard": {
+      // D9: the result first, then the member's step: none while its listener runs
+      const next = heardStep(s);
+      return { lines: [...r.lines, ...(next ? [next] : [])], next, phase: null };
     }
     case "join": {
       const headers = phaseHeaders(s);

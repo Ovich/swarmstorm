@@ -439,12 +439,11 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
   });
 };
 
-const emitHeard = async (p: Participant, json: object, human: string | (() => void)): Promise<void> => {
-  const next = await heardStep(p);
-  emit(next ? { ...json, next } : json, () => {
-    if (typeof human === "string") console.log(human);
-    else human();
-    if (next) console.log(next);
+/** A verb that heard from the member (D9): its result lines, then the step the answer rules give (D1). */
+const emitHeard = async (p: Participant, json: object, result: string | string[]): Promise<void> => {
+  const a = answer({ verb: "heard", lines: typeof result === "string" ? [result] : result }, await situation(p));
+  emit(a.next ? { ...json, next: a.next } : json, () => {
+    for (const l of a.lines) console.log(l);
   });
 };
 
@@ -878,13 +877,13 @@ ${USAGE}`);
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
-      const human = () => {
-        console.log(seqLine(m));
+      const human = [
+        seqLine(m),
         // posting is claiming (D7)
-        if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
-        for (const line of unmatched) console.log(line);
-        if (args.verb === "agree" && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
-      };
+        ...(m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : []),
+        ...unmatched,
+        ...(args.verb === "agree" && m.mentions?.length ? [`parties: ${m.mentions.join(", ")}, woken when its file merges`] : []),
+      ];
       // V4: open's next line is said once, by open; a post never repeats it
       await emitHeard(p, json, human);
       break;
@@ -1047,13 +1046,10 @@ ${USAGE}`);
       const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
       const json = answers.length === 1 ? answers[0].verdict : { claims: answers.map((a) => ({ path: a.rel, ...a.verdict })) };
-      await emitHeard(p, told.length ? { ...json, guides: told } : json, () => {
-        for (const { rel, verdict, also } of answers) {
-          if (!verdict.allowed) console.log(verdict.refusal);
-          else console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
-        }
-        if (guidesNow) console.log(guidesNow);
-      });
+      await emitHeard(p, told.length ? { ...json, guides: told } : json, [
+        ...answers.map(({ rel, verdict, also }) => (!verdict.allowed ? verdict.refusal : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`)),
+        ...(guidesNow ? [guidesNow] : []),
+      ]);
       break;
     }
     case "release": {
@@ -1108,8 +1104,8 @@ ${USAGE}`);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
-        if (r.granted && guides.length) console.log(`guides of this merge: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`);
-        console.log(r.granted ? `granted: merge, then swarm merged <sha> --files <path>...${guides.length ? ' --guides "..."' : ""}` : `held by ${r.holder}: swarm wait --mentions for its merged event`);
+        if (r.granted && guides.length) console.log(WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length > 0) : WORDING.mergeHeld(r.holder!, waitCommand(p.name, true)));
       });
       break;
     }

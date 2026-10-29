@@ -42,6 +42,12 @@ export const WORDING = {
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
 
+  // ── the merge (V12: every command runnable as printed) ──
+  mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`,
+  mergeGranted: (cli: Command, as: string, guides: boolean) =>
+    `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
+  mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
+
   // ── the run ──
   paused: (run: number, why: string, wait: Command) =>
     `run ${run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
