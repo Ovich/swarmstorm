@@ -89,6 +89,9 @@ export const WORDING = {
   parked: (member: string, cli: Command, seat: string, as: string) =>
     `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
   unparked: (member: string) => `${member} is unparked: its alerts and its share of all-done are back`,
+  /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
+  packVerbRefused: (verb: string, seatKind: string) =>
+    `${verb}: refused, a ${seatKind} seat has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,

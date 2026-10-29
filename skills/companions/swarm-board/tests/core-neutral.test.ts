@@ -20,7 +20,7 @@ const ALLOWED: Record<string, number> = {
   "board/board.ts": 105,
   "board/claims.ts": 70,
   "board/events.ts": 3,
-  "board/stats.ts": 61,
+  "board/stats.ts": 8,
   "cli/answer/usage.ts": 9,
   "cli/answer/wording.ts": 2,
 };
