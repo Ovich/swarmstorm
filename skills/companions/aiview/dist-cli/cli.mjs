@@ -13,6 +13,29 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/proc.ts
+import { spawn, spawnSync } from "node:child_process";
+function hiddenSpawnSync(command, args2, options = {}) {
+  return spawnSync(command, args2, { ...options, windowsHide: true });
+}
+var hiddenSpawn;
+var init_proc = __esm({
+  "src/proc.ts"() {
+    "use strict";
+    hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
+  }
+});
+
+// ../swarm-board/src/proc.ts
+import { spawn as spawn2, spawnSync as spawnSync2 } from "node:child_process";
+var hiddenSpawn2;
+var init_proc2 = __esm({
+  "../swarm-board/src/proc.ts"() {
+    "use strict";
+    hiddenSpawn2 = (command, args2, options = {}) => spawn2(command, args2, { ...options, windowsHide: true });
+  }
+});
+
 // ../swarm-board/src/place/place.ts
 import fs from "node:fs";
 import path from "node:path";
@@ -27,11 +50,11 @@ function commonGitDir(dotGit) {
 var init_place = __esm({
   "../swarm-board/src/place/place.ts"() {
     "use strict";
+    init_proc2();
   }
 });
 
 // src/core/home.ts
-import { spawnSync } from "node:child_process";
 import fs2 from "node:fs";
 import os from "node:os";
 import path2 from "node:path";
@@ -52,7 +75,7 @@ function normalHome(root) {
 }
 function firstFreePort(from) {
   const probe = `const net=require("net");const f=(p,n)=>{if(n===0){console.log(${from});return}const s=net.createServer();s.once("error",()=>f(p+1,n-1));s.listen(p,"127.0.0.1",()=>{s.close(()=>console.log(p))})};f(${from},20)`;
-  const r = spawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
+  const r = hiddenSpawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
   const port = Number(r.stdout?.trim());
   return Number.isInteger(port) && port > 0 ? port : from;
 }
@@ -70,6 +93,7 @@ var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor
 var init_home = __esm({
   "src/core/home.ts"() {
     "use strict";
+    init_proc();
     homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
     NEW_HOME = path2.join(os.homedir(), "swarmstorm_appdata");
     OLD_HOME = path2.join(os.homedir(), "charrette_appdata");
@@ -9158,6 +9182,8 @@ var init_wire = __esm({
       "pause",
       "resume",
       "pausedOf",
+      "park",
+      "unpark",
       "done",
       "phaseProgress",
       "lastActivity",
@@ -9260,6 +9286,7 @@ var DEFAULT_TIMING;
 var init_link = __esm({
   "../swarm-board/src/link/link.ts"() {
     "use strict";
+    init_proc2();
     init_home2();
     init_wire();
     init_transcripts();
@@ -9281,7 +9308,6 @@ __export(remote_exports, {
   linkVerbArgs: () => linkVerbArgs,
   openLinkPipe: () => openLinkPipe
 });
-import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
 import fs10 from "node:fs";
 import net from "node:net";
@@ -9323,7 +9349,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
       log = fs10.openSync(serverLogFile(dataRoot), "a");
     } catch {
     }
-    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
@@ -9388,7 +9414,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
     }
     return null;
   }
-  const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
+  const child = hiddenSpawn2(process.execPath, [...entry(), ...linkVerbArgs(member)], {
     detached: true,
     cwd: DETACHED_CWD,
     stdio: "ignore",
@@ -9530,6 +9556,7 @@ var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurr
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
+    init_proc2();
     init_wire();
     init_link();
     START_TIMEOUT_MS = 5e3;
@@ -9817,7 +9844,7 @@ __export(server_exports, {
   servedBuild: () => servedBuild,
   startServer: () => startServer
 });
-import { spawn as spawn2 } from "node:child_process";
+import { spawn as spawn3 } from "node:child_process";
 import fs12 from "node:fs";
 import http from "node:http";
 import path14 from "node:path";
@@ -9831,7 +9858,7 @@ function servedBuild(distDir) {
 function openBrowser(url) {
   const [c, args2] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
   try {
-    spawn2(c, args2, { detached: true, stdio: "ignore" }).unref();
+    spawn3(c, args2, { detached: true, stdio: "ignore" }).unref();
   } catch (e) {
     console.error(`could not open browser: ${e.message}`);
   }
@@ -10114,6 +10141,7 @@ var init_server = __esm({
 });
 
 // src/cli/index.ts
+init_proc();
 await init_db();
 init_bind();
 init_paths();
@@ -10122,7 +10150,7 @@ init_projects();
 init_home();
 init_serverstate();
 init_collectionversion();
-import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
+import { spawn as spawn4, spawnSync as spawnSync3 } from "node:child_process";
 import fs13 from "node:fs";
 import path15 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
@@ -10565,7 +10593,7 @@ function askServer(route, body) {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
-  const r = spawnSync2(
+  const r = hiddenSpawnSync(
     process.execPath,
     [
       "-e",
@@ -10601,7 +10629,7 @@ function ensureDist() {
   if (!fs13.existsSync(path15.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync3(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) {
     console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -10612,7 +10640,7 @@ function spawnDetachedServer(port) {
     fs13.rmSync(PORT_FILE, { force: true });
   } catch {
   }
-  const child = spawn3(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
+  const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
     detached: true,
     stdio: "ignore",
     cwd: TOOL_ROOT
@@ -10630,7 +10658,7 @@ function spawnDetachedServer(port) {
   }
 }
 var pause2 = (ms) => {
-  spawnSync2(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+  hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
 };
 var isAlive3 = (pid) => {
   try {
@@ -11092,7 +11120,7 @@ function cmdOpen() {
   if (args.has("--open")) {
     const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
     try {
-      spawn3(c, a, { detached: true, stdio: "ignore" }).unref();
+      spawn4(c, a, { detached: true, stdio: "ignore" }).unref();
     } catch {
     }
   }
@@ -11118,7 +11146,7 @@ function cmdBoard() {
     if (args.has("--open")) {
       const [c, a] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
       try {
-        spawn3(c, a, { detached: true, stdio: "ignore" }).unref();
+        spawn4(c, a, { detached: true, stdio: "ignore" }).unref();
       } catch {
       }
     }

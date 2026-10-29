@@ -73,7 +73,7 @@ function planCode(plan) {
 }
 function parseMentions(body, senderPlan, plans, names) {
   const out = /* @__PURE__ */ new Set();
-  for (const m of body.matchAll(MENTION)) {
+  for (const m of outsideCode(body).matchAll(MENTION)) {
     const token = m[1].replace(/[.\-]+$/, "");
     const named = names?.get(token.toLowerCase());
     if (named) {
@@ -101,7 +101,7 @@ function unmatchedMentions(body, senderPlan, plans, names) {
   const members = /* @__PURE__ */ new Set([...handleOf.keys(), ...[senderPlan, ...plans].map((p) => `${p}/orchestrator`)]);
   const out = [];
   const seen = /* @__PURE__ */ new Set();
-  for (const m of body.matchAll(MENTION)) {
+  for (const m of outsideCode(body).matchAll(MENTION)) {
     const token = m[1].replace(/[.\-]+$/, "");
     if (seen.has(token)) continue;
     seen.add(token);
@@ -123,13 +123,14 @@ function unmatchedMentions(body, senderPlan, plans, names) {
   }
   return out;
 }
-var isCodeShaped, plansOfCode, MENTION, nameHandle, editDistance;
+var isCodeShaped, plansOfCode, MENTION, outsideCode, nameHandle, editDistance;
 var init_mentions = __esm({
   "src/board/mentions.ts"() {
     "use strict";
     isCodeShaped = (token) => /^[A-Za-z]{2}$/.test(token);
     plansOfCode = (code, plans) => plans.filter((plan) => planCode(plan) === code.toUpperCase());
     MENTION = /(?<![\w@])@([A-Za-z0-9][\w.\-]*(?:[\/·][A-Za-z0-9][\w.\-]*)?)/g;
+    outsideCode = (body) => body.replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
     nameHandle = (nick) => nick.replace(/\s+/g, "").toLowerCase();
     editDistance = (a, b) => {
       let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -143,58 +144,7 @@ var init_mentions = __esm({
   }
 });
 
-// src/board/kinds.ts
-function profileOf(kind) {
-  const profile = PROFILES[kind];
-  if (!profile || !Object.hasOwn(PROFILES, kind)) throw new Error(`unknown kind ${kind}: the kinds are ${Object.keys(PROFILES).join(", ")}`);
-  return profile;
-}
-var run, carried, PROFILES;
-var init_kinds = __esm({
-  "src/board/kinds.ts"() {
-    "use strict";
-    run = (...events) => events.map((event) => ({ event, scope: "run" }));
-    carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
-    PROFILES = {
-      plan: { kind: "plan", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } },
-      brainstorm: {
-        kind: "brainstorm",
-        claims: false,
-        mergeLock: false,
-        worktree: false,
-        member: "seat",
-        wholeThread: true,
-        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
-      },
-      // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-      task: { kind: "task", claims: true, mergeLock: true, worktree: true, member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } }
-    };
-  }
-});
-
 // src/board/events.ts
-function stalledMove(m, me, cli) {
-  const meta = m.meta && "rule" in m.meta ? m.meta : null;
-  if (meta?.members && meta.members.length > 1)
-    return meta.members.map((one) => `${one.member}: ${one.rule ? stalledMove({ ...m, meta: { ...one, rule: one.rule } }, me, cli) : stalledMove({ ...m, meta: null }, me, cli)}`).join("; ");
-  const id = meta?.member ?? "<member>";
-  switch (meta?.rule) {
-    case "ended":
-      return "a post does not wake it: SendMessage it, or dispatch it again";
-    case "in-turn":
-      return "SendMessage it; if it does not answer, dispatch it again";
-    case "background":
-      return `ask it: ${cli} post ${word(`@${id} \u2026`)} --as ${word(me.name)}, or SendMessage it if its turn ended`;
-    case "call":
-      return "SendMessage it to stop the call";
-    case "owing":
-      return `${cli} post ${word(`@${id} your part of ${meta.phase ?? "<phase>"}`)} --as ${word(me.name)}: its wait returns on it`;
-    case "lock":
-      return `ask ${meta.holder ?? "its holder"} to unlock ${meta.lock ?? "<lock>"}, or to stop what it holds: ${cli} post ${word(`@${meta.holder ?? "<holder>"} \u2026`)} --as ${word(me.name)}`;
-    default:
-      return `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${word(me.name)})`;
-  }
-}
 function eventOf(m) {
   if (m.event && isEvent(m.event)) return m.event;
   return m.kind === "agreement" || m.kind === "endorsement" || m.kind === "urgent" ? m.kind : null;
@@ -233,24 +183,15 @@ function carries(m, me, subs) {
   if ((EVENTS[e].ambient || e === "joined") && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
-var word, FOREGROUND_WAIT_MS, FOREGROUND_NOTE, foregroundWait, EVENTS, NAMES, isEvent;
+var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, NAMES, isEvent;
 var init_events = __esm({
   "src/board/events.ts"() {
     "use strict";
-    init_kinds();
-    word = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
     FOREGROUND_WAIT_MS = 17e4;
     FOREGROUND_NOTE = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
-    foregroundWait = (cli, me) => `${cli} wait --mentions --as ${word(me.name)} --timeout ${FOREGROUND_WAIT_MS}`;
     EVENTS = {
-      // a seat backs another member's agreement (D36)
-      agreement: {
-        name: "agreement",
-        next: (m, me, cli) => (
-          // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
-          profileOf(me.kind).member === "seat" && me.seat !== "orchestrator" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null
-        )
-      },
+      // a seat backs another member's agreement (D36): the answer module tells a seat to back it
+      agreement: { name: "agreement" },
       endorsement: { name: "endorsement" },
       merged: { name: "merged" },
       joined: { name: "joined" },
@@ -266,118 +207,481 @@ var init_events = __esm({
       // the orchestrator opens a phase (`phase <name> <text>`), the current one ending with it: a separator on the thread;
       // it mentions `<group>/*`, so its own run's members wake and no other's, whatever the run's kind; a member
       // runs `done <name>` when its part is in
-      phase: {
-        name: "phase",
-        next: (m, me, cli) => {
-          const name = m.meta && "phase" in m.meta ? m.meta.phase : null;
-          if (!name || me.seat === "orchestrator" || m.from === me.name) return null;
-          const listed = /; its tasks posted before it: (.+)$/.exec(m.body)?.[1] ?? "";
-          const mine = listed.split(", ").map((t) => t.split(" ")).filter(([, ...seats]) => seats.includes(me.seat)).map(([seq]) => seq);
-          const tasks = mine.length ? ` (your task${mine.length > 1 ? "s" : ""} ${mine.join(", ")})` : "";
-          return `when your part of ${name}${tasks} is posted: ${cli} done ${word(name)} --as ${word(me.name)}`;
-        }
-      },
+      phase: { name: "phase" },
       // the orchestrator pauses its run (`pause [text]`): mentions `<group>/*`, every member stops and waits for the resume
-      pause: {
-        name: "pause",
-        next: (m, me, cli) => {
-          if (me.seat === "orchestrator" || m.from === me.name) return null;
-          const pause3 = m.meta && "person" in m.meta ? m.meta : null;
-          const why = pause3?.person ? `waiting on the person: ${pause3.text || "their decision"}; ` : "";
-          return `${why}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${foregroundWait(cli, me)}`;
-        }
-      },
+      pause: { name: "pause" },
       // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
-      resume: {
-        name: "resume",
-        next: (m, me) => me.seat === "orchestrator" || m.from === me.name ? null : "the run resumed: continue where you stopped, as the resume's message says"
-      },
+      resume: { name: "resume" },
+      // board-split D30: the orchestrator parks a seat (`park <seat>`): mentions it, which ends its turn without `end`;
+      // `unpark <seat>` lifts it (so does the member's own next call)
+      park: { name: "park" },
+      unpark: { name: "unpark" },
       // a member finished the current phase (`done <name>`); mentions the orchestrator
       done: { name: "done" },
       // every member of the run is done with the current phase: one event to the orchestrator
-      "all-done": {
-        name: "all-done",
-        next: (m, me, cli) => me.seat === "orchestrator" ? `open the next phase: ${cli} phase <name> "<text>" --as ${word(me.name)}; after the last, ${cli} close --run ${m.run}` : null
-      },
+      "all-done": { name: "all-done" },
       // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
-      idle: {
-        name: "idle",
-        toAuthor: true,
-        next: (_m, me, cli) => me.seat === "orchestrator" ? `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${word(me.name)}), else wait again` : null
-      },
+      idle: { name: "idle", toAuthor: true },
       // `stalled <member>`: one member quiet past the run's threshold, to the orchestrator alone, again every
       // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken
-      stalled: {
-        name: "stalled",
-        toAuthor: true,
-        next: (m, me, cli) => me.seat === "orchestrator" ? stalledMove(m, me, cli) : null
-      },
+      stalled: { name: "stalled", toAuthor: true },
       // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
       recovered: { name: "recovered", toAuthor: true },
       // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
-      unlocked: {
-        toAuthor: true,
-        name: "unlocked",
-        next: (m, me, cli) => {
-          const name = m.meta && "unlocked" in m.meta ? m.meta.unlocked : null;
-          return name && m.mentions.includes(me.name) ? `it is free: lock it now: ${cli} lock ${word(name)} --as ${word(me.name)}` : null;
-        }
-      },
+      unlocked: { name: "unlocked", toAuthor: true },
       // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
-      breach: {
-        name: "breach",
-        toAuthor: true,
-        next: (m, me) => {
-          const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
-          if (!member || me.seat !== "orchestrator") return null;
-          return member === me.name ? "stop only the PIDs you started, or lock the port first: machine.md" : `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`;
-        }
-      },
+      breach: { name: "breach", toAuthor: true },
       // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
-      gone: {
-        name: "gone",
-        toAuthor: true,
-        next: (_m, me) => me.seat === "orchestrator" ? "its agent is not running: dispatch it again, or close its seat" : null
-      },
-      // a member's transcript cannot be read: the stall check is blind for it; mentions the orchestrator
-      liveness: {
-        name: "liveness",
-        toAuthor: true,
-        // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
-        next: (m, me, cli) => {
-          const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
-          if (!member || me.seat !== "orchestrator") return null;
-          const all = m.meta && "linkDowns" in m.meta && m.meta.linkDowns ? m.meta.linkDowns : [member];
-          if (all.length > 1) return all.map((one) => `SendMessage ${one} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(one)}`).join("; ");
-          return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
-        }
-      },
+      gone: { name: "gone", toAuthor: true },
+      // a member's transcript cannot be read, or its link is lost while it grows: mentions the orchestrator
+      liveness: { name: "liveness", toAuthor: true },
       // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
-      flag: {
-        name: "flag",
-        next: (m, me, cli) => {
-          const [holder, writer] = m.mentions;
-          if (!m.about || !holder || !writer) return null;
-          if (me.name === holder) return `settle it: ${cli} agree ${word(`@${writer} <who changes what>`)} --about ${word(m.about)}`;
-          if (me.name === writer) return `settle it: ${cli} post ${word(`@${holder} <what you change>`)} --about ${word(m.about)}`;
-          return null;
-        }
-      },
+      flag: { name: "flag" },
       // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 gone`, `+ w2 back`; carried to every member, waking none
       composition: { name: "composition", ambient: true },
       // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
-      "all-joined": {
-        name: "all-joined",
-        next: (_m, me, cli) => me.seat === "orchestrator" ? `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${word(me.name)})` : null
-      }
+      "all-joined": { name: "all-joined" }
     };
     NAMES = Object.keys(EVENTS);
     isEvent = (s) => Object.hasOwn(EVENTS, s);
   }
 });
 
+// src/board/kinds.ts
+function profileOf(kind) {
+  const profile = PROFILES[kind];
+  if (!profile || !Object.hasOwn(PROFILES, kind)) throw new Error(`unknown kind ${kind}: the kinds are ${Object.keys(PROFILES).join(", ")}`);
+  return profile;
+}
+var run, carried, PROFILES;
+var init_kinds = __esm({
+  "src/board/kinds.ts"() {
+    "use strict";
+    run = (...events) => events.map((event) => ({ event, scope: "run" }));
+    carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
+    PROFILES = {
+      plan: { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } },
+      brainstorm: {
+        kind: "brainstorm",
+        member: "seat",
+        wholeThread: true,
+        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
+      },
+      // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
+      task: { kind: "task", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } }
+    };
+  }
+});
+
+// src/board/stats-math.ts
+function percentile(values, p) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
+}
+function sumKnown(values) {
+  const known = values.filter((v) => typeof v === "number");
+  return known.length ? known.reduce((a, b) => a + b, 0) : null;
+}
+var CASELESS, foldPath, ms, iso, firstLine;
+var init_stats_math = __esm({
+  "src/board/stats-math.ts"() {
+    "use strict";
+    CASELESS = process.platform === "win32";
+    foldPath = (p) => CASELESS ? p.toLowerCase() : p;
+    ms = (at) => Date.parse(String(at));
+    iso = (t) => new Date(t).toISOString();
+    firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
+  }
+});
+
+// src/packs/code/stats.ts
+function distinctFlags(messages) {
+  const seen = /* @__PURE__ */ new Set();
+  return messages.filter((m) => {
+    if (!isBoardFlag(m)) return false;
+    const [, path13 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
+    const key = JSON.stringify([Number(m.author), foldPath(String(path13)), holder]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function mergesFromEvents(messages) {
+  return messages.filter((m) => m.kind === "event" && (m.event === "merged" || m.event == null && MERGED_BODY.test(String(m.body)))).map((m) => {
+    const line = String(m.body).match(FILES_LINE)?.[1].trim();
+    const files = line === void 0 ? null : line === "-" ? [] : line.split(", ").map((f) => f.trim()).filter(Boolean);
+    return { participant: Number(m.author), at: ms(m.at), files, conflicts: null };
+  });
+}
+function estimatedTimeline(joined, over, mergedAt) {
+  if (!(over > joined)) return [];
+  const merges = mergedAt.filter((t) => t > joined && t <= over).sort((a, b) => a - b);
+  const working = { from: iso(joined), to: iso(merges[0] ?? over), what: "working", inferred: true };
+  return [working, ...merges.map((t) => ({ from: iso(t), to: iso(t), what: "merging", inferred: true }))];
+}
+function ofRun(input) {
+  const { db, run: r, people, messages, recorded, runOver, orchestrators, nameOf } = input;
+  const id = Number(r.id);
+  const repo = String(r.repo);
+  const ids = people.map((p) => Number(p.id));
+  const marks = ids.map(() => "?").join(", ") || "NULL";
+  const sharesSince = db.prepare("SELECT value FROM settings WHERE name = ?").get(SHARES_SINCE);
+  const sharesRecorded = sharesSince !== void 0 && ms(r.opened_at) >= ms(sharesSince.value);
+  const merges = recorded ? db.prepare("SELECT * FROM merges WHERE run = ? ORDER BY rowid").all(id) : [];
+  const claimLog = db.prepare(`SELECT path, participant, kind FROM claim_log WHERE participant IN (${marks}) ORDER BY rowid`).all(...ids);
+  const shares = db.prepare(`SELECT path, participant, other FROM shares WHERE participant IN (${marks}) AND other IN (${marks})`).all(...ids, ...ids);
+  const conflictedOf = (m) => m.conflicts == null ? null : JSON.parse(String(m.conflicts));
+  const mergesRead = recorded ? merges.map((m) => ({ participant: Number(m.participant), at: ms(m.at), files: JSON.parse(String(m.files)), conflicts: conflictedOf(m) })) : mergesFromEvents(messages);
+  const mergeTimesOf = (pid) => mergesRead.filter((m) => m.participant === pid).map((m) => m.at);
+  const grants = recorded ? db.prepare(
+    `SELECT t.participant, t.asked_at, t.granted_at, p.seat, r.plan FROM lock_requests t
+             LEFT JOIN participants p ON p.id = t.participant LEFT JOIN runs r ON r.id = p.run
+           WHERE t.repo = ? AND t.granted_at IS NOT NULL ORDER BY t.granted_at`
+  ).all(repo) : [];
+  const lockWaitsMs = [];
+  const boardFlags = distinctFlags(messages);
+  const racesLost = [];
+  const memberOf = (p, window) => {
+    const pid = Number(p.id);
+    const turns = recorded ? db.prepare("SELECT * FROM lock_requests WHERE participant = ? ORDER BY rowid").all(pid).map((t) => {
+      const asked = ms(t.asked_at);
+      const merged = t.merged_at == null ? null : ms(t.merged_at);
+      return {
+        asked,
+        granted: t.granted_at == null ? null : ms(t.granted_at),
+        merged,
+        refused: Number(t.refused),
+        // a turn without a merge is closed by the member's next end call (D25), else by its end
+        over: merged ?? window.endCalls.find((e) => e >= asked) ?? window.over
+      };
+    }) : [];
+    const memberMarks = [];
+    let lost = 0;
+    let waitedMs = null;
+    for (const t of turns) {
+      if (t.granted !== null) lockWaitsMs.push(t.granted - t.asked);
+      if (t.refused === 0) continue;
+      const until = t.granted ?? t.over;
+      for (const g of grants) {
+        const at = ms(g.granted_at);
+        if (Number(g.participant) === pid || !(ms(g.asked_at) > t.asked) || !(at > t.asked && at < until)) continue;
+        lost++;
+        waitedMs = Math.max(waitedMs ?? 0, at - t.asked);
+        const winner = g.seat == null ? "a member" : `${g.plan}/${g.seat}`;
+        memberMarks.push({ at: iso(at), what: "race", note: `the merge lock went to ${winner}, who asked later` });
+      }
+    }
+    if (lost) racesLost.push({ member: nameOf(p), lost, waitedMs });
+    const flagged = boardFlags.filter((m) => Number(m.author) === pid);
+    for (const m of flagged) {
+      memberMarks.push({ at: String(m.at), what: "flag", seq: Number(m.seq), ...m.about != null ? { path: String(m.about) } : {}, note: firstLine(String(m.body)) });
+    }
+    for (const m of mergesRead.filter((x) => x.participant === pid)) {
+      for (const f of m.conflicts ?? []) memberMarks.push({ at: iso(m.at), what: "conflict", path: f, note: `the rebase met a conflict in ${f}` });
+    }
+    const spans = [
+      ...turns.flatMap((t) => t.granted !== null ? [{ from: t.granted, to: t.merged ?? t.over, what: "merging" }] : []),
+      ...turns.flatMap((t) => t.refused > 0 ? [{ from: t.asked, to: t.granted ?? t.over, what: "waiting" }] : [])
+    ];
+    return {
+      spans,
+      marks: memberMarks,
+      estimated: recorded ? null : estimatedTimeline(window.joined, window.over, mergeTimesOf(pid)),
+      counts: { claims: claimLog.filter((c) => Number(c.participant) === pid).length, flags: flagged.length },
+      // read from its spans once they are whole, in `fill` (D40)
+      late: { waitingMs: null }
+    };
+  };
+  const runFields = () => {
+    const firstMerge = mergesRead.length ? Math.min(...mergesRead.map((m) => m.at)) : null;
+    return {
+      firstMergeAtMs: firstMerge === null ? null : firstMerge - ms(r.opened_at),
+      racesLost: recorded ? racesLost.reduce((n, x) => n + (x.lost ?? 0), 0) : null
+    };
+  };
+  const kindFields = () => {
+    if (String(r.kind ?? "plan") !== "plan") return null;
+    const sliceMembers = people.filter((p) => !orchestrators.has(Number(p.id)));
+    const timesMs = sliceMembers.flatMap((p) => {
+      const mergedAt = mergeTimesOf(Number(p.id));
+      const end = mergedAt.length ? Math.min(...mergedAt) : p.ended_at == null ? null : ms(p.ended_at);
+      return end === null ? [] : [end - ms(p.joined_at)];
+    });
+    const sliceCount = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(id).n);
+    const addedMidRun = messages.filter((m) => m.kind === "event" && orchestrators.has(Number(m.author)) && /^added \S+: /.test(String(m.body))).length;
+    const holdersByPath = /* @__PURE__ */ new Map();
+    for (const c of claimLog) {
+      const key = foldPath(String(c.path));
+      const entry2 = holdersByPath.get(key) ?? { path: String(c.path), holders: [] };
+      if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
+      holdersByPath.set(key, entry2);
+    }
+    const sharersOf = (path13) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path13)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
+    const byId = new Map(people.map((p) => [Number(p.id), p]));
+    const membershipOf = (pid) => {
+      const p = byId.get(pid);
+      return { from: ms(p.joined_at), to: p.ended_at == null ? runOver : ms(p.ended_at) };
+    };
+    const membersTogether = (a, b) => {
+      const x = membershipOf(a);
+      const y = membershipOf(b);
+      return x.from < y.to && y.from < x.to;
+    };
+    const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
+    const namesPath = (m, path13) => {
+      if (aboutNames(m.about, path13)) return true;
+      const body = foldPath(String(m.body));
+      return body.includes(foldPath(path13)) || body.includes(foldPath(path13.split("/").pop()));
+    };
+    const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
+    const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
+    const perFile = [];
+    let everyHolderTold = 0;
+    let agreed = 0;
+    let agreedBeforeMerge = 0;
+    for (const { path: path13, holders: everyHolder } of holdersByPath.values()) {
+      const sharers = sharersOf(path13);
+      const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
+      if (holders.length < 2) continue;
+      const tellTimes = [];
+      let told = true;
+      for (let i = 1; i < holders.length; i++) {
+        const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path13));
+        tellTimes.push(...tells.map((m) => ms(m.at)));
+        const mentioned = (e) => tells.some((m) => {
+          const named = JSON.parse(String(m.mentions));
+          return named.includes(nameOf(byId.get(e))) || named.includes(`${r.plan}/*`);
+        });
+        if (!holders.slice(0, i).every(mentioned)) told = false;
+      }
+      const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
+      const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path13));
+      const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path13)) : holders.includes(m.participant));
+      const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
+      if (told) {
+        everyHolderTold++;
+        if (agreement) {
+          agreed++;
+          if (firstMergeOfPath === null || ms(agreement.at) < firstMergeOfPath) agreedBeforeMerge++;
+        }
+      }
+      const met = mergedWith.map((m) => m.conflicts);
+      const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path13))) ? true : met.some((c) => c === null) ? null : false;
+      const declaredInterface = holders.some(
+        (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path13))
+      );
+      const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path13));
+      perFile.push({
+        path: path13,
+        holders: holders.map((h) => nameOf(byId.get(h))),
+        interface: declaredInterface || claimedInterface,
+        told,
+        agreement: agreement ? Number(agreement.seq) : null,
+        // below 0: agreed before the tell (D46)
+        agreedAfterMs: agreement && sharedAt !== null ? ms(agreement.at) - sharedAt : null,
+        conflict
+      });
+    }
+    let known = 0;
+    let inShared = 0;
+    let unknownMerges = 0;
+    for (const m of merges) {
+      const files = conflictedOf(m);
+      if (files === null) {
+        unknownMerges++;
+        continue;
+      }
+      known += files.length;
+      inShared += files.filter((f) => claimLog.some((c) => Number(c.participant) !== Number(m.participant) && foldPath(String(c.path)) === foldPath(f))).length;
+    }
+    const mergedSlices = recorded ? new Set(merges.map((m) => Number(m.participant)).filter((pid) => !orchestrators.has(pid))).size : sliceMembers.filter((p) => Number(p.merged ?? 0) === 1).length;
+    return {
+      plan: {
+        slices: { merged: mergedSlices, of: sliceCount, addedMidRun, timesMs, timesEstimated: !recorded },
+        lock: { waitsMs: lockWaitsMs, racesLost },
+        shared: { files: perFile.length, everyHolderTold, agreed, agreedBeforeMerge, perFile, estimated: !sharesRecorded },
+        flags: boardFlags.length,
+        conflicts: recorded ? { known, inShared, unknownMerges } : { known: null, inShared: null, unknownMerges: null }
+      }
+    };
+  };
+  return { member: memberOf, runFields, kindFields };
+}
+function slicesOfSummary(slices) {
+  const { estimated, ...rest } = slices;
+  return { ...rest, timesEstimated: slices.timesEstimated ?? estimated ?? false };
+}
+function fill(run3) {
+  const codeRun = run3;
+  const lengthOf = (i) => ms(i.to) - ms(i.from);
+  const members = codeRun.members.map(
+    (m) => "waitingMs" in m ? { ...m, waitingMs: m.waitingMs ?? (run3.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null) } : m
+  );
+  const plan = codeRun.plan && {
+    ...codeRun.plan,
+    slices: slicesOfSummary(codeRun.plan.slices),
+    shared: {
+      ...codeRun.plan.shared,
+      estimated: codeRun.plan.shared.estimated ?? false,
+      // a summary from before `told` (D46) reads each file told, as its list read it
+      perFile: codeRun.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
+    }
+  };
+  return { ...run3, members, ...plan ? { plan } : {} };
+}
+function totals(runs) {
+  const codeRuns = runs;
+  const plans = codeRuns.flatMap((r) => r.plan ? [r.plan] : []);
+  const recordedPlans = codeRuns.filter((r) => r.recorded).flatMap((r) => r.plan ? [r.plan] : []);
+  const times = plans.flatMap((p) => p.slices.timesMs);
+  const waits = recordedPlans.flatMap((p) => p.lock.waitsMs);
+  const bounds = waitBinsMs();
+  const bins = [...bounds, Infinity].map((upper, i) => waits.filter((w) => w >= (bounds[i - 1] ?? 0) && w < upper).length);
+  const shared = (pick) => sumKnown(plans.map((p) => pick(p.shared)));
+  const files = shared((s) => s.files);
+  const agreed = shared((s) => s.agreed);
+  const series = (figure) => codeRuns.map((r) => r.recorded ? figure(r) : null);
+  const everyRun = (figure) => codeRuns.map(figure);
+  return {
+    fields: {
+      slices: {
+        merged: sumKnown(plans.map((p) => p.slices.merged)),
+        of: sumKnown(plans.map((p) => p.slices.of)),
+        p50Ms: percentile(times, 0.5),
+        p90Ms: percentile(times, 0.9),
+        timesEstimatedRuns: plans.filter((p) => p.slices.timesEstimated).length
+      },
+      // merges: the lock turns granted, each one merge's wait
+      lockWait: { merges: recordedPlans.length ? waits.length : null, p50Ms: percentile(waits, 0.5), p90Ms: percentile(waits, 0.9), bins: recordedPlans.length ? bins : [] },
+      shared: {
+        files,
+        everyHolderTold: shared((s) => s.everyHolderTold),
+        agreed,
+        agreedBeforeMerge: shared((s) => s.agreedBeforeMerge),
+        withoutAgreement: files === null || agreed === null ? null : files - agreed,
+        estimatedRuns: plans.filter((p) => p.shared.estimated).length
+      },
+      flags: sumKnown(plans.map((p) => p.flags)),
+      runsWithoutFlag: plans.length ? plans.filter((p) => p.flags === 0).length : null,
+      conflicts: {
+        known: sumKnown(plans.map((p) => p.conflicts.known)),
+        inShared: sumKnown(plans.map((p) => p.conflicts.inShared)),
+        unknownMerges: sumKnown(plans.map((p) => p.conflicts.unknownMerges))
+      }
+    },
+    series: {
+      slicesMerged: everyRun((r) => r.plan?.slices.merged ?? null),
+      sliceTimeP50: everyRun((r) => r.plan ? percentile(r.plan.slices.timesMs, 0.5) : null),
+      lockWaitP50: series((r) => r.plan ? percentile(r.plan.lock.waitsMs, 0.5) : null),
+      sharedAgreed: everyRun((r) => r.plan?.shared.agreed ?? null),
+      // flags come from the board's messages, kept for a run before the records too (D43)
+      flags: everyRun((r) => r.plan?.flags ?? null),
+      conflicts: series((r) => r.plan?.conflicts.known ?? null)
+    }
+  };
+}
+function filesAcross(runs) {
+  const byPath = /* @__PURE__ */ new Map();
+  for (const r of runs) {
+    for (const f of r.plan?.shared.perFile ?? []) {
+      const key = foldPath(f.path);
+      const entry2 = byPath.get(key) ?? { path: f.path, perRun: [] };
+      entry2.perRun.push({ run: r.run, holders: f.holders, agreed: f.agreement !== null, conflict: f.conflict, interface: f.interface ?? null });
+      byPath.set(key, entry2);
+    }
+  }
+  return [...byPath.values()].map(({ path: path13, perRun }) => ({
+    path: path13,
+    runs: perRun.map((x) => x.run),
+    holders: new Set(perRun.flatMap((x) => x.holders)).size,
+    agreements: perRun.filter((x) => x.agreed).length,
+    conflicts: perRun.every((x) => x.conflict === null) ? null : perRun.filter((x) => x.conflict === true).length,
+    // the runs in which a holder declared or claimed it an interface; null when none knows (summaries from before D37)
+    declaredInterface: perRun.every((x) => x.interface === null) ? null : perRun.filter((x) => x.interface === true).length,
+    perRun: perRun.map((x) => ({ run: x.run, holders: x.holders.length, conflict: x.conflict }))
+  })).sort((a, b) => b.runs.length - a.runs.length || a.path.localeCompare(b.path));
+}
+var MINUTE_MS, SHARES_SINCE, FLAG_BODY, waitBinsMs, isBoardFlag, aboutNames, MERGED_BODY, FILES_LINE, codeStats;
+var init_stats = __esm({
+  "src/packs/code/stats.ts"() {
+    "use strict";
+    init_stats_math();
+    MINUTE_MS = 60 * 1e3;
+    SHARES_SINCE = "shares-since";
+    FLAG_BODY = /flag:\s*\S+\s+wrote\s+(\S+)\s+outside its claim(?:;\s*(\S+)\s+holds it)?/;
+    waitBinsMs = () => [1, 2, 5, 10].map((m) => m * MINUTE_MS);
+    isBoardFlag = (m) => Number(m.by_board ?? 0) === 1 && (m.event === "flag" || m.event == null && FLAG_BODY.test(String(m.body)));
+    aboutNames = (about, path13) => {
+      if (about == null) return false;
+      const a = foldPath(String(about).replace(/\\/g, "/"));
+      const f = foldPath(path13);
+      return a === f || f.endsWith(`/${a}`);
+    };
+    MERGED_BODY = /^merged \S+/;
+    FILES_LINE = /^files: (.*)$/m;
+    codeStats = { ofRun, fill, totals, files: filesAcross };
+  }
+});
+
+// src/packs/code/index.ts
+var claimsOf, codePack;
+var init_code = __esm({
+  "src/packs/code/index.ts"() {
+    "use strict";
+    init_stats();
+    claimsOf = (ctx) => ctx.tables;
+    codePack = {
+      name: "code",
+      verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
+      stats: codeStats,
+      // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
+      alsoFor: (member, message, ctx) => (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && claimsOf(ctx).holderNames(member.repo, message.about).includes(member.name),
+      // an agreement with no party named binds the file's other holders (F25)
+      defaultParties: (about, ctx) => claimsOf(ctx).holderNames(ctx.repo, about),
+      // a member holding a claim or the merge lock is mid-work, never idle
+      busy: (member, ctx) => claimsOf(ctx).holdsAny(member)
+    };
+  }
+});
+
+// src/packs/registry.ts
+var PACKS, MEMBER_ROWS, rowOf, registry;
+var init_registry = __esm({
+  "src/packs/registry.ts"() {
+    "use strict";
+    init_kinds();
+    init_code();
+    PACKS = { [codePack.name]: codePack };
+    MEMBER_ROWS = [
+      { kind: "plan", role: null, pack: "code", verify: false },
+      { kind: "plan", role: "verifier", pack: null, verify: true },
+      { kind: "task", role: null, pack: "code", verify: false },
+      { kind: "task", role: "verifier", pack: null, verify: true },
+      { kind: "brainstorm", role: null, pack: null, verify: false }
+    ];
+    rowOf = (spec) => ({ pack: spec.pack === null ? null : PACKS[spec.pack], verify: spec.verify });
+    registry = {
+      /** The member's pack and verify setting for a seat of `role` in a run of `kind`; throws on an unknown kind. */
+      forMember(kind, role) {
+        const known = profileOf(kind).kind;
+        const own = role === null ? void 0 : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
+        return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null));
+      },
+      /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
+      statsFigures() {
+        return Object.values(PACKS).flatMap((p) => p.stats ? [p.stats] : []);
+      },
+      /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
+      packNamed(name) {
+        return name !== null && Object.hasOwn(PACKS, name) ? PACKS[name] : null;
+      }
+    };
+  }
+});
+
 // src/board/claims.ts
-function claimsOf(deps) {
+function claimsOf2(deps) {
   const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf } = deps;
   const clearFlags = () => {
     db.prepare("DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path)").run();
@@ -514,14 +818,8 @@ function claimsOf(deps) {
         return x === f || x.endsWith(`/${f}`);
       }).map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
-    holds(p, about) {
-      const f = fold2(relPath(p.repo, about) ?? slashes(about));
-      if (!f) return false;
-      const rows = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(p.repo, p.id);
-      return rows.some((r) => {
-        const x = fold2(String(r.path));
-        return x === f || x.endsWith(`/${f}`);
-      });
+    holdsAny(p) {
+      return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id, p.id) !== void 0;
     },
     checkEdit(me, file, opts = {}) {
       const kind = opts.interface ? "interface" : "inside";
@@ -665,13 +963,13 @@ function claimsOf(deps) {
         }
         const agreed = /* @__PURE__ */ new Set();
         const foldedWanted = new Set(rels.map(fold2));
-        const live = new Set(db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo).map((o) => `${o.plan}/${o.seat}`));
-        for (const a of db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo)) {
+        const joinedAt = new Map(db.prepare("SELECT p.since_seq, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo).map((o) => [`${o.plan}/${o.seat}`, Number(o.since_seq)]));
+        for (const a of db.prepare("SELECT seq, author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo)) {
           if (!foldedWanted.has(fold2(slashes(String(a.about))))) continue;
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
-          for (const n of parties) if (n !== me.name && live.has(n) && !told.has(n)) agreed.add(n);
+          for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => profileOf(String(r.kind)).claims).map((r) => String(r.plan));
+        const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => registry.forMember(String(r.kind), null).pack !== null).map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
@@ -706,22 +1004,11 @@ var init_claims = __esm({
   "src/board/claims.ts"() {
     "use strict";
     init_events();
-    init_kinds();
+    init_registry();
   }
 });
 
 // src/board/stats.ts
-function distinctFlags(messages) {
-  const seen = /* @__PURE__ */ new Set();
-  return messages.filter((m) => {
-    if (!isBoardFlag(m)) return false;
-    const [, path13 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
-    const key = JSON.stringify([Number(m.author), foldPath(String(path13)), holder]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
 function periodStart(since) {
   if (since === void 0) return null;
   const days = since.match(/^(\d+)d$/);
@@ -729,22 +1016,8 @@ function periodStart(since) {
   if (Number.isNaN(at)) throw new Error(`since takes <n>d or an ISO time, got ${since}`);
   return new Date(at).toISOString();
 }
-function percentile(values, p) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
-}
-function sumKnown(values) {
-  const known = values.filter((v) => typeof v === "number");
-  return known.length ? known.reduce((a, b) => a + b, 0) : null;
-}
-function timeline(joined, over, calls, turns, silentAfterMs) {
+function timeline(joined, over, calls, exact, silentAfterMs) {
   if (!(over > joined)) return [];
-  const exact = [];
-  for (const t of turns) {
-    if (t.refused > 0) exact.push({ from: t.asked, to: t.granted ?? t.over, what: "waiting" });
-    if (t.granted !== null) exact.push({ from: t.granted, to: t.merged ?? t.over, what: "merging" });
-  }
   const points = [joined, ...calls.filter((c) => c > joined && c < over), over].sort((a, b) => a - b);
   const silent = [];
   for (let i = 1; i < points.length; i++) if (points[i] - points[i - 1] > silentAfterMs) silent.push({ from: points[i - 1], to: points[i], what: "silent" });
@@ -756,130 +1029,68 @@ function timeline(joined, over, calls, turns, silentAfterMs) {
     const from = bounds[i - 1];
     const to = bounds[i];
     const mid = (from + to) / 2;
-    const what = inside2(exact, "merging", mid) ? "merging" : inside2(exact, "waiting", mid) ? "waiting" : inside2(silent, "silent", mid) ? "silent" : "working";
+    const what = exact.find((s) => s.from <= mid && mid < s.to)?.what ?? (inside2(silent, "silent", mid) ? "silent" : "working");
     const last = out[out.length - 1];
     if (last && last.what === what && ms(last.to) === from) last.to = iso(to);
     else out.push({ from: iso(from), to: iso(to), what, inferred: what === "working" || what === "silent" });
   }
   return out;
 }
-function estimatedTimeline(joined, over, mergedAt) {
-  if (!(over > joined)) return [];
-  const merges = mergedAt.filter((t) => t > joined && t <= over).sort((a, b) => a - b);
-  const working = { from: iso(joined), to: iso(merges[0] ?? over), what: "working", inferred: true };
-  return [working, ...merges.map((t) => ({ from: iso(t), to: iso(t), what: "merging", inferred: true }))];
-}
-function mergesFromEvents(messages) {
-  return messages.filter((m) => m.kind === "event" && (m.event === "merged" || m.event == null && MERGED_BODY.test(String(m.body)))).map((m) => {
-    const line = String(m.body).match(FILES_LINE)?.[1].trim();
-    const files = line === void 0 ? null : line === "-" ? [] : line.split(", ").map((f) => f.trim()).filter(Boolean);
-    return { participant: Number(m.author), at: ms(m.at), files, conflicts: null };
-  });
-}
 function computeRun(db, r, now, silentAfterMs) {
   const id = Number(r.id);
-  const repo = String(r.repo);
   const kind = profileOf(String(r.kind ?? "plan")).kind;
   const openedAt = String(r.opened_at);
   const closedAt = r.closed_at == null ? null : String(r.closed_at);
   const runOver = closedAt ? ms(closedAt) : now;
   const since = db.prepare("SELECT value FROM settings WHERE name = ?").get(RECORDS_SINCE);
   const recorded = since !== void 0 && ms(openedAt) >= ms(since.value);
-  const sharesSince = db.prepare("SELECT value FROM settings WHERE name = ?").get(SHARES_SINCE);
-  const sharesRecorded = sharesSince !== void 0 && ms(openedAt) >= ms(sharesSince.value);
   const people = db.prepare("SELECT * FROM participants WHERE run = ? ORDER BY id").all(id);
   const ids = people.map((p) => Number(p.id));
   const marks = ids.map(() => "?").join(", ") || "NULL";
   const nameOf = (p) => `${r.plan}/${p.seat}`;
   const messages = db.prepare(`SELECT * FROM messages WHERE run = ? OR (run IS NULL AND author IN (${marks})) ORDER BY seq`).all(id, ...ids);
-  const merges = recorded ? db.prepare("SELECT * FROM merges WHERE run = ? ORDER BY rowid").all(id) : [];
-  const claimLog = db.prepare(`SELECT path, participant, kind FROM claim_log WHERE participant IN (${marks}) ORDER BY rowid`).all(...ids);
-  const shares = db.prepare(`SELECT path, participant, other FROM shares WHERE participant IN (${marks}) AND other IN (${marks})`).all(...ids, ...ids);
   const orchestrators = new Set(people.filter((p) => String(p.seat) === ORCHESTRATOR).map((p) => Number(p.id)));
-  const conflictedOf = (m) => m.conflicts == null ? null : JSON.parse(String(m.conflicts));
-  const mergesRead = recorded ? merges.map((m) => ({ participant: Number(m.participant), at: ms(m.at), files: JSON.parse(String(m.files)), conflicts: conflictedOf(m) })) : mergesFromEvents(messages);
-  const mergeTimesOf = (pid) => mergesRead.filter((m) => m.participant === pid).map((m) => m.at);
-  const grants = recorded ? db.prepare(
-    `SELECT t.participant, t.asked_at, t.granted_at, p.seat, r.plan FROM lock_requests t
-             LEFT JOIN participants p ON p.id = t.participant LEFT JOIN runs r ON r.id = p.run
-           WHERE t.repo = ? AND t.granted_at IS NOT NULL ORDER BY t.granted_at`
-  ).all(repo) : [];
-  const lockWaitsMs = [];
-  const boardFlags = distinctFlags(messages);
-  const racesLost = [];
+  const packRuns = statsPacks().map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
   const members = people.map((p) => {
     const pid = Number(p.id);
     const joined = ms(p.joined_at);
     const over = Math.min(p.ended_at == null ? runOver : ms(p.ended_at), Math.max(now, joined));
     const calls = recorded ? db.prepare("SELECT at, verb FROM call_log WHERE participant = ? ORDER BY at").all(pid) : [];
     const endCalls = calls.filter((c) => c.verb === "end").map((c) => ms(c.at));
-    const turns = recorded ? db.prepare("SELECT * FROM lock_requests WHERE participant = ? ORDER BY rowid").all(pid).map((t) => {
-      const asked = ms(t.asked_at);
-      const merged = t.merged_at == null ? null : ms(t.merged_at);
-      return {
-        asked,
-        granted: t.granted_at == null ? null : ms(t.granted_at),
-        merged,
-        refused: Number(t.refused),
-        // a turn without a merge is closed by the member's next end call (D25), else by its end
-        over: merged ?? endCalls.find((e) => e >= asked) ?? over
-      };
-    }) : [];
-    const memberMarks = [];
-    let lost = 0;
-    let waitedMs = null;
-    for (const t of turns) {
-      if (t.granted !== null) lockWaitsMs.push(t.granted - t.asked);
-      if (t.refused === 0) continue;
-      const until = t.granted ?? t.over;
-      for (const g of grants) {
-        const at = ms(g.granted_at);
-        if (Number(g.participant) === pid || !(ms(g.asked_at) > t.asked) || !(at > t.asked && at < until)) continue;
-        lost++;
-        waitedMs = Math.max(waitedMs ?? 0, at - t.asked);
-        const winner = g.seat == null ? "a member" : `${g.plan}/${g.seat}`;
-        memberMarks.push({ at: iso(at), what: "race", note: `the merge lock went to ${winner}, who asked later` });
-      }
-    }
-    if (lost) racesLost.push({ member: nameOf(p), lost, waitedMs });
+    const figures = packRuns.map((f) => f.member(p, { joined, over, endCalls }));
     const own = messages.filter((m) => Number(m.author) === pid);
     const posts = own.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
-    const flagged = boardFlags.filter((m) => Number(m.author) === pid);
-    for (const m of [...own.filter((x) => x.kind === "agreement"), ...flagged]) {
-      memberMarks.push({
+    const memberMarks = [
+      ...figures.flatMap((f) => f.marks),
+      ...own.filter((x) => x.kind === "agreement").map((m) => ({
         at: String(m.at),
-        what: m.kind === "agreement" ? "agreement" : "flag",
+        what: "agreement",
         seq: Number(m.seq),
         ...m.about != null ? { path: String(m.about) } : {},
         note: firstLine(String(m.body))
-      });
-    }
-    for (const m of mergesRead.filter((x) => x.participant === pid)) {
-      for (const f of m.conflicts ?? []) memberMarks.push({ at: iso(m.at), what: "conflict", path: f, note: `the rebase met a conflict in ${f}` });
-    }
-    memberMarks.sort((a, b) => ms(a.at) - ms(b.at));
+      }))
+    ].sort((a, b) => ms(a.at) - ms(b.at));
+    const working = over > joined ? [{ from: iso(joined), to: iso(over), what: "working", inferred: true }] : [];
     return {
       member: nameOf(p),
       nick: p.nick == null ? String(p.seat) : String(p.nick),
       seat: String(p.seat),
       joined: String(p.joined_at),
       ended: p.ended_at == null ? null : String(p.ended_at),
-      intervals: recorded ? timeline(joined, over, calls.map((c) => ms(c.at)), turns, silentAfterMs) : estimatedTimeline(joined, over, mergeTimesOf(pid)),
+      intervals: recorded ? timeline(joined, over, calls.map((c) => ms(c.at)), figures.flatMap((f) => f.spans), silentAfterMs) : figures.find((f) => f.estimated !== null)?.estimated ?? working,
       marks: memberMarks,
       posts: posts.length,
       postTimes: posts.map((m) => String(m.at)),
-      claims: claimLog.filter((c) => Number(c.participant) === pid).length,
-      flags: flagged.length,
+      ...Object.assign({}, ...figures.map((f) => f.counts)),
       unsourced: posts.filter((m) => !SOURCE.test(String(m.body))).length,
+      ...Object.assign({}, ...figures.map((f) => f.late)),
       // read from its spans and marks once they are whole, below (D40)
-      waitingMs: null,
       agreementsMade: null,
       endorsed: null,
       objections: null,
       estimated: !recorded
     };
   });
-  const firstMerge = mergesRead.length ? Math.min(...mergesRead.map((m) => m.at)) : null;
   const length = runOver - ms(openedAt);
   const base = {
     run: id,
@@ -890,8 +1101,7 @@ function computeRun(db, r, now, silentAfterMs) {
     closedAt,
     lengthMs: Number.isNaN(length) ? null : length,
     recorded,
-    firstMergeAtMs: firstMerge === null ? null : firstMerge - ms(openedAt),
-    racesLost: recorded ? racesLost.reduce((n, x) => n + (x.lost ?? 0), 0) : null,
+    ...Object.assign({}, ...packRuns.map((f) => f.runFields())),
     members
   };
   if (kind === "brainstorm") {
@@ -903,111 +1113,7 @@ function computeRun(db, r, now, silentAfterMs) {
     });
     return { ...base, brainstorm };
   }
-  if (kind !== "plan") return base;
-  const sliceMembers = people.filter((p) => !orchestrators.has(Number(p.id)));
-  const timesMs = sliceMembers.flatMap((p) => {
-    const mergedAt = mergeTimesOf(Number(p.id));
-    const end = mergedAt.length ? Math.min(...mergedAt) : p.ended_at == null ? null : ms(p.ended_at);
-    return end === null ? [] : [end - ms(p.joined_at)];
-  });
-  const sliceCount = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(id).n);
-  const addedMidRun = messages.filter((m) => m.kind === "event" && orchestrators.has(Number(m.author)) && /^added \S+: /.test(String(m.body))).length;
-  const holdersByPath = /* @__PURE__ */ new Map();
-  for (const c of claimLog) {
-    const key = foldPath(String(c.path));
-    const entry2 = holdersByPath.get(key) ?? { path: String(c.path), holders: [] };
-    if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
-    holdersByPath.set(key, entry2);
-  }
-  const sharersOf = (path13) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path13)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
-  const byId = new Map(people.map((p) => [Number(p.id), p]));
-  const membershipOf = (pid) => {
-    const p = byId.get(pid);
-    return { from: ms(p.joined_at), to: p.ended_at == null ? runOver : ms(p.ended_at) };
-  };
-  const membersTogether = (a, b) => {
-    const x = membershipOf(a);
-    const y = membershipOf(b);
-    return x.from < y.to && y.from < x.to;
-  };
-  const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
-  const namesPath = (m, path13) => {
-    if (aboutNames(m.about, path13)) return true;
-    const body = foldPath(String(m.body));
-    return body.includes(foldPath(path13)) || body.includes(foldPath(path13.split("/").pop()));
-  };
-  const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
-  const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
-  const perFile = [];
-  let everyHolderTold = 0;
-  let agreed = 0;
-  let agreedBeforeMerge = 0;
-  for (const { path: path13, holders: everyHolder } of holdersByPath.values()) {
-    const sharers = sharersOf(path13);
-    const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
-    if (holders.length < 2) continue;
-    const tellTimes = [];
-    let told = true;
-    for (let i = 1; i < holders.length; i++) {
-      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path13));
-      tellTimes.push(...tells.map((m) => ms(m.at)));
-      const mentioned = (e) => tells.some((m) => {
-        const named = JSON.parse(String(m.mentions));
-        return named.includes(nameOf(byId.get(e))) || named.includes(`${r.plan}/*`);
-      });
-      if (!holders.slice(0, i).every(mentioned)) told = false;
-    }
-    const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
-    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path13));
-    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path13)) : holders.includes(m.participant));
-    const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
-    if (told) {
-      everyHolderTold++;
-      if (agreement) {
-        agreed++;
-        if (firstMergeOfPath === null || ms(agreement.at) < firstMergeOfPath) agreedBeforeMerge++;
-      }
-    }
-    const met = mergedWith.map((m) => m.conflicts);
-    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path13))) ? true : met.some((c) => c === null) ? null : false;
-    const declaredInterface = holders.some(
-      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path13))
-    );
-    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path13));
-    perFile.push({
-      path: path13,
-      holders: holders.map((h) => nameOf(byId.get(h))),
-      interface: declaredInterface || claimedInterface,
-      told,
-      agreement: agreement ? Number(agreement.seq) : null,
-      // below 0: agreed before the tell (D46)
-      agreedAfterMs: agreement && sharedAt !== null ? ms(agreement.at) - sharedAt : null,
-      conflict
-    });
-  }
-  let known = 0;
-  let inShared = 0;
-  let unknownMerges = 0;
-  for (const m of merges) {
-    const files = conflictedOf(m);
-    if (files === null) {
-      unknownMerges++;
-      continue;
-    }
-    known += files.length;
-    inShared += files.filter((f) => claimLog.some((c) => Number(c.participant) !== Number(m.participant) && foldPath(String(c.path)) === foldPath(f))).length;
-  }
-  const mergedSlices = recorded ? new Set(merges.map((m) => Number(m.participant)).filter((pid) => !orchestrators.has(pid))).size : sliceMembers.filter((p) => Number(p.merged ?? 0) === 1).length;
-  return {
-    ...base,
-    plan: {
-      slices: { merged: mergedSlices, of: sliceCount, addedMidRun, timesMs, timesEstimated: !recorded },
-      lock: { waitsMs: lockWaitsMs, racesLost },
-      shared: { files: perFile.length, everyHolderTold, agreed, agreedBeforeMerge, perFile, estimated: !sharesRecorded },
-      flags: boardFlags.length,
-      conflicts: recorded ? { known, inShared, unknownMerges } : { known: null, inShared: null, unknownMerges: null }
-    }
-  };
+  return { ...base, ...Object.assign({}, ...packRuns.map((f) => f.kindFields() ?? {})) };
 }
 function skepticOf(db, run3, seats) {
   const seated = (seat) => new Set(seats.filter((p) => String(p.seat) === seat).map((p) => Number(p.id)));
@@ -1098,31 +1204,15 @@ function debateOf(db, run3, seats, messages) {
 function withMemberFigures(run3) {
   const debated = run3.brainstorm !== void 0;
   const marked = (m, what) => m.marks.filter((x) => x.what === what).length;
-  const lengthOf = (i) => ms(i.to) - ms(i.from);
   const members = run3.members.map((m) => ({
     ...m,
-    waitingMs: m.waitingMs ?? (run3.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null),
     agreementsMade: m.agreementsMade ?? marked(m, "agreement"),
     endorsed: m.endorsed ?? (debated ? marked(m, "endorsed") : null),
     objections: m.objections ?? (debated ? marked(m, "objected") : null),
     // a summary from before the events were read (D45) reads its member as not estimated
     estimated: m.estimated ?? false
   }));
-  const plan = run3.plan && {
-    ...run3.plan,
-    slices: slicesOfSummary(run3.plan.slices),
-    shared: {
-      ...run3.plan.shared,
-      estimated: run3.plan.shared.estimated ?? false,
-      // a summary from before `told` (D46) reads each file told, as its list read it
-      perFile: run3.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
-    }
-  };
-  return { ...run3, members, ...plan ? { plan } : {} };
-}
-function slicesOfSummary(slices) {
-  const { estimated, ...rest } = slices;
-  return { ...rest, timesEstimated: slices.timesEstimated ?? estimated ?? false };
+  return statsPacks().reduce((filled, f) => f.fill(filled), { ...run3, members });
 }
 function summarize(db, run3, silentAfterMs) {
   const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
@@ -1130,57 +1220,20 @@ function summarize(db, run3, silentAfterMs) {
   return withMemberFigures(computeRun(db, r, Date.now(), silentAfterMs));
 }
 function totalsOf(runs) {
-  const plans = runs.flatMap((r) => r.plan ? [r.plan] : []);
   const recorded = runs.filter((r) => r.recorded);
-  const recordedPlans = recorded.flatMap((r) => r.plan ? [r.plan] : []);
   const silentOf = (r) => r.members.filter((m) => m.intervals.some((i) => i.what === "silent")).length;
-  const times = plans.flatMap((p) => p.slices.timesMs);
-  const waits = recordedPlans.flatMap((p) => p.lock.waitsMs);
-  const bins = [...WAIT_BINS_MS, Infinity].map((upper, i) => waits.filter((w) => w >= (WAIT_BINS_MS[i - 1] ?? 0) && w < upper).length);
-  const shared = (pick) => sumKnown(plans.map((p) => pick(p.shared)));
-  const files = shared((s) => s.files);
-  const agreed = shared((s) => s.agreed);
   const series = (figure) => runs.map((r) => r.recorded ? figure(r) : null);
-  const everyRun = (figure) => runs.map(figure);
+  const packTotals = statsPacks().map((f) => f.totals(runs));
   return {
     runs: runs.length,
     byKind: { plan: runs.filter((r) => r.kind === "plan").length, brainstorm: runs.filter((r) => r.kind === "brainstorm").length },
     notRecorded: runs.length - recorded.length,
     members: runs.length ? runs.reduce((n, r) => n + r.members.length, 0) : null,
     silentMembers: sumKnown(recorded.map(silentOf)),
-    slices: {
-      merged: sumKnown(plans.map((p) => p.slices.merged)),
-      of: sumKnown(plans.map((p) => p.slices.of)),
-      p50Ms: percentile(times, 0.5),
-      p90Ms: percentile(times, 0.9),
-      timesEstimatedRuns: plans.filter((p) => p.slices.timesEstimated).length
-    },
-    // merges: the lock turns granted, each one merge's wait
-    lockWait: { merges: recordedPlans.length ? waits.length : null, p50Ms: percentile(waits, 0.5), p90Ms: percentile(waits, 0.9), bins: recordedPlans.length ? bins : [] },
-    shared: {
-      files,
-      everyHolderTold: shared((s) => s.everyHolderTold),
-      agreed,
-      agreedBeforeMerge: shared((s) => s.agreedBeforeMerge),
-      withoutAgreement: files === null || agreed === null ? null : files - agreed,
-      estimatedRuns: plans.filter((p) => p.shared.estimated).length
-    },
-    flags: sumKnown(plans.map((p) => p.flags)),
-    runsWithoutFlag: plans.length ? plans.filter((p) => p.flags === 0).length : null,
-    conflicts: {
-      known: sumKnown(plans.map((p) => p.conflicts.known)),
-      inShared: sumKnown(plans.map((p) => p.conflicts.inShared)),
-      unknownMerges: sumKnown(plans.map((p) => p.conflicts.unknownMerges))
-    },
+    ...Object.assign({}, ...packTotals.map((t) => t.fields)),
     brainstorm: brainstormTotalsOf(runs),
     series: {
-      slicesMerged: everyRun((r) => r.plan?.slices.merged ?? null),
-      sliceTimeP50: everyRun((r) => r.plan ? percentile(r.plan.slices.timesMs, 0.5) : null),
-      lockWaitP50: series((r) => r.plan ? percentile(r.plan.lock.waitsMs, 0.5) : null),
-      sharedAgreed: everyRun((r) => r.plan?.shared.agreed ?? null),
-      // flags come from the board's messages, kept for a run before the records too (D43)
-      flags: everyRun((r) => r.plan?.flags ?? null),
-      conflicts: series((r) => r.plan?.conflicts.known ?? null),
+      ...Object.assign({}, ...packTotals.map((t) => t.series)),
       silentMembers: series(silentOf)
     }
   };
@@ -1204,27 +1257,6 @@ function brainstormTotalsOf(runs) {
     claimsWithSource: { n, of },
     silentSeats: sumKnown(debated.filter((d) => d.run.recorded).map((d) => silentSeatsOf(d.run)))
   };
-}
-function filesAcross(runs) {
-  const byPath = /* @__PURE__ */ new Map();
-  for (const r of runs) {
-    for (const f of r.plan?.shared.perFile ?? []) {
-      const key = foldPath(f.path);
-      const entry2 = byPath.get(key) ?? { path: f.path, perRun: [] };
-      entry2.perRun.push({ run: r.run, holders: f.holders, agreed: f.agreement !== null, conflict: f.conflict, interface: f.interface ?? null });
-      byPath.set(key, entry2);
-    }
-  }
-  return [...byPath.values()].map(({ path: path13, perRun }) => ({
-    path: path13,
-    runs: perRun.map((x) => x.run),
-    holders: new Set(perRun.flatMap((x) => x.holders)).size,
-    agreements: perRun.filter((x) => x.agreed).length,
-    conflicts: perRun.every((x) => x.conflict === null) ? null : perRun.filter((x) => x.conflict === true).length,
-    // the runs in which a holder declared or claimed it an interface; null when none knows (summaries from before D37)
-    declaredInterface: perRun.every((x) => x.interface === null) ? null : perRun.filter((x) => x.interface === true).length,
-    perRun: perRun.map((x) => ({ run: x.run, holders: x.holders.length, conflict: x.conflict }))
-  })).sort((a, b) => b.runs.length - a.runs.length || a.path.localeCompare(b.path));
 }
 function statsOf(db, scope, silentAfterMs) {
   for (const k of scope.kinds ?? []) profileOf(k);
@@ -1256,41 +1288,26 @@ function statsOf(db, scope, silentAfterMs) {
       const row = stored.get(Number(r.id));
       return withMemberFigures(row ? JSON.parse(String(row.body)) : computeRun(db, r, now, silentAfterMs));
     });
-    return { scope, runs, totals: totalsOf(runs), files: filesAcross(runs), silentAfterMs };
+    return { scope, runs, totals: totalsOf(runs), files: statsPacks().flatMap((f) => f.files(runs)), silentAfterMs };
   } finally {
     db.exec("COMMIT");
   }
 }
-var DAY_MS, MINUTE_MS, CASELESS, foldPath, RECORDS_SINCE, SHARES_SINCE, ORCHESTRATOR, SKEPTIC, QUESTION, FLAG_BODY, isBoardFlag, SOURCE, WAIT_BINS_MS, ms, iso, firstLine, aboutNames, MERGED_BODY, FILES_LINE, KEPT;
-var init_stats = __esm({
+var DAY_MS, RECORDS_SINCE, ORCHESTRATOR, SKEPTIC, QUESTION, SOURCE, statsPacks, KEPT;
+var init_stats2 = __esm({
   "src/board/stats.ts"() {
     "use strict";
+    init_registry();
     init_kinds();
     init_mentions();
+    init_stats_math();
     DAY_MS = 24 * 60 * 60 * 1e3;
-    MINUTE_MS = 60 * 1e3;
-    CASELESS = process.platform === "win32";
-    foldPath = (p) => CASELESS ? p.toLowerCase() : p;
     RECORDS_SINCE = "records-since";
-    SHARES_SINCE = "shares-since";
     ORCHESTRATOR = "orchestrator";
     SKEPTIC = "skeptic";
     QUESTION = /^D\d+$/;
-    FLAG_BODY = /flag:\s*\S+\s+wrote\s+(\S+)\s+outside its claim(?:;\s*(\S+)\s+holds it)?/;
-    isBoardFlag = (m) => Number(m.by_board ?? 0) === 1 && (m.event === "flag" || m.event == null && FLAG_BODY.test(String(m.body)));
     SOURCE = /[\w./\\-]+\.\w+:\d+|#\d+|https?:\/\/\S+/;
-    WAIT_BINS_MS = [1, 2, 5, 10].map((m) => m * MINUTE_MS);
-    ms = (at) => Date.parse(String(at));
-    iso = (t) => new Date(t).toISOString();
-    firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
-    aboutNames = (about, path13) => {
-      if (about == null) return false;
-      const a = foldPath(String(about).replace(/\\/g, "/"));
-      const f = foldPath(path13);
-      return a === f || f.endsWith(`/${a}`);
-    };
-    MERGED_BODY = /^merged \S+/;
-    FILES_LINE = /^files: (.*)$/m;
+    statsPacks = () => registry.statsFigures();
     KEPT = "(pruned_at IS NULL OR id IN (SELECT run FROM run_stats))";
   }
 });
@@ -1643,6 +1660,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "open_wait", "open_wait INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "listening", "listening INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "nick", "nick TEXT");
+  upkeep("participants", "pack", "pack TEXT");
+  upkeep("participants", "verify", "verify INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "pack_chosen", "pack_chosen INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "wait_gen", "wait_gen INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
   upkeep("messages", "by_board", "by_board INTEGER NOT NULL DEFAULT 0");
@@ -1680,6 +1700,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "phase_for", "phase_for TEXT");
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "parked", "parked INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "seated_at", "seated_at TEXT");
+  upkeep("participants", "parked_until", "parked_until TEXT");
   db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
@@ -1765,6 +1788,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
     base: r.base == null ? null : String(r.base),
+    kindPack: kindPackOf(String(r.kind ?? "plan")),
     id: Number(r.id),
     repo: String(r.repo),
     kind: profileOf(String(r.kind ?? "plan")).kind,
@@ -1793,6 +1817,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     scope: x.scope === "run" ? "run" : "any",
     ...x.carry === true ? { carry: true } : {}
   }));
+  const kindPackOf = (kind) => registry.forMember(kind, null).pack?.name ?? null;
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
     LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
   const listensNow = (r) => Number(r.listening) === 1 || Number(r.listener_running) === 1;
@@ -1808,7 +1833,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
     ended: r.ended_at != null,
     worktree: r.worktree == null ? null : String(r.worktree),
     listening: listensNow(r),
-    subscriptions: subsOf(r)
+    subscriptions: subsOf(r),
+    // pack_chosen 0: a member from before the registry (or an orchestrator), read as its kind's default (D22)
+    ...Number(r.pack_chosen ?? 0) === 1 ? { pack: r.pack == null ? null : String(r.pack), verify: Number(r.verify) === 1 } : { pack: kindPackOf(String(r.kind ?? "plan")), verify: registry.forMember(String(r.kind ?? "plan"), null).verify },
+    kindPack: kindPackOf(String(r.kind ?? "plan"))
   });
   const participantById = (id) => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id));
   const toMessage = (r) => {
@@ -1845,7 +1873,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return board2.read(seq);
   };
   const gated = (p, verb) => {
-    if (!profileOf(p.kind).claims) throw new Error(`${verb}: a ${p.kind} run has no claims`);
+    if (p.kindPack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
     return p;
   };
   const live = (p) => {
@@ -1873,7 +1901,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return null;
   };
   const doingOf = (id) => String(db.prepare("SELECT doing FROM participants WHERE id = ?").get(id).doing) || "no note";
-  const claims = claimsOf({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf });
+  const claims = claimsOf2({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf });
+  const packOf = (p) => registry.packNamed(p.kindPack);
+  const packCtxOf = (p) => ({ run: p.run, repo: p.repo, tables: claims, insertMessage: (author, body, about) => insertMessage(author, body, about, "msg") });
   const unseenRows = (me) => db.prepare(
     `SELECT m.* FROM messages m
          WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
@@ -1889,7 +1919,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const deliverTo = (p, fromWait, mentionsOnly = false) => {
     const me = participantById(p.id);
-    const named = (m) => mentions(m, me) || (m.kind === "agreement" || m.kind === "endorsement") && m.about != null && claims.holds(me, m.about);
+    const pack = packOf(me);
+    const named = (m) => mentions(m, me) || (pack?.alsoFor?.(me, m, packCtxOf(me)) ?? false);
     const whole = profileOf(me.kind).wholeThread;
     const ownPost = (m) => whole && m.run === me.run && m.kind !== "event";
     const messages = transaction(() => {
@@ -2043,15 +2074,38 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const heldWaits = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
+  const seatedAtOf = (p) => String(p.seated_at ?? p.joined_at);
   const progressAtOf = (p, run3, a) => Math.max(
     a?.grew_at == null ? 0 : Number(a.grew_at),
     p.progress_at == null ? 0 : Date.parse(String(p.progress_at)),
-    Date.parse(String(p.joined_at)),
+    Date.parse(seatedAtOf(p)),
     run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at))
   );
   const seatBusyMaxOf = (run3, seat) => {
     const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run3, seat);
     return s?.busy_max == null ? null : Number(s.busy_max);
+  };
+  const activityShown = (run3, seat) => {
+    const a = activityOf(run3, seat);
+    if (!a) return {};
+    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1 };
+    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) };
+    return { activity: { open, background } };
+  };
+  const setParked = (p, seat, parked, until) => {
+    const fresh = live(p);
+    const verb = parked ? "park" : "unpark";
+    if (fresh.seat !== ORCHESTRATOR2) throw new Error(`${verb}: only the orchestrator parks a seat; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR2}`);
+    if (runRow(fresh.run).state !== "open") throw new Error(`run ${fresh.run} is closed`);
+    const row = db.prepare("SELECT id, parked FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(fresh.run, seat);
+    if (!row || seat === ORCHESTRATOR2) throw new Error(`${verb}: no live member in seat ${seat} of run ${fresh.run}`);
+    if (Number(row.parked) === 1 === parked) throw new Error(`${verb}: ${fresh.plan}/${seat} is ${parked ? "already parked" : "not parked"}`);
+    return transaction(() => {
+      const until_ = until?.trim() || null;
+      const shown = parked ? until_ ? `dormant until ${until_}` : "dormant until its next task" : "unparked";
+      db.prepare("UPDATE participants SET parked = ?, parked_until = ?, doing = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, shown, Number(row.id));
+      return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
+    });
   };
   const stateOf = (p, run3, t, presence, withHolder = true) => {
     const member = String(p.seat);
@@ -2066,7 +2120,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (linkLost) return { member, state: "working", doing: a?.last_tool == null ? null : String(a.last_tool), since: link.transcriptGrewAt ?? null, reason: "link down" };
     if (!a) {
       if (inWait) return { member, state: "waiting", doing: null, since: null };
-      const joined = Date.parse(String(p.joined_at));
+      const joined = Date.parse(seatedAtOf(p));
       return { member, state: "quiet", doing: null, since: joined, reason: t - joined >= NO_TRANSCRIPT_MS ? "no transcript found" : "no activity yet" };
     }
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
@@ -2077,6 +2131,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      if (a.bg_target != null) {
+        const bgSince = Number(a.bg_since);
+        const doing = `${minutes(t - bgSince)} min \xB7 background ${String(a.bg_target)}`;
+        const capped = t - bgSince >= BUSY_MAX_MS;
+        return { member, state: "busy", doing, since: bgSince, ...capped ? { reason: `background open ${minutes(BUSY_MAX_MS)} min, may be long or hung${said}`, rule: "call" } : {} };
+      }
       const owing = a.bg_target == null ? owingOf(p, run3, a, t, stallMs) : null;
       if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
@@ -2245,7 +2305,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const progressOf = (run3, phase) => {
     if (phase == null) return null;
     const rows = db.prepare(
-      `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+      `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, p.parked, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR2}'`
     ).all(phase, run3);
@@ -2253,7 +2313,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const named = (seat) => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
     const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
     const gone = live2.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
-    const counted2 = live2.filter((r) => !gone.includes(r));
+    const counted2 = live2.filter((r) => !gone.includes(r) && !(Number(r.parked) === 1 && Number(r.done) !== 1));
     const dormant = counted2.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
     return { phase, done: counted2.filter((r) => Number(r.done) === 1).length, of: counted2.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), dormant };
   };
@@ -2424,7 +2484,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const flagged = [];
         for (const r of db.prepare("SELECT id, plan FROM runs WHERE state = 'open' AND paused IS NULL AND stale_flagged = 0 ORDER BY id").all()) {
           const id = Number(r.id);
-          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL").all(id);
+          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 0").all(id);
           if (!members.length || members.some((m) => Date.parse(String(m.last_call ?? m.joined_at)) >= silentBefore)) continue;
           const author = members.find((m) => String(m.seat) === ORCHESTRATOR2) ?? members[0];
           const group = String(r.plan);
@@ -2449,25 +2509,33 @@ async function openBoard(dbPath = SQLITE_PATH) {
       if (r.state !== "open") throw new Error(`run ${run3} is closed`);
       if (seat === ORCHESTRATOR2) throw new Error(`"${ORCHESTRATOR2}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
-      if (files.length && !profile.claims) throw new Error(`join: a ${profile.kind} run has no claims`);
-      const where = worktree && profile.worktree ? path2.resolve(worktree) : null;
+      const kindPack = kindPackOf(profile.kind);
+      if (files.length && kindPack === null) throw new Error(`join: a ${profile.kind} run has no claims`);
+      const where = worktree && kindPack !== null ? path2.resolve(worktree) : null;
       return transaction(() => {
         let entry2 = "new";
         const id = transaction(() => {
           const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
-          const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run3, seat);
+          const seatRow = db.prepare("SELECT on_events, role FROM seats WHERE run = ? AND id = ?").get(run3, seat);
           if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run3}: declare it first with \`seat add ${seat}\``);
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
           const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
           const fresh = () => unusedNick(String(r.repo));
+          const given = registry.forMember(profile.kind, seatRow?.role == null ? null : String(seatRow.role));
+          const packName = given.pack?.name ?? null;
+          const verify = given.verify ? 1 : 0;
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
-            db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
+            db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
               doing,
               JSON.stringify(files),
               where,
               subs,
               existing.nick == null ? fresh() : null,
+              packName,
+              verify,
+              now(),
+              now(),
               Number(existing.id)
             );
             db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run3, seat);
@@ -2477,7 +2545,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           }
           const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run3, `%"${String(r.plan)}/${seat}"%`);
           const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
-          const ins = db.prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(run3, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs);
+          const ins = db.prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)").run(run3, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs, packName, verify);
           return Number(ins.lastInsertRowid);
         });
         const member = participantById(id);
@@ -2641,6 +2709,12 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return insertMessage(fresh, `pause: stop where you are and wait for the resume${why}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.pause.name, meta: { person, text: said } });
       });
     },
+    park(p, seat, until) {
+      return setParked(p, seat, true, until);
+    },
+    unpark(p, seat) {
+      return setParked(p, seat, false);
+    },
     resume(p, text = "") {
       const fresh = live(p);
       if (fresh.seat !== ORCHESTRATOR2) throw new Error(`resume: only the orchestrator resumes its run; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR2}`);
@@ -2686,6 +2760,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const progress = progressOf(fresh.run, name);
         const all = progress.of > 0 && progress.done === progress.of;
         if (!added) return { progress, all, already: true, late: false, message: null };
+        db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         const wakeCase = doneWakeCase(fresh, name, progress);
         const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
@@ -2696,7 +2771,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     },
     lastActivity(run3) {
       const r = runRow(run3);
-      const row = db.prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ?) AS posts FROM participants p WHERE p.run = ?").get(run3, run3);
+      const row = db.prepare("SELECT MAX(COALESCE(p.last_call, p.joined_at)) AS calls, (SELECT MAX(m.at) FROM messages m JOIN participants q ON q.id = m.author WHERE q.run = ? AND m.by_board = 0) AS posts FROM participants p WHERE p.run = ?").get(run3, run3);
       return [String(r.opened_at), row?.calls, row?.posts].filter((v) => typeof v === "string").sort().at(-1);
     },
     phaseProgress(run3) {
@@ -2777,7 +2852,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           if (a) keepOwingSpan(r, p, a, t);
         }
         const states = statesOf(run3, t);
-        const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR2);
+        const parkedSeats = new Set(db.prepare("SELECT seat FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 1").all(run3).map((x) => String(x.seat)));
+        const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR2 && !parkedSeats.has(st.member));
         const orch = orchestratorIn(run3);
         let progress = progressOf(run3, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
@@ -2802,8 +2878,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run3, st.member);
           const a = activityOf(run3, st.member);
           if (!a) {
-            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
-            if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
+            const p = db.prepare("SELECT joined_at, seated_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
+            if (p && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS) {
               const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run3, st.member);
               if (Number(warned.changes) === 1)
                 livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
@@ -2878,7 +2954,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         if (progress?.gone.length) allDoneOnce(orch, progress);
         const gone = others.filter((st) => st.state === "gone").map((st) => `${orch.plan}/${st.member}`);
         const present = others.filter((st) => st.state !== "gone");
-        const joined = new Set(others.map((st) => st.member));
+        const joined = /* @__PURE__ */ new Set([...others.map((st) => st.member), ...parkedSeats]);
         const toJoin = db.prepare("SELECT id FROM seats WHERE run = ? AND state != 'done'").all(run3).some((s) => !joined.has(String(s.id)));
         const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting");
         if (!allWaiting) {
@@ -2958,12 +3034,12 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
         const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
-        const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
+        const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
         named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
-        if (!named.length && profileOf(fresh.kind).claims) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
+        if (!named.length && fresh.kindPack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
-      const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
+      const claimed = fresh.kindPack !== null ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
     endorse(p, seq) {
@@ -3003,8 +3079,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id);
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR2 || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
-      if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== void 0) return false;
-      if (db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== void 0) return false;
+      const fresh = participantById(p.id);
+      if (packOf(fresh)?.busy?.(fresh, packCtxOf(fresh))) return false;
       return unreadOf(p.id) === 0;
     },
     unreadMentions(p) {
@@ -3129,7 +3205,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return statesByRun.get(run3).get(member);
       };
       const cutoff = t - STALE_MS;
-      const claimsOf2 = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
+      const claimsOf3 = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
       const live2 = db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
       const files = /* @__PURE__ */ new Map();
       for (const c of live2) {
@@ -3154,7 +3230,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const orchestrator = seat === ORCHESTRATOR2;
         const s = sliceOf.get(`${r.run}/${seat}`);
         const ended = r.ended_at != null;
-        const state = orchestrator ? runOpen.get(Number(r.run)) ? "watching" : "done" : s?.state === "done" ? "done" : ended ? "ended" : lockHolder === id ? "merging" : Number(r.waiting) === 1 ? "waiting" : "working";
+        const state = orchestrator ? runOpen.get(Number(r.run)) ? "watching" : "done" : s?.state === "done" ? "done" : ended ? "ended" : Number(r.parked) === 1 ? "parked" : lockHolder === id ? "merging" : Number(r.waiting) === 1 ? "waiting" : "working";
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -3166,7 +3242,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           doing: String(r.doing),
           state,
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
-          files: claimsOf2.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
+          files: claimsOf3.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
           joined: String(r.joined_at),
           ended: r.ended_at == null ? null : String(r.ended_at),
           calls: Number(r.calls ?? 0),
@@ -3174,7 +3250,9 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           on: subsOf(r).map((x) => formatSubscriptions([x])),
           lastCall: String(r.last_call ?? r.joined_at),
           liveness: ended ? void 0 : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
-          unread: ended ? 0 : unreadOf(id)
+          unread: ended ? 0 : unreadOf(id),
+          ...Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {},
+          ...ended ? {} : activityShown(Number(r.run), seat)
         };
       });
       const events = db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN).map((r) => {
@@ -3276,6 +3354,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   const PROGRESS_VERBS = /* @__PURE__ */ new Set(["post", "done", "setDoing", "endorse", "merged"]);
   const countCall = (p, verb) => {
     const at = now();
+    db.prepare("UPDATE participants SET parked = 0 WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     if (PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
     db.prepare("INSERT INTO call_log (participant, at, verb) VALUES (?, ?, ?)").run(p.id, at, verb);
@@ -3296,6 +3375,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   board2.post = counted("post", board2.post);
   board2.phase = counted("phase", board2.phase);
   board2.pause = counted("pause", board2.pause);
+  board2.park = counted("park", board2.park);
+  board2.unpark = counted("unpark", board2.unpark);
   board2.resume = counted("resume", board2.resume);
   board2.done = counted("done", board2.done);
   board2.endorse = counted("endorse", board2.endorse);
@@ -3320,8 +3401,9 @@ var init_board = __esm({
     init_home();
     init_mentions();
     init_claims();
-    init_stats();
+    init_stats2();
     init_kinds();
+    init_registry();
     init_events();
     init_names();
     init_liveness();
@@ -3426,6 +3508,8 @@ var init_wire = __esm({
       "pause",
       "resume",
       "pausedOf",
+      "park",
+      "unpark",
       "done",
       "phaseProgress",
       "lastActivity",
@@ -7399,11 +7483,14 @@ async function stopBoardServer(dataRoot) {
   return true;
 }
 function listen(server, host, port) {
+  return bind(server, host, port).then((bound) => FETCH_BLOCKED_PORTS.has(bound) ? new Promise((done) => server.close(() => done())).then(() => listen(server, host, 0)) : bound);
+}
+function bind(server, host, port) {
   return new Promise((resolve, reject) => {
     const onError = (e) => {
       if (e.code === "EADDRINUSE" && port !== 0) {
         server.off("error", onError);
-        resolve(listen(server, host, 0));
+        resolve(bind(server, host, 0));
       } else reject(e);
     };
     server.once("error", onError);
@@ -7413,7 +7500,7 @@ function listen(server, host, port) {
     });
   });
 }
-var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed;
+var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
 var init_server = __esm({
   "src/server/server.ts"() {
     "use strict";
@@ -7432,27 +7519,35 @@ var init_server = __esm({
     LOCK_READ_RETRIES = 20;
     BREAKER_STALE_MS = 5e3;
     serversClosed = /* @__PURE__ */ new Map();
+    FETCH_BLOCKED_PORTS = /* @__PURE__ */ new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6e3, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
   }
 });
+
+// src/proc.ts
+import { spawn, spawnSync } from "node:child_process";
+var hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
+function hiddenSpawnSync(command, args2, options = {}) {
+  return spawnSync(command, args2, { ...options, windowsHide: true });
+}
 
 // src/cli/index.ts
 init_board();
 init_kinds();
 init_events();
 init_home();
-import { spawnSync as spawnSync5 } from "node:child_process";
 import fs12 from "node:fs";
 import path12 from "node:path";
 
 // src/client/remote.ts
 init_wire();
-import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
 import fs6 from "node:fs";
 import net2 from "node:net";
+import os4 from "node:os";
 import path6 from "node:path";
 
 // src/link/link.ts
+init_home();
 init_wire();
 import crypto2 from "node:crypto";
 import fs5 from "node:fs";
@@ -7469,11 +7564,11 @@ var TARGET_CHARS = 50;
 var SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
 function shellWords(command, backslashEscapes = true) {
   const words = [];
-  let word2 = "";
+  let word = "";
   let inWord = false;
   const flush = () => {
-    if (inWord) words.push(word2);
-    word2 = "";
+    if (inWord) words.push(word);
+    word = "";
     inWord = false;
   };
   for (let i = 0; i < command.length; i++) {
@@ -7481,11 +7576,11 @@ function shellWords(command, backslashEscapes = true) {
     if (c === "'" || c === '"') {
       const close = command.indexOf(c, i + 1);
       const end = close < 0 ? command.length : close;
-      word2 += command.slice(i + 1, end);
+      word += command.slice(i + 1, end);
       inWord = true;
       i = end;
     } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
-      word2 += command[++i];
+      word += command[++i];
       inWord = true;
     } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
       flush();
@@ -7496,15 +7591,15 @@ function shellWords(command, backslashEscapes = true) {
       } else words.push(c);
     } else if (/\s/.test(c)) flush();
     else {
-      word2 += c;
+      word += c;
       inWord = true;
     }
   }
   flush();
   return words;
 }
-var isSwarmTool = (word2) => /(^|[\\/])swarm(\.mjs)?$/i.test(word2) || /^\$\{?\w+\}?$/.test(word2);
-function flagValue(words, names) {
+var isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
+function optionValue(words, names) {
   for (let i = 0; i < words.length; i++) {
     for (const n of names) {
       if (words[i] === n && i + 1 < words.length) return words[i + 1];
@@ -7533,8 +7628,8 @@ function commandRunsBinding(command, binding, backslashEscapes = true) {
     if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
     const args2 = segment.slice(at + 1);
     if (binding.verb === "join") {
-      if (flagValue(args2, ["--run"]) === String(binding.run) && flagValue(args2, ["--seat"]) === binding.seat) return true;
-    } else if (flagValue(args2, ["--group", "--plan"]) === binding.group) return true;
+      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
+    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
   }
   return false;
 }
@@ -7751,7 +7846,15 @@ function awaitedBackground(cursor) {
   }
   return { target: oldest.target, since: oldest.since, outputGrewAt };
 }
-function observe(transcript, from) {
+function commandActsAsOther(command, binding, backslashEscapes = true) {
+  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
+  if (as === void 0) return false;
+  const slash = as.lastIndexOf("/");
+  const group = slash < 0 ? null : as.slice(0, slash);
+  const seat = as.slice(slash + 1);
+  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
+}
+function observe(transcript, from, binding) {
   let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
@@ -7798,15 +7901,16 @@ function observe(transcript, from) {
           const input = part.input;
           const command = input?.command;
           const escapes = toolEscapesBackslash(name);
-          const boardWait = typeof command === "string" && commandRunsWait(command, escapes);
+          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
+          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
           const shell = typeof command === "string";
           cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {} });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
-          const boardsOwn = typeof command === "string" && commandIsBoardsOwn(command, escapes);
+          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
-          if (input?.run_in_background === true && typeof command === "string" && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
+          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
         }
@@ -7959,7 +8063,7 @@ async function runLink(opts) {
     if (exiting) return;
     transcript ??= locate(opts.binding, env);
     if (!transcript) return;
-    const read = observe(transcript, cursor);
+    const read = observe(transcript, cursor, opts.binding);
     const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
     if (grew) lastStirAt = Date.now();
@@ -8105,6 +8209,42 @@ async function runLink(opts) {
   }
   return finished;
 }
+var alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+function commandLine(pid) {
+  const r = process.platform === "win32" ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+  return (r.stdout ?? "").trim() || null;
+}
+function stopLinks(runId, members) {
+  const pids = [];
+  for (const member of members) {
+    const file = linkPidFile(DATA_ROOT, runId, member);
+    let pid;
+    try {
+      pid = Number(fs5.readFileSync(file, "utf8").trim());
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
+      try {
+        process.kill(pid);
+        pids.push(pid);
+      } catch {
+      }
+    }
+    try {
+      fs5.rmSync(file);
+    } catch {
+    }
+  }
+  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+}
 
 // src/client/remote.ts
 var START_TIMEOUT_MS = 5e3;
@@ -8128,6 +8268,7 @@ function readServerState2(dataRoot) {
     return null;
   }
 }
+var DETACHED_CWD = os4.tmpdir();
 var isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
 async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   const found = readServerState2(dataRoot);
@@ -8149,7 +8290,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
       log = fs6.openSync(serverLogFile(dataRoot), "a");
     } catch {
     }
-    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
@@ -8219,8 +8360,9 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
     }
     return null;
   }
-  const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
+  const child = hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
     detached: true,
+    cwd: DETACHED_CWD,
     stdio: "ignore",
     windowsHide: true,
     env: homeEnv(dataRoot)
@@ -8435,7 +8577,6 @@ ${m.answer}` : ""}`;
 init_mentions();
 
 // src/cli/aiview-board.ts
-import { spawnSync } from "node:child_process";
 import fs7 from "node:fs";
 import path7 from "node:path";
 function aiviewLauncher(toolRoot2) {
@@ -8443,7 +8584,7 @@ function aiviewLauncher(toolRoot2) {
   return fs7.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
-  const r = spawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
+  const r = hiddenSpawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
   if (r.status !== 0) return { ok: false, error: `aiview ${argv[0]} failed: ${(r.stderr || r.stdout).trim()}` };
   try {
     return { ok: true, out: JSON.parse(r.stdout.trim().split("\n").pop() ?? "") };
@@ -8617,10 +8758,9 @@ function projectGuidesAt(show, list) {
   return out;
 }
 
-// src/cli/git.ts
-import { spawnSync as spawnSync2 } from "node:child_process";
+// src/git.ts
 var gitAnswer = (cwd, ...argv) => {
-  const r = spawnSync2("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
 };
 var git = (cwd, ...argv) => {
@@ -8638,13 +8778,20 @@ var worktreeHolding = (cwd, branch) => {
   }
   return null;
 };
+var baseAt = (cwd) => {
+  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
+  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
+};
+var baseRef = (cwd, base) => {
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  return base;
+};
 
 // src/place/place.ts
-import { spawnSync as spawnSync3 } from "node:child_process";
 import fs9 from "node:fs";
 import path9 from "node:path";
 var gitOut = (cwd, ...argv) => {
-  const r = spawnSync3("git", argv, { cwd, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : null;
 };
 var real = (p) => {
@@ -8725,6 +8872,36 @@ function conflictsOf(worktree, onto, reflogMark) {
 
 // src/cli/answer/rules.ts
 init_events();
+init_kinds();
+
+// src/cli/answer/code-rules.ts
+init_events();
+
+// src/cli/answer/code-wording.ts
+var CODE_WORDING = {
+  /** The code verbs' help, apart from the core (D22). */
+  usage: (cli) => [
+    `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
+    "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
+    "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
+    "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
+    `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
+  ].join("\n"),
+  // ── the merge (V12: every command runnable as printed) ──
+  mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
+  /** S4: the --guides form filled with this merge's guides, as merged takes it */
+  guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
+  mergeGranted: (cli, as, guidesForm) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+  /** D2: an argument error names what is wrong, then usage, then one corrected form */
+  guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
+  mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
+  // S32: said at the grant, before the rebase and the report, never after the report is written
+  conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
+  tellResolved: (path13, member) => `if you resolved a conflict in ${path13}, tell them: swarm post "@${member} I resolved ${path13}: <how>" --about ${path13}`,
+  // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
+  flagHolder: (cli, writer, about) => `settle it: ${cli} agree ${writer} --about ${about}`,
+  flagWriter: (cli, holder, about) => `settle it: ${cli} post ${holder} --about ${about}`
+};
 
 // src/cli/answer/wording.ts
 init_events();
@@ -8735,7 +8912,8 @@ var WORDING = {
   done: (cli, phase, as) => `${cli} done ${phase} --as ${as}`,
   thread: (cli, as) => `${cli} thread --as ${as}`,
   end: (cli, as) => `${cli} end --as ${as}`,
-  // ── the listener ──
+  // ── the link and the listener ──
+  linkStart: (link) => `start your link now, in the background (your harness's background task): ${link}`,
   listenerStart: (wait) => `start your listener now, in the background (your harness's background task): ${wait}`,
   waitNow: (afterPhase, wait) => `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${FOREGROUND_NOTE}): ${wait}`,
   rearmBackground: (wait) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND_NOTE}): ${wait}`,
@@ -8743,11 +8921,12 @@ var WORDING = {
   rearmOrchestrator: (wait) => `act on it, then start this listener again, in the background: ${wait}`,
   rearmAfterOwed: (owed, wait) => `${owed}
 only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  nothingYetOrchestrator: (wait) => `nothing yet; wait again: ${wait}`,
-  nothingYet: (wait) => `nothing yet; wait again (${FOREGROUND_NOTE}): ${wait}`,
+  // S30: a member's first wait reads the same as a later one: no "again" for a wait it never made
+  nothingYetOrchestrator: (wait) => `nothing yet; wait: ${wait}`,
+  nothingYet: (wait) => `nothing yet; wait, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   superseded: "superseded by a newer wait",
-  // G14: the seat stays, said before the end command, so it never reads as the end of the run
-  idle: (end) => `nothing for you now; the run is open and your seat stays in it, the orchestrator may dispatch you to it again: run ${end} and return`,
+  // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
+  idle: (wait) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ended: (run3) => `you have ended in run ${run3}: this listener stops; nothing to re-arm`,
   delivered: "these lines are delivered; the task-end notice is the same event",
   // ── the phase ──
@@ -8761,14 +8940,11 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   noPostYet: (name) => `no post yet in phase ${name}`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
-  // ── the merge (V12: every command runnable as printed) ──
-  mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
-  /** S4: the --guides form filled with this merge's guides, as merged takes it */
-  guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
-  mergeGranted: (cli, as, guidesForm) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
-  /** D2: an argument error names what is wrong, then usage, then one corrected form */
-  guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
-  mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
+  // ── a post's @-names (D63) ──
+  // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
+  mentionEnded: (name) => `@${name} has ended: the post stays on the thread, read at the seat's next join`,
+  mentionNotJoined: (name) => `@${name} has not joined yet: the post waits for it, read at its join`,
+  mentionNobody: (name, guesses) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
   // ── agree ──
   /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
   agreeParties: (author, others) => `parties: ${[.../* @__PURE__ */ new Set([author, ...others])].sort().map((n) => n === author ? `${n} (you)` : n).join(", ")}; woken when its file merges`,
@@ -8783,8 +8959,60 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   lockHeldNext: (cli, name, as, wait) => `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the run ──
   paused: (run3, why, wait) => `run ${run3} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
-  closed: (run3, end) => `run ${run3} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`
+  closed: (run3, end) => `run ${run3} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
+  // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
+  backIt: (cli, seq, as) => `back it: ${cli} endorse ${seq} --as ${as}`,
+  phaseDoneWhen: (name, tasks, done) => `when your part of ${name}${tasks.length ? ` (your task${tasks.length > 1 ? "s" : ""} ${tasks.join(", ")})` : ""} is posted: ${done}`,
+  pauseStop: (person, wait) => `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+  resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
+  // board-split D30: parked by the orchestrator; ending the turn is the member's, `end` the orchestrator's alone
+  parkedStop: "you are parked: end your turn now, without end; the orchestrator resumes you at your next task",
+  parked: (member, cli, seat, as) => `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
+  unparked: (member) => `${member} is unparked: its alerts and its share of all-done are back`,
+  /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
+  packVerbRefused: (verb, seatKind) => `${verb}: refused, a ${seatKind} seat has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
+  /** board-split D30, D38: a member's own end while its run is open */
+  endRefused: (run3, wait) => `end: refused, run ${run3} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
+  openNextPhase: (cli, as, run3) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
+  swarmQuiet: (cli, as) => `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
+  allJoined: (cli, as) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
+  lockFree: (cli, name, as) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
+  breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
+  breachOther: (member) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
+  goneMove: "its agent is not running: dispatch it again, or close its seat",
+  restartLink: (member, cli, run3, as) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run3} --as ${as}`,
+  /** a stall's move, by the rule that made its member quiet (idea 1, rule 6) */
+  stalledEnded: "a post does not wake it: SendMessage it, or dispatch it again",
+  stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
+  stalledBackground: (cli, post, as) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,
+  stalledCall: "SendMessage it to stop the call",
+  stalledOwing: (cli, post, as) => `${cli} post ${post} --as ${as}: its wait returns on it`,
+  stalledLock: (holder, lock, cli, post, as) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
+  stalledAny: (cli, as) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
+  /** several members stalled at one tick: each member's move after its name */
+  stalledEach: (moves) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
+  // ── the seat's commands at its join (D21, D36) ──
+  seatCommands: (cli, as, holdMs) => [
+    `${cli} post "\u2026" --about <D id> --as ${as}`,
+    `${cli} agree "\u2026" --about <D id> --as ${as}`,
+    `${cli} endorse <seq> --as ${as}`,
+    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`
+  ],
+  // ── a lock granted, and status's forgotten run ──
+  unlockWhenDone: (cli, name, as) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
+  forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`
 };
+var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
+
+// src/cli/answer/code-rules.ts
+function codeEventStep(m, me, cli, event = eventOf(m)) {
+  if (event !== "flag") return null;
+  const [holder, writer] = m.mentions;
+  if (!m.about || !holder || !writer) return null;
+  if (me.name === holder) return CODE_WORDING.flagHolder(cli, shellWord(`@${writer} <who changes what>`), shellWord(m.about));
+  if (me.name === writer) return CODE_WORDING.flagWriter(cli, shellWord(`@${holder} <what you change>`), shellWord(m.about));
+  return null;
+}
 
 // src/cli/answer/rules.ts
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
@@ -8801,10 +9029,10 @@ var owedLine = (s, opts = {}) => {
   return opts.brief ? WORDING.owedBrief(s.owed.name, read, done) : WORDING.owedOpen(s.owed.name, s.owed.text, read, done);
 };
 var listenNow = (s, afterPhase = false) => s.listens === "foreground" ? WORDING.waitNow(afterPhase, waitCommand(s, true)) : WORDING.listenerStart(waitCommand(s));
-var nextStep = (s) => {
+var nextStep = (s, brief = false) => {
   const paused = pausedLine(s);
   if (paused) return paused;
-  const owed = owedLine(s);
+  const owed = owedLine(s, { brief });
   return owed ? `${owed}
 ${listenNow(s, true)}` : listenNow(s);
 };
@@ -8814,8 +9042,8 @@ var joinStep = (s, showedPosts) => {
 };
 var heardStep = (s) => {
   if (s.ended || s.listenerRunning) return null;
-  if (s.listens !== "foreground") return nextStep(s);
-  return pausedLine(s) ?? owedLine(s);
+  if (s.listens !== "foreground") return nextStep(s, true);
+  return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 var phaseHeaders = (s, showPause = true) => {
   const whole = s.phase ? WORDING.phaseWhole(s.phase.name, s.phase.text) : null;
@@ -8826,6 +9054,80 @@ var phaseHeaders = (s, showPause = true) => {
   return { printed: WORDING.phasePaused(short, why), full: WORDING.phasePaused(whole, why), first };
 };
 var closedLine = (s) => WORDING.closed(s.run, WORDING.end(s.cli, s.as));
+function eventStep(m, me, cli, event = eventOf(m)) {
+  const as = shellWord(me.name);
+  const orchestrator = me.seat === "orchestrator";
+  const own = m.from === me.name;
+  const meta = m.meta ?? null;
+  switch (event) {
+    case "agreement":
+      return profileOf(me.kind).member === "seat" && !orchestrator && !own ? WORDING.backIt(cli, m.seq, as) : null;
+    case "phase": {
+      const name = meta && "phase" in meta ? meta.phase : null;
+      if (!name || orchestrator || own) return null;
+      return WORDING.phaseDoneWhen(name, tasksOf(m.body, me.seat), WORDING.done(cli, shellWord(name), as));
+    }
+    case "pause": {
+      if (orchestrator || own) return null;
+      const pause3 = meta && "person" in meta ? meta : null;
+      return WORDING.pauseStop(pause3?.person ? pause3.text : null, WORDING.wait(cli, as, FOREGROUND_WAIT_MS));
+    }
+    case "resume":
+      return orchestrator || own ? null : WORDING.resumeGoOn;
+    case "park":
+      return m.mentions.includes(me.name) ? WORDING.parkedStop : null;
+    case "all-done":
+      return orchestrator ? WORDING.openNextPhase(cli, as, m.run) : null;
+    case "idle":
+      return orchestrator ? WORDING.swarmQuiet(cli, as) : null;
+    case "all-joined":
+      return orchestrator ? WORDING.allJoined(cli, as) : null;
+    case "stalled":
+      return orchestrator ? stalledMove(m, cli, as) : null;
+    case "unlocked": {
+      const name = meta && "unlocked" in meta ? meta.unlocked : null;
+      return name && m.mentions.includes(me.name) ? WORDING.lockFree(cli, shellWord(name), as) : null;
+    }
+    case "breach": {
+      const member = meta && "breach" in meta ? meta.breach : null;
+      if (!member || !orchestrator) return null;
+      return member === me.name ? WORDING.breachOwn : WORDING.breachOther(member);
+    }
+    case "gone":
+      return orchestrator ? WORDING.goneMove : null;
+    case "liveness": {
+      const member = meta && "linkDown" in meta ? meta.linkDown : null;
+      if (!member || !orchestrator) return null;
+      const all = meta && "linkDowns" in meta && meta.linkDowns ? meta.linkDowns : [member];
+      return all.map((one) => WORDING.restartLink(one, cli, m.run, shellWord(one))).join("; ");
+    }
+    default:
+      return codeEventStep(m, me, cli, event);
+  }
+}
+var tasksOf = (body, seat) => (/; its tasks posted before it: (.+)$/.exec(body)?.[1] ?? "").split(", ").map((t) => t.split(" ")).filter(([, ...seats]) => seats.includes(seat)).map(([seq]) => seq);
+function stalledMove(m, cli, as) {
+  const meta = m.meta && "rule" in m.meta ? m.meta : null;
+  if (meta?.members && meta.members.length > 1)
+    return WORDING.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
+  const id = meta?.member ?? "<member>";
+  switch (meta?.rule) {
+    case "ended":
+      return WORDING.stalledEnded;
+    case "in-turn":
+      return WORDING.stalledInTurn;
+    case "background":
+      return WORDING.stalledBackground(cli, shellWord(`@${id} \u2026`), as);
+    case "call":
+      return WORDING.stalledCall;
+    case "owing":
+      return WORDING.stalledOwing(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+    case "lock":
+      return WORDING.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} \u2026`), as);
+    default:
+      return WORDING.stalledAny(cli, as);
+  }
+}
 
 // src/cli/answer/situation.ts
 init_kinds();
@@ -8853,6 +9155,58 @@ async function readSituation(board2, me, opts) {
   };
 }
 
+// src/cli/answer/usage.ts
+var coreUsage = (cli, events) => [
+  `usage: ${cli} <verb> [--json]        (${cli} --help code: the claim and merge verbs)`,
+  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
+  "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
+  "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
+  `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
+  "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
+  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
+  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
+  "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
+  "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
+  '  park    <seat> [--until <phase>] [--as <member>]                # shown "dormant until <phase>"; a seat only you need now (a worker between tasks, a dormant verifier): told to end its turn without end; no idle, stalled, stale or gone for it, all-done does not wait for it, until its next call or unpark (orchestrator)',
+  "  unpark  <seat> [--as <member>]                                  # lifts a park (orchestrator)",
+  "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
+  "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
+  "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
+  "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
+  "  unsubscribe [--as <member>] <events>",
+  "  doing   [--as <member>] <text>",
+  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
+  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
+  "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
+  "  read    <seq>",
+  "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
+  "  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only",
+  "  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)",
+  "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
+  "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
+  "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
+  "  roster  [--repo <path>] [--as <member>]",
+  "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
+  "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
+  "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
+  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
+  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
+  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
+  "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
+  `events: ${events.join(", ")}; any:<event> for one posted in any run`,
+  "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree"
+].join("\n");
+var statsUsage = (cli) => [
+  `usage: ${cli} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]`,
+  "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
+  "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
+  `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${cli} read <seq>`
+].join("\n");
+var hiddenUsage = (cli, verb) => verb === "serve" ? `usage: ${cli} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it` : `usage: ${cli} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`;
+
 // src/cli/answer/index.ts
 var shownLines = (shown) => shown.flatMap((m) => m.next ? [m.text, m.next] : [m.text]);
 function answer(r, s) {
@@ -8861,7 +9215,7 @@ function answer(r, s) {
       if (r.outcome === "superseded") return { lines: [WORDING.superseded], next: null, phase: null };
       if (r.outcome === "ended") return { lines: [WORDING.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
-        const next2 = r.idle ? WORDING.idle(WORDING.end(s.cli, s.as)) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
+        const next2 = r.idle ? WORDING.idle(r.foregroundAgain) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
         return { lines: [next2], next: next2, phase: null };
       }
       const headers = phaseHeaders(s, !pausedLine(s));
@@ -8916,11 +9270,10 @@ ${owes}` : rearm;
   }
 }
 
-// src/cli/worktrees.ts
+// src/packs/code/worktrees.ts
 init_home();
-import { spawnSync as spawnSync4 } from "node:child_process";
 import fs10 from "node:fs";
-import os4 from "node:os";
+import os5 from "node:os";
 import path10 from "node:path";
 var worktreesRoot = (repo) => path10.join(repo, "swarm", "worktrees");
 var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
@@ -8935,13 +9288,9 @@ var worktreeDirs = (repos) => {
 };
 var same = (a, b) => fold(a) === fold(b);
 function run2(cwd, ...argv) {
-  const r = spawnSync4("git", argv, { cwd, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
 }
-var baseAt = (cwd) => {
-  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
-  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
-};
 function inLinkedWorktree(cwd) {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
   const common = git(cwd, "rev-parse", "--git-common-dir");
@@ -8949,10 +9298,6 @@ function inLinkedWorktree(cwd) {
 }
 var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
-var baseRef = (cwd, base) => {
-  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
-  return base;
-};
 function ensureWorktree(cwd, repo, runId, group, seat, base) {
   const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
@@ -8979,48 +9324,12 @@ function leftover(wt, into) {
 }
 function removeWorktree(wt, repo) {
   if (!fs10.existsSync(wt)) {
-    run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+    run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
     return null;
   }
-  const r = run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
-  run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+  const r = run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
+  run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
   return r.ok ? null : r.err || "git worktree remove failed";
-}
-var alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-function commandLine(pid) {
-  const r = process.platform === "win32" ? spawnSync4("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : spawnSync4("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
-  return (r.stdout ?? "").trim() || null;
-}
-function stopLinks(runId, members) {
-  const pids = [];
-  for (const member of members) {
-    const file = linkPidFile(DATA_ROOT, runId, member);
-    let pid;
-    try {
-      pid = Number(fs10.readFileSync(file, "utf8").trim());
-    } catch {
-      continue;
-    }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
-      try {
-        process.kill(pid);
-        pids.push(pid);
-      } catch {
-      }
-    }
-    try {
-      fs10.rmSync(file);
-    } catch {
-    }
-  }
-  for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync4(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
 }
 function sweep(wt, repo, into) {
   const why = leftover(wt, into) ?? removeWorktree(wt, repo);
@@ -9053,6 +9362,43 @@ function sweepLegacyRoot() {
 `);
   return kept;
 }
+function worktrees(repo) {
+  return {
+    /** Where the seat's worktree is, without making it (G20); null when `cwd` is a worktree the board did not make. */
+    place(run3, group, seat, cwd) {
+      if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
+      const at = worktreeDir(repo, run3, seat);
+      return { path: at, branch: branchFor(run3, group, seat), reused: fs10.existsSync(at) };
+    },
+    /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
+    forSeat(run3, group, seat, base) {
+      return ensureWorktree(repo, repo, run3, group, seat, base);
+    },
+    /** True when `wt` is a worktree the board made for this repository. */
+    owns(wt) {
+      return owned(wt, repo);
+    },
+    /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
+    unmerged(wt, into) {
+      return leftover(wt, into);
+    },
+    /** Stops the seat's link (Windows refuses to remove a folder a live process is in), then removes the worktree once
+     *  clean and merged into `into`; otherwise says why it stays. */
+    release(seat, into) {
+      stopLinks(seat.run, [seat.member]);
+      return sweep(seat.worktree, repo, into);
+    }
+  };
+}
+function sweepAll(repos, recordOf) {
+  return worktreeDirs(repos).map((dir) => {
+    const w = recordOf(dir);
+    if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
+    if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
+    return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+  });
+}
+var sweepLegacy = () => sweepLegacyRoot();
 
 // src/cli/index.ts
 var args = parseArgs(process.argv.slice(2));
@@ -9064,54 +9410,8 @@ var usageError = (what, usage, example) => fail(`${what}
 usage: ${CLI} ${usage}
 e.g. ${CLI} ${example}`);
 var asWord = () => quoted(args.flag("--as") ?? "<group>/<seat>");
-var USAGE = [
-  `usage: ${CLI} <verb> [--json]        (${CLI} --help code: the claim and merge verbs)`,
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
-  "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
-  "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
-  "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
-  "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
-  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
-  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
-  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
-  "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
-  "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
-  "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
-  "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
-  "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
-  "  unsubscribe [--as <member>] <events>",
-  "  doing   [--as <member>] <text>",
-  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
-  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
-  "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
-  "  read    <seq>",
-  "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
-  "  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only",
-  "  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)",
-  "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
-  "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
-  "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
-  "  roster  [--repo <path>] [--as <member>]",
-  "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
-  "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
-  "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
-  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
-  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
-  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
-  "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
-  `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
-  "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree"
-].join("\n");
-var CODE_USAGE = [
-  `usage: ${CLI} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
-  "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
-  "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
-  "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
-].join("\n");
+var USAGE = coreUsage(CLI, Object.keys(EVENTS));
+var CODE_USAGE = CODE_WORDING.usage(CLI);
 var EXAMPLES = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
   seat: () => "seat w1 --run 3 --state running",
@@ -9133,12 +9433,7 @@ var verbHelp = (verb = args.verb ?? "") => {
   return example ? `${usage}
 e.g. ${CLI} ${example}` : usage;
 };
-var STATS_USAGE = [
-  `usage: ${CLI} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]`,
-  "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
-  "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
-  `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${CLI} read <seq>`
-].join("\n");
+var STATS_USAGE = statsUsage(CLI);
 var lengthText = (ms2) => {
   if (ms2 === null) return "\u2014";
   const minutes = Math.floor(ms2 / 6e4);
@@ -9170,7 +9465,7 @@ function repoOf2(dir) {
 }
 function changedIn(worktree) {
   if (!fs12.existsSync(worktree)) return [];
-  const r = spawnSync5("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out = [];
@@ -9184,13 +9479,13 @@ function changedIn(worktree) {
 }
 function branchChangedIn(worktree, onto) {
   const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
-  const r = spawnSync5("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
 }
 function renamesIn(worktree, base) {
-  const r = spawnSync5("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return [];
   const parts = r.stdout.split("\0");
   const out = [];
@@ -9250,13 +9545,12 @@ var rosterLine = (r, ages = false) => {
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
   return `${who}${r.stale ? " (stale)" : ""}  run ${r.run}  ${stateLine(r, ages)}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
 };
-var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord, show });
+var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
 var withNext = (me, d) => ({
   ...d,
   full: d.full.map((m) => {
-    const e = eventOf(m);
-    const line = e ? EVENTS[e].next?.(m, me, self().join(" ")) ?? null : null;
+    const line = eventStep(m, me, self().join(" "));
     return line ? { ...m, endorse: line } : m;
   })
 });
@@ -9264,9 +9558,9 @@ var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? {
   for (const l of a.lines) console.log(l);
 });
 var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null }));
-var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
+var shellWord2 = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var fwd = (p) => p.split("\\").join("/");
-var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
+var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord2(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord2(process.argv[1].replace(/\\/g, "/"))];
 var linkToldFile = (member) => path12.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
 var linkTold = (member) => fs12.existsSync(linkToldFile(member));
 var markLinkTold = (member) => {
@@ -9277,9 +9571,8 @@ var markLinkTold = (member) => {
   }
 };
 var clearLinkTold = (member) => fs12.rmSync(linkToldFile(member), { force: true });
-var startLinkLine = (member) => `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
-var SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
-var waitCommand2 = (name, foreground = false) => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : void 0);
+var startLinkLine = (member) => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord2)].join(" "));
+var waitCommand2 = (name, foreground = false) => WORDING.wait(self().join(" "), shellWord2(name), foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine2 = async (p) => pausedLine(await situation(p));
 var refusedPaused = async (p, verb) => {
   const line = await pausedLine2(p);
@@ -9293,13 +9586,13 @@ var LOCK_PORT = /^port:(\d{1,5})$/;
 function listenersOn(port) {
   const found = /* @__PURE__ */ new Set();
   if (process.platform === "win32") {
-    const out = spawnSync5("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = hiddenSpawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const cols = line.trim().split(/\s+/);
       if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
     }
   } else {
-    const out = spawnSync5("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
+    const out = hiddenSpawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
   }
   return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
@@ -9310,13 +9603,13 @@ function processStarts(pids) {
   if (process.platform === "win32") {
     const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
     const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
-    const out = spawnSync5("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const [pid, at] = line.trim().split(/\s+/);
       if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
     }
   } else {
-    const out = spawnSync5("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
+    const out = hiddenSpawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const m = /^\s*(\d+)\s+(.+)$/.exec(line);
       if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
@@ -9344,7 +9637,7 @@ var lockLine = (l, listening) => `${l.name}  held by ${l.member} (run ${l.run}) 
 var firstPhaseLine = (kind, group, protocol) => {
   if (kind !== "task" && kind !== "plan") return null;
   if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
-  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord(`${group}/orchestrator`)}`;
+  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord2(`${group}/orchestrator`)}`;
   const pointer = "(its protocol.md's phase table names them)";
   return protocol ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}` : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
@@ -9365,16 +9658,21 @@ var unmatchedLines = async (p, body) => {
   const declared = new Set((await board.runs()).filter((r) => r.repo === p.repo).flatMap((r) => r.seats.map((s) => `${r.group}/${s.id}`)));
   return unmatchedMentions(body, p.plan, plans, names).map(({ name, closest }) => {
     const member = name.includes("/") ? name : `${p.plan}/${name}`;
-    if (ended.has(member)) return `@${name} has ended: the post stays on the thread, but they will not read it`;
-    if (declared.has(member)) return `@${name} has not joined yet: the post waits for it, read at its join`;
-    const guesses = closest.map((c) => nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`);
-    return `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`;
+    if (ended.has(member)) return WORDING.mentionEnded(name);
+    if (declared.has(member)) return WORDING.mentionNotJoined(name);
+    return WORDING.mentionNobody(name, closest.map((c) => nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`));
   });
 };
 var emitHeard = async (p, json, result) => {
-  const a = answer({ verb: "heard", lines: typeof result === "string" ? [result] : result }, await situation(p));
+  const lines = typeof result === "string" ? [result] : result;
+  const a = answer({ verb: "heard", lines }, await situation(p));
   emit(a.next ? { ...json, next: a.next } : json, () => {
-    for (const l of a.lines) console.log(l);
+    for (const l of lines) console.log(l);
+    if (linkToStart && !linkTold(linkToStart)) {
+      console.log(startLinkLine(linkToStart));
+      markLinkTold(linkToStart);
+    }
+    for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
 var generatedAmong = (worktree, files) => files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
@@ -9461,16 +9759,7 @@ function joinedSeat() {
 ${verbHelp()}`);
 }
 var POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>";
-var seatCommands = (as) => {
-  const cli = self().join(" ");
-  const who = `--as ${shellWord(as)}`;
-  return [
-    `${cli} post "\u2026" --about <D id> ${who}`,
-    `${cli} agree "\u2026" --about <D id> ${who}`,
-    `${cli} endorse <seq> ${who}`,
-    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`
-  ];
-};
+var seatCommands = (as) => WORDING.seatCommands(self().join(" "), shellWord2(as), FOREGROUND_WAIT_MS);
 var subscriptionsArg = (spec) => {
   try {
     return parseSubscriptions(spec);
@@ -9482,31 +9771,31 @@ var NO_MAIN = "there is no Main any more: the conversation is one; mention who y
 var runOf = async (id) => (await board.runs()).find((r) => r.id === id) ?? null;
 async function memberWorktree(runId, seat) {
   const run3 = await runOf(runId);
-  if (!run3 || !profileOf(run3.kind).worktree || !run3.seats.some((s) => s.id === seat)) return null;
+  if (!run3 || run3.kindPack === null || !run3.seats.some((s) => s.id === seat)) return null;
   const cwd = process.cwd();
   const base = run3.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), run3.repo)) return null;
+  const place = worktrees(run3.repo).place(run3.id, run3.group, seat, cwd);
+  if (!place) return null;
   if (repoOf2(cwd) !== run3.repo) fail(`join: run ${runId} is on ${run3.repo}; join from a checkout of that repository`);
-  const at = worktreeDir(run3.repo, run3.id, seat);
-  return { path: at, branch: branchFor(run3.id, run3.group, seat), base, reused: fs12.existsSync(at) };
+  return { ...place, base };
 }
 async function madeWorktree(p) {
-  if (!p.worktree || !owned(p.worktree, p.repo) || fs12.existsSync(p.worktree)) return;
+  if (!p.worktree || !worktrees(p.repo).owns(p.worktree) || fs12.existsSync(p.worktree)) return;
   const run3 = await runOf(p.run);
   if (!run3) return;
   const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path12.dirname(p.repo);
   const base = run3.base ?? baseAt(cwd);
   if (!base) fail(`${p.name}: no base to make the worktree from`);
   try {
-    ensureWorktree(cwd, p.repo, run3.id, run3.group, p.seat, base);
+    worktrees(p.repo).forSeat(run3.id, run3.group, p.seat, base);
     callerWorktree = p.worktree;
   } catch (e) {
     fail(`worktree: ${e.message}`);
   }
 }
 async function main() {
-  for (const line of sweepLegacyRoot()) console.error(`legacy worktree ${line}`);
+  for (const line of sweepLegacy()) console.error(`legacy worktree ${line}`);
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
     process.exitCode = 2;
@@ -9601,10 +9890,9 @@ ${verbHelp()}`);
     }
     case "close": {
       const run3 = runArg();
-      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree, w.repo) && fs12.existsSync(w.worktree));
+      const trees = (await board.worktrees(run3)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs12.existsSync(w.worktree));
       await board.closeRun(run3);
-      if (trees.length) stopLinks(run3, trees.map((w) => w.member));
-      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
+      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: run3, member: w.member, worktree: w.worktree }, w.base) }));
       const kept = swept.filter((w) => !w.removed);
       emit({ run: run3, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run3} closed`);
@@ -9624,13 +9912,26 @@ ${verbHelp()}`);
       const only = args.list("--for");
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...watch.length ? { watch } : {}, ...only.length ? { for: only } : {} } : void 0);
       const cli = self().join(" ");
-      const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
+      const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord2(p.name), m.run);
       const brief = WORDING.briefThePerson;
       const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => WORDING.dormant(s.slice(s.lastIndexOf("/") + 1)));
       emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
         console.log(seqLine(m));
         for (const line of dormant) console.log(line);
         console.log(brief);
+        console.log(next);
+      });
+      break;
+    }
+    case "park":
+    case "unpark": {
+      const p = await caller();
+      const seat = args.positional[0] ?? usageError(`${args.verb}: which seat?`, `${args.verb} <seat> --as <group>/orchestrator`, `${args.verb} w2 --as ${asWord()}`);
+      const m = args.verb === "park" ? await board.park(p, seat, args.flag("--until")) : await board.unpark(p, seat);
+      const member = `${p.plan}/${seat}`;
+      const next = args.verb === "park" ? WORDING.parked(member, self().join(" "), shellWord2(seat), shellWord2(p.name)) : WORDING.unparked(member);
+      emit({ seq: m.seq, run: m.run, member, parked: args.verb === "park", next }, () => {
+        console.log(seqLine(m));
         console.log(next);
       });
       break;
@@ -9643,7 +9944,7 @@ ${verbHelp()}`);
       const cli = self().join(" ");
       if (args.verb === "pause") {
         const m2 = await board.pause(p, text, person !== void 0 ? { person: true } : void 0);
-        const next2 = WORDING.pausedAll(m2.run, person !== void 0 ? text : null, cli, shellWord(p.name));
+        const next2 = WORDING.pausedAll(m2.run, person !== void 0 ? text : null, cli, shellWord2(p.name));
         emit({ seq: m2.seq, run: m2.run, paused: true, person: person !== void 0, next: next2 }, () => {
           console.log(seqLine(m2));
           console.log(next2);
@@ -9651,7 +9952,7 @@ ${verbHelp()}`);
         break;
       }
       const m = await board.resume(p, text);
-      const next = WORDING.resumed(m.run, m.held.length, cli, shellWord(p.name));
+      const next = WORDING.resumed(m.run, m.held.length, cli, shellWord2(p.name));
       emit({ seq: m.seq, run: m.run, paused: false, held: m.held, next }, () => {
         console.log(seqLine(m));
         for (const line of m.held) console.log(line);
@@ -9687,17 +9988,18 @@ ${verbHelp()}`);
         ...args.flag("--on") !== void 0 ? { on: subscriptionsArg(args.flag("--on")) } : {}
       });
       const link = startLinkLine({ name: member.name, run: member.run });
-      const shared = !profileOf(member.kind).worktree;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
+      const shared = member.kindPack === null;
+      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
       const commands = shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
-      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...roster.map((r) => rosterLine(r))];
-      const tail = [...as ? [as] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
       const waiting = await board.deliverMentions(member);
+      const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
+      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r))];
+      const tail = [...as ? [as] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
       const statedByJoin = /* @__PURE__ */ new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
       const a = answer({ verb: "join", head, shown, tail }, await situation(member));
-      emitAnswer({ member: member.name, nick: member.nick, roster, composition, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...drawing ? { drawing } : {}, link }, a);
+      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...drawing ? { drawing } : {}, link }, a);
       break;
     }
     case "subscribe":
@@ -9818,7 +10120,7 @@ ${verbHelp()}`);
       }
       const again = [...self(), "wait"];
       if (mentionsOnly) again.push("--mentions");
-      if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")));
+      if (args.flag("--as")) again.push("--as", shellWord2(args.flag("--as")));
       if (raw !== void 0) again.push("--timeout", raw);
       if (asJson) again.push("--json");
       const foregroundAgain = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
@@ -9926,8 +10228,9 @@ ${verbHelp()}`);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
-        if (r.granted && guides.length) console.log(WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
-        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? WORDING.guidesForm(guides.map((g) => g.name)) : null) : WORDING.mergeHeld(r.holder, waitCommand2(p.name, true)));
+        if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+        if (r.granted) console.log(CODE_WORDING.conflictsInReport);
+        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord2(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder, waitCommand2(p.name, true)));
       });
       break;
     }
@@ -9947,9 +10250,9 @@ ${verbHelp()}`);
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const unlocked = args.flag("--unlocked")?.trim();
-      if (!lock && profileOf(p.kind).mergeLock) {
+      if (!lock && p.kindPack !== null) {
         if (unlocked === void 0) {
-          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
+          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord2(p.name)].join(" ")} first, then merge, then merged again`);
         }
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
@@ -9957,13 +10260,13 @@ ${verbHelp()}`);
       const guidesArg = args.flag("--guides")?.trim();
       const listed = lock?.guides ?? [];
       const settled = guidesSettlement(guidesArg ?? "", listed);
-      const form = WORDING.guidesForm(listed);
-      if (settled.separator) fail(WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
-      if (settled.malformed.length) fail(WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
-      if (settled.unknown.length) fail(WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
+      const form = CODE_WORDING.guidesForm(listed);
+      if (settled.separator) fail(CODE_WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
+      if (settled.malformed.length) fail(CODE_WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
+      if (settled.unknown.length) fail(CODE_WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
       if (settled.missing.length)
-        fail(WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
-      if (settled.unjudged.length) fail(WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
+        fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
+      if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
       if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
@@ -9975,9 +10278,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
-      const tell = sharers.map(
-        (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
-      );
+      const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
       emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {} }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
         for (const line of tell) console.log(line);
@@ -9994,12 +10295,13 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       }
       if (p.ended) break;
       const unread = await board.unreadMentions(p);
-      if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
+      if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord2(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree, p.repo) && fs12.existsSync(p.worktree) ? slashed(p.worktree) : null;
-      const left = mine ? leftover(mine, base) : null;
+      const seatTrees = worktrees(p.repo);
+      const mine = seatTrees.owns(p.worktree) && fs12.existsSync(p.worktree) ? slashed(p.worktree) : null;
+      const left = mine ? seatTrees.unmerged(mine, base) : null;
       if (mine && left) {
-        const who = `--as ${shellWord(p.name)}`;
+        const who = `--as ${shellWord2(p.name)}`;
         fail(
           `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
         );
@@ -10011,8 +10313,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
       await board.end(p);
       linkToStart = null;
-      if (mine) stopLinks(p.run, [p.name]);
-      const removal = mine ? removeWorktree(mine, p.repo) : null;
+      const removal = mine ? seatTrees.release({ run: p.run, member: p.name, worktree: mine }, base).why : null;
       emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
@@ -10024,14 +10325,9 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
 ${verbHelp()}`);
       const known = await board.worktrees();
-      const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
       const fold2 = (s) => process.platform === "win32" ? path12.resolve(s).toLowerCase() : path12.resolve(s);
-      const out = dirs.map((dir) => {
-        const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);
-        if (!w) return { worktree: slashed(dir), removed: false, why: "no member of any run joined from it" };
-        if (w.open) return { worktree: slashed(dir), removed: false, why: `run ${w.run} is open` };
-        return { worktree: slashed(dir), ...sweep(dir, w.repo, w.base) };
-      });
+      const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
+      const out = sweepAll([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)], recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
       const kept = out.filter((o) => !o.removed);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
@@ -10075,12 +10371,12 @@ ${verbHelp()}`);
 ${verbHelp()}`);
       const r = await board.lock(p, name, args.flag("--note"));
       const cli = self().join(" ");
-      const who = shellWord(p.name);
+      const who = shellWord2(p.name);
       if (!r.granted) {
         process.exitCode = 3;
         const h = r.holder;
         const held = `held by ${h.nick} (${h.code}\xB7${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
-        const next2 = WORDING.lockHeldNext(cli, shellWord(name), who, waitCommand2(p.name, true));
+        const next2 = WORDING.lockHeldNext(cli, shellWord2(name), who, waitCommand2(p.name, true));
         emit({ name, granted: false, holder: h, next: next2 }, () => {
           console.log(held);
           console.log(next2);
@@ -10089,7 +10385,7 @@ ${verbHelp()}`);
       }
       const port = portListeners(name);
       const told = port && port.pids.length ? grantListeners(port.port, port.pids, r.released) : null;
-      const next = told && told.stoppable.length ? `next: to restart what listens on ${port.port}, stop exactly these: ${stopLine(told.stoppable)}` : `next: unlock it once you are done: ${cli} unlock ${shellWord(name)} --as ${who}`;
+      const next = told && told.stoppable.length ? `next: to restart what listens on ${port.port}, stop exactly these: ${stopLine(told.stoppable)}` : WORDING.unlockWhenDone(cli, shellWord2(name), who);
       emit({ name, granted: true, ...port ? { port: port.port, listening: port.pids } : {}, ...r.released ? { released: r.released } : {}, next }, () => {
         console.log(`granted ${name}`);
         for (const line of told?.lines ?? []) console.log(line);
@@ -10140,7 +10436,7 @@ ${verbHelp()}`);
           }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
-            console.log(`  no activity for ${Math.floor(idle / 864e5)} d: likely left open; ask the person, then archive it: ${cli} close --run ${r.id}`);
+            console.log(WORDING.forgottenRun(Math.floor(idle / 864e5), cli, r.id));
         }
       });
       break;
@@ -10159,7 +10455,7 @@ if (args.verb === "stats" && args.has("--help")) {
 }
 if ((args.verb === "serve" || args.verb === "link") && (args.has("--help") || args.has("-h"))) {
   console.log(
-    args.verb === "serve" ? `usage: ${CLI} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it` : `usage: ${CLI} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`
+    hiddenUsage(CLI, args.verb)
   );
   process.exit(0);
 }
