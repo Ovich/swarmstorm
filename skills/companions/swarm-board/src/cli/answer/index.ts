@@ -3,7 +3,7 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { heardStep, nextStep, owedLine, phaseHeaders, pausedLine, waitCommand } from "./rules.ts";
+import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
@@ -114,7 +114,7 @@ export function answer(r: VerbResult, s: Situation): Answer {
     }
     case "join": {
       const headers = phaseHeaders(s);
-      const next = nextStep(s);
+      const next = joinStep(s, r.shown.length > 0);
       // G32: a member owing the phase reads its text once, on the owed line; the header only when it owes nothing
       const header = headers.printed && !(s.owed && !pausedLine(s)) ? [headers.printed] : [];
       // S1: the result first (the posts waiting for the member), then its steps

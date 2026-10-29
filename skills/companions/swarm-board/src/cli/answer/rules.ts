@@ -37,6 +37,13 @@ export const nextStep = (s: Situation): string => {
   return owed ? `${owed}\n${listenNow(s, true)}` : listenNow(s);
 };
 
+/** Where a joining member is told to listen: a worker with nothing owed and no post shown at its join is idle, so it
+ *  waits in the foreground for its task (S15); a working one starts its background listener. */
+export const joinStep = (s: Situation, showedPosts: boolean): string => {
+  const idleWorker = s.listens === "background" && !showedPosts && !s.owed && !s.pause;
+  return idleWorker ? W.nothingYet(waitCommand(s, true)) : nextStep(s);
+};
+
 /** What a verb that heard from the member ends on: nothing for an ended member or one whose listener runs; a seat is told
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {

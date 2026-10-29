@@ -314,6 +314,9 @@ const START_LINK = (member: string, run: string): string =>
 
 test("join prints the link line, then the line that starts the listener, the exact command with --as, last; --json carries them as link then next (D61, D32, swarm-relay D33)", () => {
   const id = String(openRun());
+  // S15: a worker with a task unread is working, so its join ends on the background listener
+  run("post", "@S5 your task", "--as", "review-tool/orchestrator");
+  run("post", "@S3 your task", "--as", "review-tool/orchestrator");
   const r = run("join", "--run", id, "--seat", "S5", "--doing", "y");
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.trimEnd().split("\n");
@@ -1047,7 +1050,10 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
   assert.match(orch, /start this listener again, in the background: node .* wait --mentions --as idea\/orchestrator/);
-  const member = run("join", "--run", String(openRun()), "--seat", "S3", "--doing", "x").stdout.trimEnd().split("\n");
+  const planRun = String(openRun());
+  // S15: a task unread, so the worker's join ends on the background listener
+  run("post", "@S3 your task", "--as", "review-tool/orchestrator");
+  const member = run("join", "--run", planRun, "--seat", "S3", "--doing", "x").stdout.trimEnd().split("\n");
   assert.match(member.at(-1)!, /^start your listener now, in the background/);
 });
 
