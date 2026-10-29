@@ -3472,9 +3472,9 @@ var init_wire = __esm({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/constants.js
+// node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/constants.js"(exports, module) {
+  "node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -3494,9 +3494,9 @@ var require_constants = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/buffer-util.js
+// node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/buffer-util.js"(exports, module) {
+  "node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -3569,9 +3569,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/limiter.js
+// node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/limiter.js"(exports, module) {
+  "node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -3619,9 +3619,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/permessage-deflate.js
+// node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
+  "node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
     var zlib = __require("zlib");
     var bufferUtil = require_buffer_util();
@@ -4002,9 +4002,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/validation.js
+// node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/validation.js"(exports, module) {
+  "node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants();
@@ -4203,9 +4203,9 @@ var require_validation = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/receiver.js
+// node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/receiver.js"(exports, module) {
+  "node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
     var PerMessageDeflate = require_permessage_deflate();
@@ -4795,9 +4795,9 @@ var require_receiver = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/sender.js
+// node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/sender.js"(exports, module) {
+  "node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
@@ -5283,9 +5283,9 @@ var require_sender = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/event-target.js
+// node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/event-target.js"(exports, module) {
+  "node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -5512,9 +5512,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/extension.js
+// node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/extension.js"(exports, module) {
+  "node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -5665,9 +5665,9 @@ var require_extension = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket.js
+// node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket.js"(exports, module) {
+  "node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var https = __require("https");
@@ -6548,9 +6548,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/stream.js
+// node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/stream.js"(exports, module) {
+  "node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket3 = require_websocket();
     var { Duplex } = __require("stream");
@@ -6646,9 +6646,9 @@ var require_stream = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/subprotocol.js
+// node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/subprotocol.js"(exports, module) {
+  "node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -6691,9 +6691,9 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket-server.js
+// node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket-server.js"(exports, module) {
+  "node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var http2 = __require("http");
@@ -7080,10 +7080,10 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/wrapper.mjs
+// node_modules/ws/wrapper.mjs
 var import_stream, import_receiver, import_sender, import_websocket, import_websocket_server;
 var init_wrapper = __esm({
-  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/wrapper.mjs"() {
+  "node_modules/ws/wrapper.mjs"() {
     import_stream = __toESM(require_stream(), 1);
     import_receiver = __toESM(require_receiver(), 1);
     import_sender = __toESM(require_sender(), 1);
