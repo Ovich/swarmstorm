@@ -13,7 +13,7 @@ const GONE_POLLS = 200;
 
 /** Waits until `pid` has exited, at most GONE_POLLS polls. On Windows a folder that a live process
  *  holds a file of cannot be removed: a test's cleanup waits for the process, not its state file. */
-function untilGone(pid: number): void {
+export function untilGone(pid: number): void {
   for (let i = 0; i < GONE_POLLS && isAlive(pid); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
 }
 
