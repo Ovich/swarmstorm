@@ -246,7 +246,10 @@ var init_events = __esm({
       // a seat backs another member's agreement (D36)
       agreement: {
         name: "agreement",
-        next: (m, me, cli) => profileOf(me.kind).member === "seat" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null
+        next: (m, me, cli) => (
+          // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
+          profileOf(me.kind).member === "seat" && me.seat !== "orchestrator" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null
+        )
       },
       endorsement: { name: "endorsement" },
       merged: { name: "merged" },
@@ -2560,7 +2563,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const unknown = only.filter((s) => s === ORCHESTRATOR2 || !db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         const since = Number(db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name).s ?? 0);
-        const tasks = db.prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq").all(fresh.run, since, ORCHESTRATOR2).map((m) => ({ seq: Number(m.seq), seats: JSON.parse(String(m.mentions ?? "[]")).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR2}`)) })).filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
+        const tasks = db.prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq").all(fresh.run, since, ORCHESTRATOR2).map((m) => ({ seq: Number(m.seq), seats: JSON.parse(String(m.mentions ?? "[]")).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR2}`)).filter((t) => !only.length || only.includes(seatOf(t))) })).filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
         const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
@@ -8744,6 +8747,19 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   noPostYet: (name) => `no post yet in phase ${name}`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
+  // ── the merge (V12: every command runnable as printed) ──
+  mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`,
+  mergeGranted: (cli, as, guides) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
+  mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
+  // ── the orchestrator's verbs ──
+  phaseHeard: (watch) => watch.length ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake` : "each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>",
+  phaseFor: (only) => only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "",
+  phaseOpened: (name, forWhom, heard, cli, as, run3) => `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
+  briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
+  dormant: (seat) => `${seat} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`,
+  pausedAll: (run3, person, cli, as) => `every member of run ${run3} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
+  resumed: (run3, held, cli, as) => `run ${run3} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
+  lockHeldNext: (cli, name, as, wait) => `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the run ──
   paused: (run3, why, wait) => `run ${run3} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run3, end) => `run ${run3} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`
@@ -8849,7 +8865,7 @@ ${owes}` : rearm;
     case "read": {
       const headers = phaseHeaders(s);
       const owes = r.member ? owedLine(s) : null;
-      return { lines: [...headers.printed ? [headers.printed] : [], r.shown.text, ...owes ? [owes] : []], next: owes, phase: headers.full };
+      return { lines: [r.shown.text, ...headers.printed ? [headers.printed] : [], ...owes ? [owes] : []], next: owes, phase: headers.full };
     }
     case "thread": {
       const headers = phaseHeaders(s);
@@ -8861,6 +8877,10 @@ ${owes}` : rearm;
       if (r.none) return { lines: [WORDING.doneNone], next: null, phase: null };
       const next = WORDING.doneWaitNext(waitCommand(s, true));
       return { lines: [r.line, next], next, phase: null };
+    }
+    case "heard": {
+      const next = heardStep(s);
+      return { lines: [...r.lines, ...next ? [next] : []], next, phase: null };
     }
     case "join": {
       const headers = phaseHeaders(s);
@@ -9067,6 +9087,27 @@ var CODE_USAGE = [
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
   `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
 ].join("\n");
+var EXAMPLES = {
+  open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
+  seat: () => "seat w1 --run 3 --state running",
+  phase: (as) => `phase build "build the slices" --as ${as}`,
+  join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
+  "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
+  merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
+  lock: (as) => `lock port:4399 --as ${as}`,
+  unlock: (as) => `unlock port:4399 --as ${as}`,
+  config: () => "config retention 30",
+  worktree: () => "worktree prune",
+  close: () => "close --run 3"
+};
+var verbHelp = (verb = args.verb ?? "") => {
+  const line = [...USAGE.split("\n"), ...CODE_USAGE.split("\n")].find((l) => l.startsWith(`  ${verb} `));
+  if (!line) return USAGE;
+  const usage = `usage: ${CLI} ${line.trim().replace(/\s+#.*$/, "")}`;
+  const example = EXAMPLES[verb]?.(asWord());
+  return example ? `${usage}
+e.g. ${CLI} ${example}` : usage;
+};
 var STATS_USAGE = [
   `usage: ${CLI} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]`,
   "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
@@ -9097,7 +9138,7 @@ var emit = (json, human) => {
 };
 var refuseTranscriptFlag = (verb) => {
   if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript
-${USAGE}`);
+${verbHelp()}`);
 };
 function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
@@ -9144,7 +9185,7 @@ var printReconciled = (unclaimed, flags, renames = []) => {
 };
 var toolRoot = () => process.env.SWARM_ROOT ?? path12.dirname(path12.resolve(process.argv[1]));
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
-${USAGE}`);
+${verbHelp()}`);
 var runArg = () => {
   const raw = need("--run");
   const id = Number(raw);
@@ -9201,6 +9242,16 @@ var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? 
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var fwd = (p) => p.split("\\").join("/");
 var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
+var linkToldFile = (member) => path12.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
+var linkTold = (member) => fs12.existsSync(linkToldFile(member));
+var markLinkTold = (member) => {
+  try {
+    fs12.mkdirSync(path12.dirname(linkToldFile(member)), { recursive: true });
+    fs12.writeFileSync(linkToldFile(member), "");
+  } catch {
+  }
+};
+var clearLinkTold = (member) => fs12.rmSync(linkToldFile(member), { force: true });
 var startLinkLine = (member) => `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
 var SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
 var waitCommand2 = (name, foreground = false) => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : void 0);
@@ -9272,7 +9323,6 @@ var firstPhaseLine = (kind, group, protocol) => {
   const pointer = "(its protocol.md's phase table names them)";
   return protocol ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}` : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
-var heardStep2 = async (p) => heardStep(await situation(p));
 var answeredClosed = async (p) => {
   const s = await situation(p);
   if (!s.closed) return false;
@@ -9296,12 +9346,10 @@ var unmatchedLines = async (p, body) => {
     return `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`;
   });
 };
-var emitHeard = async (p, json, human) => {
-  const next = await heardStep2(p);
-  emit(next ? { ...json, next } : json, () => {
-    if (typeof human === "string") console.log(human);
-    else human();
-    if (next) console.log(next);
+var emitHeard = async (p, json, result) => {
+  const a = answer({ verb: "heard", lines: typeof result === "string" ? [result] : result }, await situation(p));
+  emit(a.next ? { ...json, next: a.next } : json, () => {
+    for (const l of a.lines) console.log(l);
   });
 };
 var generatedAmong = (worktree, files) => files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
@@ -9341,20 +9389,22 @@ var declaredPath = (file) => {
   const { abs, missing } = resolveIn(root, file);
   return missing.length && root ? path12.resolve(root, file) : abs;
 };
+var seatsFail = (what) => fail(`${what}
+e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]`);
 function readSeats(file) {
   let raw;
   try {
     raw = JSON.parse(fs12.readFileSync(path12.resolve(file), "utf8"));
   } catch (e) {
-    return fail(`cannot read seats from ${file}: ${e.message}`);
+    return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
   const list = Array.isArray(raw) ? raw : raw.seats;
-  if (!Array.isArray(list)) return fail(`${file}: expected an array of {id, role, area, blockers}`);
+  if (!Array.isArray(list)) return seatsFail(`${file}: expected an array of {id, role, area, blockers}`);
   return list.map((s) => {
-    if (typeof s.id !== "string") fail(`${file}: a seat without an id`);
-    if ("title" in s) fail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
-    if ("transcript" in s) fail(`${file}: unknown field transcript in ${s.id}`);
-    if (s.busyMax !== void 0 && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) fail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
+    if (typeof s.id !== "string") seatsFail(`${file}: a seat without an id`);
+    if ("title" in s) seatsFail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
+    if ("transcript" in s) seatsFail(`${file}: unknown field transcript in ${s.id}`);
+    if (s.busyMax !== void 0 && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) seatsFail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
       ...s.busyMax !== void 0 ? { busyMax: s.busyMax } : {},
       id: String(s.id),
@@ -9377,13 +9427,13 @@ function openKindAndGroup() {
   const plan = args.flag("--plan");
   if (plan !== void 0 && kind !== "plan") fail(`open: --plan means --kind plan; a ${kind} run takes --group <slug>`);
   const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)
-${USAGE}`);
+${verbHelp()}`);
   return { kind, group };
 }
 function joinedSeat() {
   const seat = args.flag("--seat");
   return seat ?? fail(`--seat is required
-${USAGE}`);
+${verbHelp()}`);
 }
 var POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>";
 var seatCommands = (as) => {
@@ -9441,7 +9491,7 @@ async function main() {
     case "config": {
       const setting = args.positional[0];
       if (setting !== "retention") fail(`config: the one setting is retention
-${USAGE}`);
+${verbHelp()}`);
       const raw = args.positional[1];
       const value = raw === void 0 ? void 0 : Number(raw);
       const days = await board.setting("retention-days", value);
@@ -9452,7 +9502,7 @@ ${USAGE}`);
       const { kind, group } = openKindAndGroup();
       const plan = group;
       const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required
-${USAGE}`);
+${verbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === void 0 ? void 0 : Number(rawStall);
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
@@ -9494,7 +9544,7 @@ ${USAGE}`);
     case "seat": {
       if (args.positional[0] === "add") {
         const id2 = args.positional[1] ?? fail(`seat add: which id?
-${USAGE}`);
+${verbHelp()}`);
         const run4 = runArg();
         const on = args.flag("--on");
         if (on !== void 0) subscriptionsArg(on);
@@ -9516,7 +9566,7 @@ ${USAGE}`);
         break;
       }
       const id = args.positional[0] ?? fail(`seat: which seat?
-${USAGE}`);
+${verbHelp()}`);
       const run3 = runArg();
       refuseTranscriptFlag("seat");
       const state = need("--state");
@@ -9543,17 +9593,15 @@ ${USAGE}`);
       const p = await caller();
       const [name, ...said] = args.positional;
       if (!name) fail(`phase: which phase?
-${USAGE}`);
+${verbHelp()}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       const watch = args.list("--watch");
       const only = args.list("--for");
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...watch.length ? { watch } : {}, ...only.length ? { for: only } : {} } : void 0);
       const cli = self().join(" ");
-      const heard = watch.length ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake` : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
-      const forWhom = only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "";
-      const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
-      const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
-      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => `${s.slice(s.lastIndexOf("/") + 1)} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`);
+      const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
+      const brief = WORDING.briefThePerson;
+      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => WORDING.dormant(s.slice(s.lastIndexOf("/") + 1)));
       emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
         console.log(seqLine(m));
         for (const line of dormant) console.log(line);
@@ -9570,7 +9618,7 @@ ${USAGE}`);
       const cli = self().join(" ");
       if (args.verb === "pause") {
         const m2 = await board.pause(p, text, person !== void 0 ? { person: true } : void 0);
-        const next2 = `every member of run ${m2.run} is told to stop and wait${person !== void 0 ? `, waiting on the person: ${text}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${shellWord(p.name)}`;
+        const next2 = WORDING.pausedAll(m2.run, person !== void 0 ? text : null, cli, shellWord(p.name));
         emit({ seq: m2.seq, run: m2.run, paused: true, person: person !== void 0, next: next2 }, () => {
           console.log(seqLine(m2));
           console.log(next2);
@@ -9578,7 +9626,7 @@ ${USAGE}`);
         break;
       }
       const m = await board.resume(p, text);
-      const next = `run ${m.run} resumed${m.held.length ? `; ${m.held.length} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${shellWord(p.name)}`;
+      const next = WORDING.resumed(m.run, m.held.length, cli, shellWord(p.name));
       emit({ seq: m.seq, run: m.run, paused: false, held: m.held, next }, () => {
         console.log(seqLine(m));
         for (const line of m.held) console.log(line);
@@ -9657,12 +9705,13 @@ ${USAGE}`);
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
-      const human = () => {
-        console.log(seqLine(m));
-        if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
-        for (const line of unmatched) console.log(line);
-        if (args.verb === "agree" && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
-      };
+      const human = [
+        seqLine(m),
+        // posting is claiming (D7)
+        ...m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : [],
+        ...unmatched,
+        ...args.verb === "agree" && m.mentions?.length ? [`parties: ${m.mentions.join(", ")}, woken when its file merges`] : []
+      ];
       await emitHeard(p, json, human);
       break;
     }
@@ -9692,7 +9741,7 @@ ${USAGE}`);
       else {
         const ph = await board.currentPhase(m.run);
         const phase = ph ? WORDING.phaseWhole(ph.name, ph.text) : null;
-        emitAnswer({ ...m }, { lines: [...phase ? [phase] : [], fullText(m)], next: null, phase });
+        emitAnswer({ ...m }, { lines: [fullText(m), ...phase ? [phase] : []], next: null, phase });
       }
       break;
     }
@@ -9800,13 +9849,10 @@ ${USAGE}`);
       const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
       const json = answers.length === 1 ? answers[0].verdict : { claims: answers.map((a) => ({ path: a.rel, ...a.verdict })) };
-      await emitHeard(p, told.length ? { ...json, guides: told } : json, () => {
-        for (const { rel, verdict, also } of answers) {
-          if (!verdict.allowed) console.log(verdict.refusal);
-          else console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
-        }
-        if (guidesNow) console.log(guidesNow);
-      });
+      await emitHeard(p, told.length ? { ...json, guides: told } : json, [
+        ...answers.map(({ rel, verdict, also }) => !verdict.allowed ? verdict.refusal : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`),
+        ...guidesNow ? [guidesNow] : []
+      ]);
       break;
     }
     case "release": {
@@ -9851,8 +9897,8 @@ ${USAGE}`);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
-        if (r.granted && guides.length) console.log(`guides of this merge: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`);
-        console.log(r.granted ? `granted: merge, then swarm merged <sha> --files <path>...${guides.length ? ' --guides "..."' : ""}` : `held by ${r.holder}: swarm wait --mentions for its merged event`);
+        if (r.granted && guides.length) console.log(WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length > 0) : WORDING.mergeHeld(r.holder, waitCommand2(p.name, true)));
       });
       break;
     }
@@ -9943,7 +9989,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
     }
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
-${USAGE}`);
+${verbHelp()}`);
       const known = await board.worktrees();
       const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
       const fold2 = (s) => process.platform === "win32" ? path12.resolve(s).toLowerCase() : path12.resolve(s);
@@ -9993,7 +10039,7 @@ ${USAGE}`);
       const p = await caller();
       if (await refusedPaused(p, "lock")) break;
       const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>
-${USAGE}`);
+${verbHelp()}`);
       const r = await board.lock(p, name, args.flag("--note"));
       const cli = self().join(" ");
       const who = shellWord(p.name);
@@ -10001,7 +10047,7 @@ ${USAGE}`);
         process.exitCode = 3;
         const h = r.holder;
         const held = `held by ${h.nick} (${h.code}\xB7${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
-        const next2 = `next: wait for its unlocked event, then lock again (${cli} lock ${shellWord(name)} --as ${who}); in the foreground (${SHELL_TOOL_TIMEOUT}): ${waitCommand2(p.name, true)}`;
+        const next2 = WORDING.lockHeldNext(cli, shellWord(name), who, waitCommand2(p.name, true));
         emit({ name, granted: false, holder: h, next: next2 }, () => {
           console.log(held);
           console.log(next2);
@@ -10021,7 +10067,7 @@ ${USAGE}`);
     case "unlock": {
       const p = await caller();
       const name = args.positional[0] ?? fail(`unlock: which resource?
-${USAGE}`);
+${verbHelp()}`);
       const r = await board.unlock(p, name);
       emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
       break;
@@ -10091,6 +10137,7 @@ if (args.verb === "--help") {
 if (args.verb === "link") {
   try {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
+    clearLinkTold(member);
     await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     process.exit(0);
   } catch (e) {
@@ -10108,7 +10155,10 @@ if (args.verb === "serve") {
   try {
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    if (linkToStart && !linkTold(linkToStart)) {
+      (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+      markLinkTold(linkToStart);
+    }
   } catch (e) {
     const said = e.message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);
