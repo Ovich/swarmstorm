@@ -56,8 +56,8 @@ before(async () => {
   const board = testBoard.writer;
   try {
     const seats = [
-      { id: "S1", title: "the schema", blockers: [] },
-      { id: "S2", title: "the page", blockers: [] },
+      { id: "S1", blockers: [] },
+      { id: "S2", blockers: [] },
     ];
     const planRun = async (title: string, opened: number, closed: number): Promise<number> => {
       at(opened);
@@ -89,8 +89,8 @@ before(async () => {
       group: "idea",
       title: "An idea",
       seats: [
-        { id: "skeptic", title: "the skeptic", role: "skeptic", blockers: [] },
-        { id: "builder", title: "the builder", role: "builder", blockers: [] },
+        { id: "skeptic", role: "skeptic", blockers: [] },
+        { id: "builder", role: "builder", blockers: [] },
       ],
     });
     const skeptic = (await board.join({ run: idea.id, seat: "skeptic", doing: "doubting", files: [] })).member;

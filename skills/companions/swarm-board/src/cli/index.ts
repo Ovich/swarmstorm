@@ -15,11 +15,12 @@ import { boardHome, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
 import { git, gitAnswer, worktreeHolding } from "./git.ts";
+import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { answer, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-import { baseAt, branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
+import { baseAt, baseRef, branchFor, ensureWorktree, worktreeDir, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, sweepLegacyRoot, worktreeDirs } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -133,22 +134,9 @@ const refuseTranscriptFlag = (verb: string): void => {
   if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript\n${USAGE}`);
 };
 
-/** The repository (D29): its common git dir, so every worktree of one repository is one. */
+/** The repository (D29): its common git dir, so every worktree of one repository is one (Place, D5). */
 function repoOf(dir: string): string {
-  const common = git(dir, "rev-parse", "--git-common-dir");
-  if (!common) fail(`not in a git repository: ${dir}`);
-  const abs = path.resolve(dir, common as string);
-  try {
-    return fs.realpathSync.native(abs);
-  } catch {
-    return abs;
-  }
-}
-
-/** The worktree the CLI runs in, as registered at join (D28). */
-function worktreeOf(dir: string): string | null {
-  const top = git(dir, "rev-parse", "--show-toplevel");
-  return top ? path.resolve(top) : null;
+  return placeRepoOf(dir) ?? fail(`not in a git repository: ${dir}`);
 }
 
 /** Paths `git status` shows changed in a worktree, as it gives them; a rename gives both (D31). */
@@ -485,31 +473,15 @@ export const DELIVERED_LINE = WORDING.delivered;
 /** The worktree a member's paths are relative to: its board worktree once known, else the shell's checkout. */
 let callerWorktree: string | null = null;
 const pathsRoot = (): string | null => callerWorktree ?? worktreeOf(process.cwd());
-const inside = (root: string, dir: string): boolean => {
-  const rel = path.relative(path.resolve(root), path.resolve(dir));
-  return !rel.startsWith("..") && !path.isAbsolute(rel);
-};
-
-/** The file a relative path means (D6): from the current folder when it exists there, else from
- *  the repository root when it exists there; neither refuses, unless `--new` creates it here. */
+/** The file a relative path means (D6), through Place: the member's worktree first; neither refuses, unless `--new`. */
 function resolveClaimPath(file: string, about = false): string {
-  if (path.isAbsolute(file)) return file;
-  const root = pathsRoot();
-  // a shell outside the member's worktree (the no-cd rule): the path is the worktree's (G19)
-  const here = root && !inside(root, process.cwd()) ? path.resolve(root, file) : path.resolve(file);
-  if (fs.existsSync(here)) return here;
-  const fromRoot = root ? path.resolve(root, file) : null;
-  if (fromRoot && fs.existsSync(fromRoot)) return fromRoot;
-  if (args.has("--new")) return here;
-  return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
+  const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
+  if (!missing.length) return abs;
+  return fail(`no such file: ${missing.join(" nor ")}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
 }
 
 /** Repository-relative, forward slashes: what the board stores and every answer names. */
-function repoRelative(abs: string): string {
-  const root = pathsRoot();
-  const rel = root ? path.relative(root, abs) : abs;
-  return rel.split(path.sep).join("/");
-}
+const repoRelative = (abs: string): string => relativeIn(pathsRoot(), abs);
 
 /** `--about`: a path (it has a slash) resolved and made repository-relative; a decision id or a bare name as given. */
 function aboutArg(): string | undefined {
@@ -526,13 +498,13 @@ function parseFile(spec: string): Declared {
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
 
-function declaredPath(file: string): string {
-  if (path.isAbsolute(file)) return file;
-  const here = path.resolve(file);
-  if (fs.existsSync(here)) return here;
+/** A declared file: from the shell's folder when it is there, else from the repository root (created or not). */
+const declaredPath = (file: string): string => {
   const root = worktreeOf(process.cwd());
-  return root ? path.resolve(root, file) : here;
-}
+  const { abs, missing } = resolveIn(root, file);
+  // not there yet: one the seat creates, from the repository root
+  return missing.length && root ? path.resolve(root, file) : abs;
+};
 
 function readSeats(file: string): SeatSpec[] {
   let raw: unknown;
@@ -648,6 +620,8 @@ async function madeWorktree(p: Participant): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // D6: the worktrees an older board made under the data home, swept once
+  for (const line of sweepLegacyRoot()) console.error(`legacy worktree ${line}`);
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
     process.exitCode = 2;
@@ -1112,16 +1086,18 @@ ${USAGE}`);
         break;
       }
       // what the branch wrote without a claim, committed or not, before the lock; a flag informs, never blocks
-      const reconciled = p.worktree ? branchChangedIn(p.worktree, onto) : [];
+      // V8: a base only on origin is read as origin's, as the worktree was made from it (G36)
+      const ontoRef = p.worktree && fs.existsSync(p.worktree) ? baseRef(p.worktree, onto) : onto;
+      const reconciled = p.worktree ? branchChangedIn(p.worktree, ontoRef) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
-      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", onto, "HEAD") ?? "HEAD") : [];
+      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.worktree ? (headReflogLength(p.worktree) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
-      const guides = guidesFor(guidesHere(p, onto), reconciled);
+      const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);

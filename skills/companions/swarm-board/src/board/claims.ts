@@ -71,9 +71,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     ).run();
   };
 
-  /** Every live holder of `rel`, in claim order. */
+  /** Every live holder of `rel`, in claim order: of the path itself, or of a directory it is under (G42). */
   const holdersOf = (repo: string, rel: string): ClaimRow[] =>
-    (db.prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND path = ? ORDER BY rowid").all(repo, rel) as Row[])
+    (
+      db
+        .prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid")
+        .all(repo, rel, rel) as Row[]
+    )
       .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
       .filter((c) => isLive(c.participant));
   /** `p` holds `rel` (alongside whoever else does); `interface` widens an inside claim, never the reverse.

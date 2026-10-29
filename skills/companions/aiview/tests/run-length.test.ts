@@ -39,7 +39,7 @@ before(async () => {
   try {
     for (const [i, length] of LENGTHS.entries()) {
       mock.timers.setTime(start + i * 3 * 60 * MINUTE);
-      const run = await board.writer.openRun({ repo, group: `run-${i}`, title: `Run ${i}`, seats: [{ id: "S1", title: "the work", blockers: [] }] });
+      const run = await board.writer.openRun({ repo, group: `run-${i}`, title: `Run ${i}`, seats: [{ id: "S1", blockers: [] }] });
       mock.timers.setTime(start + i * 3 * 60 * MINUTE + length);
       await board.writer.closeRun(run.id);
     }

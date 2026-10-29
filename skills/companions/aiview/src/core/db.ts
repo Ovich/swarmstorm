@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
 import { adoptLegacyIndex, DATA_ROOT, DOCS_ROOT, ensureHome } from "./home.ts";
 import { resolveProject, type Project } from "./projects.ts";
 import {
@@ -219,15 +220,7 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
   if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
   // the project is its repository: one board; a repo written as its folder or its .git, or gone from disk, is read once
   // D12: the `.git` of every path of the project that is a repository: the board's repos when none was registered yet
-  // G6: a path that is a git worktree has a `.git` file pointing at its own git dir; the board keys the repository by the common one
-  const commonGitDir = (dotGit: string): string => {
-    if (!fs.statSync(dotGit).isFile()) return dotGit;
-    const own = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, "utf8"))?.[1]?.trim();
-    if (!own) return dotGit;
-    const dir = path.resolve(path.dirname(dotGit), own);
-    const common = path.join(dir, "commondir");
-    return fs.existsSync(common) ? path.resolve(dir, fs.readFileSync(common, "utf8").trim()) : dir;
-  };
+  // G6: a path that is a git worktree has a `.git` file pointing at its own git dir; the board keys the repository by the common one (Place, D5)
   const gitDirsOf = (pathsJson: string): string[] =>
     (JSON.parse(pathsJson) as string[])
       .map((p) => path.join(path.resolve(p), ".git"))
