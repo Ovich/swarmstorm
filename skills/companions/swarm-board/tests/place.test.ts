@@ -11,6 +11,7 @@ import { openBoard, type Board } from "../src/board/board.ts";
 import { commonGitDir, relativeIn, repoOf, resolveIn } from "../src/place/place.ts";
 import { worktrees } from "../src/packs/code/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 let dir: string;
@@ -58,10 +59,10 @@ test("G42: a directory claimed by one member holds every file under it for anoth
     const run = board.openRun({ repo: "/r/.git", kind: "task", group: "g", title: "T", seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
     const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
     const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
-    assert.equal(board.checkEdit(a, "src/dir").allowed, true);
-    const held = board.checkEdit(b, "src/dir/f.ts");
+    assert.equal(codeVerbs(board).checkEdit(a, "src/dir").allowed, true);
+    const held = codeVerbs(board).checkEdit(b, "src/dir/f.ts");
     assert.equal(held.allowed, false, "the file under a's directory is held");
-    assert.equal(board.checkEdit(b, "src/dirt.ts").allowed, true, "a sibling sharing the prefix is free");
+    assert.equal(codeVerbs(board).checkEdit(b, "src/dirt.ts").allowed, true, "a sibling sharing the prefix is free");
   } finally {
     board.close();
   }

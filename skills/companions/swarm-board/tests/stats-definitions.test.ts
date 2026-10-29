@@ -5,6 +5,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { MemberStats, RunStats } from "../src/board/board.ts";
 import { REPO, brainstormRun, clockTo, dropSummary, planRun, recordsBeginAt, scratchBoard, setup, share, type ScratchBoard } from "./fixtures/stats-board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 let s: ScratchBoard;
 beforeEach(async () => {
@@ -20,18 +21,18 @@ test("before shares-since, two members claiming a path one after the other are n
   const run = board.openRun({ repo: REPO, group: "app", title: "app", seats: ["S1", "S2", "S3"].map((id) => ({ id, title: id, blockers: [] })) }).id;
   const join = (seat: string) => board.join({ run, seat, doing: seat, files: [] }).member;
   const a = join("S1");
-  clockTo(1), board.checkEdit(a, "dist/out.js");
-  clockTo(2), board.checkEdit(a, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "dist/out.js");
+  clockTo(2), codeVerbs(board).checkEdit(a, "src/x.ts");
   clockTo(3), board.end(a);
   // b joins after a ended: its claim of dist/out.js follows a's, never beside it
   clockTo(4);
   const b = join("S2");
-  clockTo(5), board.checkEdit(b, "dist/out.js");
+  clockTo(5), codeVerbs(board).checkEdit(b, "dist/out.js");
   // c joins while b is still a member: src/y.ts, claimed by both, is shared
   const c = join("S3");
-  clockTo(6), board.checkEdit(b, "src/y.ts");
+  clockTo(6), codeVerbs(board).checkEdit(b, "src/y.ts");
   clockTo(7), board.end(b);
-  clockTo(8), board.checkEdit(c, "src/y.ts");
+  clockTo(8), codeVerbs(board).checkEdit(c, "src/y.ts");
   clockTo(10), board.closeRun(run);
   await recordsBeginAt(s.file, s.board.stats({ repo: REPO, run }).runs[0].closedAt!);
   await dropSummary(s.file, run);
@@ -47,14 +48,14 @@ test("an untold file with an agreement reads `told: false` and is not counted ag
   const { board } = s;
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
   // src/x.ts: c holds it and lets go, a takes it, b and c share it, but a never tells c; then a agrees with b
-  clockTo(1), board.checkEdit(c, "src/x.ts");
-  clockTo(2), board.release(c, "src/x.ts");
-  clockTo(3), board.checkEdit(a, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(c, "src/x.ts");
+  clockTo(2), codeVerbs(board).release(c, "src/x.ts");
+  clockTo(3), codeVerbs(board).checkEdit(a, "src/x.ts");
   clockTo(3), share(board, b, a, "src/x.ts");
   clockTo(3), share(board, c, [a, b], "src/x.ts");
   clockTo(3), board.post(a, `@${b.name} ${b.seat} owns the top of x`, { about: "src/x.ts", kind: "agreement" });
   // src/y.ts: told and agreed
-  clockTo(4), board.checkEdit(a, "src/y.ts");
+  clockTo(4), codeVerbs(board).checkEdit(a, "src/y.ts");
   clockTo(5), share(board, b, a, "src/y.ts");
   clockTo(6), board.post(a, `@${b.name} ${b.seat} owns the top of y`, { about: "src/y.ts", kind: "agreement" });
   const shared = runOf(run).plan!.shared;
@@ -71,8 +72,8 @@ test("an untold file with an agreement reads `told: false` and is not counted ag
 test("an agreement posted before the tell reads a negative `agreedAfterMs`, never 0 (D46 point 3, SL11)", () => {
   const { board } = s;
   const { run, m: [a, b] } = planRun(board, "app", ["S1", "S2"]);
-  clockTo(1), board.checkEdit(a, "src/x.ts");
-  clockTo(2), board.checkEdit(b, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/x.ts");
+  clockTo(2), codeVerbs(board).checkEdit(b, "src/x.ts");
   clockTo(3), board.post(a, `@${b.name} ${b.seat} owns the top`, { about: "src/x.ts", kind: "agreement" });
   clockTo(5), board.post(b, `@${a.name} I change one function in src/x.ts`, { about: "src/x.ts" });
   const [file] = runOf(run).plan!.shared.perFile;
@@ -123,17 +124,17 @@ test("`MemberStats.endorsed` counts every seat's endorsements; the run's `endors
 test("a flag repeated for the same writer, path and holder counts once; another holder's counts apart (D43, D46 point 7, SL11)", async () => {
   const { board } = s;
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
-  clockTo(1), board.checkEdit(a, "src/y.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/y.ts");
   clockTo(2);
-  const [flag] = board.reconcileWrites(b, ["src/y.ts"]);
+  const [flag] = codeVerbs(board).reconcileWrites(b, ["src/y.ts"]);
   // the board posted the same flag again, as a store from before kept it
   await setup(s.file, (db) => {
     const columns = (db.prepare("SELECT name FROM pragma_table_info('messages') WHERE name <> 'seq'").all() as { name: string }[]).map((c) => c.name).join(", ");
     db.prepare(`INSERT INTO messages (${columns}) SELECT ${columns} FROM messages WHERE seq = ?`).run(flag.seq);
   });
   // c holds src/z.ts and b writes it: another flag
-  clockTo(3), board.checkEdit(c, "src/z.ts");
-  clockTo(4), board.reconcileWrites(b, ["src/z.ts"]);
+  clockTo(3), codeVerbs(board).checkEdit(c, "src/z.ts");
+  clockTo(4), codeVerbs(board).reconcileWrites(b, ["src/z.ts"]);
   const r = runOf(run);
   assert.equal(r.plan!.flags, 2);
   assert.deepEqual([memberOf(r, b.name).flags, memberOf(r, b.name).marks.filter((x) => x.what === "flag").length], [2, 2]);

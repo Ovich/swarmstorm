@@ -17,7 +17,7 @@ const EXCEPTION = "AGENTS EXCEPTION";
 
 /** Sites per file (path relative to src/, `/`-separated) allowed today; each count may only fall. */
 const ALLOWED: Record<string, number> = {
-  "board/board.ts": 45,
+  "board/board.ts": 22,
   "board/events.ts": 3,
   "cli/answer/usage.ts": 8,
 };

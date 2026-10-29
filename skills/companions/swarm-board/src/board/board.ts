@@ -9,7 +9,8 @@ import { SQLITE_PATH } from "./home.ts";
 import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type HeldMergeLock, type PackCtx, type PackRefusal, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
+import { registry, type PackCtx, type PackRefusal, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
+import type { Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -370,15 +371,13 @@ export interface Board {
   setting(name: "retention-days", value?: number): number;
   /** Flags in main, once, each open run whose every member made no call for ten minutes;
    *  a call by a member clears its run's mark. Returns the runs flagged now. */
-  flagStale(now?: Date): RunId[];
-  /** The board's upkeep when due (D16): `prune` then `flagStale`, when the last upkeep, kept in the
+  markStaleRuns(now?: Date): RunId[];
+  /** The board's upkeep when due (D16): `prune` then `markStaleRuns`, when the last upkeep, kept in the
    *  store for every process, is older than UPKEEP_EVERY_MS. The time is recorded first, so a
    *  process due at the same moment skips, and a failure waits for the next due upkeep. True when it ran. */
   upkeepIfDue(now?: Date): boolean;
   /** The open runs, every repository. */
   runs(): Run[];
-  /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
-  worktrees(run?: RunId): MemberWorktree[];
 
   /** `place` is ignored when the member has no pack; `files` are refused when it has no claims.
    *  Declared files become claims where free (*interface* or *inside*); a held one stays declared only. */
@@ -430,25 +429,6 @@ export interface Board {
    *  left for `deliver`. The delivery hook's call at each tool call and each stop of the member's agent (swarm-relay D43). */
   deliverMentions(p: Participant): Delivery;
 
-  /** A claim before an edit of `path` (absolute, or repository-relative), `swarm claim` (D58).
-   *  Free: claimed, silently. Held by others (D40, D41): `p`'s first claim is held until `p` has
-   *  posted about the path mentioning every holder; then `p` holds it too, the other holders named
-   *  once. `interface`: claimed as an interface, an `inside` claim of `p` widened. */
-  checkEdit(p: Participant, path: string, opts?: { interface?: boolean }): EditAllowed | EditHeld;
-  // checkEdit, reconcileWrites, release, lockMerge, merged: refused when the caller's kind has no claims
-  /** Paths written outside the claim: a free one is claimed, a held one flagged on the thread. */
-  reconcileWrites(p: Participant, changed: string[], generated?: string[]): Flag[];
-  release(p: Participant, path: string): void;
-  /** `reflogMark`: the length of the caller's HEAD reflog at the call, kept with a new grant so `merged` replays only a later rebase (D36). */
-  /** `guides`: the guides the branch's changes fall under, which `merged --guides` must settle. */
-  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
-  /** Releases the lock; tells whoever holds or declared one of `files` to rebase onto `sha`,
-   *  every plan on the repository when one of them is an interface (D26). Returns, for each
-   *  merged path, every other member that holds it, or held it during `p`'s run (D63); once `conflicts` are known,
-   *  of a conflicted path only (D5). Records the merge with its conflicts, absent recorded as unknown (D25). */
-  merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
-  /** The merge lock `p` holds, its grant time, branch and reflog mark, for the CLI to replay the rebase since (D33, D36); null when it holds none. */
-  heldMergeLock(p: Participant): HeldMergeLock | null;
   /** A pack verb's server side (board-split#D9, D19): the member's pack answers, before any transaction, with facts or a
    *  `PackRefusal`; `p` null for a call no member makes (a seat's place before its join, a close, a prune). */
   packCall(p: Participant | null, verb: string, input: PackVerbInput): unknown;
@@ -923,12 +903,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
     return board.read(seq);
-  };
-
-  /** A code verb on a kind with no claims is refused before any write (D22, D25). */
-  const gated = (p: Participant, verb: string): Participant => {
-    if (p.pack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
-    return p;
   };
 
   const live = (p: Participant): Participant => {
@@ -1706,11 +1680,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       });
       if (!recorded) return false;
       board.prune(at);
-      board.flagStale(at);
+      board.markStaleRuns(at);
       return true;
     },
 
-    flagStale(at = new Date()) {
+    markStaleRuns(at = new Date()) {
       const silentBefore = at.getTime() - STALE_MS;
       return transaction(() => {
         // an orchestrator silent STALE_MS: one quiet event in its run, until it calls again (D15)
@@ -1744,13 +1718,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     runs() {
       return (db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all() as Row[]).map(toRun);
-    },
-
-    worktrees(run) {
-      const rows = db
-        .prepare(`SELECT p.run, r.plan, p.seat, p.place, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.place IS NOT NULL${run === undefined ? "" : " AND p.run = ?"} ORDER BY p.id`)
-        .all(...(run === undefined ? [] : [run])) as Row[];
-      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.place), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
     },
 
     join({ run, seat, doing, files, place, on }) {
@@ -2552,34 +2519,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         check();
       });
     },
-    checkEdit(p, file, opts = {}) {
-      return claims.checkEdit(gated(live(p), "claim"), file, opts);
-    },
-
-    reconcileWrites(p, changed, generated) {
-      return claims.reconcileWrites(gated(live(p), "reconcile"), changed, generated);
-    },
-
-    release(p, file) {
-      claims.release(gated(live(p), "release"), file);
-    },
-
-    lockMerge(p, onto, reflogMark, guides) {
-      return claims.lockMerge(gated(live(p), "merge-lock"), onto, reflogMark, guides);
-    },
-
-    merged(p, sha, files, conflicts) {
-      return claims.merged(gated(live(p), "merged"), sha, files, conflicts);
-    },
-
-    heldMergeLock(p) {
-      return claims.heldMergeLock(p);
-    },
-
     packCall(p, verb, input) {
       const member = p ? participantById(p.id) : null;
       // an ended member's verb has nothing for its pack to do (the verb itself answers it); afterEnd runs once it has
-      if (member?.ended && verb !== "afterEnd") return null;
+      if (member?.ended && verb !== "afterEnd") {
+        // a write to an ended member's name is refused, as any verb of an ended member is
+        if (registry.all().some((k) => Object.hasOwn(k.writes ?? {}, verb))) live(member);
+        return null;
+      }
       // whose pack answers: the member's own; a seat not joined yet, its seat's row; a run's call, its kind's; else every pack
       const runId = member ? member.run : typeof input.run === "number" ? input.run : null;
       const packs = member
@@ -2591,15 +2538,24 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             : registry.all();
       const ctx = runId !== null ? runPackCtx(runId) : null;
       // a pack verb called by a member whose pack lacks it: the refusal fact the answer module words (D12)
-      const known = registry.all().some((k) => k.verbs.some((v) => v.name === verb));
+      const offers = (k: Pack | null | undefined): boolean => !!k && (k.verbs.some((v) => v.name === verb) || Object.hasOwn(k.writes ?? {}, verb));
+      const known = registry.all().some(offers);
       const own = packs[0];
-      if (member && known && !own?.verbs.some((v) => v.name === verb)) {
+      if (member && known && !offers(own)) {
         const refusal: PackRefusal = { refused: { reason: "no-pack", verb, seatKind: member.verify ? "verifier" : "seat" } };
         return refusal;
       }
       if (member && ctx && own && verb === "beforeEnd") return own.beforeEnd?.(member, ctx) ?? null;
       if (member && ctx && own && verb === "afterEnd") return own.afterEnd?.(member, ctx) ?? {};
-      const answers = packs.filter((k): k is NonNullable<typeof k> => !!k?.run).map((k) => k.run!(verb, member, input, ctx));
+      // a member's write: the pack's tables, in the core's transaction with the call counted (D9, D19)
+      const write = member && own?.writes && Object.hasOwn(own.writes, verb) ? own.writes[verb] : null;
+      if (member && write && own && ctx)
+        return transaction(() => {
+          const out = write.apply(live(member), input, ctx);
+          if (write.countedAs !== null) countCall(member, write.countedAs, write.progress);
+          return out;
+        });
+      const answers = packs.filter((k): k is NonNullable<typeof k> => !!k?.run).map((k) => k.run!(verb, member, input, ctx, claims));
       return answers.length <= 1 ? (answers[0] ?? null) : answers.flat();
     },
 
@@ -2792,14 +2748,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // what the card's call count shows, and the last sign of life "stale" is measured from.
   // `reconcileWrites` is part of `merge-lock` and `end`, not a call.
   /** The verbs that are a member's progress (swarm-relay D36). */
-  const PROGRESS_VERBS: ReadonlySet<string> = new Set(["post", "done", "setDoing", "endorse", "merged"]);
-  const countCall = (p: Participant, verb: string): void => {
+  const PROGRESS_VERBS: ReadonlySet<string> = new Set(["post", "done", "setDoing", "endorse"]);
+  /** `progress`: a pack's verb that is progress of its own (D36), beside the core's PROGRESS_VERBS. */
+  const countCall = (p: Participant, verb: string, progress = false): void => {
     const at = now();
     // board-split D30: a parked member's own call resumes it
     db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, doing = 'unparked' WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     // D36: a post, `done` or `doing` is progress, a look at the board is not
-    if (PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
+    if (progress || PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
     // the call itself, for the member's timeline (D25)
     db.prepare("INSERT INTO call_log (participant, at, verb) VALUES (?, ?, ?)").run(p.id, at, verb);
     // a member's call clears its run's stale mark, so a later silence flags again (D19)
@@ -2832,10 +2789,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   board.endorse = counted("endorse", board.endorse);
   board.deliver = counted("deliver", board.deliver);
   board.wait = counted("wait", board.wait);
-  board.checkEdit = counted("checkEdit", board.checkEdit);
-  board.release = counted("release", board.release);
-  board.lockMerge = counted("lockMerge", board.lockMerge);
-  board.merged = counted("merged", board.merged);
   const read = board.read;
   board.read = (seq, by) => {
     const m = read(seq, by);

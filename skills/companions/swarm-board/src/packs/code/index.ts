@@ -3,9 +3,9 @@
 // server, before any transaction opens (D19); its end refuses work not merged and removes the worktree after (D38).
 import fs from "node:fs";
 import path from "node:path";
-import type { MemberWorktree, Participant } from "../../board/board.ts";
+import type { Conflicts, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
-import type { Pack, PackCtx, PackRefusal, PackVerbInput } from "../types.ts";
+import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
@@ -37,6 +37,24 @@ function makeWorktree(verb: string, member: Participant, input: PackVerbInput, c
 /** The code pack's tables, as the board hands them in the run's context (D20). */
 const tablesOf = (ctx: PackCtx): Claims => ctx.tables;
 
+/** A member's verb on the claims tables, its input as the CLI sends it; the call is counted under `countedAs`. */
+const tableWrite = (countedAs: string | null, apply: (claims: Claims, member: Participant, input: PackVerbInput) => unknown, progress = false): PackWrite => ({
+  countedAs,
+  progress,
+  apply: (member, input, ctx) => apply(tablesOf(ctx), member, input),
+});
+const optional = <T>(v: unknown): T | undefined => (v === null || v === undefined ? undefined : (v as T));
+
+/** The claims verbs a member calls through `packCall` (board-split T11, D9): the core's transaction around each. */
+const CLAIM_WRITES: Record<string, PackWrite> = {
+  "check-edit": tableWrite("checkEdit", (c, m, i) => c.checkEdit(m, String(i.file), { interface: i.interface === true })),
+  release: tableWrite("release", (c, m, i) => c.release(m, String(i.file))),
+  // part of merge-lock and end, not a call of its own
+  reconcile: tableWrite(null, (c, m, i) => c.reconcileWrites(m, i.changed as string[], optional<string[]>(i.generated))),
+  "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional<string>(i.onto), optional<number>(i.reflogMark), optional<string[]>(i.guides))),
+  merged: tableWrite("merged", (c, m, i) => c.merged(m, String(i.sha), i.files as string[], optional<Conflicts>(i.conflicts)), true),
+};
+
 export const codePack: Pack = {
   name: "code",
   verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
@@ -57,8 +75,9 @@ export const codePack: Pack = {
   snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
   held: (db, member) => heldOf(db, member),
   forget: (db, scope) => ("member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run)),
+  writes: CLAIM_WRITES,
 
-  run(verb, member, input, ctx) {
+  run(verb, member, input, ctx, tables) {
     switch (verb) {
       // where a joining seat's worktree goes, named and not made (G20)
       case "place":
@@ -66,17 +85,24 @@ export const codePack: Pack = {
       case "claim":
       case "merge-lock":
         return member && ctx ? makeWorktree(verb, member, input, ctx) : { made: false };
+      // the merge lock the member holds, read for merged's replay (D33, D36); never counted
+      case "held-merge-lock":
+        return member && ctx ? tablesOf(ctx).heldMergeLock(member) : null;
+      // the worktrees members joined from, of the run given or every run
+      case "worktrees":
+        return tables.seatWorktrees(typeof input.run === "number" ? input.run : undefined);
       // a run's close: its worktrees go once clean and merged, each seat's link stopped first
       case "close": {
-        const trees = (input.trees as MemberWorktree[]).filter((w) => worktrees(w.repo).owns(w.worktree) && fs.existsSync(w.worktree));
+        const trees = tables.seatWorktrees(Number(input.run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs.existsSync(w.worktree));
         return trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: w.run, member: w.member, worktree: w.worktree }, w.base) }));
       }
       // `worktree prune`: every worktree folder of each repository the board knows, judged by its latest record
       case "prune": {
-        const known = input.known as MemberWorktree[];
+        const known = tables.seatWorktrees();
+        const repos = [...new Set([...known.map((k) => k.repo), ...(input.repos as string[])])];
         const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
         const recordOf = (dir: string): WorktreeRecord | null => known.filter((k) => fold(k.worktree) === fold(dir)).at(-1) ?? null;
-        return sweepAll(input.repos as string[], recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
+        return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
       }
       case "legacy":
         return sweepLegacy();

@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -34,7 +35,7 @@ test("D7: a merge of a file named in an agreement wakes the agreement's other pa
   board.deliver(w3);
   const waiting = board.wait(w3, { mentionsOnly: true, timeoutMs: 3000 });
   const bystander = board.wait(w2, { mentionsOnly: true, timeoutMs: 600 });
-  board.merged(w1, "abc123", ["docs/notes.md"]);
+  codeVerbs(board).merged(w1, "abc123", ["docs/notes.md"]);
   const got = await waiting;
   assert.equal(got.full.length, 1);
   assert.match(got.full[0].body, /merged abc123/);
@@ -48,7 +49,7 @@ test("D7: a merge of another file wakes nobody of the agreement; the merger is n
   board.deliver(w1);
   board.deliver(w3);
   const waiting = board.wait(w3, { mentionsOnly: true, timeoutMs: 600 });
-  board.merged(w1, "abc123", ["src/other.ts"]);
+  codeVerbs(board).merged(w1, "abc123", ["src/other.ts"]);
   assert.deepEqual((await waiting).full, []);
 });
 
@@ -92,7 +93,7 @@ test("G27: an agreement replying to the member's own post rides on its next answ
 
 test("G27: an agreement about a file the member holds, not replying to its own post, still wakes it", () => {
   const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
-  board.checkEdit(w3, "src/y.ts");
+  codeVerbs(board).checkEdit(w3, "src/y.ts");
   const agreed = board.post(w1, "@g/w3 w1 the top, w3 the rest", { kind: "agreement", about: "src/y.ts" });
   assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [agreed.seq]);
 });

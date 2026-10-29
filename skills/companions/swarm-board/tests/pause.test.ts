@@ -88,7 +88,7 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   board.livenessTick(run.id, at(0), linked);
   board.pause(orchestrator);
   for (const s of [6, 11, 30, 60]) board.livenessTick(run.id, at(s), linked);
-  board.flagStale(new Date(Date.now() + 60 * 60_000));
+  board.markStaleRuns(new Date(Date.now() + 60 * 60_000));
   assert.equal(alerts().length, 0);
   board.resume(orchestrator);
   board.livenessTick(run.id, new Date(Date.now() + 3_000), linked);

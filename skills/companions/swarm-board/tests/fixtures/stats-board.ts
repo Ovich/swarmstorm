@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type RunId, type SeatSpec } from "../../src/board/board.ts";
+import { codeVerbs } from "../../src/packs/code/calls.ts";
 
 export const MIN = 60 * 1000;
 export const DAY = 24 * 60 * MIN;
@@ -59,7 +60,7 @@ export function brainstormRun(board: Board, group: string, ids: string[], on: Re
 /** `p` shares `path` with its holder `holder`: refused, posts naming it to the holder, claims (D7, D41). */
 export function share(board: Board, p: Participant, holder: Participant | Participant[], file: string): void {
   const holders = Array.isArray(holder) ? holder : [holder];
-  board.checkEdit(p, file);
+  codeVerbs(board).checkEdit(p, file);
   board.post(p, `${holders.map((h) => `@${h.name}`).join(" ")} I change one function in ${file}`, { about: file });
 }
 

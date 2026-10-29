@@ -13,6 +13,7 @@ import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
 // The board is seeded through swarm's board server, which the route's reader and the spawned CLI read.
 import { SWARM_CLI, startTestBoard, type TestBoard } from "./fixtures/board-server.ts";
+import { codeVerbs } from "../../swarm-board/src/packs/code/calls.ts";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 let home: string;
@@ -66,13 +67,13 @@ before(async () => {
       const s2 = (await board.join({ run: run.id, seat: "S2", doing: "the page", files: [] })).member;
       await board.deliver(s1);
       await board.deliver(s2);
-      await board.checkEdit(s2, "src/a.ts");
+      await codeVerbs(board).checkEdit(s2, "src/a.ts");
       await board.post(s2, `@${s1.name} I add a helper at the end of src/a.ts`, { about: "src/a.ts" });
-      await board.checkEdit(s2, "src/a.ts");
+      await codeVerbs(board).checkEdit(s2, "src/a.ts");
       await board.post(s1, `@${s2.name} S2 adds the helper, S1 the rest`, { about: "src/a.ts", kind: "agreement" });
       at(opened - 0.5);
-      await board.lockMerge(s1, "main");
-      await board.merged(s1, "abc123", ["src/a.ts"], { files: [] });
+      await codeVerbs(board).lockMerge(s1, "main");
+      await codeVerbs(board).merged(s1, "abc123", ["src/a.ts"], { files: [] });
       await board.end(s1);
       await board.end(s2);
       at(closed);

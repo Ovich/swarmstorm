@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBoard, type Board } from "../src/board/board.ts";
+import { openBoard, type Board, type EditAllowed, type EditHeld } from "../src/board/board.ts";
+import { codeVerbs, PackVerbRefused } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/one/.git";
 const SLICES = [
@@ -265,12 +266,12 @@ const claimed = () => {
 };
 
 const FREE = { allowed: true, sharedWith: [], notice: null };
-const noticeOf = (v: ReturnType<Board["checkEdit"]>): string | null => (v.allowed ? v.notice : `refused: ${v.refusal}`);
+const noticeOf = (v: EditAllowed | EditHeld): string | null => (v.allowed ? v.notice : `refused: ${v.refusal}`);
 
 test("the first edit of a held file is held, naming the holder and the post that opens it (D41)", () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.checkEdit(s3, path.join(wt("s3"), "src/a.ts")), FREE);
-  const v = board.checkEdit(s5, path.join(wt("s5"), "src/a.ts"));
+  assert.deepEqual(codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/a.ts")), FREE);
+  const v = codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts"));
   assert.equal(v.allowed, false);
   const refusal = (v as { refusal: string }).refusal;
   assert.match(refusal, /review-tool\/S3/);
@@ -281,22 +282,22 @@ test("the first edit of a held file is held, naming the holder and the post that
 
 test("a post about the path mentioning the holder opens it; both then hold it", () => {
   const { s3, s5 } = claimed();
-  board.checkEdit(s5, path.join(wt("s5"), "src/a.ts"));
+  codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts"));
   board.post(s5, "@S3 I add isExpired() at the end", { about: "src/a.ts" });
-  assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), {
+  assert.deepEqual(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts")), {
     allowed: true,
     sharedWith: [{ member: "review-tool/S3", doing: "the page" }],
     notice: "src/a.ts is also held by review-tool/S3: the page",
   });
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S3", "review-tool/S5"]);
   // the holder's next edit goes through too, told once of the newcomer
-  assert.equal(noticeOf(board.checkEdit(s3, "src/a.ts")), "src/a.ts is also held by review-tool/S5: the skill");
+  assert.equal(noticeOf(codeVerbs(board).checkEdit(s3, "src/a.ts")), "src/a.ts is also held by review-tool/S5: the skill");
 });
 
 test("a body naming the file opens it as an about does", () => {
   const { s5 } = claimed();
   board.post(s5, "@S3 in a.ts I only append a helper");
-  assert.equal(board.checkEdit(s5, "src/a.ts").allowed, true);
+  assert.equal(codeVerbs(board).checkEdit(s5, "src/a.ts").allowed, true);
 });
 
 test("a post about the path mentioning no holder does not open it", () => {
@@ -305,43 +306,43 @@ test("a post about the path mentioning no holder does not open it", () => {
   board.post(s5, "I add isExpired() at the end", { about: "src/a.ts" });
   board.post(s5, "@S1 I add isExpired() at the end", { about: "src/a.ts" }); // S1 does not hold it
   board.post(s5, "@S3 about something else", { about: "src/b.ts" });
-  assert.equal(board.checkEdit(s5, "src/a.ts").allowed, false);
+  assert.equal(codeVerbs(board).checkEdit(s5, "src/a.ts").allowed, false);
 });
 
 test("a path held by two opens only once every holder is mentioned, in one post or several", () => {
   const { run, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
-  board.checkEdit(s5, "src/a.ts");
+  codeVerbs(board).checkEdit(s5, "src/a.ts");
   const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   board.post(s1, "@S3 one line in a.ts", { about: "src/a.ts" });
-  const v = board.checkEdit(s1, "src/a.ts");
+  const v = codeVerbs(board).checkEdit(s1, "src/a.ts");
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /`swarm post "@review-tool\/S3 @review-tool\/S5 …"/);
   board.post(s1, "@S5 one line in a.ts", { about: "src/a.ts" });
-  assert.equal(board.checkEdit(s1, "src/a.ts").allowed, true);
+  assert.equal(codeVerbs(board).checkEdit(s1, "src/a.ts").allowed, true);
 });
 
 test("the notice is given once per member and path", () => {
   const { s3, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
   assert.deepEqual(
-    [1, 2, 3].map(() => noticeOf(board.checkEdit(s5, "src/a.ts"))),
+    [1, 2, 3].map(() => noticeOf(codeVerbs(board).checkEdit(s5, "src/a.ts"))),
     ["src/a.ts is also held by review-tool/S3: the page", null, null],
   );
   // another shared path is told of on its own
   board.post(s3, "@S5 one line in b.ts", { about: "src/b.ts" });
-  assert.equal(noticeOf(board.checkEdit(s3, "src/b.ts")), "src/b.ts is also held by review-tool/S5: the skill");
-  assert.equal(noticeOf(board.checkEdit(s3, "src/b.ts")), null);
+  assert.equal(noticeOf(codeVerbs(board).checkEdit(s3, "src/b.ts")), "src/b.ts is also held by review-tool/S5: the skill");
+  assert.equal(noticeOf(codeVerbs(board).checkEdit(s3, "src/b.ts")), null);
 });
 
 test("release drops one holder of a shared path", () => {
   const { run, s3, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
-  board.checkEdit(s5, "src/a.ts");
-  board.release(s3, "src/a.ts");
+  codeVerbs(board).checkEdit(s5, "src/a.ts");
+  codeVerbs(board).release(s3, "src/a.ts");
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S5"]);
   const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
-  const v = board.checkEdit(s1, "src/a.ts");
+  const v = codeVerbs(board).checkEdit(s1, "src/a.ts");
   assert.match((v as { refusal: string }).refusal, /^src\/a\.ts is also held by review-tool\/S5 \(/);
 });
 
@@ -356,11 +357,11 @@ test("merged mentions every other holder of a shared path", () => {
   const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   for (const p of [s1, s5]) {
     board.post(p, "@S3 @S1 my part of a.ts", { about: "src/a.ts" });
-    assert.equal(board.checkEdit(p, "src/a.ts").allowed, true);
+    assert.equal(codeVerbs(board).checkEdit(p, "src/a.ts").allowed, true);
   }
   for (const p of [s1, s3, s5]) board.deliver(p);
-  board.lockMerge(s3);
-  board.merged(s3, "abc123", ["src/a.ts"]);
+  codeVerbs(board).lockMerge(s3);
+  codeVerbs(board).merged(s3, "abc123", ["src/a.ts"]);
   const m = board.deliver(s5).full[0];
   assert.match(m.body, /^merged abc123: rebase your branch onto it./);
   assert.deepEqual([...m.mentions].sort(), ["review-tool/S1", "review-tool/S5"]);
@@ -391,57 +392,57 @@ test("holds the first edit across two runs on one repository", () => {
   claimed();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [], place: wt("swarm-s1") }).member;
-  const v = board.checkEdit(s1, path.join(wt("swarm-s1"), "src/b.ts"));
+  const v = codeVerbs(board).checkEdit(s1, path.join(wt("swarm-s1"), "src/b.ts"));
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5 \(\w+ \w+: the skill\)/);
   // a run on another repository holds nothing here
   const far = board.openRun({ repo: "/repos/two/.git", group: "far", title: "C", seats: SLICES });
   const f1 = board.join({ run: far.id, seat: "S1", doing: "x", files: [], place: wt("far") }).member;
-  assert.deepEqual(board.checkEdit(f1, path.join(wt("far"), "src/b.ts")), FREE);
+  assert.deepEqual(codeVerbs(board).checkEdit(f1, path.join(wt("far"), "src/b.ts")), FREE);
 });
 
 test("widens the claim on a free undeclared path, silently", () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.checkEdit(s3, path.join(wt("s3"), "src/new.ts")), FREE);
-  const v = board.checkEdit(s5, path.join(wt("s5"), "src/new.ts"));
+  assert.deepEqual(codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/new.ts")), FREE);
+  const v = codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/new.ts"));
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /src\/new\.ts is also held by review-tool\/S3/);
 });
 
 test("a worktree path and the checkout path are one claim", () => {
   const { s3, s5 } = claimed();
-  assert.equal(board.checkEdit(s5, path.join(CHECKOUT, "src", "a.ts")).allowed, false);
-  assert.equal(board.checkEdit(s5, path.join(wt("s5"), "src", "a.ts")).allowed, false);
-  assert.equal(board.checkEdit(s5, "src/a.ts").allowed, false);
-  board.checkEdit(s3, path.join(CHECKOUT, "src", "c.ts"));
-  assert.equal(board.checkEdit(s5, path.join(wt("s5"), "src", "c.ts")).allowed, false);
+  assert.equal(codeVerbs(board).checkEdit(s5, path.join(CHECKOUT, "src", "a.ts")).allowed, false);
+  assert.equal(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src", "a.ts")).allowed, false);
+  assert.equal(codeVerbs(board).checkEdit(s5, "src/a.ts").allowed, false);
+  codeVerbs(board).checkEdit(s3, path.join(CHECKOUT, "src", "c.ts"));
+  assert.equal(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src", "c.ts")).allowed, false);
   // outside every root of the repository: no claim at all
-  assert.deepEqual(board.checkEdit(s5, path.resolve("/elsewhere/src/a.ts")), FREE);
+  assert.deepEqual(codeVerbs(board).checkEdit(s5, path.resolve("/elsewhere/src/a.ts")), FREE);
 });
 
 test("end releases the claims", () => {
   const { s3, s5 } = claimed();
   board.end(s3);
-  assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
+  assert.deepEqual(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
 });
 
 test("seat done releases a stale member's claims", () => {
   const { run, s5 } = claimed();
   board.setSeatState(run.id, "S3", "done");
-  assert.deepEqual(board.checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
+  assert.deepEqual(codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts")), FREE);
 });
 
 test("claims a free file written outside the claim", () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.reconcileWrites(s5, ["src/free.ts", "src/b.ts"]), []);
-  const v = board.checkEdit(s3, path.join(wt("s3"), "src/free.ts"));
+  assert.deepEqual(codeVerbs(board).reconcileWrites(s5, ["src/free.ts", "src/b.ts"]), []);
+  const v = codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/free.ts"));
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5/);
 });
 
 test("flags a held file written outside the claim, mentioning both", () => {
   const { s3, s5 } = claimed();
-  const flags = board.reconcileWrites(s5, ["src/a.ts"]);
+  const flags = codeVerbs(board).reconcileWrites(s5, ["src/a.ts"]);
   assert.equal(flags.length, 1);
   assert.equal(flags[0].path, "src/a.ts");
   assert.equal(flags[0].holder, "review-tool/S3");
@@ -450,45 +451,45 @@ test("flags a held file written outside the claim, mentioning both", () => {
   assert.equal(m.about, "src/a.ts");
   assert.deepEqual(board.deliver(s3).full.map((x) => x.seq), [flags[0].seq]);
   // the holder keeps it
-  assert.equal(board.checkEdit(s5, "src/a.ts").allowed, false);
+  assert.equal(codeVerbs(board).checkEdit(s5, "src/a.ts").allowed, false);
 });
 
 test("grants the lock to one member at a time", () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  board.merged(s3, "abc123", ["src/a.ts"]);
-  assert.deepEqual(board.lockMerge(s5), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(s5), { granted: false, holder: "review-tool/S3" });
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  codeVerbs(board).merged(s3, "abc123", ["src/a.ts"]);
+  assert.deepEqual(codeVerbs(board).lockMerge(s5), { granted: true });
 });
 
 test("a member refused the lock hears its release by merged in a mentions-only wait (D65)", async () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(s5), { granted: false, holder: "review-tool/S3" });
   const merger = await another();
   // S3 merged a file S5 neither holds nor declared: only the refusal makes S5 a reader
-  setTimeout(() => merger.merged(merger.participant(s3.name)!, "abc123", ["src/a.ts"]), 100);
+  setTimeout(() => codeVerbs(merger).merged(merger.participant(s3.name)!, "abc123", ["src/a.ts"]), 100);
   const d = await board.wait(s5, { timeoutMs: 5000, mentionsOnly: true });
   assert.equal(d.full.length, 1);
   assert.match(d.full[0].body, /the merge lock is free: @review-tool\/S5/);
   assert.ok(d.full[0].mentions.includes("review-tool/S5"));
   // the record is cleared: the next merge does not mention S5 again
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  board.merged(s3, "def456", ["src/a.ts"]);
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  codeVerbs(board).merged(s3, "def456", ["src/a.ts"]);
   assert.equal(board.deliver(s5).full.length, 0);
 });
 
 test("a member refused the lock hears its release by the holder's end (D65)", async () => {
   const { s3, s5 } = claimed();
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  assert.deepEqual(board.lockMerge(s5), { granted: false, holder: "review-tool/S3" });
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(s5), { granted: false, holder: "review-tool/S3" });
   const ender = await another();
   setTimeout(() => ender.end(ender.participant(s3.name)!), 100);
   const d = await board.wait(s5, { timeoutMs: 5000, mentionsOnly: true });
   assert.equal(d.full.length, 1);
   assert.match(d.full[0].body, /the merge lock is free: @review-tool\/S5/);
-  assert.deepEqual(board.lockMerge(s5), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(s5), { granted: true });
 });
 
 test("a refusal recorded under one holder is not carried to the next (D65)", () => {
@@ -497,12 +498,12 @@ test("a refusal recorded under one holder is not carried to the next (D65)", () 
   board.deliver(s3);
   board.deliver(s5);
   board.deliver(s1);
-  board.lockMerge(s3);
-  board.lockMerge(s5); // refused under S3
+  codeVerbs(board).lockMerge(s3);
+  codeVerbs(board).lockMerge(s5); // refused under S3
   board.end(s3); // tells S5, clears the record
   assert.equal(board.deliver(s5).full.length, 1);
-  assert.deepEqual(board.lockMerge(s1), { granted: true });
-  board.merged(s1, "abc123", ["src/c.ts"]);
+  assert.deepEqual(codeVerbs(board).lockMerge(s1), { granted: true });
+  codeVerbs(board).merged(s1, "abc123", ["src/c.ts"]);
   assert.equal(board.deliver(s5).full.length, 0, "S5 was not refused under S1");
 });
 
@@ -514,9 +515,9 @@ test("merged releases the lock and mentions holders and declarers", () => {
   board.deliver(s5);
   board.deliver(s1);
   const merger = board.participant("review-tool/orchestrator")!;
-  assert.deepEqual(board.lockMerge(merger), { granted: true });
-  board.merged(merger, "abc123", ["src/b.ts"]);
-  assert.deepEqual(board.lockMerge(s3), { granted: true }, "the lock was released");
+  assert.deepEqual(codeVerbs(board).lockMerge(merger), { granted: true });
+  codeVerbs(board).merged(merger, "abc123", ["src/b.ts"]);
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true }, "the lock was released");
 
   const forS5 = board.deliver(s5).full;
   const forS1 = board.deliver(s1).full;
@@ -538,8 +539,8 @@ test("an interface file in a merge is announced to @swarm, and reaches the other
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [], place: wt("far") }).member;
   for (const p of [s3, s5, far]) board.deliver(p);
-  board.lockMerge(s3);
-  board.merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
+  codeVerbs(board).lockMerge(s3);
+  codeVerbs(board).merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
   for (const p of [s5, far]) {
     const d = board.deliver(p);
     assert.equal(d.full.length, 1, `${p.name} got the announcement in full`);
@@ -554,8 +555,8 @@ test("a plan merge of an interface file never mentions a brainstorm seat subscri
   const debate = board.openRun({ repo: REPO, kind: "brainstorm", group: "topic", title: "T", seats: SLICES });
   const seat = board.join({ run: debate.id, seat: "S1", doing: "arguing", files: [], on: [] }).member;
   board.deliver(seat);
-  board.lockMerge(s3);
-  board.merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
+  codeVerbs(board).lockMerge(s3);
+  codeVerbs(board).merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
   const event = board.snapshot(REPO).events.find((e) => /^merged def456: rebase your branch onto it./.test(e.body))!;
   assert.ok(!board.read(event.seq).mentions.includes("topic/*"), "the seat's run is not @all-ed");
   assert.notEqual(event.channel, "main");
@@ -586,7 +587,7 @@ test("a snapshot shows two plans on one repository", () => {
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [{ path: "src/api.ts", interface: true }], place: wt("swarm-s1") }).member;
   board.post(s3, "@swarm/S1 one thread", { about: "src/a.ts" });
-  board.lockMerge(s1);
+  codeVerbs(board).lockMerge(s1);
 
   const snap = board.snapshot(REPO);
   assert.equal(snap.repo, REPO);
@@ -687,13 +688,13 @@ test("each write fires onChange once with its repository", async () => {
   await settle("post");
   board.setSeatState(run.id, "S3", "running");
   await settle("seat state");
-  board.checkEdit(s3, "src/new.ts");
+  codeVerbs(board).checkEdit(s3, "src/new.ts");
   await settle("claim widened");
-  board.release(s3, "src/new.ts");
+  codeVerbs(board).release(s3, "src/new.ts");
   await settle("claim released");
-  board.lockMerge(s3);
+  codeVerbs(board).lockMerge(s3);
   await settle("lock taken");
-  board.merged(s3, "abc", ["src/a.ts"]);
+  codeVerbs(board).merged(s3, "abc", ["src/a.ts"]);
   await settle("lock released");
   board.end(s3);
   await settle("end");
@@ -710,16 +711,16 @@ test("calls counts every board call of a member, one each, a wait's looks none (
     call();
     assert.equal(calls(), before + 1, what);
   };
-  step("claim", () => board.checkEdit(s3, path.join(wt("s3"), "src/c.ts")));
+  step("claim", () => codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/c.ts")));
   step("post", () => board.post(s3, "@S5 a word"));
   step("agree", () => board.post(s3, "S3 changes c.ts", { kind: "agreement", with: ["orchestrator"] }));
   step("doing", () => board.setDoing(s3, "the tests"));
   step("deliver", () => board.deliver(s3));
   const seq = board.post(s5, "@S3 hello").seq;
   step("read", () => board.read(seq, s3));
-  step("release", () => board.release(s3, path.join(wt("s3"), "src/c.ts")));
-  step("merge-lock", () => board.lockMerge(s3));
-  step("merged", () => board.merged(s3, "abc123", []));
+  step("release", () => codeVerbs(board).release(s3, path.join(wt("s3"), "src/c.ts")));
+  step("merge-lock", () => codeVerbs(board).lockMerge(s3));
+  step("merged", () => codeVerbs(board).merged(s3, "abc123", []));
   board.deliver(s3); // nothing left for s3: the wait below times out after several looks
   const before = calls();
   await board.wait(s3, { timeoutMs: 1300 }); // more than one look: the poll runs every second
@@ -736,8 +737,8 @@ test("an ended member's doing says how it ended, and its end time is kept (D66)"
   const { s3, s5 } = claimed();
   board.setDoing(s3, "writing src/cli.js");
   board.setDoing(s5, "writing src/b.ts");
-  assert.deepEqual(board.lockMerge(s3), { granted: true });
-  board.merged(s3, "abc123", []);
+  assert.deepEqual(codeVerbs(board).lockMerge(s3), { granted: true });
+  codeVerbs(board).merged(s3, "abc123", []);
   board.end(s3);
   board.end(s5);
   const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r]));
@@ -750,8 +751,8 @@ test("an ended member's doing says how it ended, and its end time is kept (D66)"
 
 test("a member joined again starts unmerged and live (D66)", () => {
   const { run, s3 } = claimed();
-  board.lockMerge(s3);
-  board.merged(s3, "abc123", []);
+  codeVerbs(board).lockMerge(s3);
+  codeVerbs(board).merged(s3, "abc123", []);
   board.end(s3);
   const again = board.join({ run: run.id, seat: "S3", doing: "a second pass", files: [], place: wt("s3") }).member;
   assert.equal(board.snapshot(REPO).roster.find((r) => r.member === again.name)!.ended, null);
@@ -761,13 +762,13 @@ test("a member joined again starts unmerged and live (D66)", () => {
 
 test("a flag appears and clears with its claim", () => {
   const { s3, s5 } = claimed();
-  board.reconcileWrites(s5, ["src/a.ts", "src/free.ts"]);
+  codeVerbs(board).reconcileWrites(s5, ["src/a.ts", "src/free.ts"]);
   assert.deepEqual(board.snapshot(REPO).flags, [
     { path: "src/a.ts", member: "review-tool/S5" },
     { path: "src/free.ts", member: "review-tool/S5" },
   ]);
-  board.release(s3, "src/a.ts"); // the holder's claim goes, and with it the flag
-  board.release(s5, "src/free.ts");
+  codeVerbs(board).release(s3, "src/a.ts"); // the holder's claim goes, and with it the flag
+  codeVerbs(board).release(s5, "src/free.ts");
   assert.deepEqual(board.snapshot(REPO).flags, []);
 });
 
@@ -803,7 +804,7 @@ test("a store from before shared claims is rebuilt keyed by holder, its claims k
   assert.equal(s3.id, 2);
   assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["review-tool/S3"], interface: true }]);
   old.post(s5, "@S3 one helper", { about: "src/a.ts" });
-  assert.equal(old.checkEdit(s5, "src/a.ts").allowed, true);
+  assert.equal(codeVerbs(old).checkEdit(s5, "src/a.ts").allowed, true);
   assert.deepEqual(old.snapshot(REPO).files[0].holders, ["review-tool/S3", "review-tool/S5"]);
 });
 
@@ -832,7 +833,7 @@ test("the hard rule: run A's plain post reaches run B neither in full nor as a l
   const mention = board.post(s3, "@SW·S1 your schema touches mine");
   assert.deepEqual(board.deliver(far).full.map((x) => x.seq), [mention.seq]);
 
-  assert.equal(board.checkEdit(far, "src/x.ts").allowed, true);
+  assert.equal(codeVerbs(board).checkEdit(far, "src/x.ts").allowed, true);
   const agreement = board.post(s3, "S1 first, then S3", { about: "src/x.ts", kind: "agreement", with: ["orchestrator"] });
   assert.deepEqual(board.deliver(far).full.map((x) => x.seq), [agreement.seq]);
 
@@ -906,9 +907,9 @@ test("endorse backs an agreement: a mention of its author, its about copied", ()
 
 test("an agreement about a path held by members of two runs keeps its author's run and reaches the other holder", () => {
   const { run, other, s3, far } = twoRuns();
-  assert.equal(board.checkEdit(far, "src/x.ts").allowed, true);
+  assert.equal(codeVerbs(board).checkEdit(far, "src/x.ts").allowed, true);
   board.post(s3, "@swarm/S1 I add a helper to src/x.ts", { about: "src/x.ts" });
-  assert.equal(board.checkEdit(s3, "src/x.ts").allowed, true);
+  assert.equal(codeVerbs(board).checkEdit(s3, "src/x.ts").allowed, true);
   const a = board.post(far, "S1 first, then S3", { about: "src/x.ts", kind: "agreement", with: ["orchestrator"] });
   assert.equal(a.run, other.id);
   assert.ok(board.deliver(s3).full.some((x) => x.seq === a.seq));
@@ -929,14 +930,15 @@ test("a brainstorm run refuses files, worktrees and every code verb, writing not
   assert.equal(seat.kind, "brainstorm");
   const unchanged = JSON.stringify(board.snapshot(REPO));
   const verbs: [string, () => unknown][] = [
-    ["claim", () => board.checkEdit(seat, "src/a.ts")],
-    ["reconcile", () => board.reconcileWrites(seat, ["src/a.ts"])],
-    ["release", () => board.release(seat, "src/a.ts")],
-    ["merge-lock", () => board.lockMerge(seat)],
-    ["merged", () => board.merged(seat, "abc", ["src/a.ts"])],
+    ["check-edit", () => codeVerbs(board).checkEdit(seat, "src/a.ts")],
+    ["reconcile", () => codeVerbs(board).reconcileWrites(seat, ["src/a.ts"])],
+    ["release", () => codeVerbs(board).release(seat, "src/a.ts")],
+    ["lock-merge", () => codeVerbs(board).lockMerge(seat)],
+    ["merged", () => codeVerbs(board).merged(seat, "abc", ["src/a.ts"])],
   ];
+  // a seat with no pack is refused the code verb, the fact the answer module words (D12)
   for (const [verb, call] of verbs) {
-    assert.throws(call, new RegExp(`${verb}: a brainstorm run has no claims`));
+    assert.throws(call, (e: unknown) => e instanceof PackVerbRefused && e.fact.refused.reason === "no-pack" && e.fact.refused.verb === verb);
     assert.equal(JSON.stringify(board.snapshot(REPO)), unchanged, verb);
   }
 });
@@ -968,7 +970,7 @@ test("a store from before channels opens: a row with run null reads as its autho
   const m = old.post(s3, "@S5 after");
   assert.equal(m.run, 1);
   assert.deepEqual(old.deliver(s5).full.map((x) => x.seq), [m.seq]);
-  assert.equal(old.checkEdit(s3, "src/a.ts").allowed, true);
+  assert.equal(codeVerbs(old).checkEdit(s3, "src/a.ts").allowed, true);
   assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"], interface: false }]);
 });
 

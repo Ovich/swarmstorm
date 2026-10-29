@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoardReader } from "../../swarm-board/src/client/reader.ts";
 import { SWARM_CLI, startTestBoard } from "./fixtures/board-server.ts";
+import { codeVerbs } from "../../swarm-board/src/packs/code/calls.ts";
 
 test("aiview reads a run through the reader", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aiview-board-reader-"));
@@ -47,11 +48,11 @@ test("`BoardReader.stats` deep-equals `Board.stats` for a run, the across scopes
     const plan = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats });
     const s1 = (await writer.join({ run: plan.id, seat: "S1", doing: "the schema", files: [{ path: "src/a.ts", interface: true }] })).member;
     const s2 = (await writer.join({ run: plan.id, seat: "S2", doing: "the page", files: [] })).member;
-    await writer.checkEdit(s2, "src/a.ts");
+    await codeVerbs(writer).checkEdit(s2, "src/a.ts");
     await writer.post(s2, `@${s1.name} I add a helper to src/a.ts`, { about: "src/a.ts" });
     mock.timers.tick(60_000);
-    assert.equal((await writer.lockMerge(s1, "main")).granted, true);
-    await writer.merged(s1, "abc123", ["src/a.ts"], { files: ["src/a.ts"] });
+    assert.equal((await codeVerbs(writer).lockMerge(s1, "main")).granted, true);
+    await codeVerbs(writer).merged(s1, "abc123", ["src/a.ts"], { files: ["src/a.ts"] });
     await writer.end(s1);
     await writer.end(s2);
     mock.timers.tick(60_000);

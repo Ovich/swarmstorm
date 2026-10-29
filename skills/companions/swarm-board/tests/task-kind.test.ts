@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -32,7 +33,7 @@ test("a task run: workers join, a task posted to w2 reaches w2 in full and w1 as
   assert.equal(toW2.full.length, 1);
   assert.match(toW2.full[0].body, /rename the config loader/);
   assert.equal(board.deliverMentions(w1).full.length, 0);
-  assert.equal(board.lockMerge(w2).granted, true);
+  assert.equal(codeVerbs(board).lockMerge(w2).granted, true);
 });
 
 test("a task posted to a seat before its worker joins is the first thing that worker receives; other seats' tasks are not its", () => {

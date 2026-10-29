@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBoard } from "../src/board/board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
@@ -273,11 +274,11 @@ const crossRuns = async () => {
 test("across runs: the post that opens a held file keeps its author's run and opens it; the agreement reaches the claimer", async () => {
   const { board, mine, theirs } = await crossRuns();
   try {
-    assert.equal(board.checkEdit(mine, "src/x.ts").allowed, false);
+    assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, false);
     const ask = board.post(mine, "@swarm/S3 I add a helper to src/x.ts", { about: "src/x.ts" });
     assert.equal(ask.run, mine.run);
     assert.deepEqual(board.deliver(theirs).full.map((m) => m.seq), [ask.seq]);
-    assert.equal(board.checkEdit(mine, "src/x.ts").allowed, true);
+    assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, true);
     const agreed = board.post(theirs, "review-tool/S3 adds the helper at the end", { about: "src/x.ts", kind: "agreement" });
     assert.equal(agreed.run, theirs.run);
     assert.deepEqual(board.deliver(mine).full.map((m) => m.seq), [agreed.seq]);
@@ -289,7 +290,7 @@ test("across runs: the post that opens a held file keeps its author's run and op
 test("across runs: the answer line the holder gets carries no --main, and its agreement reaches the claimer before its reclaim (D12)", async () => {
   const { board, mine, theirs } = await crossRuns();
   try {
-    assert.equal(board.checkEdit(mine, "src/x.ts").allowed, false);
+    assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, false);
     board.post(mine, "@swarm/S3 I add a helper to src/x.ts", { about: "src/x.ts" }); // settles the claim (D7)
     const heard = board.deliver(theirs).full[0] as { answer?: string };
     assert.equal(heard.answer, 'answer with an agreement on who changes what: swarm agree "<who changes what in src/x.ts>" --about src/x.ts');
@@ -304,10 +305,10 @@ test("across runs: a merge notice keeps the merger's run and reaches another run
   const { board, mine, theirs } = await crossRuns();
   try {
     board.post(mine, "@swarm/S3 I add a helper", { about: "src/x.ts" });
-    assert.equal(board.checkEdit(mine, "src/x.ts").allowed, true);
+    assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, true);
     board.deliver(theirs);
-    assert.equal(board.lockMerge(mine).granted, true);
-    board.merged(mine, "abc123", ["src/x.ts"]);
+    assert.equal(codeVerbs(board).lockMerge(mine).granted, true);
+    codeVerbs(board).merged(mine, "abc123", ["src/x.ts"]);
     const got = board.deliver(theirs).full;
     assert.equal(got.length, 1);
     assert.equal(got[0].run, mine.run);

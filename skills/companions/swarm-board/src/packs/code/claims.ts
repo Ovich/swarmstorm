@@ -2,7 +2,7 @@
 // registry, the second module that sees SQL. The Board's verbs of the same names delegate here after the
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
-import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, Message, MessageKind, Participant, Sharer } from "../../board/board.ts";
+import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, MemberWorktree, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
 import { type EventName, EVENTS } from "../../board/events.ts";
 
 export interface ClaimsDeps {
@@ -50,6 +50,8 @@ export interface Claims {
   holdsAny(p: Participant): boolean;
   /** The live holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
   holderNames(repo: string, about: string): string[];
+  /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
+  seatWorktrees(run?: RunId): MemberWorktree[];
 }
 
 /** What a post settled: the claimed path and its other holders' names. */
@@ -463,6 +465,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         clearFlags();
       });
       return sharers;
+    },
+
+    seatWorktrees(run) {
+      const rows = db
+        .prepare(`SELECT p.run, r.plan, p.seat, p.place, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.place IS NOT NULL${run === undefined ? "" : " AND p.run = ?"} ORDER BY p.id`)
+        .all(...(run === undefined ? [] : [run])) as Row[];
+      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.place), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
     },
   };
 }

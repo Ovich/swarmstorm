@@ -125,7 +125,7 @@ test("every method answers over the wire what the Board answers in process; an u
       ["owedPhase", [s2]],
       ["setting", ["retention-days"]],
       ["endedMembers", [REPO]],
-      ["heldMergeLock", [s1]],
+      ["packCall", [s1, "held-merge-lock", {}]],
       ["repos", []],
       ["snapshot", [REPO]],
       ["stats", [{ repo: REPO }]],
@@ -142,9 +142,9 @@ test("every method answers over the wire what the Board answers in process; an u
   }
   // writes answer as in process
   assert.equal((await value(c, "deliver", s2)).full.length, 1);
-  assert.equal(typeof (await value(c, "checkEdit", s1, "a.ts")).allowed, "boolean");
-  const unknown = await call(c, "flagStale");
-  assert.deepEqual(unknown.type === "result" && !unknown.ok && unknown.error, "unknown method flagStale");
+  assert.equal(typeof (await value(c, "packCall", s1, "check-edit", { file: "a.ts" })).allowed, "boolean");
+  const unknown = await call(c, "markStaleRuns");
+  assert.deepEqual(unknown.type === "result" && !unknown.ok && unknown.error, "unknown method markStaleRuns");
   const thrown = await call(c, "read", 99999);
   assert.ok(thrown.type === "result" && !thrown.ok && /unknown message/.test(thrown.error));
 });

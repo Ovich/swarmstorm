@@ -9,6 +9,7 @@ import path from "node:path";
 import { openBoard, type Board, type Delivery, type Participant, type Presence } from "../src/board/board.ts";
 import { CARRY_MAX_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/carry/.git";
 let dir: string;
@@ -44,8 +45,8 @@ const woke = (d: Delivery) => d.full.length > 0 || d.lines.length > 0;
 const wokeBesidesLiveness = (d: Delivery) => [...d.full.map((x) => x.body), ...d.lines].some((l) => !/no transcript found|^stalled /.test(l));
 const all = (d: Delivery) => [...d.full.map((x) => x.body), ...d.lines].join("\n");
 const merge = (p: Participant, sha: string) => {
-  board.lockMerge(p);
-  board.merged(p, sha, []);
+  codeVerbs(board).lockMerge(p);
+  codeVerbs(board).merged(p, sha, []);
 };
 /** A member joins a seat added mid-run, its doing `tag`: a carried joined event. A second seat stays unjoined, so no all-joined wakes. */
 const arrive = (run: number, tag: string) => {

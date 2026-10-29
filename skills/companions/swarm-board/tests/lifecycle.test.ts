@@ -196,17 +196,17 @@ test("the retention setting: 30 by default, set to 7, refuses what is not a posi
 test("a run whose every member is silent is flagged once with the run, by its orchestrator, never delivered to it; a call clears the mark (D23)", () => {
   const { run, s1 } = runWithMembers("quiet");
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
-  assert.deepEqual(board.flagStale(later(5)), []);
-  assert.deepEqual(board.flagStale(later(11)), [run.id]);
+  assert.deepEqual(board.markStaleRuns(later(5)), []);
+  assert.deepEqual(board.markStaleRuns(later(11)), [run.id]);
   const events = board.snapshot(REPO).events.filter((e) => e.body.includes("is stale"));
   assert.equal(events.length, 1);
   assert.equal(events[0].run, run.id);
   assert.equal(events[0].body, `run ${run.id} (quiet) is stale: every member silent; close it or dispatch again`);
   assert.equal(events[0].from, "quiet/orchestrator");
   assert.deepEqual(board.read(events[0].seq).mentions, ["quiet/orchestrator"]);
-  assert.deepEqual(board.flagStale(later(12)), []);
+  assert.deepEqual(board.markStaleRuns(later(12)), []);
   board.setDoing(s1, "back");
-  assert.deepEqual(board.flagStale(later(25)), [run.id]);
+  assert.deepEqual(board.markStaleRuns(later(25)), [run.id]);
   // the orchestrator authors it, so its own delivery never carries it
   const toOrchestrator = board.deliver(board.participant("quiet/orchestrator")!);
   assert.ok(!toOrchestrator.full.some((m) => m.body.includes("is stale")));
@@ -222,7 +222,7 @@ test("the board's own stale flag is no activity of the run: a run idle two days 
   raw.prepare("UPDATE participants SET joined_at = ?, last_call = NULL WHERE run = ?").run(old, run.id);
   raw.prepare("UPDATE messages SET at = ? WHERE run = ?").run(old, run.id);
   assert.equal(board.lastActivity(run.id), old);
-  assert.deepEqual(board.flagStale(), [run.id]);
+  assert.deepEqual(board.markStaleRuns(), [run.id]);
   assert.equal(board.lastActivity(run.id), old);
 });
 
@@ -232,10 +232,10 @@ test("a silent orchestrator is posted quiet once, with its run; its next call po
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
   const quietEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "quiet");
   const backEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "back");
-  board.flagStale(later(5));
+  board.markStaleRuns(later(5));
   assert.equal(quietEvents().length, 0);
-  board.flagStale(later(11));
-  board.flagStale(later(15));
+  board.markStaleRuns(later(11));
+  board.markStaleRuns(later(15));
   const quiet = quietEvents();
   assert.equal(quiet.length, 1, "once per silence");
   assert.equal(quiet[0].from, orchestrator.name);
@@ -256,7 +256,7 @@ test("one live member keeps the run unflagged", () => {
   const { run, s1 } = runWithMembers("busy");
   raw.prepare("UPDATE participants SET last_call = ?, joined_at = ? WHERE run = ? AND id != ?").run(ago(20 * MINUTE), ago(20 * MINUTE), run.id, s1.id);
   board.setDoing(s1, "still here");
-  assert.deepEqual(board.flagStale(), []);
+  assert.deepEqual(board.markStaleRuns(), []);
 });
 
 test("repos() lists every closed run within the retention, beyond ten, and none pruned", () => {

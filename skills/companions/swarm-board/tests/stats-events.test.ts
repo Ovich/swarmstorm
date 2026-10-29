@@ -5,6 +5,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { Board, RunId } from "../src/board/board.ts";
 import { MIN, REPO, at, clockTo, dropSummary, planRun, recordsBeginAt, scratchBoard, setup, share, type ScratchBoard } from "./fixtures/stats-board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 let s: ScratchBoard;
 beforeEach(async () => {
@@ -16,15 +17,15 @@ afterEach(() => s.done());
  *  agreement at 10; c never merges and ends at 12. Closed at 20, the records begun at 21. */
 async function oldRun(board: Board): Promise<{ run: RunId; names: string[] }> {
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
-  clockTo(1), board.checkEdit(a, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/x.ts");
   clockTo(2), share(board, b, a, "src/x.ts");
   clockTo(3), board.post(a, `@${b.name} ${a.seat} changes the top`, { about: "src/x.ts", kind: "agreement" });
-  clockTo(4), board.lockMerge(a, "main");
-  clockTo(5), board.merged(a, "aaa111", ["src/x.ts"]);
+  clockTo(4), codeVerbs(board).lockMerge(a, "main");
+  clockTo(5), codeVerbs(board).merged(a, "aaa111", ["src/x.ts"]);
   clockTo(6), board.end(a);
-  clockTo(7), board.checkEdit(b, "src/z.ts");
+  clockTo(7), codeVerbs(board).checkEdit(b, "src/z.ts");
   clockTo(8), share(board, c, b, "src/z.ts");
-  clockTo(9), board.lockMerge(b, "main"), board.merged(b, "bbb222", ["src/z.ts"]);
+  clockTo(9), codeVerbs(board).lockMerge(b, "main"), codeVerbs(board).merged(b, "bbb222", ["src/z.ts"]);
   clockTo(10), board.post(c, `@${b.name} ${c.seat} keeps the rest`, { about: "src/z.ts", kind: "agreement" });
   clockTo(11), board.end(b);
   clockTo(12), board.end(c);

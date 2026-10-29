@@ -4,6 +4,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import type { MemberStats, RunStats } from "../src/board/board.ts";
 import { MIN, REPO, at, brainstormRun, clockTo, planRun, recordsBeginAt, scratchBoard, share, type ScratchBoard } from "./fixtures/stats-board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 let s: ScratchBoard;
 beforeEach(async () => {
@@ -23,12 +24,12 @@ test("a member's intervals: working, waiting for the lock, merging solid; silent
   const { board } = s;
   const { run, m: [a, b] } = planRun(board, "app", ["S1", "S2"]);
   clockTo(1), board.deliver(a);
-  clockTo(2), assert.equal(board.lockMerge(a, "main").granted, true);
-  clockTo(3), assert.equal(board.lockMerge(b, "main").granted, false);
+  clockTo(2), assert.equal(codeVerbs(board).lockMerge(a, "main").granted, true);
+  clockTo(3), assert.equal(codeVerbs(board).lockMerge(b, "main").granted, false);
   clockTo(4), board.deliver(b);
-  clockTo(5), board.merged(a, "aaa111", []);
-  clockTo(6), assert.equal(board.lockMerge(b, "main").granted, true);
-  clockTo(7), board.merged(b, "bbb222", []);
+  clockTo(5), codeVerbs(board).merged(a, "aaa111", []);
+  clockTo(6), assert.equal(codeVerbs(board).lockMerge(b, "main").granted, true);
+  clockTo(7), codeVerbs(board).merged(b, "bbb222", []);
   clockTo(8), board.end(b);
   clockTo(20), board.deliver(a);
   clockTo(21), board.end(a);
@@ -78,14 +79,14 @@ test("a refused verb counts no call, and a member whose only calls are refused f
 test("lock waits from refused to granted; a race lost is a refused ask still pending while a later asker is granted (US1, D33, SL2)", () => {
   const { board } = s;
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
-  clockTo(1), board.lockMerge(a, "main");
-  clockTo(2), assert.equal(board.lockMerge(b, "main").granted, false);
-  clockTo(3), assert.equal(board.lockMerge(c, "main").granted, false);
-  clockTo(4), board.merged(a, "aaa111", []);
-  clockTo(5), assert.equal(board.lockMerge(c, "main").granted, true);
-  clockTo(6), board.merged(c, "ccc333", []);
-  clockTo(7), assert.equal(board.lockMerge(b, "main").granted, true);
-  clockTo(8), board.merged(b, "bbb222", []);
+  clockTo(1), codeVerbs(board).lockMerge(a, "main");
+  clockTo(2), assert.equal(codeVerbs(board).lockMerge(b, "main").granted, false);
+  clockTo(3), assert.equal(codeVerbs(board).lockMerge(c, "main").granted, false);
+  clockTo(4), codeVerbs(board).merged(a, "aaa111", []);
+  clockTo(5), assert.equal(codeVerbs(board).lockMerge(c, "main").granted, true);
+  clockTo(6), codeVerbs(board).merged(c, "ccc333", []);
+  clockTo(7), assert.equal(codeVerbs(board).lockMerge(b, "main").granted, true);
+  clockTo(8), codeVerbs(board).merged(b, "bbb222", []);
   const r = runOf(run);
   assert.deepEqual([...r.plan!.lock.waitsMs].sort((x, y) => x - y), [0, 2 * MIN, 5 * MIN]);
   assert.deepEqual(r.plan!.lock.racesLost, [{ member: b.name, lost: 1, waitedMs: 3 * MIN }]);
@@ -98,12 +99,12 @@ test("lock waits from refused to granted; a race lost is a refused ask still pen
 test("`end` closes a lock turn left without a merge (D37, SL2)", () => {
   const { board } = s;
   const { run, m: [a] } = planRun(board, "app", ["S1"]);
-  clockTo(1), board.lockMerge(a, "main");
+  clockTo(1), codeVerbs(board).lockMerge(a, "main");
   clockTo(3), board.end(a);
   clockTo(5);
   const again = board.join({ run, seat: "S1", doing: "again", files: [] }).member;
-  clockTo(7), board.lockMerge(again, "main");
-  clockTo(8), board.merged(again, "aaa111", []);
+  clockTo(7), codeVerbs(board).lockMerge(again, "main");
+  clockTo(8), codeVerbs(board).merged(again, "aaa111", []);
   clockTo(9), board.end(again);
   const r = runOf(run);
   assert.deepEqual(
@@ -119,10 +120,10 @@ test("`end` closes a lock turn left without a merge (D37, SL2)", () => {
 test("a file held one after the other is not shared; held at the same time it is (D39, S2.2)", () => {
   const { board } = s;
   const { run, m: [a, b] } = planRun(board, "app", ["S1", "S2"]);
-  clockTo(1), board.checkEdit(a, "src/one.ts");
-  clockTo(2), board.release(a, "src/one.ts");
-  clockTo(3), assert.equal(board.checkEdit(b, "src/one.ts").allowed, true);
-  clockTo(4), board.checkEdit(a, "src/two.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/one.ts");
+  clockTo(2), codeVerbs(board).release(a, "src/one.ts");
+  clockTo(3), assert.equal(codeVerbs(board).checkEdit(b, "src/one.ts").allowed, true);
+  clockTo(4), codeVerbs(board).checkEdit(a, "src/two.ts");
   clockTo(5), share(board, b, a, "src/two.ts");
   const shared = runOf(run).plan!.shared;
   assert.equal(shared.files, 1);
@@ -136,14 +137,14 @@ test("the funnel is nested: an agreement given on a file whose holders were not 
   const { board } = s;
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
   // src/x.ts: c holds it first and lets go; a takes it; b and c share it, but a never tells c
-  clockTo(1), board.checkEdit(c, "src/x.ts");
-  clockTo(2), board.release(c, "src/x.ts");
-  clockTo(3), board.checkEdit(a, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(c, "src/x.ts");
+  clockTo(2), codeVerbs(board).release(c, "src/x.ts");
+  clockTo(3), codeVerbs(board).checkEdit(a, "src/x.ts");
   clockTo(4), share(board, b, a, "src/x.ts");
   clockTo(5), share(board, c, [a, b], "src/x.ts");
   clockTo(6), board.post(a, `@${b.name} ${b.seat} changes the top of x, ${a.seat} the rest`, { about: "src/x.ts", kind: "agreement" });
   // src/y.ts: told and agreed
-  clockTo(7), board.checkEdit(a, "src/y.ts");
+  clockTo(7), codeVerbs(board).checkEdit(a, "src/y.ts");
   clockTo(8), share(board, b, a, "src/y.ts");
   clockTo(9), board.post(a, `@${b.name} ${b.seat} changes the top of y, ${a.seat} the rest`, { about: "src/y.ts", kind: "agreement" });
   const shared = runOf(run).plan!.shared;
@@ -163,8 +164,8 @@ test("`totals` carries the scope's counts and a series point per run, a run with
   clockTo(2), board.closeRun(early.run);
   clockTo(10);
   const later = planRun(board, "later", ["S1"]);
-  clockTo(11), board.lockMerge(later.m[0], "main");
-  clockTo(12), board.merged(later.m[0], "aaa111", []);
+  clockTo(11), codeVerbs(board).lockMerge(later.m[0], "main");
+  clockTo(12), codeVerbs(board).merged(later.m[0], "aaa111", []);
   clockTo(15), board.closeRun(later.run);
   clockTo(20);
   const debate = brainstormRun(board, "debate", ["skeptic", "a"]);
@@ -197,17 +198,17 @@ test("`totals` carries the scope's counts and a series point per run, a run with
 test("`files[].perRun` lists each run's holders and conflict, oldest first, `declaredInterface` counted from interface claims (D33, D37, SL2)", () => {
   const { board } = s;
   const one = planRun(board, "alpha", ["S1", "S2"]);
-  clockTo(1), board.checkEdit(one.m[0], "src/x.ts", { interface: true });
+  clockTo(1), codeVerbs(board).checkEdit(one.m[0], "src/x.ts", { interface: true });
   clockTo(2), share(board, one.m[1], one.m[0], "src/x.ts");
-  clockTo(3), board.lockMerge(one.m[1], "main");
-  clockTo(4), board.merged(one.m[1], "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
+  clockTo(3), codeVerbs(board).lockMerge(one.m[1], "main");
+  clockTo(4), codeVerbs(board).merged(one.m[1], "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
   clockTo(5), board.closeRun(one.run);
   clockTo(10);
   const two = planRun(board, "beta", ["S1", "S2"]);
-  clockTo(11), board.checkEdit(two.m[0], "src/x.ts");
+  clockTo(11), codeVerbs(board).checkEdit(two.m[0], "src/x.ts");
   clockTo(12), share(board, two.m[1], two.m[0], "src/x.ts");
-  clockTo(13), board.lockMerge(two.m[1], "main");
-  clockTo(14), board.merged(two.m[1], "bbb222", ["src/x.ts"], { files: [] });
+  clockTo(13), codeVerbs(board).lockMerge(two.m[1], "main");
+  clockTo(14), codeVerbs(board).merged(two.m[1], "bbb222", ["src/x.ts"], { files: [] });
   clockTo(15), board.closeRun(two.run);
   const x = board.stats({ repo: REPO }).files.find((f) => f.path === "src/x.ts")!;
   assert.deepEqual(x.runs, [one.run, two.run]);
@@ -223,12 +224,12 @@ test("`MemberStats` carries `waitingMs`, `agreementsMade`, `endorsed`, `objectio
   const { board } = s;
   const plan = planRun(board, "app", ["S1", "S2"]);
   const [a, b] = plan.m;
-  clockTo(1), board.lockMerge(a, "main");
-  clockTo(2), board.lockMerge(b, "main");
-  clockTo(5), board.merged(a, "aaa111", []);
-  board.lockMerge(b, "main");
+  clockTo(1), codeVerbs(board).lockMerge(a, "main");
+  clockTo(2), codeVerbs(board).lockMerge(b, "main");
+  clockTo(5), codeVerbs(board).merged(a, "aaa111", []);
+  codeVerbs(board).lockMerge(b, "main");
   clockTo(6), board.post(b, `@${a.name} ${b.seat} takes the config`, { about: "src/config.ts", kind: "agreement" });
-  clockTo(7), board.merged(b, "bbb222", []);
+  clockTo(7), codeVerbs(board).merged(b, "bbb222", []);
   clockTo(8), board.closeRun(plan.run);
   const debate = brainstormRun(board, "debate", ["skeptic", "a", "b"]);
   const [skeptic, sa, sb] = debate.m;

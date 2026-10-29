@@ -51,6 +51,15 @@ export interface PackCtx {
 /** A pack verb's input as the CLI sent it over the wire: plain data, the caller's checkout among it. */
 export type PackVerbInput = Record<string, unknown>;
 
+/** A member's verb that writes the pack's tables (D9, D19): the core's `packCall` runs `apply` inside its own
+ *  transaction, after `run` did any slow work, and counts the call under `countedAs` (none when null), as progress
+ *  when `progress`. An ended member is refused it. */
+export interface PackWrite {
+  countedAs: string | null;
+  progress: boolean;
+  apply(member: Participant, input: PackVerbInput, ctx: PackCtx): unknown;
+}
+
 export interface Pack {
   /** The registry's name of it; "code" in this plan. */
   name: string;
@@ -58,8 +67,11 @@ export interface Pack {
   /** Opens the pack's tables, once per board. */
   openTables?(deps: PackTablesDeps): PackTables;
   /** The server side of a pack verb, called before the core's transaction (D19): the facts it gives the CLI, or a
-   *  refusal. `member` is null for a call no member makes (a run's close, a prune). */
-  run?(verb: string, member: Participant | null, input: PackVerbInput, ctx: PackCtx | null): unknown;
+   *  refusal. `member` is null for a call no member makes (a run's close, a prune); `tables` are the pack's own, for a
+   *  call with no run and so no `ctx`. */
+  run?(verb: string, member: Participant | null, input: PackVerbInput, ctx: PackCtx | null, tables: PackTables): unknown;
+  /** The member verbs that write its tables, by verb, each after `run` (D9). */
+  writes?: Record<string, PackWrite>;
   onJoin?(member: Participant, ctx: PackCtx): JoinFacts;
   onPost?(member: Participant, message: Message, ctx: PackCtx): PostFacts | null;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;

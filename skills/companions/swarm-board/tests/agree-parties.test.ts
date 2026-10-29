@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -34,7 +35,7 @@ test("F25: --with names the agreement's party, and the merge of its file wakes i
   board.deliver(w1);
   board.deliver(w2);
   const waiting = board.wait(w2, { mentionsOnly: true, timeoutMs: 3000 });
-  board.merged(w1, "abc123", ["docs/notes.md"]);
+  codeVerbs(board).merged(w1, "abc123", ["docs/notes.md"]);
   const got = await waiting;
   assert.match(got.full[0].body, /@g\/w2: you agreed on a file it changed/);
 });

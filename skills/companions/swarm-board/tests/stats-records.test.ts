@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Board, RunId } from "../src/board/board.ts";
 import { DAY, REPO, at, brainstormRun, clockTo, dropSummary, planRun, recordsBeginAt, scratchBoard, setup, share, type ScratchBoard } from "./fixtures/stats-board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
@@ -23,13 +24,13 @@ function fullPlanRun(board: Board, group = "app"): { run: RunId; seqs: number[] 
   clockTo(1), share(board, b, a, "src/x.ts");
   clockTo(2);
   const agreed = board.post(a, `@${b.name} ${b.seat} changes the top, ${a.seat} the rest`, { about: "src/x.ts", kind: "agreement" });
-  clockTo(3), board.checkEdit(a, "src/y.ts");
-  clockTo(4), board.reconcileWrites(b, ["src/y.ts"]);
-  clockTo(5), board.lockMerge(a, "main");
-  clockTo(6), board.lockMerge(b, "main");
-  clockTo(8), board.merged(a, "aaa111", ["src/x.ts"], { files: [] });
-  board.lockMerge(b, "main");
-  clockTo(9), board.merged(b, "bbb222", ["src/x.ts", "src/y.ts"], { files: ["src/x.ts"] });
+  clockTo(3), codeVerbs(board).checkEdit(a, "src/y.ts");
+  clockTo(4), codeVerbs(board).reconcileWrites(b, ["src/y.ts"]);
+  clockTo(5), codeVerbs(board).lockMerge(a, "main");
+  clockTo(6), codeVerbs(board).lockMerge(b, "main");
+  clockTo(8), codeVerbs(board).merged(a, "aaa111", ["src/x.ts"], { files: [] });
+  codeVerbs(board).lockMerge(b, "main");
+  clockTo(9), codeVerbs(board).merged(b, "bbb222", ["src/x.ts", "src/y.ts"], { files: ["src/x.ts"] });
   clockTo(25), board.deliver(a);
   clockTo(30), board.closeRun(run);
   return { run, seqs: [agreed.seq] };
@@ -97,13 +98,13 @@ test("a run before the records reads `recorded: false`, its lock-wait and confli
   await recordsBeginAt(s.file, at(1));
   clockTo(2), share(board, b, a, "src/x.ts");
   clockTo(3), board.post(a, `@${b.name} ${b.seat} changes the top`, { about: "src/x.ts", kind: "agreement" });
-  clockTo(4), board.checkEdit(a, "src/y.ts");
-  clockTo(5), board.reconcileWrites(b, ["src/y.ts"]);
-  clockTo(6), board.lockMerge(a, "main");
-  clockTo(7), board.lockMerge(b, "main");
-  clockTo(8), board.merged(a, "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
-  board.lockMerge(b, "main");
-  clockTo(9), board.merged(b, "bbb222", ["src/x.ts"]);
+  clockTo(4), codeVerbs(board).checkEdit(a, "src/y.ts");
+  clockTo(5), codeVerbs(board).reconcileWrites(b, ["src/y.ts"]);
+  clockTo(6), codeVerbs(board).lockMerge(a, "main");
+  clockTo(7), codeVerbs(board).lockMerge(b, "main");
+  clockTo(8), codeVerbs(board).merged(a, "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
+  codeVerbs(board).lockMerge(b, "main");
+  clockTo(9), codeVerbs(board).merged(b, "bbb222", ["src/x.ts"]);
   clockTo(30), board.closeRun(run);
   const out = board.stats({ repo: REPO, run });
   const r = out.runs[0];
@@ -144,8 +145,8 @@ test("`close` exits 0 with its usual output when the summary fails, and the run 
     spawnSync(process.execPath, [CLI, "close", "--run", String(run)], { cwd: home, encoding: "utf8", env: { ...process.env, SWARM_ROOT: home, SWARMSTORM_HOME: home, SWARM_NO_POLLER: "1" } });
   const mergedRun = (group: string): RunId => {
     const { run, m: [a] } = planRun(board, group, ["S1"]);
-    board.lockMerge(a, "main");
-    board.merged(a, "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
+    codeVerbs(board).lockMerge(a, "main");
+    codeVerbs(board).merged(a, "aaa111", ["src/x.ts"], { files: ["src/x.ts"] });
     return run;
   };
   // the usual output, from a run whose summary is written
@@ -167,9 +168,9 @@ test("`close` exits 0 with its usual output when the summary fails, and the run 
 test("a file claimed, not declared, as an interface reads interface: true from the stored summary and computed live after close (D37, D42)", async () => {
   const { board } = s;
   const { run, m: [a, b] } = planRun(board, "api", ["S1", "S2"]);
-  clockTo(1), board.checkEdit(a, "src/api.ts", { interface: true });
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/api.ts", { interface: true });
   clockTo(2), share(board, b, a, "src/api.ts");
-  clockTo(3), board.checkEdit(b, "src/api.ts");
+  clockTo(3), codeVerbs(board).checkEdit(b, "src/api.ts");
   clockTo(10), board.closeRun(run);
   const interfaceOf = (): (boolean | null)[] =>
     board.stats({ repo: REPO, run }).runs[0].plan!.shared.perFile.filter((f) => f.path === "src/api.ts").map((f) => f.interface);
@@ -183,8 +184,8 @@ test("a closed run's flags are the board's flag messages, read after release: th
   /** A plan run where `b` writes a path `a` holds, flagged by the board, and `a` quotes a flag's wording in a post. */
   const flaggedRun = (group: string): { run: RunId; a: string; b: string; flagSeq: number } => {
     const { run, m: [a, b] } = planRun(board, group, ["S1", "S2"]);
-    board.checkEdit(a, "src/y.ts");
-    const [flag] = board.reconcileWrites(b, ["src/y.ts"]);
+    codeVerbs(board).checkEdit(a, "src/y.ts");
+    const [flag] = codeVerbs(board).reconcileWrites(b, ["src/y.ts"]);
     board.post(a, `@${b.name} the page reads 'flag: <member> wrote <path> outside its claim; <holder> holds it'`, { about: "src/view.ts" });
     board.closeRun(run);
     return { run, a: a.name, b: b.name, flagSeq: flag.seq };
@@ -240,11 +241,11 @@ test("a closed run's flags are the board's flag messages, read after release: th
 test("a plan run before the records: slices merged from the members' rows, each member's join to its `merged` event, else to its end, estimated; lock and conflicts null (D44, D45, SL9, SL10)", async () => {
   const { board } = s;
   const { run, m: [a, b, c] } = planRun(board, "app", ["S1", "S2", "S3"]);
-  clockTo(1), board.lockMerge(a, "main");
-  clockTo(2), board.merged(a, "aaa111", []);
+  clockTo(1), codeVerbs(board).lockMerge(a, "main");
+  clockTo(2), codeVerbs(board).merged(a, "aaa111", []);
   clockTo(5), board.end(a);
-  clockTo(6), board.lockMerge(b, "main");
-  clockTo(7), board.merged(b, "bbb222", []);
+  clockTo(6), codeVerbs(board).lockMerge(b, "main");
+  clockTo(7), codeVerbs(board).merged(b, "bbb222", []);
   clockTo(9), board.end(b);
   clockTo(10), board.end(c);
   clockTo(20), board.closeRun(run);
@@ -266,12 +267,12 @@ test("before shares-since a path claimed by two members is shared, estimated, it
   const { run, m: [a, b] } = planRun(board, "app", ["S1", "S2"]);
   // held one after the other while both were members: a recorded run would not share it, an old one counts it, their
   // memberships overlapping (D46)
-  clockTo(1), board.checkEdit(a, "src/x.ts");
+  clockTo(1), codeVerbs(board).checkEdit(a, "src/x.ts");
   clockTo(2), board.end(a);
-  clockTo(3), board.checkEdit(b, "src/x.ts");
+  clockTo(3), codeVerbs(board).checkEdit(b, "src/x.ts");
   clockTo(4), board.post(b, `@${a.name} I change one function in src/x.ts`, { about: "src/x.ts" });
   clockTo(5), board.post(b, `@${a.name} ${b.seat} owns the bottom`, { about: "src/x.ts", kind: "agreement" });
-  clockTo(6), board.checkEdit(b, "src/y.ts");
+  clockTo(6), codeVerbs(board).checkEdit(b, "src/y.ts");
   clockTo(10), board.closeRun(run);
   await recordsBeginAt(s.file, at(11));
   await dropSummary(s.file, run);

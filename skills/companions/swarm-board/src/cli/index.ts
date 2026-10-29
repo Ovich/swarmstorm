@@ -3,7 +3,7 @@
 import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, type PackRefusal, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
+import { openBoard, progressText, type EditAllowed, type EditHeld, type HeldMergeLock, type PackRefusal, type Sharer, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
 import { EVENTS, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
@@ -718,10 +718,9 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
-      const trees = await board.worktrees(run);
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
-      const swept = ((await board.packCall(null, "close", { run, trees })) as { worktree: string; member: string; removed: boolean; why: string | null }[] | null) ?? [];
+      const swept = ((await board.packCall(null, "close", { run })) as { worktree: string; member: string; removed: boolean; why: string | null }[] | null) ?? [];
       const kept = swept.filter((w) => !w.removed);
       emit({ run, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run} closed`);
@@ -1046,10 +1045,10 @@ async function main(): Promise<void> {
       await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
       // every path given is claimed, each answered on its own line (G4)
-      const answers: { rel: string; verdict: Awaited<ReturnType<typeof board.checkEdit>>; also: string }[] = [];
+      const answers: { rel: string; verdict: EditAllowed | EditHeld; also: string }[] = [];
       for (const file of args.positional) {
         const abs = resolveClaimPath(file);
-        const verdict = await board.checkEdit(p, abs, { interface: args.has("--interface") });
+        const verdict = (await packVerb(p, "check-edit", { file: abs, interface: args.has("--interface") })) as EditAllowed | EditHeld;
         // held (D41): exit 3, the member posts about the path and claims again
         if (!verdict.allowed) process.exitCode = 3;
         // the other holders are named once per member and path, when the board says so (D40)
@@ -1082,7 +1081,7 @@ async function main(): Promise<void> {
         break;
       }
       for (const abs of targets) {
-        await board.release(p, abs);
+        await packVerb(p, "release", { file: abs });
         released.push(repoRelative(abs));
       }
       emit({ member: p.name, released: released.length === 1 ? released[0] : released }, released.map((r) => `${p.name} released ${r}`).join("\n"));
@@ -1113,13 +1112,13 @@ async function main(): Promise<void> {
       // G28: build outputs are claimed like any file, never exempted, and never flagged: whoever merges second rebuilds them
       const generated = p.place ? generatedAmong(p.place, reconciled) : [];
       const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
-      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled, generated) : [];
+      const flags = reconciled.length ? ((await packVerb(p, "reconcile", { changed: reconciled, generated })) as Flag[]) : [];
       const renames = p.place && unclaimed.length ? renamesIn(p.place, git(p.place, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
       const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
-      const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
+      const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
       emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
         if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
@@ -1146,7 +1145,7 @@ async function main(): Promise<void> {
       const report = fromFile || args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently');
       const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
-      const lock = await board.heldMergeLock(p);
+      const lock = (await packVerb(p, "held-merge-lock", {})) as HeldMergeLock | null;
       // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
@@ -1174,7 +1173,7 @@ async function main(): Promise<void> {
       if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
-      const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
+      const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => path.resolve(f)), conflicts })) as Sharer[];
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
       // a silent merge still records how it settled its guides, in the run, waking no one (V3)
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
@@ -1227,7 +1226,7 @@ async function main(): Promise<void> {
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
-      const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
+      const flags = reconciled.length ? ((await packVerb(p, "reconcile", { changed: reconciled })) as Flag[]) : [];
       const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
       await board.end(p);
       // ended: no link to start
@@ -1245,11 +1244,10 @@ async function main(): Promise<void> {
     }
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${verbHelp()}`);
-      const known = await board.worktrees();
       // each repository the board knows a run of: its worktrees folder is the only one walked, by the code pack; the
       // latest member to join from a folder says which run it belongs to
-      const repos = [...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)];
-      const out = ((await board.packCall(null, "prune", { known, repos })) as { worktree: string; removed: boolean; why: string | null }[] | null) ?? [];
+      const repos = (await board.runs()).map((r) => r.repo);
+      const out = ((await board.packCall(null, "prune", { repos })) as { worktree: string; removed: boolean; why: string | null }[] | null) ?? [];
       const kept = out.filter((o) => !o.removed);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
