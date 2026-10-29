@@ -1,6 +1,6 @@
 // A member's link (swarm-relay D1): the pipe its member's CLI calls come in on, one WebSocket to the
 // board server, every Call forwarded and its Result sent back to the pipe that asked. It keeps no
-// file (D15): a restart re-locates the server and re-reads.
+// state file (D15): a restart re-locates the server and re-reads. Its one file is its pid, for `stopLinks`.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -39,6 +39,11 @@ export function linkPipe(dataRoot: string, run: RunId, member: string): string {
   const home = crypto.createHash("sha256").update(path.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), `${name}.sock`);
+}
+
+/** Where a live link writes its pid: under its data home, so a stop never reaches another home's link. */
+export function linkPidFile(dataRoot: string, run: RunId, member: string): string {
+  return path.join(dataRoot, "links", `${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
 }
 
 function readServerState(dataRoot: string): ServerState | null {
@@ -305,6 +310,19 @@ export async function runLink(opts: {
 
   const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
   if (!pipeServer) return pipeTaken(); // one link per member per data home: this one is the second
+  // its pid, for the stop before its worktree goes; removed at exit when still its own
+  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
+  try {
+    fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+    fs.writeFileSync(pidFile, String(process.pid));
+  } catch {}
+  const dropPid = (): void => {
+    try {
+      if (fs.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs.rmSync(pidFile);
+    } catch {}
+  };
+  process.once("exit", dropPid);
+  void finished.then(dropPid, dropPid);
 
   const idleCheck = setInterval(() => {
     if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");

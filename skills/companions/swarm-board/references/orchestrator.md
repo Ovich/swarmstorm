@@ -122,6 +122,9 @@ waits: in the foreground; a seat runs on the plugin's
   posted by `merged --report`, is the one wake of a merge; the `merged` event itself no longer
   reaches you (`subscribe merged` to hear it). Re-run the done-when at the sha it names, not at
   the branch's tip by then; the report adds what it found.
+- **A merge past the lock is yours alone**: `merged` refuses a member that holds no merge lock;
+  when a merge had to land without it (the holder died mid-merge), record it with
+  `$S merged <sha> --files <path>... --report - --unlocked "<why>" --as <plan>/orchestrator`, the why posted in the run.
 - **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
   you in full. With no background notification in the harness (`references/setup.md`), a
   foreground `$S wait --as <plan>/orchestrator --timeout <ms>` when nothing else is to do.

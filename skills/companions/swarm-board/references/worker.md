@@ -45,7 +45,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
    on. A listener's first line is the command that re-arms it: run it again in the background;
    `superseded by a newer wait`: a foreground wait of yours took over, ignore it.
 6. **Merge, at the task's end**, and early when a file you marked *interface* changed in a way
-   other tasks import. Nothing changed: no merge.
+   other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
    1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in
       the foreground for its merged event, then run `merge-lock` again. `… is checked out at …`
       (exit 5): git would refuse the push; do what the answer says.

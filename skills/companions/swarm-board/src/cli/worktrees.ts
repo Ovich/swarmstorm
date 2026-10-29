@@ -1,11 +1,12 @@
 // The worktrees the board makes for a code run's members (kind profile `worktree`): one per seat under
-// `<data home>/worktrees`, never inside the repository, on branch `swarm/<group>/<seat>` from the run's base.
+// `<data home>/worktrees/<run>/<seat>`, never inside the repository, on branch `swarm/<run>-<group>/<seat>` from the run's base.
 // Removed once clean and merged, the branch kept; what is not removed is said, with why.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
+import { linkPidFile } from "../link/link.ts";
 import { git } from "./git.ts";
 
 export const WORKTREES_ROOT = path.join(DATA_ROOT, "worktrees");
@@ -14,11 +15,18 @@ const CASELESS = process.platform === "win32" || process.platform === "darwin";
 const fold = (s: string): string => (CASELESS ? path.resolve(s).toLowerCase() : path.resolve(s));
 const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
-export const worktreeDir = (group: string, seat: string): string => path.join(WORKTREES_ROOT, `${safe(group)}-${safe(seat)}`);
-export const branchFor = (group: string, seat: string): string => `swarm/${group}/${seat}`;
+// the run id keeps two runs apart: group a-b seat c and group a seat b-c never share a folder or a branch
+export const worktreeDir = (run: number, seat: string): string => path.join(WORKTREES_ROOT, String(run), safe(seat));
+export const branchFor = (run: number, group: string, seat: string): string => `swarm/${run}-${group}/${seat}`;
 
-/** A worktree the board made: it lives under the data home's worktrees folder. */
-export const owned = (wt: string | null): wt is string => !!wt && fold(path.dirname(wt)) === fold(WORKTREES_ROOT);
+/** A worktree the board made: `<data home>/worktrees/<run>/<seat>`. */
+export const owned = (wt: string | null): wt is string => !!wt && fold(path.dirname(path.dirname(wt))) === fold(WORKTREES_ROOT);
+
+/** Every worktree folder under the data home's worktrees folder, run by run. */
+export const worktreeDirs = (): string[] => {
+  const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
+  return sub(WORKTREES_ROOT).flatMap(sub);
+};
 
 const same = (a: string, b: string): boolean => fold(a) === fold(b);
 
@@ -45,15 +53,15 @@ const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-par
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
-export function ensureWorktree(cwd: string, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
-  const at = worktreeDir(group, seat);
-  const branch = branchFor(group, seat);
+export function ensureWorktree(cwd: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
+  const at = worktreeDir(runId, seat);
+  const branch = branchFor(runId, group, seat);
   const top = fs.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
   if (fs.existsSync(at) && fs.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   // a registration whose folder went is pruned first, or git refuses the path
   run(cwd, "worktree", "prune");
-  fs.mkdirSync(WORKTREES_ROOT, { recursive: true });
+  fs.mkdirSync(path.dirname(at), { recursive: true });
   // a branch left by an earlier worktree of the seat: reset to the base when merged, kept as it is when not
   const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
@@ -84,22 +92,6 @@ export function removeWorktree(wt: string, repo: string): string | null {
   return r.ok ? null : r.err || "git worktree remove failed";
 }
 
-/** The link processes of a run (of `members` only, when given), from the OS: a link's command line is `… link --run <id> --as <member>`. */
-function linkPids(runId: number, members?: string[]): number[] {
-  const lines =
-    process.platform === "win32"
-      ? (spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`], { encoding: "utf8", windowsHide: true }).stdout ?? "")
-      : (spawnSync("ps", ["-eo", "pid=,args="], { encoding: "utf8" }).stdout ?? "");
-  const found: number[] = [];
-  for (const line of lines.split(/\r?\n/)) {
-    const m = /^\s*(\d+)\s.*\slink\s+--run\s+(\d+)\s+--as\s+"?([^\s"]+)"?/.exec(line);
-    if (!m || Number(m[2]) !== runId || Number(m[1]) === process.pid) continue;
-    if (members && !members.includes(m[3])) continue;
-    found.push(Number(m[1]));
-  }
-  return found;
-}
-
 const alive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -109,12 +101,35 @@ const alive = (pid: number): boolean => {
   }
 };
 
-/** Stops the members' links before their worktrees go: Windows refuses to remove a folder a live process holds. */
-export function stopLinks(runId: number, members?: string[]): void {
-  const pids = linkPids(runId, members);
-  for (const pid of pids) {
+/** The command line of a live process; null when it is gone or cannot be read. */
+function commandLine(pid: number): string | null {
+  const r =
+    process.platform === "win32"
+      ? spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
+      : spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+  return (r.stdout ?? "").trim() || null;
+}
+
+/** Stops the members' links before their worktrees go (Windows refuses to remove a folder a live process holds):
+ *  only the pid each link wrote under this data home, and only while that process is still a link. */
+export function stopLinks(runId: number, members: string[]): void {
+  const pids: number[] = [];
+  for (const member of members) {
+    const file = linkPidFile(DATA_ROOT, runId, member);
+    let pid: number;
     try {
-      process.kill(pid);
+      pid = Number(fs.readFileSync(file, "utf8").trim());
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
+      try {
+        process.kill(pid);
+        pids.push(pid);
+      } catch {}
+    }
+    try {
+      fs.rmSync(file);
     } catch {}
   }
   for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);

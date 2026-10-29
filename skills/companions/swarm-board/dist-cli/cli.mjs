@@ -7780,6 +7780,9 @@ function linkPipe(dataRoot, run3, member) {
   const name = `swarm-${home}-${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path5.join(os3.tmpdir(), `${name}.sock`);
 }
+function linkPidFile(dataRoot, run3, member) {
+  return path5.join(dataRoot, "links", `${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
+}
 function readServerState(dataRoot) {
   try {
     return JSON.parse(fs5.readFileSync(serverStateFile(dataRoot), "utf8"));
@@ -7985,6 +7988,20 @@ async function runLink(opts) {
   };
   const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
   if (!pipeServer) return pipeTaken();
+  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
+  try {
+    fs5.mkdirSync(path5.dirname(pidFile), { recursive: true });
+    fs5.writeFileSync(pidFile, String(process.pid));
+  } catch {
+  }
+  const dropPid = () => {
+    try {
+      if (fs5.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs5.rmSync(pidFile);
+    } catch {
+    }
+  };
+  process.once("exit", dropPid);
+  void finished.then(dropPid, dropPid);
   const idleCheck = setInterval(() => {
     if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
   }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
@@ -8277,7 +8294,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--person",
   "--note",
   "--busy-max",
-  "--report"
+  "--report",
+  "--unlocked"
 ]);
 var LIST_FLAGS = /* @__PURE__ */ new Set(["--files"]);
 function parseArgs(argv) {
@@ -8454,9 +8472,13 @@ var WORKTREES_ROOT = path8.join(DATA_ROOT, "worktrees");
 var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
 var fold = (s) => CASELESS3 ? path8.resolve(s).toLowerCase() : path8.resolve(s);
 var safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-var worktreeDir = (group, seat) => path8.join(WORKTREES_ROOT, `${safe(group)}-${safe(seat)}`);
-var branchFor = (group, seat) => `swarm/${group}/${seat}`;
-var owned = (wt) => !!wt && fold(path8.dirname(wt)) === fold(WORKTREES_ROOT);
+var worktreeDir = (run3, seat) => path8.join(WORKTREES_ROOT, String(run3), safe(seat));
+var branchFor = (run3, group, seat) => `swarm/${run3}-${group}/${seat}`;
+var owned = (wt) => !!wt && fold(path8.dirname(path8.dirname(wt))) === fold(WORKTREES_ROOT);
+var worktreeDirs = () => {
+  const sub = (d) => fs8.existsSync(d) ? fs8.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path8.join(d, e.name)) : [];
+  return sub(WORKTREES_ROOT).flatMap(sub);
+};
 var same = (a, b) => fold(a) === fold(b);
 function run2(cwd, ...argv) {
   const r = spawnSync3("git", argv, { cwd, encoding: "utf8" });
@@ -8473,14 +8495,14 @@ function inLinkedWorktree(cwd) {
 }
 var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
-function ensureWorktree(cwd, group, seat, base) {
-  const at = worktreeDir(group, seat);
-  const branch = branchFor(group, seat);
+function ensureWorktree(cwd, runId, group, seat, base) {
+  const at = worktreeDir(runId, seat);
+  const branch = branchFor(runId, group, seat);
   const top = fs8.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
   if (fs8.existsSync(at) && fs8.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   run2(cwd, "worktree", "prune");
-  fs8.mkdirSync(WORKTREES_ROOT, { recursive: true });
+  fs8.mkdirSync(path8.dirname(at), { recursive: true });
   const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
   const r = run2(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
@@ -8505,17 +8527,6 @@ function removeWorktree(wt, repo) {
   run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
   return r.ok ? null : r.err || "git worktree remove failed";
 }
-function linkPids(runId, members) {
-  const lines = process.platform === "win32" ? spawnSync3("powershell", ["-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }`], { encoding: "utf8", windowsHide: true }).stdout ?? "" : spawnSync3("ps", ["-eo", "pid=,args="], { encoding: "utf8" }).stdout ?? "";
-  const found = [];
-  for (const line of lines.split(/\r?\n/)) {
-    const m = /^\s*(\d+)\s.*\slink\s+--run\s+(\d+)\s+--as\s+"?([^\s"]+)"?/.exec(line);
-    if (!m || Number(m[2]) !== runId || Number(m[1]) === process.pid) continue;
-    if (members && !members.includes(m[3])) continue;
-    found.push(Number(m[1]));
-  }
-  return found;
-}
 var alive = (pid) => {
   try {
     process.kill(pid, 0);
@@ -8524,11 +8535,29 @@ var alive = (pid) => {
     return false;
   }
 };
+function commandLine(pid) {
+  const r = process.platform === "win32" ? spawnSync3("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : spawnSync3("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+  return (r.stdout ?? "").trim() || null;
+}
 function stopLinks(runId, members) {
-  const pids = linkPids(runId, members);
-  for (const pid of pids) {
+  const pids = [];
+  for (const member of members) {
+    const file = linkPidFile(DATA_ROOT, runId, member);
+    let pid;
     try {
-      process.kill(pid);
+      pid = Number(fs8.readFileSync(file, "utf8").trim());
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
+      try {
+        process.kill(pid);
+        pids.push(pid);
+      } catch {
+      }
+    }
+    try {
+      fs8.rmSync(file);
     } catch {
     }
   }
@@ -8558,7 +8587,7 @@ var USAGE = [
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
   "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<group>/<seat>, or reuses it',
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
   "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -8588,7 +8617,7 @@ var CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  '  merged  [--as <member>] <sha> --files <path>... --report <text>|-   # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently'
+  `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
 ].join("\n");
 var STATS_USAGE = [
   "usage: swarm stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]",
@@ -8745,6 +8774,7 @@ var printDelivery = (d) => {
   for (const l of d.lines) console.log(l);
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
+var fwd = (p) => p.split("\\").join("/");
 var self = () => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 var startLinkLine = (member) => `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
 var SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
@@ -8990,7 +9020,7 @@ async function memberWorktree(runId, seat) {
   if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
   if (repoOf(cwd) !== run3.repo) fail(`join: run ${runId} is on ${run3.repo}; join from a checkout of that repository`);
   try {
-    return { ...ensureWorktree(cwd, run3.group, seat, base), base };
+    return { ...ensureWorktree(cwd, run3.id, run3.group, seat, base), base };
   } catch (e) {
     return fail(`join: ${e.message}`);
   }
@@ -9184,7 +9214,7 @@ ${USAGE}`);
       const link = startLinkLine({ name: member.name, run: member.run });
       const next = await nextStep(member);
       const shared = !profileOf(member.kind).worktree;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${own.path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(own.path)}, never cd into it; pass --as ${member.name} on every call` : null;
+      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
       const commands = shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const phase = await phaseHeader(member.run);
@@ -9443,9 +9473,18 @@ ${rearm}` : rearm;
       const report = args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake; --report - merges silently');
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
+      const unlocked = args.flag("--unlocked")?.trim();
+      if (!lock && profileOf(p.kind).mergeLock) {
+        if (unlocked === void 0) {
+          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
+        }
+        if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
+        if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
+      }
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
       const sharers = await board.merged(p, sha, files.map((f) => path10.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
+      if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
         (o) => ended.has(o.member) ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report` : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`
@@ -9472,7 +9511,7 @@ ${rearm}` : rearm;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
         fail(
-          `end: your worktree ${mine} holds work not merged: ${left}. Commit it, then merge it: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
+          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
         );
       }
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
@@ -9494,7 +9533,7 @@ ${rearm}` : rearm;
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
 ${USAGE}`);
       const known = await board.worktrees();
-      const dirs = fs10.existsSync(WORKTREES_ROOT) ? fs10.readdirSync(WORKTREES_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path10.join(WORKTREES_ROOT, d.name)) : [];
+      const dirs = worktreeDirs();
       const fold2 = (s) => process.platform === "win32" ? path10.resolve(s).toLowerCase() : path10.resolve(s);
       const out = dirs.map((dir) => {
         const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);

@@ -16,7 +16,7 @@ import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { git, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { WORKTREES_ROOT, baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep } from "./worktrees.ts";
+import { WORKTREES_ROOT, baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -38,7 +38,7 @@ const USAGE = [
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
   "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<group>/<seat>, or reuses it',
+  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
   "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -70,7 +70,7 @@ const CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <member>] <sha> --files <path>... --report <text>|-   # releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
+  "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
 ].join("\n");
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
@@ -296,6 +296,8 @@ const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w
 
 /** This CLI as a member calls it: `node <skill-dir>/swarm.mjs`, as the skill writes it and the allow
  *  rule matches it; forward slashes, which Node takes on Windows too and no shell eats (D49). */
+/** A path with forward slashes: git and both shells take it, and PowerShell shows no doubled backslash. */
+const fwd = (p: string): string => p.split("\\").join("/");
 const self = (): string[] => ["node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 
 /** How a member listens, the one source the docs point at: a seat waits in the foreground (a subagent
@@ -633,7 +635,7 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
   if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
   if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
   try {
-    return { ...ensureWorktree(cwd, run.group, seat, base), base };
+    return { ...ensureWorktree(cwd, run.id, run.group, seat, base), base };
   } catch (e) {
     return fail(`join: ${(e as Error).message}`);
   }
@@ -849,7 +851,7 @@ ${USAGE}`);
       const as = shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
-          ? `your worktree: ${own.path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(own.path)}, never cd into it; pass --as ${member.name} on every call`
+          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
       const commands = shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
@@ -1155,9 +1157,20 @@ ${rearm}` : rearm;
       const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = await board.heldMergeLock(p);
+      // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
+      const unlocked = args.flag("--unlocked")?.trim();
+      if (!lock && profileOf(p.kind).mergeLock) {
+        if (unlocked === undefined) {
+          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
+        }
+        if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
+        if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
+      }
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
+      // a merge past the lock is recorded in the run, with its why
+      if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       // the post after a resolved conflict, prompted by the command just run (D63)
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map((o) =>
@@ -1192,7 +1205,7 @@ ${rearm}` : rearm;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
         fail(
-          `end: your worktree ${mine} holds work not merged: ${left}. Commit it, then merge it: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
+          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
         );
       }
       // what the member wrote without claiming it, once, before its claims go (D58)
@@ -1216,7 +1229,7 @@ ${rearm}` : rearm;
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${USAGE}`);
       const known = await board.worktrees();
-      const dirs = fs.existsSync(WORKTREES_ROOT) ? fs.readdirSync(WORKTREES_ROOT, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path.join(WORKTREES_ROOT, d.name)) : [];
+      const dirs = worktreeDirs();
       const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
       const out = dirs.map((dir) => {
         // the latest member to join from it says which run it belongs to

@@ -11,7 +11,7 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { linkPipe, runLink, type LinkStop, type LinkTiming } from "../src/link/link.ts";
+import { linkPidFile, linkPipe, runLink, type LinkStop, type LinkTiming } from "../src/link/link.ts";
 import { bundleVersion, decode, encode, serverLogFile, serverStateFile, type Call, type Frame } from "../src/wire.ts";
 import { bashCall, textLine, writeSubagent } from "./fixtures/transcripts.ts";
 
@@ -281,8 +281,11 @@ test("no call on any pipe for the idle time: the link exits (D15)", async () => 
     cli.call({ id: "r1", method: "roster", args: [] });
     await pause(150);
     assert.equal(link.exited(), false);
+    // a live link's pid is on file under its data home, for the stop before its worktree goes
+    assert.equal(fs.readFileSync(linkPidFile(home, RUN, MEMBER), "utf8"), String(process.pid));
     return { home, stop: await link.done };
   });
+  assert.equal(fs.existsSync(linkPidFile(home, RUN, MEMBER)), false);
   await until("bye idle", () => server.frames().some((f) => f.type === "bye" && f.reason === "idle"));
 });
 

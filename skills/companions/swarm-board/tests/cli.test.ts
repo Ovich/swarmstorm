@@ -327,6 +327,14 @@ test("join prints the link line, then the line that starts the listener, the exa
   assert.ok(keys.indexOf("link") < keys.indexOf("next"), keys.join(","));
 });
 
+/** Takes the merge lock onto trunk, as a code run asks before merged. */
+const lock = (as: string[]) => {
+  // a branch no checkout holds, at the run's base: merge-lock refuses one checked out
+  spawnSync("git", ["branch", "-f", "trunk", "HEAD"], { cwd: repo });
+  const r = run("merge-lock", "--onto", "trunk", ...as);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+};
+
 test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S3", "--doing", "x");
@@ -338,17 +346,20 @@ test("merged ends, for each merged path another member holds or held, on the lin
   assert.equal(run("claim", ...s5, "src/mine.ts").status, 0);
 
   const TELL = (f: string): string =>
-    `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/S3 I resolved ${f}: <how>" --about ${f}`;
-  const r = run("merged", "--report", "-", ...s5, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
+    `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/${f === "src/mine.ts" ? "S5" : "S3"} I resolved ${f}: <how>" --about ${f}`;
+  // the orchestrator merges past the lock: no grant, so no rebase read, and every sharer is told (D33)
+  const orch = ["--as", "review-tool/orchestrator", "--unlocked", "test"];
+  const r = run("merged", "--report", "-", ...orch, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
   assert.equal(r.status, 0, r.stderr);
   // the board's worktree line follows (worktrees.test.ts)
-  assert.deepEqual(r.stdout.trimEnd().split("\n").filter((l) => !l.startsWith("worktree ")), ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts")]);
+  const said = r.stdout.trimEnd().split("\n").filter((l) => !l.startsWith("worktree ") && !l.startsWith("start your link"));
+  assert.deepEqual(said, ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts"), TELL("src/mine.ts")]);
 
-  const j = JSON.parse(run("merged", "--report", "-", ...s5, "def456", "--files", "src/held.ts", "--json").stdout);
+  const j = JSON.parse(run("merged", "--report", "-", ...orch, "def456", "--files", "src/held.ts", "--json").stdout);
   assert.deepEqual(j.tell, [TELL("src/held.ts")]);
 
   // a path nobody else held: the merge line alone
-  assert.equal(run("merged", "--report", "-", ...s5, "fed789", "--files", "src/mine.ts", "src/nobody.ts").stdout, "merged fed789: lock released\n");
+  assert.equal(run("merged", "--report", "-", ...orch, "fed789", "--files", "src/nobody.ts").stdout.split("\n")[0], "merged fed789: lock released");
 });
 
 test("merged carries the worker's report: refused without --report, naming it and `-`; posts @orchestrator merged <sha>: <report>; `-` posts nothing", () => {
@@ -360,13 +371,30 @@ test("merged carries the worker's report: refused without --report, naming it an
   const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts");
   assert.notEqual(bare.status, 0);
   assert.match(bare.stderr, /--report "<what you did>".*--report - merges silently/);
+  lock(s5);
   const r = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(typeof JSON.parse(r.stdout).reported, "number");
   const heard = run("deliver", ...orch).stdout;
   assert.match(heard, /^@orchestrator merged abc123: T1 done, tests green$/m);
-  assert.equal(run("merged", ...s5, "def456", "--files", "src/a.ts", "--report", "-").stdout, "merged def456: lock released\n");
+  lock(s5);
+  assert.equal(run("merged", ...s5, "def456", "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], "merged def456: lock released");
   assert.equal(/@orchestrator merged def456/.test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
+});
+
+test("merged on a code run is refused without the merge lock, naming merge-lock; --unlocked is the orchestrator's alone, its why posted in the run", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--seat", "S5", "--doing", "y");
+  const s5 = ["--as", "review-tool/S5"];
+  const orch = ["--as", "review-tool/orchestrator"];
+  const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-");
+  assert.equal(bare.status, 1);
+  assert.match(bare.stderr, /you do not hold the merge lock; run .* merge-lock --onto <branch> --as review-tool\/S5 first/);
+  const worker = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "hurry");
+  assert.match(worker.stderr, /--unlocked is the orchestrator's alone/);
+  const r = run("merged", ...orch, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "the lock holder died mid-merge");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(run("read", "--as", "review-tool/S5").stdout + run("deliver", ...s5).stdout + run("thread", ...s5).stdout, /merged abc123 without the merge lock: the lock holder died mid-merge/);
 });
 
 test("claim, post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
@@ -866,7 +894,7 @@ test("roster --json and status --json give each member's worktree, null for a se
   const roster = JSON.parse(run("roster", "--json").stdout).roster as { name: string; worktree: string | null }[];
   const s3 = roster.find((m) => m.name === "review-tool/S3")!;
   // joined from the repository's checkout: the board made its worktree under the data home
-  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(toolRoot, "worktrees", "review-tool-S3")), String(s3.worktree));
+  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(toolRoot, "worktrees", String(id), "S3")), String(s3.worktree));
   const seat = openBrainstorm();
   assert.equal(joinSeat(seat, "skeptic").status, 0);
   const open = JSON.parse(run("status", "--json").stdout).open as { run: number; members: { name: string; worktree: string | null }[] }[];
