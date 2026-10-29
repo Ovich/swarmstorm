@@ -1,0 +1,2 @@
+exit 0
+granted: merge, then node <cli> merged <sha> --files <path>... --report "<your report>" --as g/w1

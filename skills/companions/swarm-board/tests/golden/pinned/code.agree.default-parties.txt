@@ -1,0 +1,4 @@
+exit 0
+#<seq>
+parties: g/w1 (you), g/w2; woken when its file merges
+start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/w1

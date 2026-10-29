@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+end: your worktree <home>/repo/.git/swarm/worktrees/1/w2 holds work not merged: branch swarm/1-g/w2 has commits not merged into main. Merge it: node <cli> merge-lock --onto main --as g/w2; rebase onto main and push; node <cli> merged <sha> --files <path>... --report "<what you did>" --as g/w2; then end again

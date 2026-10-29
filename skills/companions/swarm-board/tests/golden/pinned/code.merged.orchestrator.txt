@@ -1,0 +1,11 @@
+exit 0
+#<seq> g/w1 (event)  <ts>
+merged <sha> into main: rebase your branch onto it.
+@g/w2: you hold or declared a file it changed.
+@swarm interface changed: a.ts.
+the merge lock is free: @g/w2
+files: a.ts
+#<seq> g/w1 (event): joined: x · + w1 <nick:w1>
+#<seq> g/w2 (event): joined: x · + w2 <nick:w2>
+#<seq> g/w2 about a.ts: @w1 I need a.ts for one line
+#<seq> g/w1 (agreement) about a.ts: w1 changes a.ts first, w2 after
