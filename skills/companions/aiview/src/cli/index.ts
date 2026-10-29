@@ -21,6 +21,7 @@ import { isHtml, readDoc, sidecarOf } from "../core/paths.ts";
 import { pointerHash, isName, unknownNames } from "../core/pointer.ts";
 import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
+import { boardHash } from "../core/boardhash.ts";
 import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
 import { readServerStatus, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
@@ -215,6 +216,21 @@ function portOfInstalledServer(): number {
   return spawnDetachedServer(st.port);
 }
 
+/** The project the agent works in (board-split#D41): the one claiming the CLI's working directory, else `fallback`
+ *  (the document's own). Its tabs are the only ones the agent's open or pointer moves. */
+function agentProject(fallback: string): string {
+  const index = openIndex();
+  try {
+    return projectForCwd(process.cwd(), index.allProjects())?.slug ?? fallback;
+  } finally {
+    index.close();
+  }
+}
+
+/** What the agent reads of a move sent to its project's tabs (D41). */
+const movedLine = (r: ShowResponse, project: string, verb: string): string =>
+  r.opened ? `no tab showed ${project}: opened a new one` : `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+
 function resolveRef(ref: string): Document | undefined {
   const index = openIndex();
   try {
@@ -378,11 +394,12 @@ function cmdShow(): void {
   const port = portOfInstalledServer();
   const pointer = { id: doc.id, components, ...(variant ? { variant } : {}) };
   const url = `http://localhost:${port}/#${pointerHash(pointer)}`;
-  const answer = askServer("/api/show", pointer);
-  const tabs = answer === null ? 0 : (JSON.parse(answer) as ShowResponse).tabs;
-  emit({ id: doc.id, url, components, variant: variant ?? null, tabs }, () => {
+  const project = agentProject(doc.project);
+  const answer = askServer("/api/show", { ...pointer, project });
+  const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false }, () => {
     console.log(url);
-    console.log(tabs ? `shown in ${tabs} open tab${tabs > 1 ? "s" : ""}` : "no tab is open: give the person the link");
+    console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
   });
 }
 
@@ -701,17 +718,21 @@ function cmdOpen(): void {
   // Opening a document moves the mode to it (D9): the selector always states where
   // you are, and the agent never has to switch-then-open in two steps.
   setActive(index, d.project);
+  const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
   index.close();
   const port = portOfInstalledServer();
   const url = `http://localhost:${port}/#doc=${d.id}`;
-  if (args.has("--open")) {
+  // the tabs on the agent's project go to it; none there, the server opens one (D41)
+  const answer = askServer("/api/open", { id: d.id, project });
+  const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
+  if (!moved && args.has("--open")) {
     const [c, a] =
       process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
     try {
       spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
     } catch {}
   }
-  emit({ id: d.id, url, server: readServerStatus() }, url);
+  emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
 }
 
 /** The project's board, aiview's /board page: `--repo` adds a repository to it (what
@@ -733,7 +754,8 @@ function cmdBoard(): void {
     const repos = repo === undefined ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
     setActive(index, slug);
     ensureDist();
-    const url = `http://localhost:${portOfInstalledServer()}/board`;
+    // the board's scoped URL (D41): the tab it opens shows this project, whatever another tab shows
+    const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
     if (args.has("--open")) {
       const [c, a] =
         process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];

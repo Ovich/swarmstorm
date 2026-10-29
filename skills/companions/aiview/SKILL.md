@@ -30,7 +30,7 @@ F=$($A path 2026-08-24-topic.brainstorm.md)   # the absolute path, joined for th
 $A open "$F" --tag <topic>
 ```
 
-- **`open` is the standard gesture**, on creation: it registers the file, starts a detached server if none runs, and prints the URL. **Its last line says what the person now sees** (one tab shown or switched, updated in place, or no tab: give the link in chat); tell the person that and nothing more. Each tab keeps its own project: `references/projects.md`.
+- **`open` is the standard gesture**, on creation: it registers the file, starts a detached server if none runs, and prints the URL. **Its last line says what the person now sees** (the tabs on the agent's project moved to it, or a new tab opened when none was on it); tell the person that and nothing more. Each tab keeps its own project: `references/projects.md`.
 - **A project is a folder of the data home, `docs/<slug>/`**; refiling is `move <ref> --project <slug>`, and `status --json` says which project claims a working directory.
 - **The date in the name is when the work started.**
 - **A location the user states explicitly wins.**
@@ -48,7 +48,7 @@ $A open "$F" --tag <topic>
 - **Fix metadata with `update`.** `aiview.sqlite` is the tool's to write, and scratch files stay unregistered.
 - **Prototypes are self-contained HTML**, per the `design-prototype` skill.
 - **A workbench is one HTML page, its data optionally in a sidecar `<stem>/` beside it, read only through the frame's bridge, per the `create-workbench` skill**; a trace is a workbench. `move` carries the sidecar with the page.
-- **The project's board is aiview's `/board` page, never a document**: `swarm open` adds the run's repository to it with `aiview board --repo <path>`, and `aiview board` alone prints its link. aiview draws it through swarm's `client/reader.ts`, a client of swarm's board server, and never opens swarm's store. `/board#run=<id>` opens one run's tab.
+- **The project's board is aiview's board page, `#board&repo=<key>`, never a document**: `swarm open` adds the run's repository to it with `aiview board --repo <path>`, and `aiview board` alone prints its link. aiview draws it through swarm's `client/reader.ts`, a client of swarm's board server, and never opens swarm's store. `&run=<id>` opens one run's tab; the older `/board#run=<id>` still opens.
 
 ## Publishing before the work is done
 
@@ -56,7 +56,7 @@ $A open "$F" --tag <topic>
 
 ## Pointing at a prototype
 
-**`show <file|#id> --component <Name>... [--variant <v>]` moves one tab to the prototype and lights those components** (the tab already on its project, else the last used), dimming the rest, until the next `show`, until `show --done` sends that tab back to what the person was reading, or until the person stops it themselves. `components <file|#id>` lists every name on the page and its variants, and `show` refuses any other, listing the ones it has. It prints the link that does the same in a tab opened later, and its last line says which tab showed it; with no tab it says so, returns at once, and the link goes in chat. When to point and how to word the question: the `point-at` skill.
+**`show <file|#id> --component <Name>... [--variant <v>]` moves the tabs on the agent's project to the prototype and lights those components** (none there: a new tab opens on it), dimming the rest, until the next `show`, until `show --done` sends that tab back to what the person was reading, or until the person stops it themselves. `components <file|#id>` lists every name on the page and its variants, and `show` refuses any other, listing the ones it has. It prints the link that does the same in a tab opened later, and its last line says which tabs showed it; with no server it says so, and the link goes in chat. When to point and how to word the question: the `point-at` skill.
 
 ## Contract for calling skills
 

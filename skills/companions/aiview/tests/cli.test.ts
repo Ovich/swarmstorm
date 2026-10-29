@@ -651,7 +651,7 @@ test("plan check: warns on unconfirmed agent defaults, never fails the run", () 
   assert.match(run("plan", "check", write("docs/JOBS/r.plan.md", head("draft"))).stdout, /to list at approval: D1/);
 });
 
-test("board --repo adds the repository to the project's board once, makes the project active and prints the /board link", () => {
+test("board --repo adds the repository to the project's board once, makes the project active and prints the board link scoped to the project (board-split#D41)", () => {
   assert.equal(run("project", "add", "p", "--path", toolRoot).status, 0);
   const [one, two] = ["one", "two"].map((n) => {
     fs.mkdirSync(path.join(toolRoot, "r", n, ".git"), { recursive: true });
@@ -663,7 +663,7 @@ test("board --repo adds the repository to the project's board once, makes the pr
     const out = JSON.parse(first.stdout) as { project: string; repos: string[]; url: string };
     assert.equal(out.project, "p");
     assert.deepEqual(out.repos, [one]);
-    assert.match(out.url, /^http:\/\/localhost:\d+\/board$/);
+    assert.match(out.url, /^http:\/\/localhost:\d+\/#board&repo=p$/);
     const again = JSON.parse(run("board", "--repo", one, "--project", "p", "--json").stdout) as { repos: string[] };
     assert.deepEqual(again.repos, [one]);
     const second = JSON.parse(run("board", "--repo", two, "--project", "p", "--json").stdout) as { repos: string[] };

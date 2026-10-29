@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDocuments, type DocumentWithState } from "../lib/api.ts";
+import { fetchDocuments, setActiveProject as postActiveProject, type DocumentWithState } from "../lib/api.ts";
 import type { Pointer } from "../../src/core/pointer.ts";
 import { reloadOnNewBuild } from "../lib/build.ts";
 
@@ -20,8 +20,13 @@ export interface DocumentsState {
   docs: DocumentWithState[];
   groups: Record<string, string>;
   projects: Record<string, string>;
-  /** The active project, shared with the CLI. `*` = All projects. */
+  /** This tab's project (board-split#D41): the most recently active one at its first load, then what the tab
+   *  chose; another tab's switch never moves it. `*` = All projects. */
   activeProject: string;
+  /** Sets this tab's project: it declares it on `/events`, and the server records it as the most recently active. */
+  chooseProject: (slug: string) => void;
+  /** The tab has its project: false until the first list or the tab's own choice. */
+  projectKnown: boolean;
   startId: number | null;
   /** The collection's version, or null when the server could not read one. */
   version: string | null;
@@ -37,6 +42,9 @@ export interface DocumentsState {
   shown: Pointer | null;
   /** Bumped when the agent says the pointing is over (`aiview show --done`). */
   showDoneTick: number;
+  /** Bumped when the agent opened a document on this tab's project (`aiview open`, D41). */
+  openTick: number;
+  openedId: number | null;
   reload: () => void;
 }
 
@@ -45,6 +53,7 @@ export function useDocuments(): DocumentsState {
   const [groups, setGroups] = useState<Record<string, string>>({});
   const [projects, setProjects] = useState<Record<string, string>>({});
   const [activeProject, setActiveProject] = useState<string>(ALL_PROJECTS);
+  const [projectKnown, setProjectKnown] = useState(false);
   const [startId, setStartId] = useState<number | null>(null);
   const [version, setVersion] = useState<string | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
@@ -52,7 +61,21 @@ export function useDocuments(): DocumentsState {
   const [dataChanged, setDataChanged] = useState<{ tick: number; id: number | null }>({ tick: 0, id: null });
   const [shown, setShown] = useState<{ tick: number; pointer: Pointer | null }>({ tick: 0, pointer: null });
   const [showDoneTick, setShowDoneTick] = useState(0);
+  const [opened, setOpened] = useState<{ tick: number; id: number | null }>({ tick: 0, id: null });
   const loadedOnce = useRef(false);
+  /** The tab's project as the stream declares it; null until the tab has one. */
+  const tabProject = useRef<string | null>(null);
+  /** Reconnects the stream, declaring the tab's project anew. */
+  const reconnect = useRef<() => void>(() => {});
+
+  const chooseProject = useCallback((slug: string) => {
+    if (tabProject.current === slug) return;
+    tabProject.current = slug;
+    setActiveProject(slug);
+    setProjectKnown(true);
+    reconnect.current();
+    postActiveProject(slug).catch(() => {});
+  }, []);
 
   const reload = useCallback(() => {
     fetchDocuments()
@@ -60,7 +83,13 @@ export function useDocuments(): DocumentsState {
         setDocs(data.documents);
         setGroups(data.groups);
         setProjects(data.projects);
-        setActiveProject(data.activeProject);
+        // a new tab takes the most recently active project, once (D41); its own choice holds after
+        if (tabProject.current === null) {
+          tabProject.current = data.activeProject;
+          setActiveProject(data.activeProject);
+          setProjectKnown(true);
+          reconnect.current();
+        }
         setVersion(data.version ?? null);
         if (!loadedOnce.current) {
           setStartId(data.start);
@@ -78,7 +107,8 @@ export function useDocuments(): DocumentsState {
     const connect = (): void => {
       es?.close();
       lastSeen = Date.now();
-      es = new EventSource("/events");
+      const project = tabProject.current;
+      es = new EventSource(project ? `/events?project=${encodeURIComponent(project)}` : "/events");
       es.onopen = () => setConnection("live");
       es.onerror = () => setConnection("reconnecting");
       es.onmessage = (e) => {
@@ -102,9 +132,14 @@ export function useDocuments(): DocumentsState {
           setShown((s) => ({ tick: s.tick + 1, pointer }));
         }
         if (ev.type === "show-done") setShowDoneTick((t) => t + 1);
-        // The agent switched project: this tab follows (D3).
-        if (ev.type === "project" && ev.slug) setActiveProject(ev.slug);
+        // The agent opened a document on this tab's project (D41); the server sends it to no other tab.
+        if (ev.type === "open" && typeof ev.id === "number") setOpened((o) => ({ tick: o.tick + 1, id: ev.id! }));
+        // `project` (another tab's or the CLI's switch) moves no tab (D41): each tab keeps its own.
       };
+    };
+    reconnect.current = () => {
+      setConnection("reconnecting");
+      connect();
     };
     connect();
 
@@ -116,7 +151,11 @@ export function useDocuments(): DocumentsState {
     const watchdog = setInterval(() => {
       if (!isSilent(lastSeen, Date.now())) return;
       setConnection("reconnecting");
+      reconnect.current = () => {
+      setConnection("reconnecting");
       connect();
+    };
+    connect();
       reload();
       setChanged((c) => ({ tick: c.tick + 1, id: null }));
     }, SILENCE_MS / 3);
@@ -132,6 +171,8 @@ export function useDocuments(): DocumentsState {
     groups,
     projects,
     activeProject,
+    chooseProject,
+    projectKnown,
     startId,
     version,
     connection,
@@ -142,6 +183,8 @@ export function useDocuments(): DocumentsState {
     shownTick: shown.tick,
     shown: shown.pointer,
     showDoneTick,
+    openTick: opened.tick,
+    openedId: opened.id,
     reload,
   };
 }

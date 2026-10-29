@@ -16,8 +16,12 @@ import type { PingEventPayload } from "../core/api.ts";
 export const HEARTBEAT_MS = 15_000;
 
 export interface SseHub {
-  add(res: ServerResponse): void;
+  /** `project`: the project the tab shows (board-split#D41), the slug it declared on `/events`; null when none. */
+  add(res: ServerResponse, project?: string | null): void;
   broadcast(event: unknown): void;
+  /** Sends to the tabs on `project` alone (D41: an agent's open or pointer never moves a tab on another project);
+   *  returns how many heard it. */
+  broadcastTo(project: string, event: unknown): number;
   /** Open clients. The heartbeat prunes the dead, so this is the live count. */
   size(): number;
   close(): void;
@@ -25,7 +29,8 @@ export interface SseHub {
 
 /** `hello`: what the first frame carries besides its type, read at each connection (the served build). */
 export function createSseHub(heartbeatMs = HEARTBEAT_MS, hello: () => Record<string, unknown> = () => ({})): SseHub {
-  const clients = new Set<ServerResponse>();
+  /** Each open tab and the project it declared. */
+  const clients = new Map<ServerResponse, string | null>();
 
   const drop = (res: ServerResponse): void => {
     if (clients.delete(res)) res.destroy();
@@ -42,31 +47,36 @@ export function createSseHub(heartbeatMs = HEARTBEAT_MS, hello: () => Record<str
   };
 
   const beat = setInterval(() => {
-    for (const res of [...clients]) send(res, { type: "ping" } satisfies PingEventPayload);
+    for (const res of [...clients.keys()]) send(res, { type: "ping" } satisfies PingEventPayload);
   }, heartbeatMs);
   // A heartbeat must never be the reason the process stays up.
   beat.unref?.();
 
   return {
-    add(res) {
+    add(res, project = null) {
       res.writeHead(200, {
         "content-type": "text/event-stream",
         "cache-control": "no-store",
         connection: "keep-alive",
       });
-      clients.add(res);
+      clients.set(res, project);
       res.on("close", () => clients.delete(res));
       res.on("error", () => drop(res));
       send(res, { type: "hello", ...hello() });
     },
     // The set is copied: a write that fails drops its client from it.
     broadcast(event) {
-      for (const res of [...clients]) send(res, event);
+      for (const res of [...clients.keys()]) send(res, event);
+    },
+    broadcastTo(project, event) {
+      const onProject = [...clients].filter(([, p]) => p === project).map(([res]) => res);
+      for (const res of onProject) send(res, event);
+      return onProject.length;
     },
     size: () => clients.size,
     close() {
       clearInterval(beat);
-      for (const res of [...clients]) drop(res);
+      for (const res of [...clients.keys()]) drop(res);
     },
   };
 }

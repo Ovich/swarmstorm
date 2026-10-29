@@ -740,6 +740,60 @@ describe("useDocuments: the stream is watched, not trusted", () => {
   });
 });
 
+// board-split#D41: each tab has its own project, declared on /events; no other tab's switch moves it
+describe("useDocuments: the tab's own project", () => {
+  class FakeEventSource {
+    static opened: FakeEventSource[] = [];
+    onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    constructor(public url: string) {
+      FakeEventSource.opened.push(this);
+    }
+    close() {}
+    say(event: unknown) {
+      this.onmessage?.({ data: JSON.stringify(event) });
+    }
+  }
+  const fetchMock = vi.fn(async (url: string) => ({ ok: true, json: async () => (url === "/api/active" ? { project: "beta" } : { documents: [], groups: {}, projects: {}, activeProject: "alpha", start: null }) }) as unknown as Response);
+
+  const mount = async () => {
+    FakeEventSource.opened = [];
+    fetchMock.mockClear();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("fetch", fetchMock);
+    const { renderHook, waitFor } = await import("@testing-library/react");
+    const { useDocuments } = await import("./hooks/useDocuments.ts");
+    const hook = renderHook(() => useDocuments());
+    await waitFor(() => expect(hook.result.current.projectKnown).toBe(true));
+    return hook;
+  };
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("a new tab takes the most recently active project once and declares it on /events", async () => {
+    const { result } = await mount();
+    expect(result.current.activeProject).toBe("alpha");
+    expect(FakeEventSource.opened.at(-1)!.url).toBe("/events?project=alpha");
+  });
+
+  test("another tab's switch moves nothing; the tab's own choice moves it, declared again and recorded", async () => {
+    const { result } = await mount();
+    act(() => FakeEventSource.opened.at(-1)!.say({ type: "project", slug: "beta" }));
+    expect(result.current.activeProject).toBe("alpha");
+    act(() => result.current.chooseProject("beta"));
+    expect(result.current.activeProject).toBe("beta");
+    expect(FakeEventSource.opened.at(-1)!.url).toBe("/events?project=beta");
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/active")).toBe(true);
+  });
+
+  test("the agent's open on this tab's project is heard", async () => {
+    const { result } = await mount();
+    act(() => FakeEventSource.opened.at(-1)!.say({ type: "open", id: 12 }));
+    expect(result.current.openTick).toBe(1);
+    expect(result.current.openedId).toBe(12);
+  });
+});
+
 describe("Sidebar footer: the way to the repository", () => {
   const footer = (version?: string | null) => {
     render(

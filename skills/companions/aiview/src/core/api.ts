@@ -100,8 +100,16 @@ export interface BoardChangedEventPayload {
   repo: string;
 }
 
-/** What `POST /api/show` answers: how many tabs heard it, so the agent knows whether
- *  the person is looking or has to be handed the link. */
+/** Sent to the tabs on the agent's project when it opens a document (`aiview open`, board-split#D41): they go to it. */
+export interface OpenEventPayload {
+  type: "open";
+  id: number;
+}
+
+/** What `POST /api/show` and `POST /api/open` answer: how many tabs heard it, so the agent knows whether
+ *  the person is looking or has to be handed the link; `opened`, sent to a project, when no tab showed it and a new
+ *  one was opened (D41). */
 export interface ShowResponse {
   tabs: number;
+  opened?: boolean;
 }

@@ -428,7 +428,7 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   }
   if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", "↺ recovered", TIPS.recovered);
   // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
-  if (e.kind === "event" && (e.event === "lost" || e.event === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
+  if (e.kind === "event" && ((e.event as string) === "lost" || e.event === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);

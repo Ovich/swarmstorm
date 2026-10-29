@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDocument, fetchProjectBoard, setActiveProject, type DocumentResponse } from "./lib/api.ts";
-import { useDocuments } from "./hooks/useDocuments.ts";
+import { fetchBoardOfKey, fetchDocument, fetchProjectBoard, type DocumentResponse } from "./lib/api.ts";
+import { boardHash, hashWithBoardRepo, readBoardHash } from "../src/core/boardhash.ts";
+import { ALL_PROJECTS, useDocuments } from "./hooks/useDocuments.ts";
 import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
 import { Sidebar } from "./components/shell/Sidebar.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
@@ -13,7 +14,7 @@ import { PdfFrame } from "./components/viewers/PdfFrame.tsx";
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
 import { readRunInHash } from "./lib/board/analytics.ts";
 
-/** The board page's address. */
+/** The board page's older address, still read; the board's own is its hash, `#board&repo=<key>` (board-split#D41). */
 export const BOARD_PATH = "/board";
 
 /** The board page: the project's board, over the repositories its runs were opened in, or that it has none. */
@@ -67,7 +68,7 @@ export function shouldLoad(
 export const DOCUMENTS_VIEW_KEY = "aiview.documentsView";
 
 export function App() {
-  const { docs, groups, projects, activeProject, startId, version, connection, changedTick, changedId, dataTick, dataId, shownTick, shown, showDoneTick } = useDocuments();
+  const { docs, groups, projects, activeProject, projectKnown, chooseProject, openTick, openedId, startId, version, connection, changedTick, changedId, dataTick, dataId, shownTick, shown, showDoneTick } = useDocuments();
   const [pointer, setPointer] = useState<Pointer | null>(hashPointer);
   const [currentId, setCurrentId] = useState<number | null>(() => hashPointer()?.id ?? null);
   const [response, setResponse] = useState<DocumentResponse | null>(null);
@@ -80,35 +81,60 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   /** The page: /board is the active project's board, anything else the documents. */
   const [path, setPath] = useState(() => location.pathname);
+  /** The board as the hash names it (D41): null when the hash does not open the board. */
+  const [boardKey, setBoardKey] = useState(() => readBoardHash(location.hash));
   useEffect(() => {
-    const onPop = () => setPath(location.pathname);
+    const onPop = () => {
+      setPath(location.pathname);
+      setBoardKey(readBoardHash(location.hash));
+    };
     window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    window.addEventListener("hashchange", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("hashchange", onPop);
+    };
   }, []);
-  const onBoard = path === BOARD_PATH;
-  /** The project just picked, until the server echoes it: the board asks for it at once. */
-  const [pickedProject, setPickedProject] = useState<string | null>(null);
+  const onBoard = path === BOARD_PATH || boardKey !== null;
+  const boardRepoKey = boardKey?.repo ?? null;
+  // a board tab without a project takes the tab's (the most recently active, at its first load) once, into its hash
   useEffect(() => {
-    if (pickedProject !== null && activeProject === pickedProject) setPickedProject(null);
-  }, [activeProject, pickedProject]);
-  const boardProject = pickedProject ?? activeProject;
-  /** The board's repositories, asked of the server for the project shown; null while asking. */
+    if (!onBoard || boardRepoKey !== null || !projectKnown || activeProject === ALL_PROJECTS) return;
+    history.replaceState(history.state, "", `${location.pathname}${hashWithBoardRepo(location.hash, activeProject)}`);
+    setBoardKey({ repo: activeProject });
+  }, [onBoard, boardRepoKey, projectKnown, activeProject]);
+  /** The board's repositories, asked of the server for the project the hash names (the tab's project follows it);
+   *  null while asking. */
   const [boardRepos, setBoardRepos] = useState<string[] | null>(null);
   useEffect(() => {
-    if (!onBoard) return;
+    if (!onBoard || (boardRepoKey === null && !projectKnown)) return;
     let cancelled = false;
     setBoardRepos(null);
-    fetchProjectBoard(boardProject)
-      .then((repos) => !cancelled && setBoardRepos(repos))
-      .catch(() => !cancelled && setBoardRepos([]));
+    const asked =
+      boardRepoKey !== null
+        ? fetchBoardOfKey(boardRepoKey).then((b) => {
+            if (!cancelled) chooseProject(b.project);
+            return b.repos;
+          })
+        : fetchProjectBoard(activeProject);
+    asked.then((repos) => !cancelled && setBoardRepos(repos)).catch(() => !cancelled && setBoardRepos([]));
     return () => {
       cancelled = true;
     };
-  }, [onBoard, boardProject]);
-  const showBoard = () => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onBoard, boardRepoKey, boardRepoKey === null ? activeProject : "", projectKnown]);
+  /** The board of `slug`, this tab's project by default, at its scoped address (D41). */
+  const showBoard = (slug: string = activeProject) => {
     setDocumentsShown(false);
-    if (location.pathname !== BOARD_PATH) history.pushState(null, "", BOARD_PATH);
-    setPath(BOARD_PATH);
+    history.pushState(null, "", `/${boardHash(slug)}`);
+    setPath("/");
+    setBoardKey({ repo: slug });
+  };
+  /** Off the board to `/` with `hash`, as a new history entry. */
+  const leaveBoard = (hash: string) => {
+    history.pushState(null, "", `/${hash}`);
+    setPath("/");
+    setBoardKey(null);
   };
   /** The Documents view: the list panel left of the open document. Opening a document from the
    *  panel keeps it; Board or a pinned item from the menu leaves it. Remembered for this tab. */
@@ -134,13 +160,13 @@ export function App() {
       setCurrentId(null);
       setResponse(null);
       loadedId.current = null;
-      if (location.pathname === BOARD_PATH) history.pushState(null, "", "/");
+      if (onBoard) leaveBoard("");
       else history.replaceState(null, "", "/");
       setPath("/");
       setDocumentsShown(true);
       return;
     }
-    if (location.pathname === BOARD_PATH) history.pushState(null, "", `/${currentId !== null ? `#doc=${currentId}` : ""}`);
+    if (onBoard) leaveBoard(currentId !== null ? `#doc=${currentId}` : "");
     setPath("/");
     setDocumentsShown(true);
   };
@@ -150,27 +176,29 @@ export function App() {
    *  previous question. null: the pointer moved nothing, or the person has moved on. */
   const returnTo = useRef<string | null>(null);
 
-  // The server owns the active project; the SSE echo is what actually moves this tab,
-  // so picking is fire-and-follow rather than optimistic local state.
-  const pickProject = useCallback((slug: string) => {
-    setActiveProject(slug).catch(() => {});
-  }, []);
+  // The tab owns its project (D41): picking moves this tab alone, and the server hears it.
+  const pickProject = useCallback((slug: string) => chooseProject(slug), [chooseProject]);
 
   const open = useCallback(
     (id: number) => {
       returnTo.current = null; // the person chose where to be: nothing to go back to
       setCurrentId(id);
-      if (location.pathname === BOARD_PATH) {
-        history.pushState(null, "", `/#doc=${id}`);
-        setPath("/");
-      } else location.hash = `doc=${id}`;
+      if (onBoard) leaveBoard(`#doc=${id}`);
+      else location.hash = `doc=${id}`;
       // Opening a document outside the active project moves the mode to it (D9),
       // so the selector never disagrees with what is on screen.
       const target = docs.find((d) => d.id === id);
       if (target && activeProject !== "*" && target.project !== activeProject) pickProject(target.project);
     },
-    [docs, activeProject, pickProject],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [docs, activeProject, pickProject, onBoard],
   );
+
+  // The agent opened a document on this tab's project (`aiview open`, D41): the tab goes to it.
+  useEffect(() => {
+    if (openTick > 0 && openedId !== null) open(openedId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTick]);
 
   // A Composition label was clicked in the frame: open the source prototype at that component.
   // The source is looked up by base name in the host's folder; an unregistered file gets
@@ -301,7 +329,7 @@ export function App() {
           open(id);
         }}
         onPickProject={pickProject}
-        onBoard={showBoard}
+        onBoard={() => showBoard()}
         boardShown={onBoard}
         documentsShown={!onBoard && documentsShown}
         onDocuments={showDocuments}
@@ -316,10 +344,9 @@ export function App() {
           activeProject={activeProject}
           allDocs={docs}
           onPickProject={(slug) => {
-            // the person switched project: land on its Board page
-            setPickedProject(slug);
-            showBoard();
+            // the person switched this tab's project: land on its Board page (D41: no other tab moves)
             pickProject(slug);
+            showBoard(slug);
           }}
         />
         <div className="flex min-w-0 flex-1 max-[860px]:flex-col">

@@ -16,7 +16,9 @@ import type {
   ShowDoneEventPayload,
   ShowEventPayload,
   ShowResponse,
+  OpenEventPayload,
 } from "../core/api.ts";
+import { projectForCwd } from "../core/projects.ts";
 import { resolveBindings } from "../core/bind.ts";
 import { formatOf, isHtml, isPdf, readDoc } from "../core/paths.ts";
 import { isName } from "../core/pointer.ts";
@@ -42,6 +44,9 @@ export interface ServeOptions {
   boardDataRoot?: string;
   /** The swarm launcher a board server is started from when none answers; beside aiview's by default. */
   swarmEntry?: string;
+  /** Opens a new browser tab on a URL (board-split#D41: an agent's open or pointer on a project no tab shows).
+   *  The system browser by default; tests pass their own. */
+  openTab?: (url: string) => void;
 }
 
 const MIME: Record<string, string> = {
@@ -87,7 +92,7 @@ function openBrowser(url: string): void {
 
 export function startServer(
   index: Index,
-  { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry }: ServeOptions,
+  { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser }: ServeOptions,
 ): http.Server {
   // the hello names the build dist/ serves now: a tab drawn by an older build reloads (app/lib/build.ts)
   const sse = createSseHub(heartbeatMs, () => {
@@ -122,6 +127,28 @@ export function startServer(
   };
   const json = (res: http.ServerResponse, obj: unknown, status = 200) => send(res, status, JSON.stringify(obj));
 
+  /** The project a board hash's `repo=` names (D41): a project's slug, or the name of a repository on a project's
+   *  board, mapped to the project whose paths cover it; null when none does. */
+  const projectOfBoardKey = (key: string): string | null => {
+    const projects = index.allProjects();
+    if (projects.some((x) => x.slug === key)) return key;
+    // a board keys a repository by its git dir or its checkout: the checkout is the folder the name is
+    const checkoutOf = (repo: string): string => repo.replace(/[\\/]+$/, "").replace(/[\\/]\.git$/i, "");
+    const named = (repo: string): boolean => path.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
+    for (const x of projects) {
+      const repo = index.boardRepos(x.slug).find(named);
+      if (repo) return projectForCwd(checkoutOf(repo), projects)?.slug ?? x.slug;
+    }
+    return null;
+  };
+  /** Moves the tabs on `project` (D41), or, none open there, opens a new tab at `hash`; the tabs that heard it. */
+  const toProjectTabs = (project: string, event: unknown, hash: string): { tabs: number; opened: boolean } => {
+    const tabs = sse.broadcastTo(project, event);
+    if (tabs > 0) return { tabs, opened: false };
+    openTab(`http://localhost:${(server.address() as { port: number }).port}/#${hash}`);
+    return { tabs: 0, opened: true };
+  };
+
   // Static UI: the built app in dist/. The CLI's ensureDist builds it before serve/open.
   const distDir = path.join(toolRoot, "dist");
   const useDist = fs.existsSync(path.join(distDir, "index.html"));
@@ -146,7 +173,8 @@ export function startServer(
     const url = new URL(req.url ?? "/", "http://x");
     if (board.handle(req, res, url)) return;
     const p = url.pathname;
-    if (p === "/events") return sse.add(res);
+    // each tab declares the project it shows (D41), again at each reconnect after a switch
+    if (p === "/events") return sse.add(res, url.searchParams.get("project") || null);
     if (p === "/api/documents")
       return json(res, {
         documents: index.all(),
@@ -168,7 +196,9 @@ export function startServer(
     }
     // The board page's source: the repositories the project's board reads (the active project by default).
     if (p === "/api/project-board") {
-      const slug = url.searchParams.get("project") || index.activeProject();
+      const key = url.searchParams.get("repo");
+      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || index.activeProject();
+      if (slug === null) return json(res, { error: `no project for ${key}` }, 404);
       return json(res, { project: slug, repos: slug === ALL_PROJECTS ? [] : index.boardRepos(slug) });
     }
     // Pinning is the person's, from the viewer: the index stores it, every tab hears it.
@@ -249,20 +279,47 @@ export function startServer(
         if (body.length > 4096) req.destroy(); // a few names, not a payload
       });
       req.on("end", () => {
-        let asked: { id?: unknown; components?: unknown; variant?: unknown };
+        let asked: { id?: unknown; components?: unknown; variant?: unknown; project?: unknown };
         try {
           asked = JSON.parse(body) as typeof asked;
         } catch {
           return json(res, { error: "bad json" }, 400);
         }
-        const { id, components, variant } = asked;
+        const { id, components, variant, project } = asked;
         if (typeof id !== "number" || !index.get(id)) return json(res, { error: "no such document" }, 404);
         if (!Array.isArray(components) || !components.every((c): c is string => typeof c === "string" && isName(c)))
           return json(res, { error: "components must be names" }, 400);
         if (variant !== undefined && (typeof variant !== "string" || !isName(variant)))
           return json(res, { error: "variant must be a name" }, 400);
-        sse.broadcast({ type: "show", id, components, ...(variant ? { variant } : {}) } satisfies ShowEventPayload);
+        const event = { type: "show", id, components, ...(variant ? { variant } : {}) } satisfies ShowEventPayload;
+        // the agent's project (D41): only its tabs move; without one, as before, every tab
+        if (typeof project === "string" && project) {
+          const hash = [`doc=${id}`, ...(components.length ? [`show=${components.join(",")}`] : []), ...(variant ? [`variant=${variant}`] : [])].join("&");
+          return json(res, toProjectTabs(project, event, hash) satisfies ShowResponse);
+        }
+        sse.broadcast(event);
         json(res, { tabs: sse.size() } satisfies ShowResponse);
+      });
+      return;
+    }
+    // The agent opened a document (`aiview open`, D41): the tabs on its project go to it; none there, a new tab does.
+    if (p === "/api/open" && req.method === "POST") {
+      let body = "";
+      req.on("data", (c) => {
+        body += c;
+        if (body.length > 4096) req.destroy(); // an id and a slug, not a payload
+      });
+      req.on("end", () => {
+        let asked: { id?: unknown; project?: unknown };
+        try {
+          asked = JSON.parse(body) as typeof asked;
+        } catch {
+          return json(res, { error: "bad json" }, 400);
+        }
+        const { id, project } = asked;
+        if (typeof id !== "number" || !index.get(id)) return json(res, { error: "no such document" }, 404);
+        if (typeof project !== "string" || !project) return json(res, { error: "project required" }, 400);
+        json(res, toProjectTabs(project, { type: "open", id } satisfies OpenEventPayload, `doc=${id}`) satisfies ShowResponse);
       });
       return;
     }

@@ -26,24 +26,23 @@ removes the others.
 
 ## Each tab keeps its project
 
-**A tab's project is its own**, kept in the tab and in its URL (`?project=<slug>`), so a
-reload keeps it. Two sessions on two projects never pull each other's tabs.
+**A tab's project is its own**: the open document's, or on the board the one its address names
+(`#board&repo=<key>[&run=<id>]`, the key a project's slug or a repository on its board), so a reload
+keeps it. A tab opened without one takes the most recently active project once and writes it in.
+Two sessions on two projects never pull each other's tabs.
 
-- **The person's pick in a tab's sidebar** changes that tab only, and sets the default:
-  the project a new tab opens on.
+- **The person's pick in a tab's project switcher** changes that tab only, and sets the most
+  recently active project, the one a new tab opens on.
 - **`use`** sets that default and the CLI's last fallback (`--project`, then the working
   directory's project, then the default). It moves no tab.
-- **A major event reaches one tab**: a **new** document (an update re-renders in place and
-  moves nothing), a **new** run's board, and `show`. It goes to the tab already on that
-  project, else the last one used, which switches to it. That tab acknowledges; one that
-  does not within 2 s is passed over for the next.
-- **News in another project** puts a dot on its sidebar entry until the tab visits it.
+- **The agent's `open` and `show` go to the tabs on the agent's project**, the one claiming the
+  CLI's working directory: every such tab moves, no tab on another project does. None open there:
+  aiview opens a new tab on it.
 
 The answer's last line says what the person now sees, and the agent says only that:
 
 | line | meaning |
 |---|---|
-| `shown in the person's tab on <p>` | a tab already on the project shows it |
-| `switched the person's last-used tab to <p>` | the last-used tab moved to the project |
-| `updated in place: no tab moved` | an update; the tab showing it re-rendered |
-| `no viewer tab showed it: give the person the link in chat: <url>` | no tab took it |
+| `opened in <n> open tab(s) on <p>` / `shown in <n> open tab(s) on <p>` | the tabs on the project show it |
+| `no tab showed <p>: opened a new one` | no tab was on the project: a new one shows it |
+| `no aiview server answered: give the person the link` | `show` reached no server: the link goes in chat |
