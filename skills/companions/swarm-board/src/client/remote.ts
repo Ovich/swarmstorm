@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import type { Board, RunId } from "../board/board.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type RpcMethod, type ServerState } from "../wire.ts";
@@ -44,6 +45,10 @@ function readServerState(dataRoot: string): ServerState | null {
   }
 }
 
+/** Where a detached server or link runs: never the caller's folder. On Windows a process's cwd cannot be removed, so a
+ *  link spawned from a worktree kept that worktree (and a test's temporary home) from removal while it lived (S31). */
+const DETACHED_CWD = os.tmpdir();
+
 /** A state naming a live process of `swarmEntry`'s version. */
 const isCurrent = (s: ServerState | null, swarmEntry: string): boolean => !!s && s.version === bundleVersion(swarmEntry) && isAlive(s.pid);
 
@@ -71,7 +76,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
       fs.writeFileSync(serverLogFile(dataRoot), "");
       log = fs.openSync(serverLogFile(dataRoot), "a");
     } catch {}
-    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => (exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`));
     child.on("error", (e) => (exited = e.message));
     child.unref();
@@ -162,6 +167,7 @@ export async function openLinkPipe(dataRoot: string, member: BoardMember, harnes
   }
   const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
     detached: true,
+    cwd: DETACHED_CWD,
     stdio: "ignore",
     windowsHide: true,
     env: homeEnv(dataRoot),
