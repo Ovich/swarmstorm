@@ -158,12 +158,16 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   const reader = await connectBoard({ dataRoot: h.r.home });
   let gone: { at: string } | undefined;
   let state = "";
+  let aliveAt: number | null = null;
   try {
     const repo = (await reader.participant(h.member.name))!.repo;
     for (const end = Date.now() + 55_000; !gone && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
       gone = (await reader.snapshot(repo)).events.find((e) => e.event === "gone" && e.body.startsWith("gone harness-plan/S3"));
     }
-    state = (await reader.roster(repo)).find((e) => e.name === h.member.name)?.state ?? "";
+    const entry = (await reader.roster(repo)).find((e) => e.name === h.member.name);
+    state = entry?.state ?? "";
+    // the server's own last sign of the link: when it saw it lost (or, past a restart, its start, D37)
+    aliveAt = entry?.aliveAt ?? null;
   } finally {
     reader.close();
   }
@@ -172,9 +176,9 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   const db = openRawStore(path.join(h.r.home, "swarm.sqlite"), { readOnly: true });
   const lost = db.prepare("SELECT lost_at FROM member_links WHERE run = ? AND member = 'S3'").get(h.run) as { lost_at: number | null } | undefined;
   db.close();
-  assert.ok(lost?.lost_at != null, "the server recorded S3's link lost");
-  const afterLoss = Date.parse(gone.at) - lost.lost_at;
-  assert.ok(afterLoss >= 30_000 && afterLoss <= 35_000, `gone posted ${afterLoss} ms after the server saw the link lost`);
+  assert.ok(lost?.lost_at != null && aliveAt !== null, "the server recorded S3's link lost");
+  const afterLoss = Date.parse(gone.at) - aliveAt;
+  assert.ok(afterLoss >= 30_000 && afterLoss <= 35_000, `gone posted ${afterLoss} ms after the server's last sign of the link (stored lost_at ${lost.lost_at}, ${Date.parse(gone.at) - lost.lost_at} ms)`);
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
   const told = h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
   assert.match(told, /gone harness-plan\/S3/);
