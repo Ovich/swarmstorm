@@ -144,9 +144,9 @@ test("S1 target: join shows the unread task posted before it", async () => {
       "you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you",
       "orchestrator <nick:orchestrator>: joined",
       "w1 <nick:w1>: joined",
-      `${O}  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined, done (carried), joined (carried), idle (carried)`,
+      `${O}  run 1  working  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)`,
       // S20: the roster is read after the join delivered the task: nothing unread on its own row
-      "<nick:w1> · g/w1  run 1  quiet  doing: x",
+      "<nick:w1> · g/w1  run 1  working  doing: x",
       // the result: the task, whole, as a wait would deliver it
       `#<seq> ${O}  <ts>`,
       "@w1 the task: build the thing",

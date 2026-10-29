@@ -31,7 +31,7 @@ export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, Fi
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
 export type Seat = SeatSpec & { state: SeatState };
 /** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
-export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "gone" };
+export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "lost" };
 /** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
 export type Declared = { path: string; interface: boolean }; // repository-relative
@@ -43,10 +43,11 @@ export type Phase = { name: string; text: string };
 /** `of` leaves out the members gone and not done (swarm-relay D41); `gone` names them, `<group>/<member>`. */
 /** `dormant`: the seats counted though their member ended (idle-ended, or named by `--for`): each needs a dispatch to be done. */
 export type PhaseProgress = { phase: string; done: number; of: number; gone: string[]; dormant: string[] };
-/** The progress as every line prints it: `3/3 done`, and `, 1 gone` only when a member is gone (D41). */
-export const progressText = (p: PhaseProgress): string => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} gone` : ""}`;
-/** The gone members as a line's suffix: ` (1 gone: idea/b)`, empty when none (D41). */
-export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} gone: ${gone.join(", ")})` : "");
+/** The progress as every line prints it: `3/3 done`, and `, 1 lost` only when a member is lost (D41, board-split D36;
+ *  the JSON key stays `gone`, frozen for readers). */
+export const progressText = (p: PhaseProgress): string => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
+/** The lost members as a line's suffix: ` (1 lost: idea/b)`, empty when none (D41). */
+export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");
 /** A member's activity from its transcript and its link (swarm-relay D9, D31, E12, D12): what it does, never trouble. */
 export type MemberStateName = "working" | "busy" | "waiting";
 /** board-split D36: trouble, beside the state, never a state. stalled: no progress past the stall time, or a call open
@@ -1160,7 +1161,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         nick: p ? nickOf(p) : null,
         ...(s?.role == null ? {} : { role: String(s.role) }),
         ...(s?.area == null ? {} : { area: String(s.area) }),
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "gone" : "joined",
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "lost" : "joined",
       };
     };
     const entries = [entry(ORCHESTRATOR), ...seats.map((s) => entry(String(s.id), s))];

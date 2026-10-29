@@ -171,7 +171,7 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   } finally {
     reader.close();
   }
-  assert.ok(gone, "the server's tick posted gone harness-plan/S3");
+  assert.ok(gone, "the server's tick posted lost harness-plan/S3");
   assert.equal(state, "lost");
   const db = openRawStore(path.join(h.r.home, "swarm.sqlite"), { readOnly: true });
   const lost = db.prepare("SELECT lost_at FROM member_links WHERE run = ? AND member = 'S3'").get(h.run) as { lost_at: number | null } | undefined;
@@ -181,6 +181,6 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   assert.ok(afterLoss >= 30_000 && afterLoss <= 35_000, `gone posted ${afterLoss} ms after the server's last sign of the link (stored lost_at ${lost.lost_at}, ${Date.parse(gone.at) - lost.lost_at} ms)`);
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
   const told = h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
-  assert.match(told, /gone harness-plan\/S3/);
+  assert.match(told, /lost harness-plan\/S3/);
   assert.doesNotMatch(told, /stalled/);
 });

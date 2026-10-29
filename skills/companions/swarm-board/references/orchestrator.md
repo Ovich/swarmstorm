@@ -45,8 +45,8 @@ except `open`, `seat`, `close` and `status`.
    worktree from it, under the repository's git dir (`swarm/worktrees/<run>/<seat>`, the only folder the board ever removes from), never in its tree, and the cleanup checks a
    worktree's branch is merged into it. Without `--onto`, the checkout's branch at the open.
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`. It
-   prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`
-   opens this run's tab), then the line that starts your link. `open`'s last line is the next
+   prints the run id, the link to this run's tab on the project's board in aiview
+   (`#board&repo=<project>&run=<id>`; without `&run=`, the project's board), then the line that starts your link. `open`'s last line is the next
    step: the first phase, or why there is none. Give the link to the person, who
    watches the run there, and run the line as it says.
 3. **You register nothing for liveness.** Each member's link finds its transcript in the

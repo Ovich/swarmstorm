@@ -231,7 +231,7 @@ const rosterLine = (r: RosterEntry, ages = false): string => {
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
 const situation = (p: Participant, show = false): Promise<Situation> => readSituation(board, p, { cli: self().join(" "), word: shellWord, show });
-/** `phase <name>: <text>  <n>/<m> done[, <k> gone]` beside a run's title, or nothing before its first phase. */
+/** `phase <name>: <text>  <n>/<m> done[, <k> lost]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
   phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
 
@@ -272,7 +272,7 @@ const fwd = (p: string): string => p.split("\\").join("/");
 const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : []), "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 
 /** How a member listens, the one source the docs point at: a seat waits in the foreground (a subagent
- *  that ends its turn is gone, no background listener wakes it); the orchestrator and a worker
+ *  that ends its turn is lost, no background listener wakes it); the orchestrator and a worker
  *  listen in the background while they work. */
 /** The link line of join and open, before any listener or wait line (D32, swarm-relay D33, AGENTS rule 10): the member's link, run as its agent's own
  *  background task, so a stopped agent takes it down; a verb that finds none spawns one detached outside a harness session,
@@ -830,7 +830,7 @@ async function main(): Promise<void> {
       // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
       const line = r.late
         ? `late done ${name} (not the current phase), recorded; the orchestrator is told`
-        : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
+        : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} lost` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
       const a = answer({ verb: "done", phase: name, line }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late }, a, false);
       break;

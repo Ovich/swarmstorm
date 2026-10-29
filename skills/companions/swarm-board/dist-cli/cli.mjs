@@ -3394,7 +3394,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         nick: p ? nickOf(p) : null,
         ...s?.role == null ? {} : { role: String(s.role) },
         ...s?.area == null ? {} : { area: String(s.area) },
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "gone" : "joined"
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "lost" : "joined"
       };
     };
     const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
@@ -4788,8 +4788,8 @@ var init_board = __esm({
     init_events2();
     init_names();
     init_liveness();
-    progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} gone` : ""}`;
-    goneSuffix = (gone) => gone.length ? ` (${gone.length} gone: ${gone.join(", ")})` : "";
+    progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
+    goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL THEN 'ready' WHEN p.ended_at IS NULL OR p.dormant = 1 OR p.parked = 1 THEN 'running' ELSE 'done' END
@@ -10392,7 +10392,7 @@ ${verbHelp()}`);
         emit({ member: p.name, phase: name, done: null, none: true }, WORDING.doneNone);
         break;
       }
-      const line = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} gone` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
+      const line = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} lost` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
       const a = answer({ verb: "done", phase: name, line }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late }, a, false);
       break;

@@ -193,7 +193,7 @@ test("the retention setting: 30 by default, set to 7, refuses what is not a posi
   assert.equal(board.setting("retention-days"), 7);
 });
 
-test("a run whose every member is silent is flagged once with the run, by its orchestrator, never delivered to it; a call clears the mark (D23)", () => {
+test("a run whose every member is silent is flagged once with the run, by its orchestrator, which hears it (board-split D36); a call clears the mark (D23)", () => {
   const { run, s1 } = runWithMembers("quiet");
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
   assert.deepEqual(board.markStaleRuns(later(5)), []);
@@ -207,10 +207,9 @@ test("a run whose every member is silent is flagged once with the run, by its or
   assert.deepEqual(board.markStaleRuns(later(12)), []);
   board.setDoing(s1, "back");
   assert.deepEqual(board.markStaleRuns(later(25)), [run.id]);
-  // the orchestrator authors it, so its own delivery never carries it
+  // board-split D36: folded into stalled, an event the board posts in the orchestrator's name that reaches it too
   const toOrchestrator = board.deliver(board.participant("quiet/orchestrator")!);
-  assert.ok(!toOrchestrator.full.some((m) => m.body.startsWith("stalled run ")));
-  assert.ok(!toOrchestrator.lines.some((l) => l.includes("stalled run ")));
+  assert.ok(toOrchestrator.full.some((m) => m.body.startsWith("stalled run ")));
   // a member of the run hears it, as a line
   assert.ok(board.deliver(s1).lines.some((l) => l.includes("stalled run ")));
 });
