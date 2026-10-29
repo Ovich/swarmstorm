@@ -9496,6 +9496,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
   eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
+  /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
+  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; claim it once free`,
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
   restartLink: (member, cli, run3, as) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run3} --as ${as}`,
   /** a stall's move, by the rule that badged its member stalled (idea 1, rule 6) */
@@ -9940,13 +9942,17 @@ var heldLine = (files) => {
   const shown = files.slice(0, HELD_SHOWN).map((f) => f.interface ? `${f.path} (interface)` : f.path).join(", ");
   return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
 };
-var rosterLine = (r, ages = false) => {
+var rosterLine = (r, roster, ages = false) => {
   const files = heldLine(r.held);
+  const holderOf = (file) => roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
+  const mine = new Set(r.held.map((h) => h.path.toLowerCase()));
+  const unclaimed = r.files.map((f) => f.path.split("\\").join("/")).filter((f) => !mine.has(f.toLowerCase())).flatMap((f) => holderOf(f) ? [`${f} (${holderOf(f)})`] : []);
+  const declared = unclaimed.length ? WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}${bound}`;
 };
 var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
@@ -10416,7 +10422,7 @@ ${verbHelp()}`);
       const drawing = POSTS_MARKDOWN;
       const waiting = await board.deliverMentions(member);
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
-      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r))];
+      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
       const tail = [...as ? [as] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
       const statedByJoin = /* @__PURE__ */ new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
@@ -10580,7 +10586,7 @@ ${verbHelp()}`);
           const run3 = runs.get(r.run);
           if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}`);
           shown = r.run;
-          console.log(rosterLine(r, true));
+          console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
         }
       });

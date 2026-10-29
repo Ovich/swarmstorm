@@ -28,6 +28,8 @@ export const CODE_WORDING = {
     ].join("\n"),
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
+  /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
+  declaredNotClaimed: (paths: string[]) => `  declared, held by another: ${paths.join(", ")}; claim it once free`,
   memberFact: { merging: "merging (holds the merge lock)" },
 
   // ── the merge (V12: every command runnable as printed) ──

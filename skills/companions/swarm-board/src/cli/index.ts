@@ -218,15 +218,24 @@ const heldLine = (files: { path: string; interface: boolean }[]): string => {
   return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
 };
 
-const rosterLine = (r: RosterEntry, ages = false): string => {
+/** `roster`: every member of the repository, for whom holds a file `r` declared. */
+const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string => {
   const files = heldLine(r.held);
-  // the funny name beside the member (D43); an orchestrator is its name alone
+  // D19 (F9): a declared file another member held at the join is not claimed; the roster names it and its holder
+  const holderOf = (file: string): string | undefined =>
+    roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
+  const mine = new Set(r.held.map((h) => h.path.toLowerCase()));
+  const unclaimed = r.files
+    .map((f) => f.path.split("\\").join("/"))
+    .filter((f) => !mine.has(f.toLowerCase()))
+    .flatMap((f) => (holderOf(f) ? [`${f} (${holderOf(f)})`] : []));
+  const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
   const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${on}${bound}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}${bound}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -868,7 +877,7 @@ async function main(): Promise<void> {
       const waiting = await board.deliverMentions(member);
       // S20: the roster read after that delivery, so the member's own row counts none of it as unread
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
-      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r))];
+      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
       const tail = [...(as ? [as] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
       const statedByJoin = new Set(["phase", "pause"]);
@@ -1052,7 +1061,7 @@ async function main(): Promise<void> {
           const run = runs.get(r.run);
           if (run && r.run !== shown) console.log(`run ${run.id}  ${run.title}${phaseSuffix(run.phase, progress.get(run.id) ?? null)}`);
           shown = r.run;
-          console.log(rosterLine(r, true));
+          console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
         }
       });

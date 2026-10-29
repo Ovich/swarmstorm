@@ -450,3 +450,17 @@ test("F3 (D2): merge-lock in a run opened --onto scratch takes scratch with no -
   assert.match(granted.stdout, /^granted: /m);
   assert.doesNotMatch(granted.stdout + granted.stderr, /--onto is required|main/);
 });
+
+test("a file declared at join while another member holds it shows on the roster, with its holder, until claimed (D19, F9)", () => {
+  const slices = path.join(home, "slices.json");
+  fs.writeFileSync(slices, SLICES);
+  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--seats", slices).split("\n")[0].trim();
+  cli(wtA, "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
+  cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill", "--files", "src/a.ts:inside");
+  const s5 = cli(wtB, "roster").split("\n").find((l) => l.includes("review-tool/S5"))!;
+  assert.match(s5, /declared, held by another: src\/a\.ts \(review-tool\/S3\); claim it once free/);
+  assert.doesNotMatch(s5, /files: /);
+  const s3 = cli(wtB, "roster").split("\n").find((l) => l.includes("review-tool/S3"))!;
+  assert.match(s3, /files: src\/a\.ts/);
+  assert.doesNotMatch(s3, /declared, held/);
+});

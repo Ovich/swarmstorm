@@ -1450,3 +1450,19 @@ test("V3: a foreground wait --mentions counts as listening even when the link re
     await exited;
   }
 });
+
+test("open prints one shape for every kind: the bare run id, then its board URL, then its link (F10)", () => {
+  const { launcher } = fakeAiview();
+  const slices = path.join(toolRoot, "s.json");
+  fs.writeFileSync(slices, SLICES);
+  const opened = (...argv: string[]) => {
+    const r = spawnSync(process.execPath, [CLI, "open", ...argv, "--title", "T", "--seats", slices], { cwd: repo, encoding: "utf8", env: { ...env(), SWARM_AIVIEW: launcher } });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.split("\n");
+  };
+  for (const lines of [opened("--plan", "review-tool"), opened("--kind", "brainstorm", "--group", "ideas"), opened("--kind", "task", "--group", "crew")]) {
+    assert.match(lines[0], /^\d+$/, lines.join("\n"));
+    assert.equal(lines[1], `http://localhost:4321/#board&repo=p&run=${lines[0]}`);
+    assert.match(lines[2], /^start your link now/);
+  }
+});
