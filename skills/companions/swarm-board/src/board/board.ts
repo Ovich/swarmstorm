@@ -230,8 +230,9 @@ export type SnapshotMember = {
   /** board-split D31, D32: what the member runs now, from its link: its oldest open call and its awaited background
    *  task; absent from a server before it, or with no activity. Times ms epoch. */
   activity?: {
-    open: { name: string; target: string; since: number; boardWait: boolean } | null;
-    background: { target: string; since: number; outputGrewAt: number | null } | null;
+    /** `label`: the call's own description, `command`: its whole command (D45); null when the transcript gave none */
+    open: { name: string; target: string; since: number; boardWait: boolean; label: string | null; command: string | null } | null;
+    background: { target: string; since: number; outputGrewAt: number | null; label: string | null; command: string | null } | null;
   };
   /** Its subscriptions, as `formatSubscriptions` writes each (D59). */
   on: string[];
@@ -715,6 +716,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("member_activity", "bg_since", "bg_since INTEGER");
   upkeep("member_activity", "bg_grew_at", "bg_grew_at INTEGER");
   upkeep("member_activity", "transcript", "transcript TEXT");
+  // board-split D45: the open call's and the background task's own description and whole command, for the card's line
+  upkeep("member_activity", "open_label", "open_label TEXT");
+  upkeep("member_activity", "open_command", "open_command TEXT");
+  upkeep("member_activity", "bg_label", "bg_label TEXT");
+  upkeep("member_activity", "bg_command", "bg_command TEXT");
   // the owing span (idea 1, rule 5): since when the member waits while owing the phase, and when its last wait returned
   upkeep("member_activity", "owe_since", "owe_since INTEGER");
   upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
@@ -1243,8 +1249,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const activityShown = (run: RunId, seat: string): { activity?: SnapshotMember["activity"] } => {
     const a = activityOf(run, seat);
     if (!a) return {};
-    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1 };
-    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) };
+    const text = (v: unknown): string | null => (v == null ? null : String(v));
+    const open =
+      a.open_tool == null
+        ? null
+        : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: text(a.open_label), command: text(a.open_command) };
+    const background =
+      a.bg_target == null
+        ? null
+        : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: text(a.bg_label), command: text(a.bg_command) };
     return { activity: { open, background } };
   };
   /** board-split D30: park or unpark a seat of the orchestrator's run, one event mentioning the seat. */
@@ -2155,6 +2168,14 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           bg?.since ?? null,
           bg?.outputGrewAt ?? null,
           act.transcript ?? null,
+          run,
+          member,
+        );
+        db.prepare("UPDATE member_activity SET open_label = ?, open_command = ?, bg_label = ?, bg_command = ? WHERE run = ? AND member = ?").run(
+          o?.label ?? null,
+          o?.command ?? null,
+          bg?.label ?? null,
+          bg?.command ?? null,
           run,
           member,
         );

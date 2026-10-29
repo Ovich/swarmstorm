@@ -124,3 +124,13 @@ test("S22 (board-split D25): a fresh agent re-joining a seat joined long ago dra
   assert.equal(eventsOf("liveness").filter((e) => e.body.includes("no transcript found for g/b")).length, 1, "still told once 30 s after the re-join");
   void b;
 });
+
+test("D45: the card's activity carries the call's own label and whole command, null from a link that sent none", () => {
+  const { run } = setup();
+  const base = Date.now();
+  const open = { name: "Bash", target: "npm run build", since: base, label: "Build the viewer", command: "cd app && npm run build" };
+  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: open, background: { target: "npm test", since: base, outputGrewAt: null } }), at(base, 0));
+  const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
+  assert.deepEqual([card.activity?.open?.label, card.activity?.open?.command], ["Build the viewer", "cd app && npm run build"]);
+  assert.deepEqual([card.activity?.background?.label, card.activity?.background?.command], [null, null]);
+});

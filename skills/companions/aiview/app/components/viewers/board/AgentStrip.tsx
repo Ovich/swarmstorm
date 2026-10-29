@@ -41,8 +41,8 @@ type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
   badge?: BoardBadge | null;
   parkedUntil?: string | null;
   activity?: {
-    open: { name: string; target: string; since: number; boardWait: boolean } | null;
-    background: { target: string; since: number; outputGrewAt: number | null } | null;
+    open: { name: string; target: string; since: number; boardWait: boolean; label?: string | null; command?: string | null } | null;
+    background: { target: string; since: number; outputGrewAt: number | null; label?: string | null; command?: string | null } | null;
   };
 };
 
@@ -91,40 +91,63 @@ function TroubleBadge({ trouble }: { trouble: { kind: string; reason: string } |
   );
 }
 
-/** A command as the card shows it (D32): no env prefix, the CLI's path dropped (a board call named by its verb), cut to the card. */
-export function cleanCall(command: string): string {
-  const words = command.trim().split(/\s+/);
+/** The card's line, ~32 characters (board-split#D45). */
+const LINE_CHARS = 32;
+const cut = (text: string, n = LINE_CHARS): string => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
+const fileName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
+
+/** A command's short form (D45), when the call gave no description: no `VAR=…` prefix and no `cd … &&`, a board
+ *  call `board <verb>`, a script its file name, else the program and its first two arguments. */
+export function shortCommand(command: string): string {
+  let line = command.trim().replace(/^cd\s+\S+\s*(&&|;)\s*/, "");
+  const words = line.split(/\s+/).filter(Boolean);
   while (words.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) words.shift();
   const board = words.findIndex((w) => /(^|[\\/])swarm(\.mjs)?$/.test(w));
-  const shown = board >= 0 ? ["swarm", ...words.slice(board + 1)] : words;
-  const line = shown.join(" ");
-  return line.length > 60 ? `${line.slice(0, 59)}…` : line;
+  if (board >= 0) return `board ${words[board + 1] ?? ""}`.trim();
+  const script = words.findIndex((w, i) => i > 0 && /\.(m?[jt]s|py|sh|ps1|cjs)$/.test(w));
+  if (script >= 0 && /^(node|python3?|bash|sh|pwsh|powershell|tsx|deno|bun)(\.exe)?$/i.test(fileName(words[0]))) return fileName(words[script]);
+  line = [fileName(words[0] ?? ""), ...words.slice(1, 3)].join(" ");
+  return line;
 }
 
-/** What the member runs now (D32), one line per open call, newest first: `running <command> · background|foreground ·
- *  <N> min`, `waiting on the board · <N> min`; nothing open, its last call. From the board's open calls when it sends
- *  them, else from its activity. */
-export function activityLines(p: MemberOnBoard, activity: MemberActivity | null, now: number): string[] {
-  const open = p.activity?.open ?? null;
+/** A call as the card names it (D45): its own description, else a shell command's short form, else `<Tool> · <file>`. */
+export function callLabel(call: { name?: string; target: string; label?: string | null; command?: string | null }): string {
+  if (call.label) return call.label;
+  const command = call.command ?? call.target;
+  if (!call.name || call.name === "Bash" || call.name === "PowerShell" || /\s/.test(command.trim())) return shortCommand(command);
+  return `${call.name} · ${fileName(command)}`;
+}
+
+/** Whole minutes since `since`, as the card's line counts them. */
+const minutesShort = (since: number, now: number): string => `${Math.max(0, Math.floor((now - since) / 60000))}m`;
+
+/** What the member runs now (D45), one line: `▸ <label>  <N>m` for a call in the foreground, `◌` for a background one;
+ *  the board's own wait is no line (the state word says waiting); nothing open, no line. `hover`: the whole command,
+ *  foreground or background, since when, and the last call. */
+export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
+  const open = p.activity?.open && !p.activity.open.boardWait ? p.activity.open : null;
   const background = p.activity?.background ?? null;
-  if (p.activity) {
-    const lines = [
-      ...(open ? [{ since: open.since, text: open.boardWait ? `waiting on the board · ${minutesSince(open.since, now)}` : `running ${cleanCall(open.target)} · foreground · ${minutesSince(open.since, now)}` }] : []),
-      ...(background ? [{ since: background.since, text: `running ${cleanCall(background.target)} · background · ${minutesSince(background.since, now)}` }] : []),
-    ].sort((a, b) => b.since - a.since);
-    if (lines.length) return lines.map((l) => l.text);
-  }
-  if (!activity?.doing) return [];
-  if (activity.state === "busy") return [`running ${cleanCall(activity.doing)} · foreground${activity.since !== null ? ` · ${minutesSince(activity.since, now)}` : ""}`];
-  return [`last: ${cleanCall(activity.doing)}`];
+  const last = activity?.doing ? `last call: ${activity.doing}` : null;
+  const shown = (mark: string, how: string, call: { name?: string; target: string; since: number; label?: string | null; command?: string | null }) => {
+    const minutes = minutesShort(call.since, now);
+    return {
+      text: `${mark} ${cut(callLabel(call), LINE_CHARS - minutes.length - 4)}  ${minutes}`,
+      hover: [call.command ?? call.target, `${how} since ${hhmm(new Date(call.since).toISOString())}`, last].filter(Boolean).join("\n"),
+    };
+  };
+  if (open) return shown("▸", "foreground", open);
+  if (background) return shown("◌", "background", background);
+  // an older board with no open calls: its busy activity is the call it runs
+  if (!p.activity && activity?.state === "busy" && activity.doing && activity.since !== null) return shown("▸", "foreground", { target: activity.doing, since: activity.since });
+  return null;
 }
 
-/** The activity line on the card face; its text also reads in the hover title. */
-function ActivityLine({ lines, state }: { lines: string[]; state: string }) {
-  if (!lines.length) return null;
+/** The activity line on the card face; the whole command on its own hover. */
+function ActivityLine({ line, state }: { line: { text: string; hover: string } | null; state: string }) {
+  if (!line) return null;
   return (
-    <span className="activity" data-component="MemberActivity" data-state={state}>
-      {lines.join("\n")}
+    <span className="activity" data-component="MemberActivity" data-state={state} title={line.hover}>
+      {line.text}
     </span>
   );
 }
@@ -165,9 +188,9 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
   const activity = isEnded(p) ? null : activityOf(p);
   const status = stateWordOf(p);
   const trouble = troubleOf(p, activity, now);
-  const lines = isEnded(p) ? [] : activityLines(p, activity, now);
+  const line = isEnded(p) ? null : activityLine(p, activity, now);
   // the face shows the ages and the activity line; the hover title repeats them, the trouble's reason with them
-  const hoverTitle = [p.doing, trouble?.reason, activity && agesText(activity, now), ...lines].filter(Boolean).join("\n");
+  const hoverTitle = [p.doing, trouble?.reason, activity && agesText(activity, now), line?.text].filter(Boolean).join("\n");
   return (
     <button
       title={hoverTitle || undefined}
@@ -191,7 +214,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
       {/* working carries its task in the word; any other live state keeps the doing line */}
       {boardStateOf(p) !== "working" && !isEnded(p) && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      <ActivityLine lines={lines} state={activity?.state ?? boardStateOf(p)} />
+      <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
     </button>
   );
 }
@@ -390,7 +413,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
   const activity = ended ? null : activityOf(p);
   const status = stateWordOf(p);
   const trouble = troubleOf(p, activity, now);
-  const lines = ended ? [] : activityLines(p, activity, now);
+  const line = ended ? null : activityLine(p, activity, now);
   return (
     <div
       className={["hovercard", "card", orch && "orch", boardStateOf(p)].filter(Boolean).join(" ")}
@@ -411,7 +434,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
       {!!p.unread && <span className="unread">{p.unread} unread</span>}
       {!ended && boardStateOf(p) !== "working" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      <ActivityLine lines={lines} state={activity?.state ?? boardStateOf(p)} />
+      <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
     </div>
   );
 }

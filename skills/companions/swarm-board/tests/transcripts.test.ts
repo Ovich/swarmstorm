@@ -166,3 +166,21 @@ test("S22 (board-split D25): a joining subagent's transcript, written after the 
   writeSubagent(root, PROJECT, SESSION, "late", [bashCall("swarm join --run 68 --seat S22 --doing x --as g/S22")], {}, 1_700_000_000);
   assert.ok(locate(join("S22"), env)?.endsWith("agent-late.jsonl"));
 });
+
+test("D45: observe carries a call's own description and whole command, for the open call and the background task", () => {
+  const long = `cd app && CI=1 npm run build -- --mode production ${"x".repeat(60)}`;
+  const file = writeMain(root, PROJECT, SESSION, [
+    toolCall("Bash", { command: "npm test", description: "Run the  suite", run_in_background: true }, "toolu_bg", "2026-10-22T10:00:00.000Z"),
+    toolResult("toolu_bg"),
+    toolCall("Bash", { command: long, description: "Build the viewer" }, "toolu_fg", "2026-10-22T10:00:01.000Z"),
+  ]);
+  const { activity } = observe(file, null);
+  assert.equal(activity.openTool!.label, "Build the viewer");
+  assert.equal(activity.openTool!.command, long);
+  assert.equal(activity.background!.label, "Run the suite");
+  assert.equal(activity.background!.command, "npm test");
+  // a call with no description has no label: the card makes its short form
+  const bare = writeMain(root, PROJECT, OTHER, [toolCall("Read", { file_path: "/r/src/a.ts" }, "toolu_r", "2026-10-22T10:00:00.000Z")]);
+  assert.equal(observe(bare, null).activity.openTool!.label, null);
+  assert.equal(observe(bare, null).activity.openTool!.command, "/r/src/a.ts");
+});

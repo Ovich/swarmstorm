@@ -358,25 +358,44 @@ test("a parked member carries no badge, whatever the board sends (D30)", () => {
   expect(badgeOf(activeCard())).toBeNull();
 });
 
-// board-split#D32: what the member runs now, one line per open call, newest first; nothing open, its last call
-test("the activity line names each open call, newest first, the command cleaned", () => {
+// board-split#D45: one short line, `▸ <label>  <N>m` (◌ in the background); the call's own description first, else a
+// short command form; the whole command on hover; the board's own wait and nothing open: no line
+test("the activity line is one short line: the call's description, its minutes, the whole command on hover", () => {
   const activity = {
-    open: { name: "Bash", target: "SWARMSTORM_HOME=/h node /x/skills/swarm.mjs wait --mentions --as g/w1", since: minutesAgo(2), boardWait: true },
-    background: { target: "npm test", since: minutesAgo(7), outputGrewAt: null },
+    open: { name: "Bash", target: "npm run build", since: minutesAgo(9), boardWait: false, label: "Build the viewer", command: "cd app && CI=1 npm run build -- --mode production" },
+    background: { target: "npm test", since: minutesAgo(7), outputGrewAt: null, label: null, command: "npm test" },
   };
-  show([APP], 1, [withMember({ activity, liveness: { state: "busy", doing: "Bash", since: minutesAgo(2), tokens: null, movedAt: null } })]);
-  expect(activityOfCard(activeCard())).toBe("waiting on the board · 2 min\nrunning npm test · background · 7 min");
-  cleanup();
-  show([APP], 1, [withMember({ activity: { open: { name: "Bash", target: "CI=1 npm run build", since: minutesAgo(3), boardWait: false }, background: null } })]);
-  expect(activityOfCard(activeCard())).toBe("running npm run build · foreground · 3 min");
+  show([APP], 1, [withMember({ activity })]);
+  const line = activeCard().querySelector('[data-component="MemberActivity"]') as HTMLElement;
+  expect(line.textContent).toBe("▸ Build the viewer  9m");
+  expect(line.title).toContain("cd app && CI=1 npm run build -- --mode production");
+  expect(line.title).toContain("foreground since");
 });
 
-test("nothing open: the activity line reads the last call; a busy activity, the call it runs", () => {
+test("no description: a short command form; a background call reads ◌; the board's own wait is no line", () => {
+  show([APP], 1, [withMember({ activity: { open: { name: "Bash", target: "x", since: minutesAgo(3), boardWait: false, label: null, command: "SWARMSTORM_HOME=/h node /x/skills/swarm.mjs merge-lock --onto main --as g/w1" }, background: null } })]);
+  expect(activityOfCard(activeCard())).toBe("▸ board merge-lock  3m");
+  cleanup();
+  show([APP], 1, [withMember({ activity: { open: { name: "Bash", target: "x", since: minutesAgo(2), boardWait: true, label: null, command: "node swarm.mjs wait" }, background: { target: "node scripts/check-all.mjs --fast", since: minutesAgo(5), outputGrewAt: null, label: null, command: null } } })]);
+  expect(activityOfCard(activeCard())).toBe("◌ check-all.mjs  5m");
+  cleanup();
+  show([APP], 1, [withMember({ activity: { open: { name: "Read", target: "C:/r/src/board/board.ts", since: minutesAgo(1), boardWait: false, label: null, command: "C:/r/src/board/board.ts" }, background: null } })]);
+  expect(activityOfCard(activeCard())).toBe("▸ Read · board.ts  1m");
+});
+
+test("a long label is cut to the card's line", () => {
+  show([APP], 1, [withMember({ activity: { open: { name: "Bash", target: "x", since: minutesAgo(12), boardWait: false, label: "Run the whole swarm-board suite in the foreground now", command: "npm test" }, background: null } })]);
+  const text = activityOfCard(activeCard())!;
+  expect(text.length).toBeLessThanOrEqual(32);
+  expect(text).toMatch(/^▸ Run the whole .*…  12m$/);
+});
+
+test("nothing open: no activity line; an older board's busy activity, the call it runs", () => {
   show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, tokens: null, movedAt: null })]);
-  expect(activityOfCard(activeCard())).toBe("last: Edit");
+  expect(activityOfCard(activeCard())).toBeNull();
   cleanup();
   show([APP], 1, [withActivity({ state: "busy", doing: "browser_click /jobs", since: minutesAgo(3), tokens: null, movedAt: null })]);
-  expect(activityOfCard(activeCard())).toBe("running browser_click /jobs · foreground · 3 min");
+  expect(activityOfCard(activeCard())).toBe("▸ browser_click /jobs  3m");
 });
 
 test("a member with no activity renders its word and no activity line", () => {
@@ -395,7 +414,7 @@ test("each card shows progress <age> and alive <age>, also in its hover title wi
   const card = activeCard();
   expect(agesOf(card)!.textContent).toBe("progress 4 min · alive 20 s");
   expect(card.title).toContain("progress 4 min · alive 20 s");
-  expect(card.title).toContain("running Bash · foreground · 3 min");
+  expect(card.title).toContain("▸ Bash  3m");
 });
 
 test("a card without the two ages renders without them", () => {

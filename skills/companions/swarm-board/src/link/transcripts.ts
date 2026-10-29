@@ -16,7 +16,7 @@ export type Binding = { verb: "join"; run: RunId; seat: string } | { verb: "open
 export type TranscriptCursor = {
   offset: number;
   tokens: number;
-  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean }>;
+  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean } & CallWords>;
   lastTool: string | null;
   context: number | null;
   grewAt: number | null;
@@ -39,7 +39,19 @@ export type TranscriptCursor = {
 };
 
 /** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
-type BackgroundTask = { target: string; since: number; turn: number; output: string | null };
+type BackgroundTask = { target: string; since: number; turn: number; output: string | null } & CallWords;
+
+/** board-split D45: a call as the card names it, read off the transcript alone: the call's own `description` (null
+ *  when it gave none) and its whole command or input, for the hover. */
+type CallWords = { label?: string | null; command?: string | null };
+const LABEL_CHARS = 80;
+const COMMAND_CHARS = 500;
+function callWordsOf(input: unknown): CallWords {
+  const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
+  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
+  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
+}
 
 export interface HarnessLocator {
   name: string;
@@ -397,7 +409,7 @@ function awaitedBackground(cursor: TranscriptCursor): MemberActivity["background
       // not written yet, or gone: unknown
     }
   }
-  return { target: oldest.target, since: oldest.since, outputGrewAt };
+  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
 }
 
 type TranscriptLine = {
@@ -474,12 +486,13 @@ export function observe(transcript: string, from: TranscriptCursor | null, bindi
           const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
           // a shell call (any tool whose input holds a string command, idea 1 §3's test) has its own timeout; idea 5 bounds the rest
           const shell = typeof command === "string";
-          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...(shell ? { shell } : {}) });
+          const words = callWordsOf(part.input);
+          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...(shell ? { shell } : {}), ...words });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
           const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
           if (boardsOwn) cursor.boardsOwn.add(part.id);
-          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
           if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
           const kill = typeof command === "string" ? classifyKill(command) : null;
@@ -502,7 +515,7 @@ export function observe(transcript: string, from: TranscriptCursor | null, bindi
             if (task) cursor.background.set(part.tool_use_id, { ...task, output });
             else if (call && !cursor.boardsOwn.has(part.tool_use_id))
               // a foreground call the harness moved to the background: it belongs to the turn it was called in
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, label: call.label ?? null, command: call.command ?? null });
           }
           cursor.open.delete(part.tool_use_id);
           cursor.boardsOwn.delete(part.tool_use_id);

@@ -79,7 +79,8 @@ export type MemberActivity = {
   /** a tool_use with no result yet */
   /** `boardWait`: the call runs the board's own `wait` verb, the one call that is waiting (swarm-relay D45) */
   /** `shell`: its input holds a string `command` (a shell call), bounded by its own timeout; any other call is bounded by the seat's `busyMax` (idea 5) */
-  openTool: { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean } | null;
+  /** `label`, `command` (board-split D45): the call's own description and its whole command; absent from an older link */
+  openTool: { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean; label?: string | null; command?: string | null } | null;
   /** "<name> <target, 50 chars>" */
   lastTool: string | null;
   /** the harness says the agent ended (meta.json) */
@@ -90,7 +91,7 @@ export type MemberActivity = {
   /** the last assistant text (50 chars), or "<tool> <target>" */
   lastLine?: string | null;
   /** the oldest awaited background task (latest turn, board's own excluded); null when none */
-  background?: { target: string; since: number; outputGrewAt: number | null } | null;
+  background?: { target: string; since: number; outputGrewAt: number | null; label?: string | null; command?: string | null } | null;
   /** the transcript's path, for the server to stat while the link is lost */
   transcript?: string;
   /** the member's last kill that was not by PID (idea 4): by name or pattern always a breach; by a port lookup a breach
