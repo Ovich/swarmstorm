@@ -157,6 +157,10 @@ test("S1 target: join shows the unread task posted before it", async () => {
     const again = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
     assert.doesNotMatch(again.text, /the task: build the thing/);
     assert.doesNotMatch(s.call("wait", "--mentions", "--as", s.me, "--timeout", "300").text, /the task: build the thing/);
+  } finally {
+    s.stop();
+  }
+});
 
 // S5: agree's parties line names every party, its author included, in one stable order (by name); every --with counts
 test("S5 target: agree names every party, the author included, each --with counted", async () => {
