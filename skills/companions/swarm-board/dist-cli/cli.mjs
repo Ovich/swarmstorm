@@ -8932,6 +8932,8 @@ ${USAGE}`);
       emit({ run: run2.id, repo: run2.repo, kind: run2.kind, group: run2.group, plan: run2.plan, url: doc.url, link, ...next ? { next } : {} }, lines(doc.url));
       break;
     }
+    case "slice":
+    // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
     case "seat": {
       if (args.positional[0] === "add") {
         const id2 = args.positional[1] ?? fail(`seat add: which id?

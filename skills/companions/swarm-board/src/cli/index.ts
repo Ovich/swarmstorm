@@ -675,6 +675,7 @@ async function main(): Promise<void> {
       emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: doc.url, link, ...(next ? { next } : {}) }, lines(doc.url));
       break;
     }
+    case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
     case "seat": {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?\n${USAGE}`);
