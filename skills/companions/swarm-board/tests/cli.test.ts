@@ -1406,10 +1406,28 @@ test("the listener line follows the link's report of the member's listener, not 
   // none: the line
   await report({ running: false, endedAt: null });
   for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/b.ts")]) assert.equal(ends(r), true, r.stdout);
-  // just returned: its own answer said to re-arm it, no line
+  // V3: a listener whose task ended without a re-arm is no listener, however lately: the line
   await report({ running: false, endedAt: Date.now() - 5_000 });
-  assert.equal(ends(run("post", ...as, "again")), false);
-  // returned long ago: the line
-  await report({ running: false, endedAt: Date.now() - 10 * 60_000 });
-  assert.equal(ends(run("post", ...as, "later")), true);
+  assert.equal(ends(run("post", ...as, "again")), true);
+});
+
+test("V3: a foreground wait --mentions counts as listening even when the link reports no background listener", async () => {
+  const id = Number(openRun());
+  run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
+  const as = ["--as", "review-tool/S5"];
+  const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
+  try {
+    board.recordActivity(id, "S5", { grewAt: Date.now(), tokens: 1, context: null, openTool: null, lastTool: null, finished: false, listener: { running: false, endedAt: null } }, new Date());
+  } finally {
+    board.close();
+  }
+  const child = spawn(process.execPath, [CLI, "wait", "--mentions", ...as, "--timeout", "15000"], { cwd: repo, env: env() });
+  const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
+  try {
+    await new Promise((r) => setTimeout(r, 1500));
+    assert.doesNotMatch(run("post", ...as, "hello").stdout, /start your listener/);
+  } finally {
+    run("end", ...as);
+    await exited;
+  }
 });

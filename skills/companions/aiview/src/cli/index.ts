@@ -20,7 +20,7 @@ import { isHtml, readDoc, sidecarOf } from "../core/paths.ts";
 import { pointerHash, isName, unknownNames } from "../core/pointer.ts";
 import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
-import { adoptLegacyIndex, DATA_ROOT, defaultPort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
+import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
 import { readServerStatus, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
@@ -204,9 +204,10 @@ function stopServerProcess(pid: number): void {
  *  or with none recorded, is stopped and replaced on its own port. With no installed
  *  version to compare against, any running server is reused. */
 function portOfInstalledServer(): number {
-  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort());
+  const asked = args.flag("--port") ?? process.env.AIVIEW_PORT;
   const st: ServerStatus = readServerStatus();
-  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(requested);
+  // V2: a derived port another process already holds is passed over for the next free one; an asked port is kept as asked
+  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(asked !== undefined ? Number(asked) : firstFreePort(defaultPort()));
   const installed = collectionVersion(TOOL_ROOT);
   if (installed === null || st.version === installed) return st.port;
   stopServerProcess(st.pid);
@@ -562,7 +563,7 @@ function cmdProject(): void {
     }
 
     if (sub === "add") {
-      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path") });
+      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p) => path.resolve(p)) });
       fs.mkdirSync(docsDirFor(slug), { recursive: true });
       emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `\n  covers ${p.paths.join(", ")}` : ""}`);
       return;

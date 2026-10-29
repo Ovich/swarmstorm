@@ -459,8 +459,8 @@ const ORCHESTRATOR = "orchestrator";
 /** A watch event can be missed (a coalesced write, a platform quirk); the store is re-read
  *  this often regardless, so a missed event costs at most this much. */
 const WAIT_POLL_MS = 1000;
-/** D4: how long after its listener returned a member is still taken to be re-arming it, the answer that returned having said so. */
-const LISTENER_REARM_GRACE_MS = 60 * 1000;
+/** G31: liveness alerts due within this window after one told are held and told together. */
+const ALERT_WINDOW_MS = 10 * 1000;
 const LINE_WIDTH = 100;
 const STALE_MS = 10 * 60 * 1000;
 /** A pending wait's looks are logged in call_log at most this often: well under STALE_MS, never a row per tick. */
@@ -920,13 +920,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
     LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
-  /** D4 (G16): the member has a listener when its link reports one running, or one that returned so lately that its own
-   *  answer told the member to re-arm it; with no report, the in-wait column. */
-  const listensNow = (r: Row): boolean => {
-    if (r.listener_running == null) return Number(r.listening) === 1;
-    if (Number(r.listener_running) === 1) return true;
-    return r.listener_ended_at != null && Date.now() - Number(r.listener_ended_at) < LISTENER_REARM_GRACE_MS;
-  };
+  /** D4 (G16), V3: the member listens while its link reports a background listener running, or while a `wait --mentions`
+   *  of its own is held (a foreground one too); a listener whose task ended without a re-arm is no listener. */
+  const listensNow = (r: Row): boolean => Number(r.listening) === 1 || Number(r.listener_running) === 1;
 
   const toParticipant = (r: Row): Participant => ({
     id: Number(r.id),
@@ -1133,6 +1129,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     };
   };
 
+  /** G23: a member done with a phase has had the event that opened it; a later wait never brings it back as news. */
+  const markPhaseOpenDelivered = (p: Participant, phase: string): void => {
+    const opened = (db.prepare("SELECT seq, meta FROM messages WHERE run = ? AND event = ?").all(p.run, EVENTS.phase.name) as Row[]).filter(
+      (r) => r.meta != null && (JSON.parse(String(r.meta)) as { phase?: string }).phase === phase,
+    );
+    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
+    for (const r of opened) mark.run(p.id, Number(r.seq));
+  };
+
   const retentionDays = (): number => {
     const r = db.prepare("SELECT value FROM settings WHERE name = 'retention-days'").get() as Row | undefined;
     return r ? Number(r.value) : RETENTION_DEFAULT_DAYS;
@@ -1239,6 +1244,25 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // ── liveness: member states from activity (swarm-relay D9, D11, D12, D31) ─────────────
   /** Since when every member of a run (the orchestrator aside) has been waiting, and when its last idle was posted. */
   /** `postedSeq`: the run's last post (idles aside) when the idle was told; `stirred`: a member left its wait since. */
+  /** G31: the liveness alerts (gone, liveness, stalled) of a run. The first goes out at once; those due within
+   *  ALERT_WINDOW_MS after it are held and told together as one wake when the window ends. */
+  type DueAlert = { body: string; event: EventName; meta?: MessageMeta };
+  const alertsDue = new Map<RunId, { lastToldAt: number | null; items: DueAlert[] }>();
+  const raiseAlert = (run: RunId, item: DueAlert): void => {
+    const due = alertsDue.get(run) ?? { lastToldAt: null, items: [] };
+    due.items.push(item);
+    alertsDue.set(run, due);
+  };
+  /** One tick's end: the held alerts, together, once the window allows. */
+  const flushAlerts = (run: RunId, t: number, orch: Participant): void => {
+    const due = alertsDue.get(run);
+    if (!due || !due.items.length) return;
+    if (due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
+    const items = due.items.splice(0);
+    due.lastToldAt = t;
+    // posted at one moment, they reach a waiting orchestrator in one wake, each line its own event
+    for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...(i.meta ? { meta: i.meta } : {}) });
+  };
   const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean; postedSeq: number; stirred: boolean }>();
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
@@ -2043,6 +2067,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const wakeCase = doneWakeCase(fresh, name, progress);
         const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
+        markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
         return { progress, all, already: false, late: false, message };
       });
@@ -2162,7 +2187,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
                 postComposition(orch, st.member, "+", "back");
               }
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run, st.member).changes) === 1) {
-            insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            raiseAlert(run, { body: `gone ${orch.plan}/${st.member}: ${st.reason}`, event: EVENTS.gone.name });
             postComposition(orch, st.member, "-", "gone");
             // idea 4: a gone member's named locks are released, their waiters woken (a listener it left may still live)
             const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
@@ -2203,10 +2228,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         }
         if (livenessLines.length === 1) {
           const [l] = livenessLines;
-          insertMessage(orch, l.linkDown ? `liveness ${l.body}` : l.body, null, "event", [orch.name], { event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
+          raiseAlert(run, { body: l.linkDown ? `liveness ${l.body}` : l.body, event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
         } else if (livenessLines.length > 1) {
           const downs = livenessLines.flatMap((l) => (l.linkDown ? [l.linkDown] : []));
-          insertMessage(orch, `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`, null, "event", [orch.name], {
+          raiseAlert(run, {
+            body: `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`,
             event: EVENTS.liveness.name,
             ...(downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}),
           });
@@ -2216,15 +2242,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (stalledNow.some((x) => x.due)) {
           if (stalledNow.length === 1) {
             const [{ st, meta }] = stalledNow;
-            insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
+            raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
           } else {
             const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
             const ruled = stalledNow.find((x) => x.meta)?.meta;
             const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
-            insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
+            raiseAlert(run, { body, event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
           }
           for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run, st.member);
         }
+        flushAlerts(run, t, orch);
         // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
         // waiting or quiet for stall_ms: `stalled · lock` to this run's orchestrator and to the holder's, once per hold
         if (r.paused == null) {
@@ -2391,9 +2418,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return (db.prepare("SELECT * FROM messages WHERE run = ? AND kind != 'event' ORDER BY seq").all(run) as Row[]).map(toMessage);
     },
 
-    read(seq) {
+    read(seq, by) {
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row | undefined;
       if (!r) throw new Error(`unknown message #${seq}`);
+      // G23, V6: a member that read a message in full has had it; its next wait never brings it again
+      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)").run(by.id, seq);
       return toMessage(r);
     },
 
@@ -2787,7 +2816,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   board.merged = counted("merged", board.merged);
   const read = board.read;
   board.read = (seq, by) => {
-    const m = read(seq);
+    const m = read(seq, by);
     if (by) transaction(() => countCall(by, "read"));
     return m;
   };
