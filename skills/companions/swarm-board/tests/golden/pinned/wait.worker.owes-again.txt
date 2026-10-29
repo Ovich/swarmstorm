@@ -1,0 +1,2 @@
+exit 0
+nothing yet; wait again (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000

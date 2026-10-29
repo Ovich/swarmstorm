@@ -1,0 +1,3 @@
+exit 0
+done build: members done 1/1; the orchestrator is told every member is done
+wait for the next phase, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000
