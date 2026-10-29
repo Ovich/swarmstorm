@@ -64,7 +64,7 @@ test("G14 target: the idle answer says the seat stays before it says end", async
 });
 
 // G16 (holds when the in-wait column is right; D4 makes the link's report the source): a post while the member's listener runs ends on its seq, no listener line
-test("G16 target: a post while the listener runs prints no listener line", { skip }, async () => {
+test("G16 target: a post while the listener runs prints no listener line", async () => {
   const s = await scene("worker", "listening");
   try {
     expect(s.call("post", "a note", "--as", s.me), ["#<seq>"]);
