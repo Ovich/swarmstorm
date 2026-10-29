@@ -1108,8 +1108,8 @@ async function main(): Promise<void> {
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
-      // the branch merged into: a worktree does not say which branch it left, so the member names it (D59)
-      const onto = need("--onto");
+      // the branch merged into: --onto, else the branch the run was opened onto (board-split F3, D2); required only when neither says
+      const onto = args.flag("--onto") ?? (await runOf(p.run))?.base ?? need("--onto");
       await madeWorktree(p, "merge-lock");
       // a branch checked out in a worktree refuses the push: say where, grant nothing (validation finding 4)
       const holding = p.place ? worktreeHolding(p.place, onto) : null;
@@ -1168,7 +1168,7 @@ async function main(): Promise<void> {
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
         if (unlocked === undefined) {
-          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
+          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", shellWord((await runOf(p.run))?.base ?? "<branch>"), "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
         }
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');

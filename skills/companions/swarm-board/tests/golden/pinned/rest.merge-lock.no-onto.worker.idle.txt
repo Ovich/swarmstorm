@@ -1,5 +1,2 @@
-exit 1
---- stderr
---onto is required
-usage: node <cli> merge-lock --onto <branch> [--as <member>]
-e.g. node <cli> merge-lock --onto main --as g/w1
+exit 5
+main is checked out at <home>/repo: ask the orchestrator to detach it, then run merge-lock again

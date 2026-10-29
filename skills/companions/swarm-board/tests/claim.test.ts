@@ -236,12 +236,11 @@ test("merge-lock claims both paths of a committed rename, and an uncommitted wri
   for (const f of ["src/old.ts", "src/renamed.ts", "src/wip.ts"]) assert.equal(swarm(wtA, "claim", f, "--new").status, 3, f);
 });
 
-test("merge-lock without --onto says it is required and grants nothing (D59)", () => {
+test("merge-lock without --onto takes the branch the run was opened onto (D59, F3)", () => {
   running();
   const r = swarm(wtB, "merge-lock");
-  assert.equal(r.status, 1);
-  assert.match(r.stderr, /--onto is required/);
-  assert.ok(cli(wtA, "merge-lock", "--onto", "main").includes("granted: "), "the lock is still free");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^granted: /m);
 });
 
 test("merge-lock onto a branch checked out in a worktree names the worktree, says what to do and grants nothing (validation finding 4)", () => {
@@ -429,4 +428,25 @@ test("a paused run refuses claim and merge-lock with exit 4, tells the member to
   assert.match(roster, /PAUSED: hold on/);
   cli(repo, "resume", "go on", "--as", "review-tool/orchestrator");
   assert.match(cli(wtA, "claim", "src/a.ts"), /claimed src\/a\.ts/);
+});
+
+test("F3 (D2): merge-lock in a run opened --onto scratch takes scratch with no --onto flag", () => {
+  git(repo, "branch", "scratch", "main");
+  const slices = path.join(home, "slices.json");
+  fs.writeFileSync(slices, SLICES);
+  const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--seats", slices, "--onto", "scratch").split("\n")[0].trim();
+  cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
+  fs.writeFileSync(path.join(wtB, "src", "new.ts"), "export const x = 1;\n");
+  commit(wtB, "new");
+  // scratch checked out elsewhere: the refusal names the run's own branch, never main
+  const wtS = path.join(home, "wt-s");
+  git(repo, "worktree", "add", "-q", wtS, "scratch");
+  const held = swarm(wtB, "merge-lock");
+  assert.equal(held.status, 5, held.stderr);
+  assert.match(held.stdout, /^scratch is checked out at /m);
+  git(repo, "worktree", "remove", "--force", wtS);
+  const granted = swarm(wtB, "merge-lock");
+  assert.equal(granted.status, 0, granted.stderr);
+  assert.match(granted.stdout, /^granted: /m);
+  assert.doesNotMatch(granted.stdout + granted.stderr, /--onto is required|main/);
 });

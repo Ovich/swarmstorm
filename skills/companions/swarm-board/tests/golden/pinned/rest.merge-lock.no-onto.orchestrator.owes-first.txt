@@ -1,5 +1,3 @@
-exit 1
---- stderr
---onto is required
-usage: node <cli> merge-lock --onto <branch> [--as <member>]
-e.g. node <cli> merge-lock --onto main --as g/orchestrator
+exit 0
+if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report
+granted: merge, then node <cli> merged <sha> --files <path>... --report "<your report>" --as g/orchestrator

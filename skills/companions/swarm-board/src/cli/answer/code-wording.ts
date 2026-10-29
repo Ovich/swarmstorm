@@ -23,7 +23,7 @@ export const CODE_WORDING = {
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
       "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
       "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
-      "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
+      "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own; claims or flags what your branch wrote unclaimed",
       "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
     ].join("\n"),
 

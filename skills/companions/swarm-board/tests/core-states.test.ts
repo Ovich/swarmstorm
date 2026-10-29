@@ -44,8 +44,11 @@ for (const kind of ["plan", "brainstorm"] as const) {
     });
     assert.deepEqual(
       board.runs().find((r) => r.id === run.id)!.seats.map((s) => [s.id, s.state]),
-      [["a", "running"], ["b", "running"], ["c", "running"], ["d", "done"], ["e", "ready"]],
+      [["a", "running"], ["b", "running"], ["c", "ready"], ["d", "done"], ["e", "ready"]],
     );
+    // F1: the roster (what roster and status print) reads the parked member parked, never its last activity
+    const listed = Object.fromEntries(board.roster(REPO).filter((m) => m.plan === group).map((m) => [m.seat, [m.state, m.activity]]));
+    assert.deepEqual(listed.c, ["parked", null]);
     void a;
     board.closeRun(run.id);
     assert.ok(Object.values(rosterOf(group)).every((m) => m.state === "ended"), "a closed run: every member ended");

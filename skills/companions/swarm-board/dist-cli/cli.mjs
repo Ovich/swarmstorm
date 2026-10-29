@@ -4403,8 +4403,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place),
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
-        state: stateIn(Number(r.run), String(r.seat))?.state ?? "working",
-        activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
+        // board-split D36: parked is a core state, never read from an activity the parked agent left behind
+        state: Number(r.parked) === 1 ? "parked" : stateIn(Number(r.run), String(r.seat))?.state ?? "working",
+        activity: Number(r.parked) === 1 ? null : stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
         busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
@@ -4792,7 +4793,7 @@ var init_board = __esm({
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
     PHASE_NAME = /^[\w.-]+$/;
-    SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL THEN 'ready' WHEN p.ended_at IS NULL OR p.dormant = 1 OR p.parked = 1 THEN 'running' ELSE 'done' END
+    SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.dormant = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR2 = "orchestrator";
@@ -9384,7 +9385,7 @@ var CODE_WORDING = {
     `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
     "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
     "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
-    "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
+    "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own; claims or flags what your branch wrote unclaimed",
     `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
   ].join("\n"),
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
@@ -10628,7 +10629,7 @@ ${verbHelp()}`);
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
-      const onto = need("--onto");
+      const onto = args.flag("--onto") ?? (await runOf(p.run))?.base ?? need("--onto");
       await madeWorktree(p, "merge-lock");
       const holding = p.place ? worktreeHolding(p.place, onto) : null;
       if (holding) {
@@ -10675,7 +10676,7 @@ ${verbHelp()}`);
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
         if (unlocked === void 0) {
-          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord2(p.name)].join(" ")} first, then merge, then merged again`);
+          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", shellWord2((await runOf(p.run))?.base ?? "<branch>"), "--as", shellWord2(p.name)].join(" ")} first, then merge, then merged again`);
         }
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');

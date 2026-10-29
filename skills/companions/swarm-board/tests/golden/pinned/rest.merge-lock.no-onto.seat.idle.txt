@@ -1,5 +1,3 @@
 exit 1
 --- stderr
---onto is required
-usage: node <cli> merge-lock --onto <branch> [--as <member>]
-e.g. node <cli> merge-lock --onto main --as g/s1
+swarm: merge-lock: refused, a seat has no code pack: merge-lock is a worker's verb; your verbs are in --help

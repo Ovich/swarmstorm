@@ -126,5 +126,5 @@ export function coreStateOf(m: CoreStateFacts): CoreMemberState {
 }
 
 /** board-split D36: a seat's state, derived from its member, never set: `ready` none has sat in it, `running` its
- *  member is on the board or parked, `done` its member left. */
+ *  member is on the board, `done` its member left; a parked seat is `ready` again, waiting for its dispatch. */
 export type SeatState = "ready" | "running" | "done";

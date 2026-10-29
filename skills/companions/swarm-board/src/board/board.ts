@@ -140,8 +140,8 @@ export interface RosterEntry {
   badge: Badge | null;
   subscriptions: Subscription[];
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
-  /** Its state from its activity (D9), and the open or last tool. */
-  state: MemberStateName;
+  /** Its state from its activity (D9), and the open or last tool; `parked` (board-split D36) when its seat is kept with no agent. */
+  state: MemberStateName | "parked";
   /** What its pack says of it now (D36); absent when nothing. */
   fact?: MemberFact;
   activity: string | null;
@@ -464,7 +464,7 @@ const PHASE_NAME = /^[\w.-]+$/;
 
 /** board-split D36: a seat's state from its member, never stored: the `seats.state` column predating it is left unread.
  *  A correlated subquery over a seats row aliased `s`. */
-const SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL THEN 'ready' WHEN p.ended_at IS NULL OR p.dormant = 1 OR p.parked = 1 THEN 'running' ELSE 'done' END
+const SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.dormant = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
 /** The events a member receives though it is their author: the board posts them in its name. */
 const TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
@@ -2413,8 +2413,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         badge: badgeOf(r, runRow(Number(r.run)), stateIn(Number(r.run), String(r.seat))),
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
-        state: stateIn(Number(r.run), String(r.seat))?.state ?? "working",
-        activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
+        // board-split D36: parked is a core state, never read from an activity the parked agent left behind
+        state: Number(r.parked) === 1 ? "parked" : (stateIn(Number(r.run), String(r.seat))?.state ?? "working"),
+        activity: Number(r.parked) === 1 ? null : (stateIn(Number(r.run), String(r.seat))?.doing ?? null),
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
         busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),

@@ -396,7 +396,7 @@ test("merged on a code run is refused without the merge lock, naming merge-lock;
   const orch = ["--as", "review-tool/orchestrator"];
   const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-");
   assert.equal(bare.status, 1);
-  assert.match(bare.stderr, /you do not hold the merge lock; run .* merge-lock --onto <branch> --as review-tool\/S5 first/);
+  assert.match(bare.stderr, /you do not hold the merge lock; run .* merge-lock --onto \S+ --as review-tool\/S5 first/); // F3: the run's own branch, never a placeholder
   const worker = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "hurry");
   assert.match(worker.stderr, /--unlocked is the orchestrator's alone/);
   const r = run("merged", ...orch, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "the lock holder died mid-merge");
