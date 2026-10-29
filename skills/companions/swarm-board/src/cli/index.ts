@@ -30,7 +30,8 @@ const USAGE = [
   '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
   "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
   "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
-  "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
@@ -720,13 +721,16 @@ ${USAGE}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
       const watch = args.list("--watch");
-      const m = await board.phase(p, name, text, watch.length ? { watch } : undefined);
+      // --for: only these seats are woken and owe their done; a seat with nothing to do is not woken (tokens)
+      const only = args.list("--for");
+      const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
       // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
       const cli = self().join(" ");
       const heard = watch.length
         ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
         : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
-      const next = `phase ${name} is open; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
+      const forWhom = only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "";
+      const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
       emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
@@ -969,7 +973,11 @@ ${USAGE}`);
         // a timeout: the line to run again (B7); the member ended: nothing to re-arm
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
-        else {
+        else if (mentionsOnly && (await board.idle(p))) {
+          // a member with nothing to do ends rather than wake every 170 s (tokens); the orchestrator dispatches it again
+          const next = `nothing for you: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; the orchestrator dispatches you again when it has work`;
+          emit({ ...d, idle: true, next }, next);
+        } else {
           const next = (await pausedLine(p)) ?? (p.seat === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
           emit({ ...d, next }, next);
         }

@@ -1664,6 +1664,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "phase_watch", "phase_watch TEXT");
   upkeep("participants", "phase_shown", "phase_shown TEXT");
+  upkeep("runs", "phase_for", "phase_for TEXT");
+  upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
     CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
@@ -2052,8 +2054,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return { member, state: "quiet", doing: last, since: progressed, reason };
   };
   const minutes = (ms2) => Math.round(ms2 / 6e4);
+  const phaseIsFor = (run2, seat) => run2.phase_for == null || JSON.parse(String(run2.phase_for)).includes(seat);
   const owedNameOf = (p, run2) => {
-    if (String(p.seat) === ORCHESTRATOR2 || run2.state !== "open" || run2.phase == null) return null;
+    if (String(p.seat) === ORCHESTRATOR2 || run2.state !== "open" || run2.phase == null || !phaseIsFor(run2, String(p.seat))) return null;
     const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run2.id), Number(p.id), String(run2.phase));
     return done ? null : String(run2.phase);
   };
@@ -2181,7 +2184,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     }
     if (progress.of - progress.done === 1) {
       const owing = db.prepare("SELECT id, seat FROM participants WHERE run = ? AND seat != ? AND ended_at IS NULL").all(p.run, ORCHESTRATOR2).find(
-        (o) => !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.seat}`)
+        (o) => phaseIsFor(r, String(o.seat)) && !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.seat}`)
       );
       if (owing) return `all but ${String(owing.seat)}`;
     }
@@ -2194,7 +2197,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR2}'`
     ).all(phase, run2);
-    const live2 = rows.filter((r) => Number(r.done) === 1 || r.ended_at == null);
+    const runR = runRow(run2);
+    const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
     const gone = live2.filter((r) => Number(r.done) !== 1 && Number(r.gone) === 1);
     const counted2 = live2.filter((r) => !gone.includes(r));
     return { phase, done: counted2.filter((r) => Number(r.done) === 1).length, of: counted2.length, gone: gone.map((r) => `${r.plan}/${r.seat}`) };
@@ -2491,11 +2495,14 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       if (!said) throw new Error(`phase ${name}: what does it ask?`);
       if (runRow(fresh.run).state !== "open") throw new Error(`run ${fresh.run} is closed`);
       return transaction(() => {
-        const watch = (opts.watch ?? []).map((w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "")).filter(Boolean);
-        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, fresh.run);
+        const seatOf = (w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "");
+        const watch = (opts.watch ?? []).map(seatOf).filter(Boolean);
+        const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
+        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR2, `all-done ${name}`);
-        return insertMessage(fresh, `phase ${name}: ${said}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.phase.name, meta: { phase: name } });
+        const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
+        return insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
       });
     },
     currentPhase(run2) {
@@ -2633,7 +2640,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR2) return null;
       const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(row.run));
       const current = r && r.state === "open" ? phaseOf(r) : null;
-      if (!current) return null;
+      if (!current || !phaseIsFor(r, String(row.seat))) return null;
       const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(row.run), Number(row.id), current.name);
       return done ? null : current;
     },
@@ -2908,6 +2915,12 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     deliverMentions(p) {
       return deliverTo(p, false, true);
     },
+    idle(p) {
+      const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id);
+      if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR2 || Number(row.empty_waits) < 2) return false;
+      if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
+      return db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) === void 0;
+    },
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
       const column = mentionsOnly ? "listening" : "waiting";
@@ -2924,6 +2937,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         let settled = false;
         let poll;
         let timer;
+        let timedOut = false;
         const finish = (d) => {
           if (settled) return;
           settled = true;
@@ -2932,6 +2946,13 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           clearInterval(poll);
           clearTimeout(timer);
           if (heldWaits.get(p.id) === held) heldWaits.delete(p.id);
+          const got = !(d instanceof Error) && (d.full.length > 0 || d.lines.length > 0);
+          if (got || timedOut) {
+            try {
+              db.prepare(`UPDATE participants SET empty_waits = ${got || !mentionsOnly ? "0" : "empty_waits + 1"} WHERE id = ?`).run(p.id);
+            } catch {
+            }
+          }
           try {
             transaction(() => {
               const r = db.prepare(`UPDATE participants SET ${column} = 0 WHERE id = ? AND wait_gen = ? AND ${column} = 1`).run(p.id, gen);
@@ -2958,7 +2979,11 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         abort?.addEventListener("abort", onAbort);
         localWakers.add(check);
         poll = setInterval(check, WAIT_POLL_MS);
-        if (timeoutMs !== void 0) timer = setTimeout(() => finish({ full: [], lines: [] }), timeoutMs);
+        if (timeoutMs !== void 0)
+          timer = setTimeout(() => {
+            timedOut = true;
+            finish({ full: [], lines: [] });
+          }, timeoutMs);
         check();
       });
     },
@@ -3311,6 +3336,7 @@ var init_wire = __esm({
       "phaseProgress",
       "lastActivity",
       "owedPhase",
+      "idle",
       "setting",
       "runs",
       "join",
@@ -8411,7 +8437,8 @@ var USAGE = [
   `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
   "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
   "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
-  "  phase   <name> <text> [--as <member>]                           # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
   "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
@@ -8939,10 +8966,12 @@ ${USAGE}`);
 ${USAGE}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       const watch = args.list("--watch");
-      const m = await board.phase(p, name, text, watch.length ? { watch } : void 0);
+      const only = args.list("--for");
+      const m = await board.phase(p, name, text, watch.length || only.length ? { ...watch.length ? { watch } : {}, ...only.length ? { for: only } : {} } : void 0);
       const cli = self().join(" ");
       const heard = watch.length ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake` : `each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>`;
-      const next = `phase ${name} is open; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
+      const forWhom = only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "";
+      const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
       emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
         console.log(seqLine(m));
@@ -9158,7 +9187,10 @@ ${USAGE}`);
       if (!d.full.length && !d.lines.length) {
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) emit(d, "");
-        else {
+        else if (mentionsOnly && await board.idle(p)) {
+          const next2 = `nothing for you: run ${[...self(), "end", "--as", shellWord(p.name)].join(" ")} and return; the orchestrator dispatches you again when it has work`;
+          emit({ ...d, idle: true, next: next2 }, next2);
+        } else {
           const next2 = await pausedLine(p) ?? (p.seat === "orchestrator" ? `nothing yet; wait again: ${again.join(" ")}` : `nothing yet; wait again (${SHELL_TOOL_TIMEOUT}): ${foregroundLine}`);
           emit({ ...d, next: next2 }, next2);
         }

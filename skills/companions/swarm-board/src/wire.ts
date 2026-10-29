@@ -25,6 +25,7 @@ export const RPC_METHODS = [
   "phaseProgress",
   "lastActivity",
   "owedPhase",
+  "idle",
   "setting",
   "runs",
   "join",
