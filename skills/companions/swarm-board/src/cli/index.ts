@@ -492,10 +492,11 @@ const emitHeard = async (p: Participant, json: object, human: string | (() => vo
   });
 };
 
-/** The file a relative path means (D6): from the current folder when it exists there, else from
- *  the repository root when it exists there; neither refuses, unless `--new` creates it here. */
 /** The last line of a `wait --mentions` that delivered (F28). */
 export const DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
+
+/** The file a relative path means (D6): from the current folder when it exists there, else from
+ *  the repository root when it exists there; neither refuses, unless `--new` creates it here. */
 
 function resolveClaimPath(file: string, about = false): string {
   if (path.isAbsolute(file)) return file;
@@ -864,6 +865,7 @@ ${USAGE}`);
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
         if (noParty) console.log(noParty);
+        if (args.verb === "agree" && !noParty && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
       };
       if (phaseNext) {
         // its own last line: a listener line, when one is due, comes before it

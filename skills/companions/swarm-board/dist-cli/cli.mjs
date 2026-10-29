@@ -9035,6 +9035,7 @@ ${USAGE}`);
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
         if (noParty) console.log(noParty);
+        if (args.verb === "agree" && !noParty && m.mentions?.length) console.log(`parties: ${m.mentions.join(", ")}, woken when its file merges`);
       };
       if (phaseNext) {
         const listen2 = await heardStep(p);
