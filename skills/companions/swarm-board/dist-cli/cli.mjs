@@ -1787,11 +1787,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   }));
   const PARTICIPANT_SQL = `SELECT p.*, r.repo, r.plan, r.kind, a.listener_running, a.listener_ended_at FROM participants p JOIN runs r ON r.id = p.run
     LEFT JOIN member_activity a ON a.run = p.run AND a.member = p.seat`;
-  const listensNow = (r) => {
-    if (r.listener_running == null) return Number(r.listening) === 1;
-    if (Number(r.listener_running) === 1) return true;
-    return r.listener_ended_at != null && Date.now() - Number(r.listener_ended_at) < LISTENER_REARM_GRACE_MS;
-  };
+  const listensNow = (r) => Number(r.listening) === 1 || Number(r.listener_running) === 1;
   const toParticipant = (r) => ({
     id: Number(r.id),
     run: Number(r.run),
@@ -1922,6 +1918,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
       lines: messages.filter((m) => !full(m)).map(messageLine)
     };
   };
+  const markPhaseOpenDelivered = (p, phase) => {
+    const opened = db.prepare("SELECT seq, meta FROM messages WHERE run = ? AND event = ?").all(p.run, EVENTS.phase.name).filter(
+      (r) => r.meta != null && JSON.parse(String(r.meta)).phase === phase
+    );
+    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
+    for (const r of opened) mark.run(p.id, Number(r.seq));
+  };
   const retentionDays = () => {
     const r = db.prepare("SELECT value FROM settings WHERE name = 'retention-days'").get();
     return r ? Number(r.value) : RETENTION_DEFAULT_DAYS;
@@ -2009,6 +2012,20 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return subs;
   };
   const sameSub = (a, b) => a.event === b.event && a.scope === b.scope;
+  const alertsDue = /* @__PURE__ */ new Map();
+  const raiseAlert = (run3, item) => {
+    const due = alertsDue.get(run3) ?? { lastToldAt: null, items: [] };
+    due.items.push(item);
+    alertsDue.set(run3, due);
+  };
+  const flushAlerts = (run3, t, orch) => {
+    const due = alertsDue.get(run3);
+    if (!due || !due.items.length) return;
+    if (due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
+    const items = due.items.splice(0);
+    due.lastToldAt = t;
+    for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...i.meta ? { meta: i.meta } : {} });
+  };
   const idleSince = /* @__PURE__ */ new Map();
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
@@ -2661,6 +2678,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const wakeCase = doneWakeCase(fresh, name, progress);
         const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
+        markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
         return { progress, all, already: false, late: false, message };
       });
@@ -2762,7 +2780,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
               postComposition(orch, st.member, "+", "back");
             }
           } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run3, st.member).changes) === 1) {
-            insertMessage(orch, `gone ${orch.plan}/${st.member}: ${st.reason}`, null, "event", [orch.name], { event: EVENTS.gone.name });
+            raiseAlert(run3, { body: `gone ${orch.plan}/${st.member}: ${st.reason}`, event: EVENTS.gone.name });
             postComposition(orch, st.member, "-", "gone");
             const goneRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (goneRow) releaseLocksOf(Number(goneRow.id), "gone", " (its holder is gone)");
@@ -2795,10 +2813,11 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         }
         if (livenessLines.length === 1) {
           const [l] = livenessLines;
-          insertMessage(orch, l.linkDown ? `liveness ${l.body}` : l.body, null, "event", [orch.name], { event: EVENTS.liveness.name, ...l.linkDown ? { meta: { linkDown: l.linkDown } } : {} });
+          raiseAlert(run3, { body: l.linkDown ? `liveness ${l.body}` : l.body, event: EVENTS.liveness.name, ...l.linkDown ? { meta: { linkDown: l.linkDown } } : {} });
         } else if (livenessLines.length > 1) {
           const downs = livenessLines.flatMap((l) => l.linkDown ? [l.linkDown] : []);
-          insertMessage(orch, `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`, null, "event", [orch.name], {
+          raiseAlert(run3, {
+            body: `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`,
             event: EVENTS.liveness.name,
             ...downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}
           });
@@ -2806,15 +2825,16 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         if (stalledNow.some((x) => x.due)) {
           if (stalledNow.length === 1) {
             const [{ st, meta }] = stalledNow;
-            insertMessage(orch, `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, null, "event", [orch.name], { event: EVENTS.stalled.name, ...meta ? { meta } : {} });
+            raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
           } else {
             const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
             const ruled = stalledNow.find((x) => x.meta)?.meta;
             const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.reason}`).join("; ")}; ${where}`;
-            insertMessage(orch, body, null, "event", [orch.name], { event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
+            raiseAlert(run3, { body, event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
           }
           for (const { st } of stalledNow) db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run3, st.member);
         }
+        flushAlerts(run3, t, orch);
         if (r.paused == null) {
           const waited = db.prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name").all(run3);
           for (const w of waited) {
@@ -2952,9 +2972,10 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       if (name !== void 0) return phasePosts(run3, name);
       return db.prepare("SELECT * FROM messages WHERE run = ? AND kind != 'event' ORDER BY seq").all(run3).map(toMessage);
     },
-    read(seq) {
+    read(seq, by) {
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq);
       if (!r) throw new Error(`unknown message #${seq}`);
+      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)").run(by.id, seq);
       return toMessage(r);
     },
     deliver(p) {
@@ -3271,13 +3292,13 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   board2.merged = counted("merged", board2.merged);
   const read = board2.read;
   board2.read = (seq, by) => {
-    const m = read(seq);
+    const m = read(seq, by);
     if (by) transaction(() => countCall(by, "read"));
     return m;
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, LISTENER_REARM_GRACE_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, SHARES_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS2;
+var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, SHARES_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS2;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -3297,7 +3318,7 @@ var init_board = __esm({
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR2 = "orchestrator";
     WAIT_POLL_MS = 1e3;
-    LISTENER_REARM_GRACE_MS = 60 * 1e3;
+    ALERT_WINDOW_MS = 10 * 1e3;
     LINE_WIDTH = 100;
     STALE_MS = 10 * 60 * 1e3;
     WAIT_LOG_EVERY_MS = 60 * 1e3;

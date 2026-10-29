@@ -14,14 +14,30 @@ var __export = (target, all) => {
 };
 
 // src/core/home.ts
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 function defaultPort(root = DATA_ROOT) {
-  if (path.resolve(root) === NEW_HOME || path.resolve(root) === OLD_HOME) return HOME_PORT;
+  const home = normalHome(root);
+  if (home === normalHome(NEW_HOME) || home === normalHome(OLD_HOME)) return HOME_PORT;
   let hash = 2166136261;
-  for (const ch of path.resolve(root).toLowerCase()) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
+  for (const ch of home) hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619) >>> 0;
   return 4400 + hash % 500;
+}
+function normalHome(root) {
+  let p = path.resolve(root);
+  try {
+    p = fs.realpathSync.native(p);
+  } catch {
+  }
+  return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+function firstFreePort(from) {
+  const probe = `const net=require("net");const f=(p,n)=>{if(n===0){console.log(${from});return}const s=net.createServer();s.once("error",()=>f(p+1,n-1));s.listen(p,"127.0.0.1",()=>{s.close(()=>console.log(p))})};f(${from},20)`;
+  const r = spawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
+  const port = Number(r.stdout?.trim());
+  return Number.isInteger(port) && port > 0 ? port : from;
 }
 function ensureHome() {
   fs.mkdirSync(DOCS_ROOT, { recursive: true });
@@ -10062,7 +10078,7 @@ init_projects();
 init_home();
 init_serverstate();
 init_collectionversion();
-import { spawn as spawn3, spawnSync } from "node:child_process";
+import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
 import fs11 from "node:fs";
 import path13 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
@@ -10505,7 +10521,7 @@ function askServer(route, body) {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
-  const r = spawnSync(
+  const r = spawnSync2(
     process.execPath,
     [
       "-e",
@@ -10541,7 +10557,7 @@ function ensureDist() {
   if (!fs11.existsSync(path13.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) {
     console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -10570,7 +10586,7 @@ function spawnDetachedServer(port) {
   }
 }
 var pause2 = (ms) => {
-  spawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+  spawnSync2(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
 };
 var isAlive3 = (pid) => {
   try {
@@ -10595,9 +10611,9 @@ function stopServerProcess(pid) {
   }
 }
 function portOfInstalledServer() {
-  const requested = Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort());
+  const asked = args.flag("--port") ?? process.env.AIVIEW_PORT;
   const st = readServerStatus();
-  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(requested);
+  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(asked !== void 0 ? Number(asked) : firstFreePort(defaultPort()));
   const installed = collectionVersion(TOOL_ROOT);
   if (installed === null || st.version === installed) return st.port;
   stopServerProcess(st.pid);
@@ -10905,7 +10921,7 @@ function cmdProject() {
       process.exit(1);
     }
     if (sub === "add") {
-      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path") });
+      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path13.resolve(p2)) });
       fs11.mkdirSync(docsDirFor(slug), { recursive: true });
       emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
   covers ${p.paths.join(", ")}` : ""}`);
