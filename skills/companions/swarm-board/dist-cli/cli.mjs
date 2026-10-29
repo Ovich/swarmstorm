@@ -2442,6 +2442,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
               existing.nick == null ? fresh() : null,
               Number(existing.id)
             );
+            db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run3, seat);
+            db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run3, seat);
+            db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run3, seat);
             return Number(existing.id);
           }
           const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run3, `%"${String(r.plan)}/${seat}"%`);
@@ -7148,6 +7151,10 @@ async function runBoardServer(opts) {
     members.set(member, link);
     logged("recordLink", () => board2.recordLink(run4, member, link));
   };
+  const freshPresence = ({ member }) => {
+    transcripts.get(member.run)?.delete(member.seat);
+    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null });
+  };
   const linked = (m, connected) => keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
   const transcripts = /* @__PURE__ */ new Map();
   const grewAt = (file) => {
@@ -7219,6 +7226,7 @@ async function runBoardServer(opts) {
       if (calls.get(call.id) !== rec) return;
       answer(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
       if (call.method === "closeRun") closed(Number(args2[0]));
+      if (call.method === "join") freshPresence(value);
     };
     if (out instanceof Promise) out.then(settle, (e) => calls.get(call.id) === rec && fail2(e.message));
     else settle(out);
@@ -8630,6 +8638,10 @@ function inLinkedWorktree(cwd) {
 }
 var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
+var baseRef = (cwd, base) => {
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  return base;
+};
 function ensureWorktree(cwd, repo, runId, group, seat, base) {
   const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
@@ -8638,7 +8650,8 @@ function ensureWorktree(cwd, repo, runId, group, seat, base) {
   if (fs9.existsSync(at) && fs9.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   run2(cwd, "worktree", "prune");
   fs9.mkdirSync(path9.dirname(at), { recursive: true });
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
+  const from = baseRef(cwd, base);
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
   const r = run2(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
@@ -9647,7 +9660,8 @@ ${owes}` : rearm;
       const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
       if (holding) {
         process.exitCode = 5;
-        const line = `${onto} is checked out at ${holding}: ask the orchestrator to detach it, then run merge-lock again`;
+        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path11.resolve(r2.worktree).toLowerCase() === path11.resolve(holding).toLowerCase());
+        const line = `${onto} is checked out at ${holding}${holder ? ` (${holder.name}'s worktree)` : ""}: ask the orchestrator to detach it, then run merge-lock again`;
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }

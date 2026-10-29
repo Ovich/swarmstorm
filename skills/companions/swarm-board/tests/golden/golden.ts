@@ -58,7 +58,9 @@ export function normalise(text: string, home: string, nicks: Map<string, string>
     .replace(/#\d+/g, "#<seq>")
     .replace(/\b\d+(s|m|h) ago\b/g, "<age> ago")
     // a roster row's unread count moves with the liveness events the board posts on its own clock
-    .replace(/  \d+ unread  /g, "  <n> unread  ");
+    .replace(/  \d+ unread  /g, "  <n> unread  ")
+    // the idle event comes on the server's tick, before or after a verb: dropped, it is no answer's line
+    .replace(/^#<seq> \S+ \(event\): idle .*\n/gm, "");
 }
 
 /** One scene: a fresh data home and repository, a run of the role's kind, its member joined, the situation set up. */
@@ -138,6 +140,16 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     // drained first: a listener started with the phase unread returns at once
     must("deliver", "--as", me);
     await s.listen(me);
+    // every member now waits: the server's tick posts idle when it next runs; waited out and read, so no verb's
+    // answer carries it or not by timing
+    const store = await openBoard(path.join(home, "swarm.sqlite"));
+    try {
+      const repoKey = store.participant(me)!.repo;
+      for (let i = 0; i < 100 && !store.snapshot(repoKey).events.some((e) => e.event === "idle"); i++) await new Promise((ok) => setTimeout(ok, 100));
+    } finally {
+      store.close();
+    }
+    must("deliver", "--as", me);
   }
   if (situation === "closed") must("close", "--run", runId, "--as", orchestrator);
   return s;

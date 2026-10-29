@@ -1767,6 +1767,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             existing.nick == null ? fresh() : null,
             Number(existing.id),
           );
+          // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link
+          // with its transcript) and the alerts told of it never carry into the new one
+          db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run, seat);
+          db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run, seat);
+          db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run, seat);
           return Number(existing.id);
         }
         // a post that already names this seat (a task posted before the member joined) is still

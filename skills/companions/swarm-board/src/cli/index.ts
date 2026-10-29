@@ -1217,7 +1217,9 @@ ${owes}` : rearm;
       const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
       if (holding) {
         process.exitCode = 5;
-        const line = `${onto} is checked out at ${holding}: ask the orchestrator to detach it, then run merge-lock again`;
+        // G36: the member whose worktree holds it, so the orchestrator knows whom to ask
+        const holder = (await board.roster(p.repo)).find((r) => r.worktree && path.resolve(r.worktree).toLowerCase() === path.resolve(holding).toLowerCase());
+        const line = `${onto} is checked out at ${holding}${holder ? ` (${holder.name}'s worktree)` : ""}: ask the orchestrator to detach it, then run merge-lock again`;
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }

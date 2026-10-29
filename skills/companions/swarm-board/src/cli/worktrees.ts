@@ -53,6 +53,14 @@ export function inLinkedWorktree(cwd: string): boolean {
 const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 
+/** The base as a full ref git cannot guess from (G36): the local branch, else `origin/<base>`, else the base as given
+ *  (a commit). A bare branch name that exists only on origin makes `git worktree add -b <seat> <dir> <base>` create and
+ *  check out the base itself instead of the seat branch. */
+export const baseRef = (cwd: string, base: string): string => {
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  return base;
+};
+
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
 export function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
   const at = worktreeDir(repo, runId, seat);
@@ -64,7 +72,8 @@ export function ensureWorktree(cwd: string, repo: string, runId: number, group: 
   run(cwd, "worktree", "prune");
   fs.mkdirSync(path.dirname(at), { recursive: true });
   // a branch left by an earlier worktree of the seat: reset to the base when merged, kept as it is when not
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
+  const from = baseRef(cwd, base);
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
