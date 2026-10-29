@@ -9204,6 +9204,23 @@ var init_wire = __esm({
   }
 });
 
+// ../swarm-board/src/board/home.ts
+import fs9 from "node:fs";
+import os2 from "node:os";
+import path10 from "node:path";
+var homeFromEnv2, NEW_HOME2, OLD_HOME2, DATA_ROOT2, HOME_OVERRIDE, SQLITE_PATH2;
+var init_home2 = __esm({
+  "../swarm-board/src/board/home.ts"() {
+    "use strict";
+    homeFromEnv2 = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
+    NEW_HOME2 = path10.join(os2.homedir(), "swarmstorm_appdata");
+    OLD_HOME2 = path10.join(os2.homedir(), "charrette_appdata");
+    DATA_ROOT2 = homeFromEnv2 ? path10.resolve(homeFromEnv2) : !fs9.existsSync(NEW_HOME2) && fs9.existsSync(OLD_HOME2) ? OLD_HOME2 : NEW_HOME2;
+    HOME_OVERRIDE = homeFromEnv2 && path10.resolve(homeFromEnv2) !== NEW_HOME2 && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT2 : null;
+    SQLITE_PATH2 = path10.join(DATA_ROOT2, "swarm.sqlite");
+  }
+});
+
 // ../swarm-board/src/board/liveness.ts
 var IDLE_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
 var init_liveness = __esm({
@@ -9232,17 +9249,18 @@ var init_transcripts = __esm({
 
 // ../swarm-board/src/link/link.ts
 import crypto2 from "node:crypto";
-import os2 from "node:os";
-import path10 from "node:path";
+import os3 from "node:os";
+import path11 from "node:path";
 function linkPipe(dataRoot, run, member) {
-  const home = crypto2.createHash("sha256").update(path10.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto2.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path10.join(os2.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os3.tmpdir(), `${name}.sock`);
 }
 var DEFAULT_TIMING;
 var init_link = __esm({
   "../swarm-board/src/link/link.ts"() {
     "use strict";
+    init_home2();
     init_wire();
     init_transcripts();
     DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
@@ -9265,9 +9283,10 @@ __export(remote_exports, {
 });
 import { spawn } from "node:child_process";
 import crypto3 from "node:crypto";
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import net from "node:net";
-import path11 from "node:path";
+import os4 from "node:os";
+import path12 from "node:path";
 function isAlive2(pid) {
   try {
     process.kill(pid, 0);
@@ -9278,7 +9297,7 @@ function isAlive2(pid) {
 }
 function readServerState(dataRoot) {
   try {
-    const s = JSON.parse(fs9.readFileSync(serverStateFile(dataRoot), "utf8"));
+    const s = JSON.parse(fs10.readFileSync(serverStateFile(dataRoot), "utf8"));
     return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
   } catch {
     return null;
@@ -9299,16 +9318,16 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs9.mkdirSync(dataRoot, { recursive: true });
-      fs9.writeFileSync(serverLogFile(dataRoot), "");
-      log = fs9.openSync(serverLogFile(dataRoot), "a");
+      fs10.mkdirSync(dataRoot, { recursive: true });
+      fs10.writeFileSync(serverLogFile(dataRoot), "");
+      log = fs10.openSync(serverLogFile(dataRoot), "a");
     } catch {
     }
-    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs9.closeSync(log);
+    if (typeof log === "number") fs10.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = readServerState(dataRoot);
@@ -9318,7 +9337,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const lines = fs9.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = fs10.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
   }
@@ -9348,7 +9367,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs9.rmSync(marker, { force: true });
+      fs10.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -9356,21 +9375,22 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs9.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs10.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs9.mkdirSync(path11.dirname(marker), { recursive: true });
-      fs9.writeFileSync(marker, String(Date.now()));
+      fs10.mkdirSync(path12.dirname(marker), { recursive: true });
+      fs10.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
   }
   const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
     detached: true,
+    cwd: DETACHED_CWD,
     stdio: "ignore",
     windowsHide: true,
     env: homeEnv(dataRoot)
@@ -9506,7 +9526,7 @@ async function connectBoard(opts) {
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
   return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
 }
-var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
+var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
@@ -9517,11 +9537,12 @@ var init_remote = __esm({
     entry = () => [process.argv[1]];
     homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
     pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    DETACHED_CWD = os4.tmpdir();
     isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
     linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
     HARNESS_LINK_WAIT_MS = 1e4;
     LINK_DOWN_WAIT_MS = 1e3;
-    linkDownMarker = (dataRoot, member) => path11.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+    linkDownMarker = (dataRoot, member) => path12.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
     inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
   }
 });
@@ -9613,8 +9634,8 @@ var init_reader = __esm({
 });
 
 // src/server/board.ts
-import fs10 from "node:fs";
-import path12 from "node:path";
+import fs11 from "node:fs";
+import path13 from "node:path";
 function mountBoard(sse, opts = {}) {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
   const swarmEntry = opts.swarmEntry ?? DEFAULT_SWARM_ENTRY;
@@ -9643,7 +9664,7 @@ function mountBoard(sse, opts = {}) {
     );
     return opening;
   };
-  if (fs10.existsSync(path12.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
+  if (fs11.existsSync(path13.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
   });
   const json = (res, obj, status = 200) => {
     if (res.headersSent) return;
@@ -9652,8 +9673,8 @@ function mountBoard(sse, opts = {}) {
   };
   const sameRepo = (a, b) => {
     const norm2 = (r) => {
-      const g = fs10.existsSync(r) && fs10.statSync(r).isFile() ? commonGitDir(r) : r;
-      return process.platform === "win32" ? path12.resolve(g).toLowerCase() : path12.resolve(g);
+      const g = fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r;
+      return process.platform === "win32" ? path13.resolve(g).toLowerCase() : path13.resolve(g);
     };
     return norm2(a) === norm2(b);
   };
@@ -9732,7 +9753,7 @@ var init_board = __esm({
     await init_db();
     init_home();
     init_place();
-    DEFAULT_SWARM_ENTRY = path12.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
+    DEFAULT_SWARM_ENTRY = path13.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
     SERVER_STATE_FILE = "swarm-server.json";
   }
 });
@@ -9797,12 +9818,12 @@ __export(server_exports, {
   startServer: () => startServer
 });
 import { spawn as spawn2 } from "node:child_process";
-import fs11 from "node:fs";
+import fs12 from "node:fs";
 import http from "node:http";
-import path13 from "node:path";
+import path14 from "node:path";
 function servedBuild(distDir) {
   try {
-    return /assets\/(index-[\w-]+\.js)/.exec(fs11.readFileSync(path13.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
+    return /assets\/(index-[\w-]+\.js)/.exec(fs12.readFileSync(path14.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
   } catch {
     return null;
   }
@@ -9817,13 +9838,13 @@ function openBrowser(url) {
 }
 function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry }) {
   const sse = createSseHub(heartbeatMs, () => {
-    const build = servedBuild(path13.join(toolRoot, "dist"));
+    const build = servedBuild(path14.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
   const board = mountBoard(sse, { dataRoot: boardDataRoot, swarmEntry });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(
-    (dir, name) => index.all().find((d) => path13.dirname(d.abs_path) === dir && path13.basename(d.abs_path) === name)
+    (dir, name) => index.all().find((d) => path14.dirname(d.abs_path) === dir && path14.basename(d.abs_path) === name)
   );
   watcher.on("changed", ({ id }) => {
     index.touch(id);
@@ -9838,19 +9859,19 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
-  const distDir = path13.join(toolRoot, "dist");
-  const useDist = fs11.existsSync(path13.join(distDir, "index.html"));
+  const distDir = path14.join(toolRoot, "dist");
+  const useDist = fs12.existsSync(path14.join(distDir, "index.html"));
   const serveStatic = (res, p) => {
     if (!useDist)
       return send(res, 404, `aiview UI not built. Run: npm install && npm run build  (in ${toolRoot})`, "text/plain");
-    const f = path13.resolve(distDir, "." + p.replaceAll("..", ""));
-    const indexHtml = path13.join(distDir, "index.html");
-    if (f !== indexHtml && f.startsWith(distDir) && fs11.existsSync(f) && fs11.statSync(f).isFile()) {
-      const hashed = f.startsWith(path13.join(distDir, "assets") + path13.sep);
-      const mime = MIME[path13.extname(f).toLowerCase()] ?? "application/octet-stream";
-      return send(res, 200, fs11.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
+    const f = path14.resolve(distDir, "." + p.replaceAll("..", ""));
+    const indexHtml = path14.join(distDir, "index.html");
+    if (f !== indexHtml && f.startsWith(distDir) && fs12.existsSync(f) && fs12.statSync(f).isFile()) {
+      const hashed = f.startsWith(path14.join(distDir, "assets") + path14.sep);
+      const mime = MIME[path14.extname(f).toLowerCase()] ?? "application/octet-stream";
+      return send(res, 200, fs12.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
     }
-    return send(res, 200, fs11.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
+    return send(res, 200, fs12.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
   };
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://x");
@@ -9975,48 +9996,48 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     if (a) {
       const doc = index.get(Number(a[1]));
       if (!doc) return send(res, 404, "not found", "text/plain");
-      const dir = path13.dirname(doc.abs_path);
-      const asked = path13.resolve(dir, decodeURIComponent(a[2]));
-      if (asked !== dir && !asked.startsWith(dir + path13.sep)) return send(res, 403, "forbidden", "text/plain");
+      const dir = path14.dirname(doc.abs_path);
+      const asked = path14.resolve(dir, decodeURIComponent(a[2]));
+      if (asked !== dir && !asked.startsWith(dir + path14.sep)) return send(res, 403, "forbidden", "text/plain");
       let base;
       let f;
       try {
-        base = fs11.realpathSync(dir);
-        f = fs11.realpathSync(asked);
+        base = fs12.realpathSync(dir);
+        f = fs12.realpathSync(asked);
       } catch {
         return send(res, 404, "not found", "text/plain");
       }
-      if (f !== base && !f.startsWith(base + path13.sep)) return send(res, 403, "forbidden", "text/plain");
-      if (!fs11.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
-      return send(res, 200, fs11.readFileSync(f), MIME[path13.extname(f).toLowerCase()] ?? "application/octet-stream");
+      if (f !== base && !f.startsWith(base + path14.sep)) return send(res, 403, "forbidden", "text/plain");
+      if (!fs12.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
+      return send(res, 200, fs12.readFileSync(f), MIME[path14.extname(f).toLowerCase()] ?? "application/octet-stream");
     }
     const r = p.match(/^\/api\/raw\/(\d+)$/);
     if (r) {
       const doc = index.get(Number(r[1]));
-      if (!doc || !fs11.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
+      if (!doc || !fs12.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
       watcher.ensureWatch(doc);
       const type = isPdf(doc.file_path) ? "application/pdf" : isHtml(doc.file_path) ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
-      return send(res, 200, fs11.readFileSync(doc.abs_path), type);
+      return send(res, 200, fs12.readFileSync(doc.abs_path), type);
     }
     const m = p.match(/^\/api\/document\/(\d+)$/);
     if (m) {
       const doc = index.get(Number(m[1]));
       if (!doc) return json(res, { error: "not found" }, 404);
       const pending = index.pendingFor(doc.id);
-      if (!fs11.existsSync(doc.abs_path))
+      if (!fs12.existsSync(doc.abs_path))
         return json(res, { document: doc, content: null, pending });
       watcher.ensureWatch(doc);
       if (isPdf(doc.file_path))
         return json(res, { document: doc, format: "pdf", content: null, pending });
       if (isHtml(doc.file_path)) {
-        const dir = path13.dirname(doc.abs_path);
+        const dir = path14.dirname(doc.abs_path);
         const reader = (name) => {
           if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-          const f = path13.join(dir, name);
-          return fs11.existsSync(f) && fs11.statSync(f).isFile() ? readDoc(f) : void 0;
+          const f = path14.join(dir, name);
+          return fs12.existsSync(f) && fs12.statSync(f).isFile() ? readDoc(f) : void 0;
         };
         const { html, sources, errors, warnings } = resolveBindings(readDoc(doc.abs_path), reader);
-        watcher.setSources(doc.id, sources.map((s) => path13.join(dir, s)));
+        watcher.setSources(doc.id, sources.map((s) => path14.join(dir, s)));
         return json(res, {
           document: doc,
           format: "html",
@@ -10102,8 +10123,8 @@ init_home();
 init_serverstate();
 init_collectionversion();
 import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
-import fs12 from "node:fs";
-import path14 from "node:path";
+import fs13 from "node:fs";
+import path15 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/cli/args.ts
@@ -10576,8 +10597,8 @@ var emit = (json, human) => {
   else human();
 };
 function ensureDist() {
-  if (fs12.existsSync(path14.join(TOOL_ROOT, "dist", "index.html"))) return;
-  if (!fs12.existsSync(path14.join(TOOL_ROOT, "app", "index.html"))) return;
+  if (fs13.existsSync(path15.join(TOOL_ROOT, "dist", "index.html"))) return;
+  if (!fs13.existsSync(path15.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
@@ -10588,7 +10609,7 @@ function ensureDist() {
 }
 function spawnDetachedServer(port) {
   try {
-    fs12.rmSync(PORT_FILE, { force: true });
+    fs13.rmSync(PORT_FILE, { force: true });
   } catch {
   }
   const child = spawn3(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
@@ -10645,7 +10666,7 @@ function portOfInstalledServer() {
 function resolveRef(ref) {
   const index = openIndex();
   try {
-    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
+    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
   } finally {
     index.close();
   }
@@ -10697,8 +10718,8 @@ known: ${known.join(", ")}` : ""}`);
     process.exit(1);
   }
   const dir = docsDirFor(slug);
-  fs12.mkdirSync(dir, { recursive: true });
-  const full = path14.join(dir, path14.basename(name));
+  fs13.mkdirSync(dir, { recursive: true });
+  const full = path15.join(dir, path15.basename(name));
   emit({ path: full, dir, project: slug }, full);
 }
 function prototypeArg(usage) {
@@ -10707,8 +10728,8 @@ function prototypeArg(usage) {
     console.error(usage);
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
-  if (!fs12.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
+  if (!fs13.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
@@ -10722,7 +10743,7 @@ function cmdComponents() {
   const abs = prototypeArg("usage: aiview components <file|#id>");
   const r = listComponents(readDoc(abs));
   const vocabulary = pageVocabulary(abs);
-  emit({ file: path14.basename(abs), ...r, ...vocabulary }, () => {
+  emit({ file: path15.basename(abs), ...r, ...vocabulary }, () => {
     if (!r.offers.length) console.log("offers   nothing: no data-component in this file");
     for (const o of r.offers)
       console.log(
@@ -10735,11 +10756,11 @@ function cmdComponents() {
   });
 }
 function composed(abs) {
-  const dir = path14.dirname(abs);
+  const dir = path15.dirname(abs);
   const reader = (name) => {
     if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-    const f = path14.join(dir, name);
-    return fs12.existsSync(f) && fs12.statSync(f).isFile() ? readDoc(f) : void 0;
+    const f = path15.join(dir, name);
+    return fs13.existsSync(f) && fs13.statSync(f).isFile() ? readDoc(f) : void 0;
   };
   return resolveBindings(readDoc(abs), reader);
 }
@@ -10788,7 +10809,7 @@ function cmdShow() {
 function cmdCheck() {
   const abs = prototypeArg("usage: aiview check <file|#id>");
   const r = composed(abs);
-  emit({ file: path14.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
+  emit({ file: path15.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
     console.log(`${r.bound} bound from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}${r.sources.length ? `: ${r.sources.join(", ")}` : ""}`);
     for (const e of r.errors) console.log(`error    ${e.ref}: ${e.message}`);
     for (const w of r.warnings) console.log(`warning  ${w.ref}: ${w.message}`);
@@ -10802,19 +10823,19 @@ async function cmdMermaidCheck() {
     console.error("usage: aiview mermaid-check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
-  if (!fs12.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
+  if (!fs13.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const here = path14.dirname(fileURLToPath2(import.meta.url));
-  const bundle = [path14.join(here, "mermaid-check.mjs"), path14.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs12.existsSync(f));
+  const here = path15.dirname(fileURLToPath2(import.meta.url));
+  const bundle = [path15.join(here, "mermaid-check.mjs"), path15.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs13.existsSync(f));
   if (!bundle) {
     console.error(`aiview: the mermaid checker is not built. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
   }
   const { blocksOf, checkBlocks } = await import(pathToFileURL(bundle).href);
-  const content = fs12.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
+  const content = fs13.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
   const markdown = /\.(md|markdown)$/i.test(abs);
   const lines = content.split("\n");
   const blocks = blocksOf(content, markdown);
@@ -10824,7 +10845,7 @@ async function cmdMermaidCheck() {
   }));
   const failed = results.filter((r) => !r.ok).length;
   const warned = results.reduce((n, r) => n + r.warnings.length, 0);
-  emit({ file: path14.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
+  emit({ file: path15.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
     if (!results.length) return console.log("no mermaid block in this document");
     for (const r of results) {
       console.log(r.ok ? `ok     line ${r.line}  ${r.type}` : `FAIL   line ${r.line}  ${r.error}`);
@@ -10839,7 +10860,7 @@ function cmdInit() {
   adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
   emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
     console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
-    console.log(`documents  ${path14.join(DOCS_ROOT, "<project>")}`);
+    console.log(`documents  ${path15.join(DOCS_ROOT, "<project>")}`);
     console.log(`tool       ${TOOL_ROOT}      (the checkout: rebuildable, safe to delete)`);
   });
 }
@@ -10849,7 +10870,7 @@ function cmdAdd() {
     process.exit(1);
   }
   const index = openIndex();
-  const d = index.register(path14.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path15.resolve(args.positional[0]), registerOpts());
   index.close();
   emit(d, docLine(d));
 }
@@ -10905,7 +10926,7 @@ function cmdRemove() {
   const index = openIndex();
   const removed = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
@@ -10944,8 +10965,8 @@ function cmdProject() {
       process.exit(1);
     }
     if (sub === "add") {
-      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path14.resolve(p2)) });
-      fs12.mkdirSync(docsDirFor(slug), { recursive: true });
+      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path15.resolve(p2)) });
+      fs13.mkdirSync(docsDirFor(slug), { recursive: true });
       emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
   covers ${p.paths.join(", ")}` : ""}`);
       return;
@@ -10992,11 +11013,11 @@ known: ${known.join(", ")}` : ""}`);
 }
 function moveAcrossVolumes(from, to) {
   try {
-    fs12.renameSync(from, to);
+    fs13.renameSync(from, to);
   } catch (e) {
     if (e.code !== "EXDEV") throw e;
-    fs12.cpSync(from, to, { recursive: true });
-    fs12.rmSync(from, { recursive: true });
+    fs13.cpSync(from, to, { recursive: true });
+    fs13.rmSync(from, { recursive: true });
   }
 }
 function cmdMove() {
@@ -11015,35 +11036,35 @@ known: ${known.join(", ")}` : ""}`);
   }
   const moved = [];
   for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path14.resolve(ref));
+    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
     if (!row) {
       console.error(`not in index: ${ref}`);
       continue;
     }
     const from = row.abs_path;
     const dir = docsDirFor(target ?? row.project);
-    const dest = path14.join(dir, path14.basename(from));
+    const dest = path15.join(dir, path15.basename(from));
     if (dest === from) {
       console.error(`already there: ${from}`);
       continue;
     }
     const sidecarFrom = sidecarOf(from);
     const sidecarDest = sidecarOf(dest);
-    const carriesSidecar = sidecarFrom !== null && fs12.existsSync(sidecarFrom);
-    const orphaned = !fs12.existsSync(from) && fs12.existsSync(dest);
-    if (!fs12.existsSync(from) && !orphaned) {
+    const carriesSidecar = sidecarFrom !== null && fs13.existsSync(sidecarFrom);
+    const orphaned = !fs13.existsSync(from) && fs13.existsSync(dest);
+    if (!fs13.existsSync(from) && !orphaned) {
       console.error(`missing file, not moved: ${from}`);
       continue;
     }
     if (!orphaned) {
-      const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs12.existsSync(p));
+      const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs13.existsSync(p));
       if (taken.length) {
         const named = carriesSidecar ? `${dest} and ${sidecarDest}` : dest;
         console.error(`target exists (${taken.join(", ")}), skipped: ${named}`);
         continue;
       }
     }
-    fs12.mkdirSync(dir, { recursive: true });
+    fs13.mkdirSync(dir, { recursive: true });
     if (!orphaned) {
       moveAcrossVolumes(from, dest);
       if (carriesSidecar) moveAcrossVolumes(sidecarFrom, sidecarDest);
@@ -11063,7 +11084,7 @@ function cmdOpen() {
   }
   ensureDist();
   const index = openIndex();
-  const d = index.register(path14.resolve(args.positional[0]), registerOpts());
+  const d = index.register(path15.resolve(args.positional[0]), registerOpts());
   setActive(index, d.project);
   index.close();
   const port = portOfInstalledServer();
@@ -11111,7 +11132,7 @@ async function cmdServe() {
     ensureDist();
     if (args.positional[0]) {
       const index2 = openIndex();
-      index2.register(path14.resolve(args.positional[0]), registerOpts());
+      index2.register(path15.resolve(args.positional[0]), registerOpts());
       index2.close();
     }
     const port = portOfInstalledServer();
@@ -11121,7 +11142,7 @@ async function cmdServe() {
   ensureDist();
   const { startServer: startServer2 } = await init_server().then(() => server_exports);
   const index = openIndex();
-  const startDoc = args.positional[0] ? index.register(path14.resolve(args.positional[0]), registerOpts()) : null;
+  const startDoc = args.positional[0] ? index.register(path15.resolve(args.positional[0]), registerOpts()) : null;
   startServer2(index, {
     port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
     open: args.has("--open"),
@@ -11196,16 +11217,16 @@ function cmdTracker() {
     console.error("usage: aiview tracker <check|sync> <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
-  if (!fs12.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
+  if (!fs13.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const raw = fs12.readFileSync(abs, "utf8");
+  const raw = fs13.readFileSync(abs, "utf8");
   const body = raw.split(CRLF).join(LF);
   const tracker = findTracker(body);
   if (!tracker) {
-    console.error(`no tracker in ${path14.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
+    console.error(`no tracker in ${path15.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
     process.exit(1);
   }
   if (mode === "sync") {
@@ -11213,22 +11234,22 @@ function cmdTracker() {
     const { text, changed } = sync(body, tracker);
     if (changed) {
       const tmp = `${abs}.aiview-${process.pid}`;
-      fs12.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
-      fs12.renameSync(tmp, abs);
+      fs13.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
+      fs13.renameSync(tmp, abs);
     }
     const after = findTracker(text);
     const left = after ? check(after) : [];
     emit(
-      { file: path14.basename(abs), changed, findings: left.length },
+      { file: path15.basename(abs), changed, findings: left.length },
       () => console.log(
-        changed ? `synced ${path14.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
+        changed ? `synced ${path15.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
       )
     );
     if (left.length) process.exit(1);
     return;
   }
   const findings = check(tracker);
-  emit({ file: path14.basename(abs), nodes: tracker.nodes.length, findings }, () => {
+  emit({ file: path15.basename(abs), nodes: tracker.nodes.length, findings }, () => {
     if (!findings.length) return console.log(`ok  ${tracker.nodes.length} steps, glyphs and classes agree`);
     for (const f of findings) console.log(`line ${f.line}  ${f.text}`);
     console.log(`${findings.length} finding(s) in ${tracker.nodes.length} steps`);
@@ -11241,16 +11262,16 @@ function cmdPlan() {
     console.error("usage: aiview plan check <file|#id>");
     process.exit(1);
   }
-  const abs = resolveRef(ref)?.abs_path ?? path14.resolve(ref);
-  if (!fs12.existsSync(abs)) {
+  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
+  if (!fs13.existsSync(abs)) {
     console.error(`no such file: ${abs}`);
     process.exit(1);
   }
-  const plan = readApproval(fs12.readFileSync(abs, "utf8").split(CRLF).join(LF));
+  const plan = readApproval(fs13.readFileSync(abs, "utf8").split(CRLF).join(LF));
   const findings = check2(plan);
   emit(
     {
-      file: path14.basename(abs),
+      file: path15.basename(abs),
       approved: plan.approved,
       decisions: plan.decisions.length,
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),
