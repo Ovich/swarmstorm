@@ -873,7 +873,12 @@ async function main(): Promise<void> {
       // listener, after the link, so the agent starts its link before a wait blocks it (swarm-relay D33)
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...roster.map((r) => rosterLine(r))];
       const tail = [...(as ? [as] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
-      const a = answer({ verb: "join", head, tail }, await situation(member));
+      // S1: a post for the seat made before its join is delivered here, whole, as a wait would (D8: marked delivered)
+      const waiting = await board.deliverMentions(member);
+      // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
+      const statedByJoin = new Set(["phase", "pause"]);
+      const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
+      const a = answer({ verb: "join", head, shown, tail }, await situation(member));
       emitAnswer({ member: member.name, nick: member.nick, roster, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(drawing ? { drawing } : {}), link }, a);
       break;
     }

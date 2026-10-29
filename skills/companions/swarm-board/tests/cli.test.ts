@@ -900,9 +900,10 @@ test("a mention of a declared seat not joined yet is not 'matched nobody': it wa
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!r.stdout.includes("matched nobody"), r.stdout);
   assert.match(r.stdout, /^@S5 has not joined yet: the post waits for it, read at its join$/m);
-  run("join", "--run", id, "--seat", "S5", "--doing", "joining");
-  const delivered = run("deliver", "--as", "review-tool/S5").stdout;
-  assert.ok(delivered.includes("@S5 the header is yours"), delivered);
+  // S1: shown at the join itself, and delivered there
+  const joined = run("join", "--run", id, "--seat", "S5", "--doing", "joining").stdout;
+  assert.ok(joined.includes("@S5 the header is yours"), joined);
+  assert.ok(!run("deliver", "--as", "review-tool/S5").stdout.includes("@S5 the header is yours"));
 });
 
 test("roster --json and status --json give each member's worktree, null for a seat (D64)", () => {

@@ -27,8 +27,9 @@ export type VerbResult =
   | { verb: "done"; phase: string; none?: false; line: string }
   /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
   | { verb: "heard"; lines: string[] }
-  /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link */
-  | { verb: "join"; head: string[]; tail: string[] };
+  /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
+   *  posts for the member, delivered at its join (S1), the phase's own event left out: the phase line states it */
+  | { verb: "join"; head: string[]; shown: Shown[]; tail: string[] };
 
 export type Answer = {
   /** the lines printed, in order */
@@ -116,7 +117,8 @@ export function answer(r: VerbResult, s: Situation): Answer {
       const next = nextStep(s);
       // G32: a member owing the phase reads its text once, on the owed line; the header only when it owes nothing
       const header = headers.printed && !(s.owed && !pausedLine(s)) ? [headers.printed] : [];
-      return { lines: [...r.head, ...header, ...r.tail, next], next, phase: headers.full };
+      // S1: the result first (the posts waiting for the member), then its steps
+      return { lines: [...r.head, ...header, ...shownLines(r.shown), ...r.tail, next], next, phase: headers.full };
     }
   }
 }

@@ -151,8 +151,8 @@ test("S1 target: join shows the unread task posted before it", async () => {
       "@w1 the task: build the thing",
       `your worktree: ${wt} (branch swarm/1-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C ${wt}, never cd into it; pass --as g/w1 on every call`,
       "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>",
-      "start your link now, in the background (your harness's background task): SWARMSTORM_HOME=<home> node <cli> link --run 1 --as g/w1",
-      "start your listener now, in the background (your harness's background task): SWARMSTORM_HOME=<home> node <cli> wait --mentions --as g/w1",
+      "start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/w1",
+      "start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/w1",
     ]);
     const again = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
     assert.doesNotMatch(again.text, /the task: build the thing/);

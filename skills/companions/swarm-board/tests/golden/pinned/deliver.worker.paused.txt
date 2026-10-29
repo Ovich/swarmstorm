@@ -3,7 +3,4 @@ phase build (unchanged; its text: node <cli> thread --as g/w1)  PAUSED: hold on
 #<seq> g/orchestrator (event)  <ts>
 phase build: build the thing
 when your part of build is posted: node <cli> done build --as g/w1
-#<seq> g/orchestrator (event)  <ts>
-pause: stop where you are and wait for the resume: hold on
-stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000
 run 1 is paused: hold on. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000
