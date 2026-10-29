@@ -3472,9 +3472,9 @@ var init_wire = __esm({
   }
 });
 
-// node_modules/ws/lib/constants.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/ws/lib/constants.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/constants.js"(exports, module) {
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
@@ -3494,9 +3494,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/ws/lib/buffer-util.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/buffer-util.js
 var require_buffer_util = __commonJS({
-  "node_modules/ws/lib/buffer-util.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/buffer-util.js"(exports, module) {
     "use strict";
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
@@ -3569,9 +3569,9 @@ var require_buffer_util = __commonJS({
   }
 });
 
-// node_modules/ws/lib/limiter.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/limiter.js
 var require_limiter = __commonJS({
-  "node_modules/ws/lib/limiter.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/limiter.js"(exports, module) {
     "use strict";
     var kDone = /* @__PURE__ */ Symbol("kDone");
     var kRun = /* @__PURE__ */ Symbol("kRun");
@@ -3619,9 +3619,9 @@ var require_limiter = __commonJS({
   }
 });
 
-// node_modules/ws/lib/permessage-deflate.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/permessage-deflate.js
 var require_permessage_deflate = __commonJS({
-  "node_modules/ws/lib/permessage-deflate.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/permessage-deflate.js"(exports, module) {
     "use strict";
     var zlib = __require("zlib");
     var bufferUtil = require_buffer_util();
@@ -4002,9 +4002,9 @@ var require_permessage_deflate = __commonJS({
   }
 });
 
-// node_modules/ws/lib/validation.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/validation.js
 var require_validation = __commonJS({
-  "node_modules/ws/lib/validation.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/validation.js"(exports, module) {
     "use strict";
     var { isUtf8 } = __require("buffer");
     var { hasBlob } = require_constants();
@@ -4203,9 +4203,9 @@ var require_validation = __commonJS({
   }
 });
 
-// node_modules/ws/lib/receiver.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/receiver.js
 var require_receiver = __commonJS({
-  "node_modules/ws/lib/receiver.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/receiver.js"(exports, module) {
     "use strict";
     var { Writable } = __require("stream");
     var PerMessageDeflate = require_permessage_deflate();
@@ -4795,9 +4795,9 @@ var require_receiver = __commonJS({
   }
 });
 
-// node_modules/ws/lib/sender.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/sender.js
 var require_sender = __commonJS({
-  "node_modules/ws/lib/sender.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/sender.js"(exports, module) {
     "use strict";
     var { Duplex } = __require("stream");
     var { randomFillSync } = __require("crypto");
@@ -5283,9 +5283,9 @@ var require_sender = __commonJS({
   }
 });
 
-// node_modules/ws/lib/event-target.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/event-target.js
 var require_event_target = __commonJS({
-  "node_modules/ws/lib/event-target.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/event-target.js"(exports, module) {
     "use strict";
     var { kForOnEventAttribute, kListener } = require_constants();
     var kCode = /* @__PURE__ */ Symbol("kCode");
@@ -5512,9 +5512,9 @@ var require_event_target = __commonJS({
   }
 });
 
-// node_modules/ws/lib/extension.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/extension.js
 var require_extension = __commonJS({
-  "node_modules/ws/lib/extension.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/extension.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
@@ -5665,9 +5665,9 @@ var require_extension = __commonJS({
   }
 });
 
-// node_modules/ws/lib/websocket.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket.js
 var require_websocket = __commonJS({
-  "node_modules/ws/lib/websocket.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var https = __require("https");
@@ -6548,9 +6548,9 @@ var require_websocket = __commonJS({
   }
 });
 
-// node_modules/ws/lib/stream.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/stream.js
 var require_stream = __commonJS({
-  "node_modules/ws/lib/stream.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/stream.js"(exports, module) {
     "use strict";
     var WebSocket3 = require_websocket();
     var { Duplex } = __require("stream");
@@ -6646,9 +6646,9 @@ var require_stream = __commonJS({
   }
 });
 
-// node_modules/ws/lib/subprotocol.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/subprotocol.js
 var require_subprotocol = __commonJS({
-  "node_modules/ws/lib/subprotocol.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/subprotocol.js"(exports, module) {
     "use strict";
     var { tokenChars } = require_validation();
     function parse(header) {
@@ -6691,9 +6691,9 @@ var require_subprotocol = __commonJS({
   }
 });
 
-// node_modules/ws/lib/websocket-server.js
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket-server.js
 var require_websocket_server = __commonJS({
-  "node_modules/ws/lib/websocket-server.js"(exports, module) {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/lib/websocket-server.js"(exports, module) {
     "use strict";
     var EventEmitter = __require("events");
     var http2 = __require("http");
@@ -7080,10 +7080,10 @@ var require_websocket_server = __commonJS({
   }
 });
 
-// node_modules/ws/wrapper.mjs
+// ../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/wrapper.mjs
 var import_stream, import_receiver, import_sender, import_websocket, import_websocket_server;
 var init_wrapper = __esm({
-  "node_modules/ws/wrapper.mjs"() {
+  "../../../../../../../../../../../../../SKILLS/sw-wt/skills/companions/swarm-board/node_modules/ws/wrapper.mjs"() {
     import_stream = __toESM(require_stream(), 1);
     import_receiver = __toESM(require_receiver(), 1);
     import_sender = __toESM(require_sender(), 1);
@@ -8584,10 +8584,24 @@ function guidesFor(guides, files) {
   return guides.filter((g) => g.paths.some((glob) => files.some((f) => globRegex(glob).test(f))));
 }
 var guidesLine = (guides) => guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
+var guideName = (token) => token.replace(/^guide-/, "");
 function guidesSettlement(arg, listed) {
-  const entries = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((e) => /^\s*([^:\s]+)\s*:\s*(.*)$/s.exec(e)).filter((m) => !!m).map((m) => ({ name: m[1], verdict: m[2].trim() }));
+  const wrongSeparator = /\s*([;&|\n])\s*((?:guide-)?[^\s:,;&|]+)\s*:/g;
+  let separator = null;
+  const corrected = arg.replace(wrongSeparator, (whole, sep, name) => {
+    if (!listed.includes(guideName(name))) return whole;
+    separator ??= sep;
+    return `, ${name}:`;
+  });
+  const tokens = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((t) => t.trim()).filter(Boolean);
+  const bare = arg.split(",").map((t) => t.trim()).filter((t) => !t.includes(":") && listed.includes(guideName(t.split(/\s+/)[0])));
+  const malformed = [...tokens.filter((t) => !/^[^:\s]+\s*:/.test(t)), ...bare];
+  const entries = tokens.map((e) => /^([^:\s]+)\s*:\s*(.*)$/s.exec(e)).filter((m) => !!m).map((m) => ({ name: guideName(m[1]), verdict: m[2].trim() }));
   const named = entries.map((e) => e.name);
   return {
+    separator,
+    corrected,
+    malformed,
     missing: listed.filter((g) => !named.includes(g)),
     unknown: named.filter((n) => !listed.includes(n)),
     unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name)
@@ -8748,9 +8762,16 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   // ── the merge (V12: every command runnable as printed) ──
-  mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`,
-  mergeGranted: (cli, as, guides) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guides ? ' --guides "<name>:ok|n/a <why>, ..."' : ""} --as ${as}`,
+  mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
+  /** S4: the --guides form filled with this merge's guides, as merged takes it */
+  guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
+  mergeGranted: (cli, as, guidesForm) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+  /** D2: an argument error names what is wrong, then usage, then one corrected form */
+  guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
   mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
+  // ── agree ──
+  /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
+  agreeParties: (author, others) => `parties: ${[.../* @__PURE__ */ new Set([author, ...others])].sort().map((n) => n === author ? `${n} (you)` : n).join(", ")}; woken when its file merges`,
   // ── the orchestrator's verbs ──
   phaseHeard: (watch) => watch.length ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake` : "each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only) => only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "",
@@ -8786,6 +8807,10 @@ var nextStep = (s) => {
   const owed = owedLine(s);
   return owed ? `${owed}
 ${listenNow(s, true)}` : listenNow(s);
+};
+var joinStep = (s, showedPosts) => {
+  const idleWorker = s.listens === "background" && !showedPosts && !s.owed && !s.pause;
+  return idleWorker ? WORDING.nothingYet(waitCommand(s, true)) : nextStep(s);
 };
 var heardStep = (s) => {
   if (s.ended || s.listenerRunning) return null;
@@ -8884,9 +8909,9 @@ ${owes}` : rearm;
     }
     case "join": {
       const headers = phaseHeaders(s);
-      const next = nextStep(s);
+      const next = joinStep(s, r.shown.length > 0);
       const header = headers.printed && !(s.owed && !pausedLine(s)) ? [headers.printed] : [];
-      return { lines: [...r.head, ...header, ...r.tail, next], next, phase: headers.full };
+      return { lines: [...r.head, ...header, ...shownLines(r.shown), ...r.tail, next], next, phase: headers.full };
     }
   }
 }
@@ -9668,7 +9693,10 @@ ${verbHelp()}`);
       const drawing = POSTS_MARKDOWN;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...roster.map((r) => rosterLine(r))];
       const tail = [...as ? [as] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
-      const a = answer({ verb: "join", head, tail }, await situation(member));
+      const waiting = await board.deliverMentions(member);
+      const statedByJoin = /* @__PURE__ */ new Set(["phase", "pause"]);
+      const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
+      const a = answer({ verb: "join", head, shown, tail }, await situation(member));
       emitAnswer({ member: member.name, nick: member.nick, roster, composition, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...drawing ? { drawing } : {}, link }, a);
       break;
     }
@@ -9701,7 +9729,8 @@ ${verbHelp()}`);
       const m = await board.post(p, body, {
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
-        ...args.verb === "agree" && args.flag("--with") ? { with: args.flag("--with").split(",") } : {}
+        // every --with counts, each a seat or a comma list of seats (S5)
+        ...args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
@@ -9710,7 +9739,7 @@ ${verbHelp()}`);
         // posting is claiming (D7)
         ...m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : [],
         ...unmatched,
-        ...args.verb === "agree" && m.mentions?.length ? [`parties: ${m.mentions.join(", ")}, woken when its file merges`] : []
+        ...args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []
       ];
       await emitHeard(p, json, human);
       break;
@@ -9898,7 +9927,7 @@ ${verbHelp()}`);
       emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
         if (r.granted && guides.length) console.log(WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
-        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length > 0) : WORDING.mergeHeld(r.holder, waitCommand2(p.name, true)));
+        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? WORDING.guidesForm(guides.map((g) => g.name)) : null) : WORDING.mergeHeld(r.holder, waitCommand2(p.name, true)));
       });
       break;
     }
@@ -9928,9 +9957,13 @@ ${verbHelp()}`);
       const guidesArg = args.flag("--guides")?.trim();
       const listed = lock?.guides ?? [];
       const settled = guidesSettlement(guidesArg ?? "", listed);
-      if (settled.missing.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${settled.missing.join(", ")}. Pass --guides "${settled.missing.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
-      if (settled.unknown.length) fail(`merged: --guides names ${settled.unknown.join(", ")}, which merge-lock did not list; the guides of this merge: ${listed.join(", ") || "none"}`);
-      if (settled.unjudged.length) fail(`merged: --guides gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`);
+      const form = WORDING.guidesForm(listed);
+      if (settled.separator) fail(WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
+      if (settled.malformed.length) fail(WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
+      if (settled.unknown.length) fail(WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
+      if (settled.missing.length)
+        fail(WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
+      if (settled.unjudged.length) fail(WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
       if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
