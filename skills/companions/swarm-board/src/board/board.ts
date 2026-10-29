@@ -11,7 +11,7 @@ import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
 import type { Pack } from "../packs/types.ts";
-import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
+import { type EventName, type Subscription, carries, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
@@ -865,7 +865,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // an old main row (null) is labelled with its author's run (plan D13)
     run: r.run == null ? author.run : Number(r.run),
     endorses: r.endorses == null ? null : Number(r.endorses),
-    event: r.event == null || !Object.hasOwn(EVENTS, String(r.event)) ? null : (String(r.event) as EventName),
+    event: r.event == null || !isEvent(String(r.event)) ? null : (String(r.event) as EventName),
     meta: r.meta == null ? null : (JSON.parse(String(r.meta)) as MessageMeta),
     };
   };
@@ -1852,17 +1852,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // ended on an idle answer: dormant, the seat still owes the run's later phases
       const dormant = board.idle(fresh) ? 1 : 0;
       transaction(() => {
-        // a held lock released by the end frees whoever was refused it (D65)
-        const waiters = claims.lockWaitersFreedBy(fresh);
+        // what the end frees in the member's pack (the code pack: its holds, and whoever was refused the lock it held)
+        const freed = packOf(fresh)?.onEnded?.(fresh, packCtxOf(fresh)) ?? null;
         const ended = { event: EVENTS.ended.name };
         postComposition(fresh, fresh.seat, "-", "ended");
-        if (waiters.length) insertMessage(fresh, `ended\nthe merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event", waiters, ended);
+        if (freed) insertMessage(fresh, `ended\n${freed.note}`, null, "event", freed.mentions, ended);
         else insertMessage(fresh, "ended", null, "event", undefined, ended);
         // idea 4: the named locks it held are released, their waiters woken
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
         // the card's last word: what the member's run came to, not its last doing (D66)
         db.prepare("UPDATE participants SET ended_at = ?, dormant = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), dormant, fresh.id);
-        claims.releaseAll(fresh.id);
       });
     },
 
@@ -2317,7 +2316,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             const me = participantById(Number(row.id));
             if (!me.subscriptions.some((s) => s.carry)) continue;
             for (const m of unseenRows(me).map(toMessage)) {
-              if (!carries(m, me, me.subscriptions) || EVENTS[eventOf(m)!].ambient || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
+              if (!carries(m, me, me.subscriptions) || eventDef(eventOf(m)!).ambient || t - Math.max(Date.parse(m.at), resumedAt) < CARRY_MAX_MS) continue;
               if (Number(markDue.run(me.id, m.seq).changes) === 1) moved = true;
             }
           }

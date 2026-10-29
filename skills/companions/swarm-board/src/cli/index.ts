@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openBoard, progressText, type EditAllowed, type EditHeld, type HeldMergeLock, type PackRefusal, type Sharer, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
 import { profileOf } from "../board/kinds.ts";
-import { EVENTS, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
+import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
@@ -35,7 +35,7 @@ const usageError = (what: string, usage: string, example: string): never => fail
 /** The --as a corrected form carries: the caller's own, else the placeholder. */
 const asWord = (): string => quoted(args.flag("--as") ?? "<group>/<seat>");
 
-const USAGE = coreUsage(CLI, Object.keys(EVENTS));
+const USAGE = coreUsage(CLI, eventNames());
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
 const CODE_USAGE = CODE_WORDING.usage(CLI);

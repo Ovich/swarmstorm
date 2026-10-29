@@ -1,13 +1,14 @@
 // The CLI's static help (board-rework D12): the core verbs, and the usage line of each hidden verb. The code verbs'
 // help is the code pack's, in code-wording.ts. `cli` is this CLI as a member runs it.
+import { CODE_IN_CORE_HELP } from "./code-wording.ts";
 import type { Command } from "./wording.ts";
 
 /** The core verbs' help; `events` the board's event names. */
 export const coreUsage = (cli: Command, events: string[]): string =>
   [
-    `usage: ${cli} <verb> [--json]        (${cli} --help code: the claim and merge verbs)`,
+    `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
     "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
-    "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
+    CODE_IN_CORE_HELP.ontoLine,
     "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
     "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
     '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
@@ -15,14 +16,14 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
     "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
     "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
-    "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
+    `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stall, quiet or stale alert until resume (orchestrator)`,
     "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
     "  park    <seat> [--until <phase>] [--as <member>]                # shown \"dormant until <phase>\"; a seat only you need now (a worker between tasks, a dormant verifier): told to end its turn without end; no idle, stalled, stale or gone for it, all-done does not wait for it, until its next call or unpark (orchestrator)",
     "  unpark  <seat> [--as <member>]                                  # lifts a park (orchestrator)",
     "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-    "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
-    '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
-    "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
+    `  close   --run <id>                                              # (orchestrator); ${CODE_IN_CORE_HELP.closeRemoves}`,
+    `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
+    `          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. ${CODE_IN_CORE_HELP.onExample}; else the seat row's on, else the kind's defaults`,
     "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
     "  unsubscribe [--as <member>] <events>",
     "  doing   [--as <member>] <text>",
@@ -44,9 +45,9 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
     "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
     "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
-    "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
+    CODE_IN_CORE_HELP.pruneLine,
     `events: ${events.join(", ")}; any:<event> for one posted in any run`,
-    "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree",
+    `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`,
   ].join("\n");
 
 /** `stats` is for an outside reader, never a member: not in the core help, its own (D33). */

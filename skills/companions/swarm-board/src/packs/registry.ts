@@ -6,10 +6,15 @@ import type * as CoreStats from "../board/stats.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { CodeMemberStats, CodeRunStats, CodeTotals, FileAcrossRuns, PlanRunStats, SharedFile } from "./code/stats.ts";
 import { codePack } from "./code/index.ts";
+import type { EventDef } from "../board/events.ts";
+import type { CodeEventName } from "./code/events.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
 const PACKS: Record<string, Pack> = { [codePack.name]: codePack };
+
+/** The names of every pack's events, for the core's `EventName`: one per pack in PACKS. */
+export type PackEventName = CodeEventName;
 
 /** `role: null` is the kind's default, for a seat whose role has no row of its own (D11). */
 type MemberRowSpec = { kind: Kind; role: string | null; pack: string | null; verify: boolean };
@@ -34,6 +39,10 @@ export const registry = {
   /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
   statsFigures(): StatsFigures[] {
     return Object.values(PACKS).flatMap((p) => (p.stats ? [p.stats] : []));
+  },
+  /** Every pack's events (D18), in PACKS' order. */
+  events(): Record<string, EventDef<string>> {
+    return Object.assign({}, ...Object.values(PACKS).map((p) => p.events ?? {}));
   },
   /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
   packNamed(name: string | null): Pack | null {

@@ -3,6 +3,19 @@
 // reads is code-rules.ts's choice. The core lines stay in wording.ts.
 import type { Command } from "./wording.ts";
 
+/** The code pack's words inside the core help's lines (D12: one static help, its code parts the pack's), so the
+ *  core help reads as before. */
+export const CODE_IN_CORE_HELP = {
+  codeVerbs: "the claim and merge verbs",
+  ontoLine: "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
+  pauseRefuses: "claim and merge-lock refused",
+  closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
+  joinMakes: "on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it",
+  onExample: "agreement,any:merged",
+  pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
+  withoutAs: "the member joined from this worktree",
+};
+
 export const CODE_WORDING = {
   /** The code verbs' help, apart from the core (D22). */
   usage: (cli: Command): string =>

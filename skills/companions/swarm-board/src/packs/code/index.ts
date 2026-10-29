@@ -9,6 +9,7 @@ import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../ty
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
+import { CODE_EVENTS } from "./events.ts";
 import { codeStats } from "./stats.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
@@ -57,6 +58,7 @@ const CLAIM_WRITES: Record<string, PackWrite> = {
 
 export const codePack: Pack = {
   name: "code",
+  events: CODE_EVENTS,
   verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
   stats: codeStats,
   // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
@@ -115,6 +117,13 @@ export const codePack: Pack = {
     const mine = ownWorktree(member);
     const left = mine ? worktrees(member.repo).unmerged(mine, ctx.base) : null;
     return mine && left ? { reason: "unmerged", worktree: mine, left, base: ctx.base } : null;
+  },
+
+  onEnded(member, ctx) {
+    // a held lock released by the end frees whoever was refused it (D65); its claims go with it
+    const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
+    tablesOf(ctx).releaseAll(member.id);
+    return waiters.length ? { note: `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, mentions: waiters } : null;
   },
 
   afterEnd(member, ctx) {

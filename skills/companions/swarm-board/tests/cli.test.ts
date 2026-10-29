@@ -871,7 +871,7 @@ test("seat add adds a seat mid-run that can be joined; a duplicate id and a clos
 
 test("--help names --on, subscribe, unsubscribe, seat add and the known events", () => {
   const h = run("--help");
-  for (const w of ["--on", "subscribe", "unsubscribe", "seat    add", "agreement, endorsement, merged"]) assert.ok(h.stdout.includes(w), w);
+  for (const w of ["--on", "subscribe", "unsubscribe", "seat    add", "agreement, endorsement", "all-joined, merged, flag;"]) assert.ok(h.stdout.includes(w), w);
 });
 
 test("a mention naming nobody is told to its author, closest names offered; the message is unchanged (D63)", () => {

@@ -4,6 +4,7 @@
 // call scoped to one run through its `PackCtx` (D10). Git and other slow work run in `run`, before any transaction
 // opens (D19).
 import type { Kind, Message, Participant, RunId } from "../board/board.ts";
+import type { EventDef } from "../board/events.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
 import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
@@ -19,6 +20,9 @@ export type JoinFacts = Record<string, unknown>;
 export type PostFacts = Record<string, unknown>;
 /** Why `end` cannot go on, for the answer module to word: `left` says what the member still holds. */
 export type Refusal = { reason: string } & Record<string, unknown>;
+/** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event, and whom
+ *  it mentions (the code pack: the members refused the merge lock it held). */
+export type EndedFreed = { note: string; mentions: string[] };
 /** What `afterEnd` released. */
 export type EndFacts = Record<string, unknown>;
 
@@ -64,6 +68,8 @@ export interface Pack {
   /** The registry's name of it; "code" in this plan. */
   name: string;
   verbs: VerbSpec[];
+  /** The events the pack posts, by name; the registry adds them to the core's (D18), so they parse and wake alike. */
+  events?: Record<string, EventDef<string>>;
   /** Opens the pack's tables, once per board. */
   openTables?(deps: PackTablesDeps): PackTables;
   /** The server side of a pack verb, called before the core's transaction (D19): the facts it gives the CLI, or a
@@ -78,6 +84,8 @@ export interface Pack {
   defaultParties?(about: string, ctx: PackCtx): string[];
   busy?(member: Participant, ctx: PackCtx): boolean;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
+  /** Inside the end's transaction: releases what the member held in the pack's tables; null when it frees no one. */
+  onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;
   afterEnd?(member: Participant, ctx: PackCtx): EndFacts;
   /** Its part of one repository's snapshot, from its tables; `people` are the snapshot's participant rows. */
   snapshot?(deps: PackSnapshotDeps, repo: string, people: Record<string, unknown>[], orchestratorSeat: string): PackSnapshot;

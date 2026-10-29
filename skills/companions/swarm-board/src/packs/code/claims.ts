@@ -3,7 +3,8 @@
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
 import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, MemberWorktree, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
-import { type EventName, EVENTS } from "../../board/events.ts";
+import type { EventName } from "../../board/events.ts";
+import { CODE_EVENTS } from "./events.ts";
 
 export interface ClaimsDeps {
   db: DatabaseSync;
@@ -314,7 +315,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             rel,
             "event",
             [holder.name, me.name],
-            { event: EVENTS.flag.name },
+            { event: CODE_EVENTS.flag.name },
           );
           flags.push({ path: rel, holder: holder.name, seq: m.seq });
         }
@@ -449,7 +450,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
-        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: EVENTS.merged.name, meta });
+        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: CODE_EVENTS.merged.name, meta });
         // the merge, for the stats: its files and conflicts, null for unknown (D25)
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(
           me.id,
