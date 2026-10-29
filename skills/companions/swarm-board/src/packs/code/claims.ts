@@ -2,7 +2,8 @@
 // registry, the second module that sees SQL. The Board's verbs of the same names delegate here after the
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
-import type { Conflicts, Declared, EditAllowed, MergedMeta, EditHeld, Flag, MemberWorktree, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
+import type { Conflicts, Declared, EditAllowed, EditHeld, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
+import type { Flag, MemberWorktree, MergedMeta } from "./types.ts";
 import type { EventName } from "../../board/events.ts";
 import { CODE_EVENTS } from "./events.ts";
 
@@ -20,7 +21,7 @@ export interface ClaimsDeps {
   slashes(rel: string): string;
   doingOf(id: number): string;
   /** A run of `kind` gives its members claims by default (D22): an interface change is announced to those runs. */
-  kindHasClaims(kind: string): boolean;
+  kindHasPack(kind: string): boolean;
 }
 
 export interface Claims {
@@ -38,6 +39,10 @@ export interface Claims {
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** join's declared files, claimed where free */
   claimDeclared(p: Participant, files: Declared[]): void;
+  /** At a join or re-join: its record of merging starts fresh (D66), its declared files claimed where free. */
+  seated(p: Participant, files: Declared[]): void;
+  /** `p` called `merged` since it joined (D66). */
+  mergedSinceJoin(participant: number): boolean;
   /** end, closeRun, seat done */
   releaseAll(participant: number): void;
   clearFlags(): void;
@@ -65,7 +70,7 @@ type Row = Record<string, unknown>;
 type ClaimRow = { participant: number; kind: string; since: number };
 
 export function claimsOf(deps: ClaimsDeps): Claims {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasClaims } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasPack } = deps;
 
   /** A flag lives while a claim on its path does; a notice while both its holders' claims do. */
   const clearFlags = (): void => {
@@ -202,6 +207,15 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         recordShares(me, rel, people);
         return { path: rel, sharedWith: people.map((o) => o.name) };
       });
+    },
+
+    seated(p, files) {
+      db.prepare("UPDATE participants SET merged = 0 WHERE id = ?").run(p.id);
+      this.claimDeclared(p, files);
+    },
+
+    mergedSinceJoin(participant) {
+      return (db.prepare("SELECT merged FROM participants WHERE id = ?").get(participant) as Row | undefined)?.merged === 1;
     },
 
     claimDeclared(p, files) {
@@ -428,7 +442,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
         const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
-          .filter((r) => kindHasClaims(String(r.kind)))
+          .filter((r) => kindHasPack(String(r.kind)))
           .map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];

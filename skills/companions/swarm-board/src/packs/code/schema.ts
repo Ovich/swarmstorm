@@ -105,6 +105,8 @@ export function migrateCodeTables(db: DatabaseSync): void {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
+  // 1 once the member has called `merged` since it joined: what `end` writes as its doing (D66); on the core's members
+  upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
   // a claim's kind kept past its release, so a closed run read live still knows its interfaces (D42)
   upkeep("claim_log", "kind", "kind TEXT NOT NULL DEFAULT 'inside'");
   // the branch a merge lands in, named by merge-lock --onto (D9)

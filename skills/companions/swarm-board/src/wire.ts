@@ -4,6 +4,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Board } from "./board/board.ts";
+/** The code pack's answers as they cross the wire to the CLI, which never imports src/packs/ (D9). */
+export type { HeldMergeLock } from "./packs/code/claims.ts";
+export type { Flag } from "./packs/code/types.ts";
 
 /** The Board methods a verb calls over the wire: all but onChange, close, livenessTick, recordActivity,
  *  memberStates, upkeepIfDue, prune and markStaleRuns, which only the server's own process runs. */

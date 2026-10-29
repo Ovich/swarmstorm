@@ -16,9 +16,7 @@ const DOMAIN_WORDS = new Set(["worktree", "worktrees", "claim", "claims", "merge
 const EXCEPTION = "AGENTS EXCEPTION";
 
 /** Sites per file (path relative to src/, `/`-separated) allowed today; each count may only fall. */
-const ALLOWED: Record<string, number> = {
-  "board/board.ts": 19,
-};
+const ALLOWED: Record<string, number> = {};
 
 const files = (dir: string): string[] =>
   readdirSync(dir).flatMap((n) => {

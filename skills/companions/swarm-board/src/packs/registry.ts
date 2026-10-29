@@ -40,6 +40,10 @@ export const registry = {
   statsFigures(): StatsFigures[] {
     return Object.values(PACKS).flatMap((p) => (p.stats ? [p.stats] : []));
   },
+  /** Why a join declaring files is refused in a run of `kind`, whose seats have no pack to hold them. */
+  declaredRefused(kind: string): string {
+    return `join: a ${kind} run has no claims`;
+  },
   /** Every pack's events (D18), in PACKS' order. */
   events(): Record<string, EventDef<string>> {
     return Object.assign({}, ...Object.values(PACKS).map((p) => p.events ?? {}));
@@ -89,3 +93,5 @@ export type Stats = Omit<CoreStats.Stats, "runs" | "totals" | "files"> & { runs:
 export type { FileAcrossRuns, PlanRunStats, SharedFile };
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
 export type { HeldMergeLock } from "./code/claims.ts";
+/** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */
+export type { MergedMeta as PackMessageMeta } from "./code/types.ts";

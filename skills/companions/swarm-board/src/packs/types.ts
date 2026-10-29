@@ -3,7 +3,7 @@
 // the board server and reaches only its own tables and `insertMessage` (D9); it holds no module-level state, every
 // call scoped to one run through its `PackCtx` (D10). Git and other slow work run in `run`, before any transaction
 // opens (D19).
-import type { Kind, Message, Participant, RunId } from "../board/board.ts";
+import type { Declared, Kind, Message, Participant, RunId } from "../board/board.ts";
 import type { EventDef } from "../board/events.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
@@ -20,9 +20,9 @@ export type JoinFacts = Record<string, unknown>;
 export type PostFacts = Record<string, unknown>;
 /** Why `end` cannot go on, for the answer module to word: `left` says what the member still holds. */
 export type Refusal = { reason: string } & Record<string, unknown>;
-/** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event, and whom
- *  it mentions (the code pack: the members refused the merge lock it held). */
-export type EndedFreed = { note: string; mentions: string[] };
+/** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event (null: none),
+ *  whom it mentions (the code pack: the members refused the merge lock it held), and the doing its card keeps (D66). */
+export type EndedFreed = { note: string | null; mentions: string[]; lastDoing: string };
 /** What `afterEnd` released. */
 export type EndFacts = Record<string, unknown>;
 
@@ -78,13 +78,14 @@ export interface Pack {
   run?(verb: string, member: Participant | null, input: PackVerbInput, ctx: PackCtx | null, tables: PackTables): unknown;
   /** The member verbs that write its tables, by verb, each after `run` (D9). */
   writes?: Record<string, PackWrite>;
-  onJoin?(member: Participant, ctx: PackCtx): JoinFacts;
+  /** At every join and re-join, after the member's row is written: `declared` the files its join declared. */
+  onJoin?(member: Participant, ctx: PackCtx, declared: Declared[]): JoinFacts;
   onPost?(member: Participant, message: Message, ctx: PackCtx): PostFacts | null;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
   busy?(member: Participant, ctx: PackCtx): boolean;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
-  /** Inside the end's transaction: releases what the member held in the pack's tables; null when it frees no one. */
+  /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;
   afterEnd?(member: Participant, ctx: PackCtx): EndFacts;
   /** Its part of one repository's snapshot, from its tables; `people` are the snapshot's participant rows. */

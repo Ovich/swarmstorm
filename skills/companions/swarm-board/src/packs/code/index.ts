@@ -119,11 +119,27 @@ export const codePack: Pack = {
     return mine && left ? { reason: "unmerged", worktree: mine, left, base: ctx.base } : null;
   },
 
+  onJoin(member, ctx, declared) {
+    // a re-join starts the seat's record fresh: merged since this join only (D66)
+    tablesOf(ctx).seated(member, declared);
+    return {};
+  },
+
+  onPost(member, message, ctx) {
+    // posting is claiming (D7)
+    const claimed = tablesOf(ctx).claimByPost(member, message);
+    return claimed ? { claimed } : null;
+  },
+
   onEnded(member, ctx) {
     // a held lock released by the end frees whoever was refused it (D65); its claims go with it
     const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
     tablesOf(ctx).releaseAll(member.id);
-    return waiters.length ? { note: `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, mentions: waiters } : null;
+    return {
+      note: waiters.length ? `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}` : null,
+      mentions: waiters,
+      lastDoing: tablesOf(ctx).mergedSinceJoin(member.id) ? "merged and ended" : "ended",
+    };
   },
 
   afterEnd(member, ctx) {

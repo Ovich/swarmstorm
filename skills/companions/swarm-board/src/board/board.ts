@@ -9,7 +9,7 @@ import { SQLITE_PATH } from "./home.ts";
 import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type PackCtx, type PackRefusal, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
+import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
 import type { Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
@@ -19,7 +19,7 @@ import type { MemberActivity } from "../wire.ts";
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
 export type { EventName, Subscription } from "./events.ts";
-export type { HeldMergeLock, PackRefusal } from "../packs/registry.ts";
+export type { PackRefusal } from "../packs/registry.ts";
 /** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
  *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */
 export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
@@ -36,8 +36,6 @@ export type CompositionEntry = { seat: string; member: string | null; nick: stri
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
 export type Declared = { path: string; interface: boolean }; // repository-relative
 export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "event";
-/** A file written outside its writer's claim while another member holds it. */
-export type Flag = { path: string; holder: string; seq: number };
 
 /** The phase a run's orchestrator opened last (`phase <name> <text>`). */
 export type Phase = { name: string; text: string };
@@ -88,16 +86,6 @@ export interface Run {
   /** The pack its kind gives a member by default (board-split#D22); null: core only. What a run's close and an
    *  interface change are judged by; a member's verbs read the member's own `pack` (D11). */
   kindPack: string | null;
-}
-
-/** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
-export interface MemberWorktree {
-  run: RunId;
-  member: string;
-  worktree: string;
-  repo: string;
-  base: string | null;
-  open: boolean;
 }
 
 export interface Participant {
@@ -236,9 +224,6 @@ export type SnapshotMember = {
   /** Messages for it not yet delivered (swarm-relay D43); absent from a reader before it. */
   unread?: number;
 };
-/** What a merged event told, as data (D11): `rebase` holds or declared a changed file, `tell` is whom to tell of a resolved conflict,
- *  of a conflicted path only once the conflicts are known (D5). */
-export type MergedMeta = { rebase: string[]; tell: string[] };
 /** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
 export type PhaseMeta = { phase: string };
 /** Which rule made a member quiet (idea 1, rule 6): the `stalled` stores it, and its `next` prints that rule's move. */
@@ -261,7 +246,7 @@ export type LinkDownMeta = { linkDown: string; linkDowns?: string[] };
 /** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
 export type PauseMeta = { person: boolean; text: string };
 /** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
-export type MessageMeta = MergedMeta | PhaseMeta | StalledMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta;
+export type MessageMeta = PackMessageMeta | PhaseMeta | StalledMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -626,8 +611,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("participants", "pack_chosen", "pack_chosen INTEGER NOT NULL DEFAULT 0");
   // moved by every `wait` start: a pending wait whose number is no longer this one is superseded (D64)
   upkeep("participants", "wait_gen", "wait_gen INTEGER NOT NULL DEFAULT 0");
-  // 1 once the member has called `merged` since it joined: what `end` writes as its doing (D66)
-  upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
   // 1: written by the board itself in a member's name (a flag, a merge notice), never a member's own word
   upkeep("messages", "by_board", "by_board INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "link", "link TEXT");
@@ -945,7 +928,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const doingOf = (id: number): string => String((db.prepare("SELECT doing FROM participants WHERE id = ?").get(id) as Row).doing) || "no note";
   // the code pack's tables, opened through the registry (board-split#D20)
-  const claims = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasClaims: (kind) => kindPackOf(kind) !== null });
+  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasPack: (kind) => kindPackOf(kind) !== null });
 
   /** One run's context for a pack call (D10). */
   const runPackCtx = (runId: RunId): PackCtx => {
@@ -955,7 +938,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       repo: String(r.repo),
       group: String(r.plan),
       base: r.base == null ? null : String(r.base),
-      tables: claims,
+      tables: packTables,
       insertMessage: (author, body, about) => insertMessage(author, body, about, "msg"),
     };
   };
@@ -1044,7 +1027,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       }
       return rows.map((r) => {
         const m = toMessage(r);
-        const rel = r.by_board || m.kind !== "msg" || !m.about || !named(m) ? null : claims.askedAbout(me, Number(r.author), m);
+        const rel = r.by_board || m.kind !== "msg" || !m.about || !named(m) ? null : packTables.askedAbout(me, Number(r.author), m);
         return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel}` } : m;
       });
     });
@@ -1563,7 +1546,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         bump(String(runRow(run).repo));
         if (state !== "done") return;
         const p = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
-        if (p) claims.releaseAll(Number(p.id));
+        if (p) packTables.releaseAll(Number(p.id));
       });
     },
 
@@ -1601,7 +1584,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         try {
           storeRunStats(run);
         } catch {}
-        for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) claims.releaseAll(Number(p.id));
+        for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) packTables.releaseAll(Number(p.id));
       });
     },
 
@@ -1730,7 +1713,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const given = registry.forMember(profile.kind, role?.role == null ? null : String(role.role));
       const packName = given.pack?.name ?? null;
       const verify = given.verify ? 1 : 0;
-      if (files.length && packName === null) throw new Error(`join: a ${profile.kind} run has no claims`);
+      if (files.length && packName === null) throw new Error(registry.declaredRefused(profile.kind));
       // a member with no pack records no place, whatever the caller passed (D21, D11)
       const where = place && packName !== null ? path.resolve(place) : null;
       // one transaction: the page sees a join as one change
@@ -1748,7 +1731,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
           // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
-          db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
+          db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, dormant = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
@@ -1779,7 +1762,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         return Number(ins.lastInsertRowid);
       });
       const member = participantById(id);
-      claims.claimDeclared(member, files);
+      // the member's pack takes what it declared, and reads it fresh (the code pack: its claims, merged since its join)
+      packOf(member)?.onJoin?.(member, packCtxOf(member), files);
       // G5, D4: one line per join: the joined event names the seat as a composition line would, and every
       // member of the run hears it carried (events.ts), so no composition line beside it
       insertMessage(member, `joined: ${doing} · + ${seatWho(run, seat)}${entry === "back" ? " back" : ""}`, null, "event", undefined, { event: EVENTS.joined.name });
@@ -1854,14 +1838,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       transaction(() => {
         // what the end frees in the member's pack (the code pack: its holds, and whoever was refused the lock it held)
         const freed = packOf(fresh)?.onEnded?.(fresh, packCtxOf(fresh)) ?? null;
+        const lastDoing = freed?.lastDoing ?? "ended";
         const ended = { event: EVENTS.ended.name };
         postComposition(fresh, fresh.seat, "-", "ended");
-        if (freed) insertMessage(fresh, `ended\n${freed.note}`, null, "event", freed.mentions, ended);
+        if (freed?.note) insertMessage(fresh, `ended
+${freed.note}`, null, "event", freed.mentions, ended);
         else insertMessage(fresh, "ended", null, "event", undefined, ended);
         // idea 4: the named locks it held are released, their waiters woken
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
         // the card's last word: what the member's run came to, not its last doing (D66)
-        db.prepare("UPDATE participants SET ended_at = ?, dormant = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), dormant, fresh.id);
+        db.prepare("UPDATE participants SET ended_at = ?, dormant = ?, doing = ? WHERE id = ?").run(now(), dormant, lastDoing, fresh.id);
       });
     },
 
@@ -2332,7 +2318,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     },
 
     heldBy(p) {
-      return (db.prepare("SELECT path FROM claims WHERE participant = ?").all(p.id) as Row[]).map((r) => String(r.path));
+      return (packOf(p)?.held?.(db, p.id) ?? []).map((d) => d.path);
     },
 
     roster(repo) {
@@ -2381,8 +2367,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
       // posting is claiming (D7), on a kind with claims
-      const claimed = fresh.pack !== null ? claims.claimByPost(fresh, m) : null;
-      return claimed ? { ...m, claimed } : m;
+      const facts = packOf(fresh)?.onPost?.(fresh, m, packCtxOf(fresh)) ?? null;
+      return facts ? { ...m, ...facts } : m;
     },
 
     endorse(p, seq) {
@@ -2554,7 +2540,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           if (write.countedAs !== null) countCall(member, write.countedAs, write.progress);
           return out;
         });
-      const answers = packs.filter((k): k is NonNullable<typeof k> => !!k?.run).map((k) => k.run!(verb, member, input, ctx, claims));
+      const answers = packs.filter((k): k is NonNullable<typeof k> => !!k?.run).map((k) => k.run!(verb, member, input, ctx, packTables));
       return answers.length <= 1 ? (answers[0] ?? null) : answers.flat();
     },
 
