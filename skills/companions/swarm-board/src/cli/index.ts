@@ -1,6 +1,6 @@
 // CLI dispatch — the agent-facing surface of the board. Human output is short lines an
 // agent reads; --json prints the same data as one object; errors go to stderr, exit 1.
-import { spawn, spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { openBoard, progressText, type Declared, type Delivery, type Flag, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec, type SeatState } from "../board/board.ts";
@@ -116,7 +116,7 @@ function repoOf(dir: string): string {
 function changedIn(worktree: string): string[] {
   // G20: a worktree named at join and never made holds nothing
   if (!fs.existsSync(worktree)) return [];
-  const r = spawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out: string[] = [];
@@ -133,7 +133,7 @@ function changedIn(worktree: string): string[] {
 function branchChangedIn(worktree: string, onto: string): string[] {
   const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
   // --no-renames: a rename is its deletion and its addition, both paths
-  const r = spawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [...new Set([...committed, ...changedIn(worktree)])];
@@ -141,7 +141,7 @@ function branchChangedIn(worktree: string, onto: string): string[] {
 
 /** The renames git detects between `base` and the worktree, committed or not: a rename is two claims, the old path and the new. */
 function renamesIn(worktree: string, base: string): Rename[] {
-  const r = spawnSync("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return [];
   const parts = r.stdout.split("\0");
   const out: Rename[] = [];
@@ -314,14 +314,14 @@ const LOCK_PORT = /^port:(\d{1,5})$/;
 function listenersOn(port: number): number[] {
   const found = new Set<number>();
   if (process.platform === "win32") {
-    const out = spawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = hiddenSpawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const cols = line.trim().split(/\s+/);
       // Proto  Local  Foreign  State  PID
       if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
     }
   } else {
-    const out = spawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
+    const out = hiddenSpawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
   }
   return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
@@ -333,13 +333,13 @@ function processStarts(pids: number[]): Map<number, number> {
   if (process.platform === "win32") {
     const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
     const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
-    const out = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
+    const out = hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const [pid, at] = line.trim().split(/\s+/);
       if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
     }
   } else {
-    const out = spawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
+    const out = hiddenSpawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
     for (const line of out.split(/\r?\n/)) {
       const m = /^\s*(\d+)\s+(.+)$/.exec(line);
       if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));

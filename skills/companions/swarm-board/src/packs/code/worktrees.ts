@@ -2,7 +2,7 @@
 // `<repo's git common dir>/swarm/worktrees/<run>/<seat>`, beside the repository's own git data, never in its tree, on branch `swarm/<run>-<group>/<seat>` from the run's base.
 // Removed once clean and merged, the branch kept; what is not removed is said, with why.
 // One entry (board-split#D13, widened by #D37): `worktrees(repo)` and the sweeps; paths, branch names, git hidden.
-import { spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "../../proc.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -35,7 +35,7 @@ const same = (a: string, b: string): boolean => fold(a) === fold(b);
 
 /** git with its error text: what a refusal quotes. */
 function run(cwd: string, ...argv: string[]): { ok: boolean; out: string; err: string } {
-  const r = spawnSync("git", argv, { cwd, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
 }
 

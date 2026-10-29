@@ -1,7 +1,7 @@
 // The project's board is aiview's /board page (aiview board-page migration): `swarm open` adds
 // the run's repository to the project's board through `aiview board --repo`, and prints the
 // page's link. aiview is called as a command, never imported (swarm plan D16, D17).
-import { spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -14,7 +14,7 @@ export function aiviewLauncher(toolRoot: string): string | null {
 type AiviewResult = { ok: true; out: unknown } | { ok: false; error: string };
 
 const callAiview = (launcher: string, cwd: string, argv: string[]): AiviewResult => {
-  const r = spawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
+  const r = hiddenSpawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
   if (r.status !== 0) return { ok: false, error: `aiview ${argv[0]} failed: ${(r.stderr || r.stdout).trim()}` };
   try {
     return { ok: true, out: JSON.parse(r.stdout.trim().split("\n").pop() ?? "") };

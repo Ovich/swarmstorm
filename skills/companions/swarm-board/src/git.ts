@@ -1,13 +1,13 @@
 // The one way to ask git: a command in a folder, its answer. Shared by the CLI's verbs, conflicts.ts and the
 // code pack's worktrees; the board never runs git.
-import { spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "./proc.ts";
 
 /** git's exit and output; `status` null when git could not be run at all. */
 export type GitAnswer = { status: number | null; stdout: string };
 
 export const gitAnswer = (cwd: string, ...argv: string[]): GitAnswer => {
   // a worktree's whole reflog is read (D36): room past the 1 MB default
-  const r = spawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
 };
 

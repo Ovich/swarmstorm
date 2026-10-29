@@ -1,7 +1,8 @@
 // CLI dispatch — the agent-facing surface. `open` is the standard gesture:
 // ensure registered, ensure server, print URL. Unknown verbs fall to legacy
 // (dies in Phase 8 cutover).
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starters of the lines marked so
+import { hiddenSpawn, hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -84,7 +85,7 @@ function askServer(route: string, body: unknown): string | null {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
-  const r = spawnSync(
+  const r = hiddenSpawnSync(
     process.execPath,
     [
       "-e",
@@ -137,7 +138,7 @@ function ensureDist(): void {
   if (!fs.existsSync(path.join(TOOL_ROOT, "app", "index.html"))) return; // no app source: legacy ui
   console.error("aiview: dist/ missing — building the UI once…");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });  // AGENTS EXCEPTION (D39): the person watches the build's output in this console
   if (r.status !== 0) {
     console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -150,7 +151,7 @@ function spawnDetachedServer(port: number): number {
     fs.rmSync(PORT_FILE, { force: true });
   } catch {}
   // re-invoke the current entry (aiview.mjs in real use, the TS source under test)
-  const child = spawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
+  const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
     detached: true,
     stdio: "ignore",
     cwd: TOOL_ROOT,
@@ -171,7 +172,7 @@ function spawnDetachedServer(port: number): number {
 
 /** Busy-wait a little: the CLI is synchronous and has no event loop to sleep on. */
 const pause = (ms: number): void => {
-  spawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+  hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
 };
 
 const isAlive = (pid: number): boolean => {
@@ -707,7 +708,7 @@ function cmdOpen(): void {
     const [c, a] =
       process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
     try {
-      spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();
+      spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
     } catch {}
   }
   emit({ id: d.id, url, server: readServerStatus() }, url);
@@ -737,7 +738,7 @@ function cmdBoard(): void {
       const [c, a] =
         process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
       try {
-        spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();
+        spawn(c, a as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
       } catch {}
     }
     emit({ project: slug, repos, url, server: readServerStatus() }, [url, ...repos.map((x) => `  ${x}`)].join("\n"));

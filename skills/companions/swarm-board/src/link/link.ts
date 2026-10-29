@@ -1,7 +1,7 @@
 // A member's link (swarm-relay D1): the pipe its member's CLI calls come in on, one WebSocket to the
 // board server, every Call forwarded and its Result sent back to the pipe that asked. It keeps no
 // state file (D15): a restart re-locates the server and re-reads. Its one file is its pid, for `stopLinks`.
-import { spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "../proc.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -352,8 +352,8 @@ const alive = (pid: number): boolean => {
 function commandLine(pid: number): string | null {
   const r =
     process.platform === "win32"
-      ? spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
-      : spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+      ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
+      : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
   return (r.stdout ?? "").trim() || null;
 }
 
@@ -379,5 +379,5 @@ export function stopLinks(runId: number, members: string[]): void {
       fs.rmSync(file);
     } catch {}
   }
-  for (let i = 0; i < 40 && pids.some(alive); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
 }

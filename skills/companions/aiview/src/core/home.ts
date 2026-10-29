@@ -4,7 +4,7 @@
 // (app/, dist/, dist-cli/, node_modules/); the data home holds what it can't
 // (the index, the server files, the documents). Delete the checkout, clone it
 // again, rebuild — nothing of the user's is lost, because none of it was there.
-import { spawnSync } from "node:child_process";
+import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,7 +44,7 @@ function normalHome(root: string): string {
  *  `from` itself when none is free or the check fails, the server then saying the port is in use. */
 export function firstFreePort(from: number): number {
   const probe = `const net=require("net");const f=(p,n)=>{if(n===0){console.log(${from});return}const s=net.createServer();s.once("error",()=>f(p+1,n-1));s.listen(p,"127.0.0.1",()=>{s.close(()=>console.log(p))})};f(${from},20)`;
-  const r = spawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
+  const r = hiddenSpawnSync(process.execPath, ["-e", probe], { encoding: "utf8" });
   const port = Number(r.stdout?.trim());
   return Number.isInteger(port) && port > 0 ? port : from;
 }

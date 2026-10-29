@@ -1,6 +1,6 @@
 // The board as the CLI sees it (swarm-relay D5, D6, D19, D29, D30, D39): every Board call a verb makes,
 // awaited over a member's link or straight to the server, either started on demand.
-import { spawn } from "node:child_process";
+import { hiddenSpawn } from "../proc.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -76,7 +76,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
       fs.writeFileSync(serverLogFile(dataRoot), "");
       log = fs.openSync(serverLogFile(dataRoot), "a");
     } catch {}
-    const child = spawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => (exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`));
     child.on("error", (e) => (exited = e.message));
     child.unref();
@@ -165,7 +165,7 @@ export async function openLinkPipe(dataRoot: string, member: BoardMember, harnes
     } catch {}
     return null;
   }
-  const child = spawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
+  const child = hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
     detached: true,
     cwd: DETACHED_CWD,
     stdio: "ignore",

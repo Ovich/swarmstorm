@@ -1,6 +1,6 @@
 // The HTTP server: 5 API routes + static UI. Phase 3: still serves the legacy
 // ui.html + vendor/ for parity; Phase 4 switches static serving to dist/.
-import { spawn } from "node:child_process";
+import { spawn } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starters of the lines marked so
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -79,7 +79,7 @@ function openBrowser(url: string): void {
         ? ["open", [url]]
         : ["xdg-open", [url]];
   try {
-    spawn(c, args as string[], { detached: true, stdio: "ignore" }).unref();
+    spawn(c, args as string[], { detached: true, stdio: "ignore" }).unref();  // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
   } catch (e) {
     console.error(`could not open browser: ${(e as Error).message}`);
   }
