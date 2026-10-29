@@ -7,8 +7,10 @@ import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, wait
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
-export { WORDING } from "./wording.ts";
+export { closedLine, eventStep, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
+export { shellWord, WORDING } from "./wording.ts";
+export { CODE_WORDING } from "./code-wording.ts";
+export { coreUsage, hiddenUsage, statsUsage } from "./usage.ts";
 
 /** A message already formatted by the verb, with the line its event registry row adds (D36). */
 export type Shown = { text: string; next?: string | null };
@@ -50,7 +52,7 @@ export function answer(r: VerbResult, s: Situation): Answer {
       if (r.outcome === "ended") return { lines: [W.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
         const next = r.idle
-          ? W.idle(W.end(s.cli, s.as))
+          ? W.idle(r.foregroundAgain)
           : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
         return { lines: [next], next, phase: null };
       }

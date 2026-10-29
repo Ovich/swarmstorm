@@ -13,6 +13,8 @@ import { LOCK_HELD_MS } from "../src/board/liveness.ts";
 import { observe } from "../src/link/transcripts.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
+const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 let dir: string;
 let board: Board;
@@ -154,7 +156,7 @@ test("G2: the orchestrator's own breach is never told to SendMessage itself", ()
   const at = Date.now();
   board.recordActivity(runA.id, "orchestrator", act({ grewAt: at, breach: { command: "pkill -f vite", kind: "pattern", at } }), new Date(at));
   const m = board.snapshot("/repos/a/.git").events.find((e) => e.event === "breach")!;
-  const next = EVENTS.breach.next!(m as never, oA, "swarm")!;
+  const next = stepOf("breach")(m as never, oA, "swarm")!;
   assert.ok(!next.includes("SendMessage"), next);
   assert.match(next, /stop only the PIDs you started/);
 });

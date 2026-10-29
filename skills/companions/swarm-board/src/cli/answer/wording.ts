@@ -14,7 +14,8 @@ export const WORDING = {
   thread: (cli: Command, as: string): Command => `${cli} thread --as ${as}`,
   end: (cli: Command, as: string): Command => `${cli} end --as ${as}`,
 
-  // ── the listener ──
+  // ── the link and the listener ──
+  linkStart: (link: Command) => `start your link now, in the background (your harness's background task): ${link}`,
   listenerStart: (wait: Command) => `start your listener now, in the background (your harness's background task): ${wait}`,
   waitNow: (afterPhase: boolean, wait: Command) =>
     `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is gone; ${FOREGROUND_NOTE}): ${wait}`,
@@ -22,11 +23,12 @@ export const WORDING = {
   rearmForeground: (wait: Command) => `wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   rearmOrchestrator: (wait: Command) => `act on it, then start this listener again, in the background: ${wait}`,
   rearmAfterOwed: (owed: string, wait: Command) => `${owed}\nonly then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  nothingYetOrchestrator: (wait: Command) => `nothing yet; wait again: ${wait}`,
-  nothingYet: (wait: Command) => `nothing yet; wait again (${FOREGROUND_NOTE}): ${wait}`,
+  // S30: a member's first wait reads the same as a later one: no "again" for a wait it never made
+  nothingYetOrchestrator: (wait: Command) => `nothing yet; wait: ${wait}`,
+  nothingYet: (wait: Command) => `nothing yet; wait, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   superseded: "superseded by a newer wait",
-  // G14: the seat stays, said before the end command, so it never reads as the end of the run
-  idle: (end: Command) => `nothing for you now; the run is open and your seat stays in it, the orchestrator may dispatch you to it again: run ${end} and return`,
+  // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
+  idle: (wait: Command) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm`,
   delivered: "these lines are delivered; the task-end notice is the same event",
 
@@ -42,15 +44,11 @@ export const WORDING = {
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
 
-  // ── the merge (V12: every command runnable as printed) ──
-  mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
-  /** S4: the --guides form filled with this merge's guides, as merged takes it */
-  guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
-  mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
-    `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
-  /** D2: an argument error names what is wrong, then usage, then one corrected form */
-  guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
-  mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
+  // ── a post's @-names (D63) ──
+  // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
+  mentionEnded: (name: string) => `@${name} has ended: the post stays on the thread, read at the seat's next join`,
+  mentionNotJoined: (name: string) => `@${name} has not joined yet: the post waits for it, read at its join`,
+  mentionNobody: (name: string, guesses: string[]) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
 
   // ── agree ──
   /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
@@ -79,4 +77,43 @@ export const WORDING = {
     `run ${run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run: number, end: Command) =>
     `run ${run} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
+  // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
+  backIt: (cli: Command, seq: number, as: string) => `back it: ${cli} endorse ${seq} --as ${as}`,
+  phaseDoneWhen: (name: string, tasks: string[], done: Command) =>
+    `when your part of ${name}${tasks.length ? ` (your task${tasks.length > 1 ? "s" : ""} ${tasks.join(", ")})` : ""} is posted: ${done}`,
+  pauseStop: (person: string | null, wait: Command) =>
+    `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+  resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
+  openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
+  swarmQuiet: (cli: Command, as: string) => `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
+  allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
+  lockFree: (cli: Command, name: string, as: string) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
+  breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
+  breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
+  goneMove: "its agent is not running: dispatch it again, or close its seat",
+  restartLink: (member: string, cli: Command, run: number, as: string) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run} --as ${as}`,
+  /** a stall's move, by the rule that made its member quiet (idea 1, rule 6) */
+  stalledEnded: "a post does not wake it: SendMessage it, or dispatch it again",
+  stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
+  stalledBackground: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,
+  stalledCall: "SendMessage it to stop the call",
+  stalledOwing: (cli: Command, post: string, as: string) => `${cli} post ${post} --as ${as}: its wait returns on it`,
+  stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
+  stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
+  /** several members stalled at one tick: each member's move after its name */
+  stalledEach: (moves: { member: string; move: string }[]) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
+
+  // ── the seat's commands at its join (D21, D36) ──
+  seatCommands: (cli: Command, as: string, holdMs: number) => [
+    `${cli} post "…" --about <D id> --as ${as}`,
+    `${cli} agree "…" --about <D id> --as ${as}`,
+    `${cli} endorse <seq> --as ${as}`,
+    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
+  ],
+  // ── a lock granted, and status's forgotten run ──
+  unlockWhenDone: (cli: Command, name: string, as: string) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
+  forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 } as const;
+
+/** A POSIX shell word, double-quoted when it holds anything else than plain characters: a command runs as printed. */
+export const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);

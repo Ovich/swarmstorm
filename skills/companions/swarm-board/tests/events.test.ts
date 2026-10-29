@@ -3,6 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Message, Participant } from "../src/board/board.ts";
 import { EVENTS, eventOf, formatSubscriptions, parseSubscriptions, wakes } from "../src/board/events.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
+const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const me: Participant = {
   id: 1, run: 7, repo: "/r/.git", kind: "brainstorm", plan: "idea", seat: "skeptic", name: "idea/skeptic", nick: "Zesty Moose",
@@ -49,8 +51,8 @@ test("wakes: a mention, urgent, a subscribed event in its scope; not another run
 
 test("the agreement row gives a seat its back-it line, and nothing to a plan member", () => {
   const a = msg({ kind: "agreement" });
-  assert.equal(EVENTS.agreement.next!(a, me, "node swarm.mjs"), "back it: node swarm.mjs endorse 5 --as idea/skeptic");
-  assert.equal(EVENTS.agreement.next!(a, { ...me, kind: "plan" }, "node swarm.mjs"), null);
+  assert.equal(stepOf("agreement")(a, me, "node swarm.mjs"), "back it: node swarm.mjs endorse 5 --as idea/skeptic");
+  assert.equal(stepOf("agreement")(a, { ...me, kind: "plan" }, "node swarm.mjs"), null);
   // G34: never to the orchestrator, though its run's members are seats
-  assert.equal(EVENTS.agreement.next!(a, { ...me, seat: "orchestrator", name: "idea/orchestrator" }, "node swarm.mjs"), null);
+  assert.equal(stepOf("agreement")(a, { ...me, seat: "orchestrator", name: "idea/orchestrator" }, "node swarm.mjs"), null);
 });

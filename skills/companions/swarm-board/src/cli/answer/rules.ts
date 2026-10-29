@@ -1,8 +1,11 @@
 // The answer rules (board-rework D1, D2): pure functions over the member's situation choosing the lines of WORDING it
 // reads. No board read, no printing: the same situation always gives the same lines.
-import { FOREGROUND_WAIT_MS } from "../../board/events.ts";
+import type { Message, Participant } from "../../board/board.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
+import { profileOf } from "../../board/kinds.ts";
+import { codeEventStep } from "./code-rules.ts";
 import type { Situation } from "./situation.ts";
-import { WORDING as W } from "./wording.ts";
+import { shellWord, WORDING as W } from "./wording.ts";
 
 /** The member's wait command: a background listener holds until something comes, a foreground wait carries its hold. */
 export const waitCommand = (s: Situation, foreground = false): string => W.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : undefined);
@@ -29,11 +32,12 @@ export const owedLine = (s: Situation, opts: { thread?: boolean; brief?: boolean
 export const listenNow = (s: Situation, afterPhase = false): string =>
   s.listens === "foreground" ? W.waitNow(afterPhase, waitCommand(s, true)) : W.listenerStart(waitCommand(s));
 
-/** Where a member would be told to listen: the pause first, then the owed phase, then the listener. */
-export const nextStep = (s: Situation): string => {
+/** Where a member would be told to listen: the pause first, then the owed phase, then the listener. `brief`: the owed
+ *  phase by its name alone, its text not again (S21). */
+export const nextStep = (s: Situation, brief = false): string => {
   const paused = pausedLine(s);
   if (paused) return paused;
-  const owed = owedLine(s);
+  const owed = owedLine(s, { brief });
   return owed ? `${owed}\n${listenNow(s, true)}` : listenNow(s);
 };
 
@@ -48,8 +52,9 @@ export const joinStep = (s: Situation, showedPosts: boolean): string => {
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {
   if (s.ended || s.listenerRunning) return null;
-  if (s.listens !== "foreground") return nextStep(s);
-  return pausedLine(s) ?? owedLine(s);
+  // S21: a verb that heard from the member names the phase it owes, never repeats its text: a wake or a read showed it
+  if (s.listens !== "foreground") return nextStep(s, true);
+  return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 
 /** The phase header: whole the first time a member is shown it, then the short form naming where its text is;
@@ -65,3 +70,93 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
 
 /** The one line a member of a closed run reads from every member verb. */
 export const closedLine = (s: Situation): string => W.closed(s.run, W.end(s.cli, s.as));
+
+/** The line under an event, for the member `me` it reached; null when the event asks nothing of it (D36, D59). The board
+ *  posts the fact (the event, its meta, its mentions); which line its reader runs next is chosen here. */
+export function eventStep(m: Message, me: Participant, cli: string, event: EventName | null = eventOf(m)): string | null {
+  const as = shellWord(me.name);
+  const orchestrator = me.seat === "orchestrator";
+  const own = m.from === me.name;
+  const meta = m.meta ?? null;
+  switch (event) {
+    case "agreement":
+      // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
+      return profileOf(me.kind).member === "seat" && !orchestrator && !own ? W.backIt(cli, m.seq, as) : null;
+    case "phase": {
+      const name = meta && "phase" in meta ? meta.phase : null;
+      if (!name || orchestrator || own) return null;
+      return W.phaseDoneWhen(name, tasksOf(m.body, me.seat), W.done(cli, shellWord(name), as));
+    }
+    case "pause": {
+      if (orchestrator || own) return null;
+      // idea 2 (B12): a pause waiting on the person says so, as the paused line does
+      const pause = meta && "person" in meta ? meta : null;
+      return W.pauseStop(pause?.person ? pause.text : null, W.wait(cli, as, FOREGROUND_WAIT_MS));
+    }
+    case "resume":
+      return orchestrator || own ? null : W.resumeGoOn;
+    case "all-done":
+      return orchestrator ? W.openNextPhase(cli, as, m.run) : null;
+    case "idle":
+      return orchestrator ? W.swarmQuiet(cli, as) : null;
+    case "all-joined":
+      return orchestrator ? W.allJoined(cli, as) : null;
+    case "stalled":
+      return orchestrator ? stalledMove(m, cli, as) : null;
+    case "unlocked": {
+      const name = meta && "unlocked" in meta ? meta.unlocked : null;
+      return name && m.mentions.includes(me.name) ? W.lockFree(cli, shellWord(name), as) : null;
+    }
+    case "breach": {
+      const member = meta && "breach" in meta ? meta.breach : null;
+      if (!member || !orchestrator) return null;
+      // G2: the orchestrator's own kill is its own to correct, never a message to itself
+      return member === me.name ? W.breachOwn : W.breachOther(member);
+    }
+    case "gone":
+      return orchestrator ? W.goneMove : null;
+    case "liveness": {
+      // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
+      const member = meta && "linkDown" in meta ? meta.linkDown : null;
+      if (!member || !orchestrator) return null;
+      const all = meta && "linkDowns" in meta && meta.linkDowns ? meta.linkDowns : [member];
+      return all.map((one) => W.restartLink(one, cli, m.run, shellWord(one))).join("; ");
+    }
+    default:
+      return codeEventStep(m, me, cli, event);
+  }
+}
+
+/** G17: the member's own tasks posted before the phase, as its text names them (`its tasks posted before it: #12 w1, #13 w2 w3`). */
+const tasksOf = (body: string, seat: string): string[] =>
+  (/; its tasks posted before it: (.+)$/.exec(body)?.[1] ?? "")
+    .split(", ")
+    .map((t) => t.split(" "))
+    .filter(([, ...seats]) => seats.includes(seat))
+    .map(([seq]) => seq);
+
+/** The move a `stalled` asks of the orchestrator, by the rule that made its member quiet (idea 1, rule 6); a stalled
+ *  stored before the rules gives the general move. */
+function stalledMove(m: Message, cli: string, as: string): string {
+  const meta = m.meta && "rule" in m.meta ? m.meta : null;
+  // several members stalled at one tick: one line, each member's move after its name
+  if (meta?.members && meta.members.length > 1)
+    return W.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
+  const id = meta?.member ?? "<member>";
+  switch (meta?.rule) {
+    case "ended":
+      return W.stalledEnded;
+    case "in-turn":
+      return W.stalledInTurn;
+    case "background":
+      return W.stalledBackground(cli, shellWord(`@${id} …`), as);
+    case "call":
+      return W.stalledCall;
+    case "owing":
+      return W.stalledOwing(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+    case "lock":
+      return W.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} …`), as);
+    default:
+      return W.stalledAny(cli, as);
+  }
+}

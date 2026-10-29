@@ -1825,7 +1825,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const verify = given.verify ? 1 : 0;
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
-          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1 WHERE id = ?").run(
+          // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
+          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ? WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
@@ -1833,6 +1834,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             existing.nick == null ? fresh() : null,
             packName,
             verify,
+            now(),
             Number(existing.id),
           );
           // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link

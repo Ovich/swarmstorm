@@ -18,7 +18,7 @@ import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { answer, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, eventStep, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 // board-split#D13: the CLI reaches worktrees through the entry alone, interim until P3 moves claim/merge-lock/end/close into the code pack
 import { sweepAll, sweepLegacy, worktrees } from "../packs/code/worktrees.ts";
@@ -37,56 +37,10 @@ const usageError = (what: string, usage: string, example: string): never => fail
 /** The --as a corrected form carries: the caller's own, else the placeholder. */
 const asWord = (): string => quoted(args.flag("--as") ?? "<group>/<seat>");
 
-const USAGE = [
-  `usage: ${CLI} <verb> [--json]        (${CLI} --help code: the claim and merge verbs)`,
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
-  "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
-  "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
-  "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
-  "  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)",
-  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
-  "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
-  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
-  "  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)",
-  "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
-  "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  "  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why",
-  '  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it',
-  "          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults",
-  "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
-  "  unsubscribe [--as <member>] <events>",
-  "  doing   [--as <member>] <text>",
-  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
-  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
-  "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
-  "  read    <seq>",
-  "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
-  "  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only",
-  "  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)",
-  "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
-  "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end …",
-  "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
-  "  roster  [--repo <path>] [--as <member>]",
-  "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
-  "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
-  "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
-  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
-  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)",
-  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
-  "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
-  `events: ${Object.keys(EVENTS).join(", ")}; any:<event> for one posted in any run`,
-  "a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree",
-].join("\n");
+const USAGE = coreUsage(CLI, Object.keys(EVENTS));
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
-const CODE_USAGE = [
-  `usage: ${CLI} <verb> [--json]        the code verbs; refused on a run whose kind has no claims`,
-  "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
-  "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
-  "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
-].join("\n");
+const CODE_USAGE = CODE_WORDING.usage(CLI);
 
 /** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
 const EXAMPLES: Record<string, (as: string) => string> = {
@@ -112,12 +66,7 @@ const verbHelp = (verb = args.verb ?? ""): string => {
 };
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
-const STATS_USAGE = [
-  `usage: ${CLI} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
-  "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
-  "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
-  `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${CLI} read <seq>`,
-].join("\n");
+const STATS_USAGE = statsUsage(CLI);
 
 /** A length as an agent reads it: `2h 05m`, `12m`, `40s`; `—` when not known. */
 const lengthText = (ms: number | null): string => {
@@ -290,8 +239,7 @@ const phaseSuffix = (phase: { name: string; text: string } | null, progress: Pha
 const withNext = (me: Participant, d: Delivery): Delivery & { full: (Message & { endorse?: string })[] } => ({
   ...d,
   full: d.full.map((m) => {
-    const e = eventOf(m);
-    const line = e ? (EVENTS[e].next?.(m, me, self().join(" ")) ?? null) : null;
+    const line = eventStep(m, me, self().join(" "));
     // `endorse`: the JSON field the back-it line has always had
     return line ? { ...m, endorse: line } : m;
   }),
@@ -341,8 +289,7 @@ const markLinkTold = (member: BoardMember): void => {
   }
 };
 const clearLinkTold = (member: BoardMember): void => fs.rmSync(linkToldFile(member), { force: true });
-const startLinkLine = (member: BoardMember): string =>
-  `start your link now, in the background (your harness's background task): ${[...self(), ...linkVerbArgs(member).map(shellWord)].join(" ")}`;
+const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord)].join(" "));
 const SHELL_TOOL_TIMEOUT = FOREGROUND_NOTE;
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
 const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
@@ -468,18 +415,24 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
   const declared = new Set((await board.runs()).filter((r) => r.repo === p.repo).flatMap((r) => r.seats.map((s) => `${r.group}/${s.id}`)));
   return unmatchedMentions(body, p.plan, plans, names).map(({ name, closest }) => {
     const member = name.includes("/") ? name : `${p.plan}/${name}`;
-    if (ended.has(member)) return `@${name} has ended: the post stays on the thread, but they will not read it`;
-    if (declared.has(member)) return `@${name} has not joined yet: the post waits for it, read at its join`;
-    const guesses = closest.map((c) => (nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`));
-    return `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`;
+    if (ended.has(member)) return WORDING.mentionEnded(name);
+    if (declared.has(member)) return WORDING.mentionNotJoined(name);
+    return WORDING.mentionNobody(name, closest.map((c) => (nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`)));
   });
 };
 
 /** A verb that heard from the member (D9): its result lines, then the step the answer rules give (D1). */
 const emitHeard = async (p: Participant, json: object, result: string | string[]): Promise<void> => {
-  const a = answer({ verb: "heard", lines: typeof result === "string" ? [result] : result }, await situation(p));
+  const lines = typeof result === "string" ? [result] : result;
+  const a = answer({ verb: "heard", lines }, await situation(p));
   emit(a.next ? { ...json, next: a.next } : json, () => {
-    for (const l of a.lines) console.log(l);
+    for (const l of lines) console.log(l);
+    // S29: a member whose link does not run yet starts it before its listener, as join orders them
+    if (linkToStart && !linkTold(linkToStart)) {
+      console.log(startLinkLine(linkToStart));
+      markLinkTold(linkToStart);
+    }
+    for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
 
@@ -603,16 +556,7 @@ function joinedSeat(): string {
 const POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>";
 
 /** The commands a member of a kind without worktree runs next, `--as` filled in (D21, D36). */
-const seatCommands = (as: string): string[] => {
-  const cli = self().join(" ");
-  const who = `--as ${shellWord(as)}`;
-  return [
-    `${cli} post "…" --about <D id> ${who}`,
-    `${cli} agree "…" --about <D id> ${who}`,
-    `${cli} endorse <seq> ${who}`,
-    `${cli} wait --mentions ${who} --timeout ${FOREGROUND_WAIT_MS}    # in the foreground, when waiting; ${SHELL_TOOL_TIMEOUT}`,
-  ];
-};
+const seatCommands = (as: string): string[] => WORDING.seatCommands(self().join(" "), shellWord(as), FOREGROUND_WAIT_MS);
 
 /** `--on`/`subscribe`'s events; an unknown name fails, listing the known ones (D59). */
 const subscriptionsArg = (spec: string): Subscription[] => {
@@ -871,15 +815,17 @@ async function main(): Promise<void> {
       const drawing = POSTS_MARKDOWN;
       // the run's current phase after the roster: a late or restarted member starts in it; then the owed phase and the
       // listener, after the link, so the agent starts its link before a wait blocks it (swarm-relay D33)
-      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...roster.map((r) => rosterLine(r))];
-      const tail = [...(as ? [as] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // S1: a post for the seat made before its join is delivered here, whole, as a wait would (D8: marked delivered)
       const waiting = await board.deliverMentions(member);
+      // S20: the roster read after that delivery, so the member's own row counts none of it as unread
+      const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
+      const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r))];
+      const tail = [...(as ? [as] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
       const statedByJoin = new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
       const a = answer({ verb: "join", head, shown, tail }, await situation(member));
-      emitAnswer({ member: member.name, nick: member.nick, roster, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(drawing ? { drawing } : {}), link }, a);
+      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(drawing ? { drawing } : {}), link }, a);
       break;
     }
     case "subscribe":
@@ -1144,8 +1090,9 @@ async function main(): Promise<void> {
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
-        if (r.granted && guides.length) console.log(WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
-        console.log(r.granted ? WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? WORDING.guidesForm(guides.map((g) => g.name)) : null) : WORDING.mergeHeld(r.holder!, waitCommand(p.name, true)));
+        if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+        if (r.granted) console.log(CODE_WORDING.conflictsInReport);
+        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, waitCommand(p.name, true)));
       });
       break;
     }
@@ -1180,13 +1127,13 @@ async function main(): Promise<void> {
       const guidesArg = args.flag("--guides")?.trim();
       const listed = lock?.guides ?? [];
       const settled = guidesSettlement(guidesArg ?? "", listed);
-      const form = WORDING.guidesForm(listed);
-      if (settled.separator) fail(WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
-      if (settled.malformed.length) fail(WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
-      if (settled.unknown.length) fail(WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
+      const form = CODE_WORDING.guidesForm(listed);
+      if (settled.separator) fail(CODE_WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
+      if (settled.malformed.length) fail(CODE_WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
+      if (settled.unknown.length) fail(CODE_WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
       if (settled.missing.length)
-        fail(WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
-      if (settled.unjudged.length) fail(WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
+        fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
+      if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
       // V1: a sha git does not know was never merged
       if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
@@ -1202,11 +1149,8 @@ async function main(): Promise<void> {
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       // the post after a resolved conflict, prompted by the command just run (D63)
       const ended = new Set(await board.endedMembers(p.repo));
-      const tell = sharers.map((o) =>
-        ended.has(o.member)
-          ? `if you resolved a conflict in ${o.path}: ${o.member} has ended, so say how in your report`
-          : `if you resolved a conflict in ${o.path}, tell them: swarm post "@${o.member} I resolved ${o.path}: <how>" --about ${o.path}`,
-      );
+      // S32: the report's word on a resolved conflict was asked at merge-lock; here only a member still there is told
+      const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
       // the worktree stays for the seat's next task; end, close and prune remove it
       emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}) }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
@@ -1330,7 +1274,7 @@ async function main(): Promise<void> {
       const next =
         told && told.stoppable.length
           ? `next: to restart what listens on ${port!.port}, stop exactly these: ${stopLine(told.stoppable)}`
-          : `next: unlock it once you are done: ${cli} unlock ${shellWord(name)} --as ${who}`;
+          : WORDING.unlockWhenDone(cli, shellWord(name), who);
       emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), ...(r.released ? { released: r.released } : {}), next }, () => {
         console.log(`granted ${name}`);
         for (const line of told?.lines ?? []) console.log(line);
@@ -1383,7 +1327,7 @@ async function main(): Promise<void> {
           }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
-            console.log(`  no activity for ${Math.floor(idle / 86400000)} d: likely left open; ask the person, then archive it: ${cli} close --run ${r.id}`);
+            console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id));
         }
       });
       break;
@@ -1404,9 +1348,7 @@ if (args.verb === "stats" && args.has("--help")) {
 // a hidden verb's help never starts it (run 75: `serve --help` took the start lock and logged a start)
 if ((args.verb === "serve" || args.verb === "link") && (args.has("--help") || args.has("-h"))) {
   console.log(
-    args.verb === "serve"
-      ? `usage: ${CLI} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it`
-      : `usage: ${CLI} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`,
+    hiddenUsage(CLI, args.verb),
   );
   process.exit(0);
 }

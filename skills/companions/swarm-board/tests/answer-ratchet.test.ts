@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-const BASELINE = 26;
+const BASELINE = 0;
 const SRC = join(import.meta.dirname, "..", "src");
 const ANSWER = join(SRC, "cli", "answer") + sep;
 // a template that prints the CLI followed by a verb: `${cli} wait …`

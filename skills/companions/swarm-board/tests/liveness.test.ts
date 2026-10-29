@@ -10,6 +10,8 @@ import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { EVENTS } from "../src/board/events.ts";
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
+const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -194,8 +196,8 @@ test("one member quiet past the threshold: stalled <member> to the orchestrator 
     board.livenessTick(run.id, at(t0, s2), presence);
   }
   assert.equal(events("stalled").length, 2);
-  assert.match(EVENTS.stalled.next!(board.read(s.seq), board.participant("idea/orchestrator")!, "swarm")!, /^read the thread, then address the member who owes a move/);
-  assert.equal(EVENTS.stalled.next!(board.read(s.seq), b, "swarm"), null);
+  assert.match(stepOf("stalled")(board.read(s.seq), board.participant("idea/orchestrator")!, "swarm")!, /^read the thread, then address the member who owes a move/);
+  assert.equal(stepOf("stalled")(board.read(s.seq), b, "swarm"), null);
 });
 
 test("gone: posted at the tick after an activity with finished and no end, and after a link lost 30 s; once; never for an ended member (US3, D12)", () => {

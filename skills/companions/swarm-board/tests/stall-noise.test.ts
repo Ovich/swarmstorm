@@ -11,6 +11,8 @@ import { openBoard, type Board, type Delivery, type Participant, type Presence }
 import { EVENTS } from "../src/board/events.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { SCENARIOS, play, steps } from "./fixtures/yardstick.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
+const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/noise/.git";
 let dir: string;
@@ -80,7 +82,7 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   assert.match(s[0].body, /^stalled g: 3 members: g\/a.*; g\/b.*; g\/c/);
   // with their rules (a transcript read gives them), the move names each member and its own move
   const members = [{ rule: "owing" as const, member: "a", phase: "p1" }, { rule: "ended" as const, member: "b" }, { rule: "in-turn" as const, member: "c" }];
-  const move = EVENTS.stalled.next!({ ...board.read(s[0].seq), meta: { ...members[0], members } }, orch, "swarm")!;
+  const move = stepOf("stalled")({ ...board.read(s[0].seq), meta: { ...members[0], members } }, orch, "swarm")!;
   assert.match(move, /^a: swarm post .*your part of p1.*; b: a post does not wake it.*; c: SendMessage it/);
   // the same set: no repeat within 15 min
   for (const t of [10, 60, 600]) {

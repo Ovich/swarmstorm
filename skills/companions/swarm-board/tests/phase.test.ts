@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { EVENTS } from "../src/board/events.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
+const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
 const SEATS = [
@@ -80,10 +82,10 @@ test("a seat's phase is refused; so is a phase on a closed run, and a phase with
 test("a woken seat is told to run done; the orchestrator gets no line; end is a phase name like any", () => {
   const { orchestrator, skeptic } = twoRuns();
   const m = board.phase(orchestrator, "diverge", "every idea");
-  assert.equal(EVENTS.phase.next!(m, skeptic, "node swarm.mjs"), "when your part of diverge is posted: node swarm.mjs done diverge --as idea/skeptic");
-  assert.equal(EVENTS.phase.next!(m, orchestrator, "node swarm.mjs"), null);
+  assert.equal(stepOf("phase")(m, skeptic, "node swarm.mjs"), "when your part of diverge is posted: node swarm.mjs done diverge --as idea/skeptic");
+  assert.equal(stepOf("phase")(m, orchestrator, "node swarm.mjs"), null);
   const end = board.phase(orchestrator, "end", "closing");
-  assert.equal(EVENTS.phase.next!(end, skeptic, "node swarm.mjs"), "when your part of end is posted: node swarm.mjs done end --as idea/skeptic");
+  assert.equal(stepOf("phase")(end, skeptic, "node swarm.mjs"), "when your part of end is posted: node swarm.mjs done end --as idea/skeptic");
 });
 
 test("done is stored once per run, member and phase; the last member's done posts one all-done to the orchestrator; a phase opened again clears its marks", () => {
@@ -108,8 +110,8 @@ test("done is stored once per run, member and phase; the last member's done post
   assert.deepEqual(told.map((m) => m.event), ["done", "all-done"]);
   assert.ok(delivery.lines.some((l) => /done diverge \(2\/2\)/.test(l)), delivery.lines.join("\n"));
   assert.match(told[1].body, /^all done diverge: every member is done \(2\/2\)/);
-  assert.match(EVENTS["all-done"].next!(told[1], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
-  assert.equal(EVENTS["all-done"].next!(told[1], skeptic, "swarm"), null);
+  assert.match(stepOf("all-done")(told[1], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
+  assert.equal(stepOf("all-done")(told[1], skeptic, "swarm"), null);
   assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [], dormant: [] });
   board.phase(orchestrator, "converge", "pick");
   board.phase(orchestrator, "diverge", "again");

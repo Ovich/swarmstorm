@@ -16,6 +16,9 @@ const plansOfCode = (code: string, plans: string[]): string[] => plans.filter((p
 
 const MENTION = /(?<![\w@])@([A-Za-z0-9][\w.\-]*(?:[\/·][A-Za-z0-9][\w.\-]*)?)/g;
 
+/** The body with its code (fenced blocks, then inline spans) blanked: an `@w1` quoted as code names nobody (S33). */
+const outsideCode = (body: string): string => body.replace(/```[\s\S]*?(```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+
 /** How a member's funny name is written in a mention (D43): "Sleepy Otter" → `sleepyotter`,
  *  compared without case. */
 export const nameHandle = (nick: string): string => nick.replace(/\s+/g, "").toLowerCase();
@@ -31,7 +34,7 @@ export const nameHandle = (nick: string): string => nick.replace(/\s+/g, "").toL
  */
 export function parseMentions(body: string, senderPlan: string, plans: string[], names?: ReadonlyMap<string, string>): string[] {
   const out = new Set<string>();
-  for (const m of body.matchAll(MENTION)) {
+  for (const m of outsideCode(body).matchAll(MENTION)) {
     const token = m[1].replace(/[.\-]+$/, "");
     const named = names?.get(token.toLowerCase());
     if (named) {
@@ -77,7 +80,7 @@ export function unmatchedMentions(body: string, senderPlan: string, plans: strin
   const members = new Set([...handleOf.keys(), ...[senderPlan, ...plans].map((p) => `${p}/orchestrator`)]);
   const out: { name: string; closest: string[] }[] = [];
   const seen = new Set<string>();
-  for (const m of body.matchAll(MENTION)) {
+  for (const m of outsideCode(body).matchAll(MENTION)) {
     const token = m[1].replace(/[.\-]+$/, "");
     if (seen.has(token)) continue;
     seen.add(token);

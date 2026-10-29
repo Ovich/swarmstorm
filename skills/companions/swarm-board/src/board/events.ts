@@ -2,7 +2,6 @@
 // the events that wake its `wait --mentions`; adding an event is a row in EVENTS and the call
 // that posts it by its constant.
 import type { Message, Participant } from "./board.ts";
-import { profileOf } from "./kinds.ts";
 
 export type EventName = "agreement" | "endorsement" | "merged" | "joined" | "ended" | "stale" | "opened" | "closed" | "urgent" | "flag" | "quiet" | "back" | "phase" | "pause" | "resume" | "done" | "all-done" | "idle" | "stalled" | "gone" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
 /** `run`: the member's own run; `any`: every run of the project. */
@@ -18,54 +17,14 @@ export interface EventDef {
   ambient?: true;
   /** posted by the board in a member's name, it reaches that member too (stalled, liveness) */
   toAuthor?: boolean;
-  /** the line a woken member runs next, or null; `cli` is the command prefix the CLI prints */
-  next?(m: Message, me: Participant, cli: string): string | null;
 }
 
-/** A POSIX shell word, double-quoted when it holds anything else than plain characters. */
-const word = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
-
-/** A foreground wait's hold, under the 180 s after which Claude Code moves a foreground command to the background (F22); the CLI's waitCommand takes both from here. */
+/** A foreground wait's hold, under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
 export const FOREGROUND_WAIT_MS = 170_000;
 export const FOREGROUND_NOTE = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
-/** The foreground wait a woken member runs next, with its hold: the bare command, runnable as printed (F6); the
- *  tool timeout to give it is said in the prose before it. */
-const foregroundWait = (cli: string, me: Participant): string => `${cli} wait --mentions --as ${word(me.name)} --timeout ${FOREGROUND_WAIT_MS}`;
-
-/** The move a `stalled` asks of the orchestrator, by the rule that made its member quiet (idea 1, rule 6); a
- *  stalled stored before the rules gives the general move. */
-function stalledMove(m: Message, me: Participant, cli: string): string {
-  const meta = m.meta && "rule" in m.meta ? m.meta : null;
-  // several members stalled at one tick: one line, each member's move after its name
-  if (meta?.members && meta.members.length > 1)
-    return meta.members.map((one) => `${one.member}: ${(one.rule ? stalledMove({ ...m, meta: { ...one, rule: one.rule } }, me, cli) : stalledMove({ ...m, meta: null }, me, cli))}`).join("; ");
-  const id = meta?.member ?? "<member>";
-  switch (meta?.rule) {
-    case "ended":
-      return "a post does not wake it: SendMessage it, or dispatch it again";
-    case "in-turn":
-      return "SendMessage it; if it does not answer, dispatch it again";
-    case "background":
-      return `ask it: ${cli} post ${word(`@${id} …`)} --as ${word(me.name)}, or SendMessage it if its turn ended`;
-    case "call":
-      return "SendMessage it to stop the call";
-    case "owing":
-      return `${cli} post ${word(`@${id} your part of ${meta.phase ?? "<phase>"}`)} --as ${word(me.name)}: its wait returns on it`;
-    case "lock":
-      return `ask ${meta.holder ?? "its holder"} to unlock ${meta.lock ?? "<lock>"}, or to stop what it holds: ${cli} post ${word(`@${meta.holder ?? "<holder>"} …`)} --as ${word(me.name)}`;
-    default:
-      return `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${word(me.name)})`;
-  }
-}
-
 export const EVENTS: Record<EventName, EventDef> = {
-  // a seat backs another member's agreement (D36)
-  agreement: {
-    name: "agreement",
-    next: (m, me, cli) =>
-      // G34: endorsing is a seat's (the skeptic's); the orchestrator is never told to back an agreement
-      profileOf(me.kind).member === "seat" && me.seat !== "orchestrator" && m.from !== me.name ? `back it: ${cli} endorse ${m.seq} --as ${word(me.name)}` : null,
-  },
+  // a seat backs another member's agreement (D36): the answer module tells a seat to back it
+  agreement: { name: "agreement" },
   endorsement: { name: "endorsement" },
   merged: { name: "merged" },
   joined: { name: "joined" },
@@ -81,119 +40,36 @@ export const EVENTS: Record<EventName, EventDef> = {
   // the orchestrator opens a phase (`phase <name> <text>`), the current one ending with it: a separator on the thread;
   // it mentions `<group>/*`, so its own run's members wake and no other's, whatever the run's kind; a member
   // runs `done <name>` when its part is in
-  phase: {
-    name: "phase",
-    next: (m, me, cli) => {
-      const name = m.meta && "phase" in m.meta ? m.meta.phase : null;
-      if (!name || me.seat === "orchestrator" || m.from === me.name) return null;
-      // G17: the member's own tasks posted before the phase, as its text names them (`its tasks posted before it: #12 w1, #13 w2 w3`)
-      const listed = /; its tasks posted before it: (.+)$/.exec(m.body)?.[1] ?? "";
-      const mine = listed
-        .split(", ")
-        .map((t) => t.split(" "))
-        .filter(([, ...seats]) => seats.includes(me.seat))
-        .map(([seq]) => seq);
-      const tasks = mine.length ? ` (your task${mine.length > 1 ? "s" : ""} ${mine.join(", ")})` : "";
-      return `when your part of ${name}${tasks} is posted: ${cli} done ${word(name)} --as ${word(me.name)}`;
-    },
-  },
+  phase: { name: "phase" },
   // the orchestrator pauses its run (`pause [text]`): mentions `<group>/*`, every member stops and waits for the resume
-  pause: {
-    name: "pause",
-    next: (m, me, cli) => {
-      if (me.seat === "orchestrator" || m.from === me.name) return null;
-      // idea 2 (B12): a pause waiting on the person says so, as the CLI's paused line does
-      const pause = m.meta && "person" in m.meta ? m.meta : null;
-      const why = pause?.person ? `waiting on the person: ${pause.text || "their decision"}; ` : "";
-      return `${why}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${foregroundWait(cli, me)}`;
-    },
-  },
+  pause: { name: "pause" },
   // the orchestrator lifts the pause (`resume [text]`), its message in the body: every member continues
-  resume: {
-    name: "resume",
-    next: (m, me) => (me.seat === "orchestrator" || m.from === me.name ? null : "the run resumed: continue where you stopped, as the resume's message says"),
-  },
+  resume: { name: "resume" },
   // a member finished the current phase (`done <name>`); mentions the orchestrator
   done: { name: "done" },
   // every member of the run is done with the current phase: one event to the orchestrator
-  "all-done": {
-    name: "all-done",
-    next: (m, me, cli) =>
-      me.seat === "orchestrator" ? `open the next phase: ${cli} phase <name> "<text>" --as ${word(me.name)}; after the last, ${cli} close --run ${m.run}` : null,
-  },
+  "all-done": { name: "all-done" },
   // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
-  idle: {
-    name: "idle",
-    toAuthor: true,
-    next: (_m, me, cli) =>
-      me.seat === "orchestrator" ? `the swarm is quiet: open the next phase if all are done (${cli} phase <name> "<text>" --as ${word(me.name)}), else wait again` : null,
-  },
+  idle: { name: "idle", toAuthor: true },
   // `stalled <member>`: one member quiet past the run's threshold, to the orchestrator alone, again every
   // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken
-  stalled: {
-    name: "stalled",
-    toAuthor: true,
-    next: (m, me, cli) => (me.seat === "orchestrator" ? stalledMove(m, me, cli) : null),
-  },
+  stalled: { name: "stalled", toAuthor: true },
   // a member told gone reads non-gone again (idea 1, rule 4): once, to the orchestrator alone
   recovered: { name: "recovered", toAuthor: true },
   // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
-  unlocked: {
-    toAuthor: true,
-    name: "unlocked",
-    next: (m, me, cli) => {
-      const name = m.meta && "unlocked" in m.meta ? m.meta.unlocked : null;
-      return name && m.mentions.includes(me.name) ? `it is free: lock it now: ${cli} lock ${word(name)} --as ${word(me.name)}` : null;
-    },
-  },
+  unlocked: { name: "unlocked", toAuthor: true },
   // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
-  breach: {
-    name: "breach",
-    toAuthor: true,
-    next: (m, me) => {
-      const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
-      if (!member || me.seat !== "orchestrator") return null;
-      // G2: the orchestrator's own kill is its own to correct, never a message to itself
-      return member === me.name ? "stop only the PIDs you started, or lock the port first: machine.md" : `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`;
-    },
-  },
+  breach: { name: "breach", toAuthor: true },
   // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
-  gone: {
-    name: "gone",
-    toAuthor: true,
-    next: (_m, me) => (me.seat === "orchestrator" ? "its agent is not running: dispatch it again, or close its seat" : null),
-  },
-  // a member's transcript cannot be read: the stall check is blind for it; mentions the orchestrator
-  liveness: {
-    name: "liveness",
-    toAuthor: true,
-    // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
-    next: (m, me, cli) => {
-      const member = m.meta && "linkDown" in m.meta ? m.meta.linkDown : null;
-      if (!member || me.seat !== "orchestrator") return null;
-      const all = m.meta && "linkDowns" in m.meta && m.meta.linkDowns ? m.meta.linkDowns : [member];
-      if (all.length > 1) return all.map((one) => `SendMessage ${one} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(one)}`).join("; ");
-      return `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${m.run} --as ${word(member)}`;
-    },
-  },
+  gone: { name: "gone", toAuthor: true },
+  // a member's transcript cannot be read, or its link is lost while it grows: mentions the orchestrator
+  liveness: { name: "liveness", toAuthor: true },
   // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
-  flag: {
-    name: "flag",
-    next: (m, me, cli) => {
-      const [holder, writer] = m.mentions;
-      if (!m.about || !holder || !writer) return null;
-      if (me.name === holder) return `settle it: ${cli} agree ${word(`@${writer} <who changes what>`)} --about ${word(m.about)}`;
-      if (me.name === writer) return `settle it: ${cli} post ${word(`@${holder} <what you change>`)} --about ${word(m.about)}`;
-      return null;
-    },
-  },
+  flag: { name: "flag" },
   // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 gone`, `+ w2 back`; carried to every member, waking none
   composition: { name: "composition", ambient: true },
   // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
-  "all-joined": {
-    name: "all-joined",
-    next: (_m, me, cli) => (me.seat === "orchestrator" ? `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${word(me.name)})` : null),
-  },
+  "all-joined": { name: "all-joined" },
 };
 
 const NAMES = Object.keys(EVENTS) as EventName[];

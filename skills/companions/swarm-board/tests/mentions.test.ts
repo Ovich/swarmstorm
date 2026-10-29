@@ -39,3 +39,9 @@ test("unmatchedMentions: @all offers @swarm; an unknown code offers the open cod
     { name: "ZZ", closest: ["SO", "RT"] },
   ]);
 });
+
+test("S33: a mention quoted as code, inline or fenced, names nobody and is never unmatched", () => {
+  assert.deepEqual(parseMentions("the `@w1` line, then @w2", "review-tool", PLANS), ["review-tool/w2"]);
+  assert.deepEqual(parseMentions("```\nswarm post \"@w1 hi\"\n```\n@w3 see above", "review-tool", PLANS), ["review-tool/w3"]);
+  assert.deepEqual(unmatchedMentions("run `@nobody …` as printed", "review-tool", PLANS, NAMES), []);
+});
