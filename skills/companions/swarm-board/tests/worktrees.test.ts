@@ -1,4 +1,4 @@
-// The board owns a code run's worktrees: join makes one per seat at <data home>/worktrees/<run>/<seat>, on swarm/<run>-<group>/<seat>
+// The board owns a code run's worktrees: join makes one per seat at <repo's git common dir>/swarm/worktrees/<run>/<seat>, on swarm/<run>-<group>/<seat>
 // from the run's base; end, close and `worktree prune` remove it once clean and merged, the branch kept.
 // A talk-only kind gets none. One real repository, the CLI spawned on a temporary data home.
 import { test, beforeEach, afterEach } from "node:test";
@@ -25,7 +25,7 @@ const git = (cwd: string, ...argv: string[]): string => {
   assert.equal(r.status, 0, `git ${argv.join(" ")}: ${r.stderr}`);
   return r.stdout.trim();
 };
-const wt = (run: string, seat: string) => path.join(home, "worktrees", run, seat);
+const wt = (run: string, seat: string) => path.join(repo, ".git", "swarm", "worktrees", run, seat);
 const hasBranch = (b: string) => spawnSync("git", ["rev-parse", "--verify", "-q", `refs/heads/${b}`], { cwd: repo }).status === 0;
 
 beforeEach(() => {
@@ -57,7 +57,7 @@ const commitAndMerge = (dir: string, file: string, branch: string): string => {
   return git(dir, "rev-parse", "HEAD");
 };
 
-test("join on a code run makes the seat's worktree under the data home, from the run's base; a re-join reuses it; a talk-only kind gets none", () => {
+test("join on a code run makes the seat's worktree under the repository's git dir, from the run's base; a re-join reuses it; a talk-only kind gets none", () => {
   const run = open("task", "g", ["w1"]);
   const out = join(run, "g", "w1");
   const dir = wt(run, "w1");

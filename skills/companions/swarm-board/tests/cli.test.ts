@@ -894,8 +894,8 @@ test("roster --json and status --json give each member's worktree, null for a se
   run("join", "--run", id, "--seat", "S3", "--doing", "the page");
   const roster = JSON.parse(run("roster", "--json").stdout).roster as { name: string; worktree: string | null }[];
   const s3 = roster.find((m) => m.name === "review-tool/S3")!;
-  // joined from the repository's checkout: the board made its worktree under the data home
-  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(toolRoot, "worktrees", String(id), "S3")), String(s3.worktree));
+  // joined from the repository's checkout: the board made its worktree beside the repository's git data
+  assert.ok(s3.worktree && fs.realpathSync(s3.worktree) === fs.realpathSync(path.join(repo, ".git", "swarm", "worktrees", String(id), "S3")), String(s3.worktree));
   const seat = openBrainstorm();
   assert.equal(joinSeat(seat, "skeptic").status, 0);
   const open = JSON.parse(run("status", "--json").stdout).open as { run: number; members: { name: string; worktree: string | null }[] }[];

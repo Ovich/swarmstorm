@@ -17,7 +17,7 @@ import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesA
 import { git, gitAnswer, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { WORKTREES_ROOT, baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
+import { baseAt, ensureWorktree, inLinkedWorktree, leftover, owned, removeWorktree, stopLinks, sweep, worktreeDirs } from "./worktrees.ts";
 
 const args = parseArgs(process.argv.slice(2));
 const asJson = args.has("--json");
@@ -666,10 +666,10 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
   // outside a repository, or in one with no commit yet: nothing to branch from
   const base = run.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
+  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), run.repo)) return null;
   if (repoOf(cwd) !== run.repo) fail(`join: run ${runId} is on ${run.repo}; join from a checkout of that repository`);
   try {
-    return { ...ensureWorktree(cwd, run.id, run.group, seat, base), base };
+    return { ...ensureWorktree(cwd, run.repo, run.id, run.group, seat, base), base };
   } catch (e) {
     return fail(`join: ${(e as Error).message}`);
   }
@@ -772,7 +772,7 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
-      const trees = (await board.worktrees(run)).filter((w) => owned(w.worktree) && fs.existsSync(w.worktree));
+      const trees = (await board.worktrees(run)).filter((w) => owned(w.worktree, w.repo) && fs.existsSync(w.worktree));
       await board.closeRun(run);
       // the run's worktrees go once clean and merged; their links go first, as Windows holds a folder a live process is in
       if (trees.length) stopLinks(run, trees.map((w) => w.member));
@@ -1267,7 +1267,7 @@ ${owes}` : rearm;
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       // the board's worktree with work not merged: end refuses, naming it and the merge
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree) && fs.existsSync(p.worktree) ? slashed(p.worktree) : null;
+      const mine = owned(p.worktree, p.repo) && fs.existsSync(p.worktree) ? slashed(p.worktree) : null;
       const left = mine ? leftover(mine, base) : null;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
@@ -1298,7 +1298,8 @@ ${owes}` : rearm;
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${USAGE}`);
       const known = await board.worktrees();
-      const dirs = worktreeDirs();
+      // each repository the board knows a run of: its worktrees folder is the only one walked
+      const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
       const fold = (s: string) => (process.platform === "win32" ? path.resolve(s).toLowerCase() : path.resolve(s));
       const out = dirs.map((dir) => {
         // the latest member to join from it says which run it belongs to
@@ -1308,8 +1309,8 @@ ${owes}` : rearm;
         return { worktree: slashed(dir), ...sweep(dir, w.repo, w.base) };
       });
       const kept = out.filter((o) => !o.removed);
-      emit({ root: WORKTREES_ROOT, removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
-        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${slashed(WORKTREES_ROOT)} (branches kept)`);
+      emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
+        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
         for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
       });
       break;

@@ -42,7 +42,7 @@ except `open`, `seat`, `close` and `status`.
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
    `--protocol none` for a run with no phases on purpose. A run that builds code (plan, task)
    takes `--onto <branch>`, the branch its work merges into: each member's join makes its
-   worktree from it, under the data home, never in the repository, and the cleanup checks a
+   worktree from it, under the repository's git dir (`swarm/worktrees/<run>/<seat>`, the only folder the board ever removes from), never in its tree, and the cleanup checks a
    worktree's branch is merged into it. Without `--onto`, the checkout's branch at the open.
    `--plan <slug>` stays an alias of `--kind plan --group <slug>`. It
    prints the run id, the link to the project's board page in aiview (`/board`; `/board#run=<id>`

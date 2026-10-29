@@ -1,5 +1,5 @@
 // The worktrees the board makes for a code run's members (kind profile `worktree`): one per seat under
-// `<data home>/worktrees/<run>/<seat>`, never inside the repository, on branch `swarm/<run>-<group>/<seat>` from the run's base.
+// `<repo's git common dir>/swarm/worktrees/<run>/<seat>`, beside the repository's own git data, never in its tree, on branch `swarm/<run>-<group>/<seat>` from the run's base.
 // Removed once clean and merged, the branch kept; what is not removed is said, with why.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,23 +9,24 @@ import { DATA_ROOT } from "../board/home.ts";
 import { linkPidFile } from "../link/link.ts";
 import { git } from "./git.ts";
 
-export const WORKTREES_ROOT = path.join(DATA_ROOT, "worktrees");
+/** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
+export const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
 
 const CASELESS = process.platform === "win32" || process.platform === "darwin";
 const fold = (s: string): string => (CASELESS ? path.resolve(s).toLowerCase() : path.resolve(s));
 const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 // the run id keeps two runs apart: group a-b seat c and group a seat b-c never share a folder or a branch
-export const worktreeDir = (run: number, seat: string): string => path.join(WORKTREES_ROOT, String(run), safe(seat));
+export const worktreeDir = (repo: string, run: number, seat: string): string => path.join(worktreesRoot(repo), String(run), safe(seat));
 export const branchFor = (run: number, group: string, seat: string): string => `swarm/${run}-${group}/${seat}`;
 
-/** A worktree the board made: `<data home>/worktrees/<run>/<seat>`. */
-export const owned = (wt: string | null): wt is string => !!wt && fold(path.dirname(path.dirname(wt))) === fold(WORKTREES_ROOT);
+/** A worktree the board made for `repo`: `<repo>/swarm/worktrees/<run>/<seat>`. */
+export const owned = (wt: string | null, repo: string): wt is string => !!wt && fold(path.dirname(path.dirname(wt))) === fold(worktreesRoot(repo));
 
-/** Every worktree folder under the data home's worktrees folder, run by run. */
-export const worktreeDirs = (): string[] => {
+/** Every worktree folder under each repository's worktrees folder, run by run. */
+export const worktreeDirs = (repos: Iterable<string>): string[] => {
   const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
-  return sub(WORKTREES_ROOT).flatMap(sub);
+  return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
 };
 
 const same = (a: string, b: string): boolean => fold(a) === fold(b);
@@ -53,8 +54,8 @@ const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-par
 const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
-export function ensureWorktree(cwd: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
-  const at = worktreeDir(runId, seat);
+export function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
+  const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
   const top = fs.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
