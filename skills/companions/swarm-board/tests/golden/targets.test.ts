@@ -1,4 +1,4 @@
-// D3: the lines a finding touches, pinned at their TARGET bytes under plan D2's rules, before the fix. Each is skipped
+// D3: the lines a finding touches, pinned at their TARGET bytes under plan D2's rules, before the fix. Each was skipped
 // until build 2 fixes its finding and enables it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,7 +10,6 @@ const FOREGROUND = "it holds 170 s, as Claude Code detaches a foreground command
 const REARM = (as: string) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND}): ${WAIT(as)}`;
 const DELIVERED = "these lines are delivered; the task-end notice is the same event";
 const SHOW = process.env.GOLDEN_SHOW === "1";
-const skip = !SHOW;
 
 const expect = (answer: Answer, target: string[]): void => {
   if (SHOW) console.log(`----\n${answer.text}----`);
@@ -108,7 +107,7 @@ test("G32 target: join in an open phase states it once", async () => {
 });
 
 // G33: thread's result first (the phase header and its posts), then the owed step brief, not the phase text again
-test("G33 target: thread states the phase text once", { skip }, async () => {
+test("G33 target: thread states the phase text once", async () => {
   const s = await scene("worker", "owes-first");
   try {
     expect(s.call("thread", "--as", s.me), [

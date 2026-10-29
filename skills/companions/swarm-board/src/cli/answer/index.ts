@@ -93,7 +93,8 @@ export function answer(r: VerbResult, s: Situation): Answer {
     }
     case "thread": {
       const headers = phaseHeaders(s);
-      const owes = owedLine(s, { thread: false });
+      // G33: the header above states the phase; the owed step alone, brief, its text not again
+      const owes = owedLine(s, { thread: false, brief: !!headers.printed });
       const none = r.shown.length ? [] : [W.noPostYet(r.phase ?? s.phase?.name ?? "-")];
       return { lines: [...(headers.printed ? [headers.printed] : []), ...none, ...shownLines(r.shown), ...(owes ? [owes] : [])], next: owes, phase: headers.full };
     }

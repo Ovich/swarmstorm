@@ -1,4 +1,4 @@
 exit 0
 phase build: build the thing
 no post yet in phase build
-phase build is open and asks: build the thing. Do your part now, then: node <cli> done build --as g/s1
+phase build is yours: Do your part now, then: node <cli> done build --as g/s1
