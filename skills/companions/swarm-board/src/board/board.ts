@@ -2065,8 +2065,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // idea 4: a kill the link saw, checked against the locks: by name or pattern always, by port only for a port
         // whose lock the member does not hold; to the orchestrator alone, once per distinct command per member
         const kill = act.breach ?? null;
-        if (kill) {
-          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member) as Row;
+        const me = kill ? (db.prepare("SELECT id, joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member) as Row) : null;
+        // G2: only a kill after the member joined (the orchestrator: after the open) is judged; the transcript's earlier lines are not the run's
+        if (kill && me && kill.at >= Date.parse(String(me.joined_at))) {
           const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
           const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
           const command = kill.command.slice(0, 120);

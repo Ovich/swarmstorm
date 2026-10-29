@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
+import { EVENTS } from "../src/board/events.ts";
 import { LOCK_HELD_MS } from "../src/board/liveness.ts";
 import { observe } from "../src/link/transcripts.ts";
 import type { MemberActivity } from "../src/wire.ts";
@@ -143,6 +144,19 @@ test("D5: the link reads a kill by name or pattern as a breach, once per command
   assert.equal(breaches().length, 1, "its own lock: no breach");
   board.recordActivity(runA.id, "a1", act({ grewAt: at, breach: { command: "kill port 4414", kind: "port", ports: [4414], at } }), new Date(at + 3000));
   assert.deepEqual(breaches().at(-1), "breach ga/a1: kill port 4414 (port 4414 not locked)");
+  // G2: a kill from before the member joined is the transcript's past, not the run's: never judged
+  board.recordActivity(runA.id, "a1", act({ grewAt: at, breach: { command: "pkill -f old", kind: "pattern", at: at - 3_600_000 } }), new Date(at + 4000));
+  assert.equal(breaches().length, 2, "a kill before the join: no breach");
+});
+
+test("G2: the orchestrator's own breach is never told to SendMessage itself", () => {
+  const { runA, oA } = setup();
+  const at = Date.now();
+  board.recordActivity(runA.id, "orchestrator", act({ grewAt: at, breach: { command: "pkill -f vite", kind: "pattern", at } }), new Date(at));
+  const m = board.snapshot("/repos/a/.git").events.find((e) => e.event === "breach")!;
+  const next = EVENTS.breach.next!(m as never, oA, "swarm")!;
+  assert.ok(!next.includes("SendMessage"), next);
+  assert.match(next, /stop only the PIDs you started/);
 });
 
 test("D8: a holder waiting past stall_ms with another run's member queued: stalled · lock to both orchestrators, once per hold; held 10 min by a holder at work: told too", async () => {

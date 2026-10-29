@@ -143,7 +143,9 @@ export const EVENTS: Record<EventName, EventDef> = {
     toAuthor: true,
     next: (m, me) => {
       const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
-      return member && me.seat === "orchestrator" ? `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"` : null;
+      if (!member || me.seat !== "orchestrator") return null;
+      // G2: the orchestrator's own kill is its own to correct, never a message to itself
+      return member === me.name ? "stop only the PIDs you started, or lock the port first: machine.md" : `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`;
     },
   },
   // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
