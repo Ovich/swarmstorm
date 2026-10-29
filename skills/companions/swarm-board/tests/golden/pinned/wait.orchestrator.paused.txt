@@ -1,2 +1,2 @@
 exit 0
-nothing yet; wait again: node <cli> wait --mentions --as g/orchestrator --timeout 1000
+nothing yet; wait: node <cli> wait --mentions --as g/orchestrator --timeout 1000

@@ -7,4 +7,4 @@ g/orchestrator  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined
 your worktree: <home>/repo/.git/swarm/worktrees/1/w1 (branch swarm/1-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C <home>/repo/.git/swarm/worktrees/1/w1, never cd into it; pass --as g/w1 on every call
 posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>
 start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/w1
-nothing yet; wait again (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000
+nothing yet; wait, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000

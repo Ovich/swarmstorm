@@ -1,4 +1,4 @@
 exit 0
 #<seq>
-phase build is open and asks: build the thing. Do your part now, then: node <cli> done build --as g/w1
+phase build is yours: Do your part now, then: node <cli> done build --as g/w1
 start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/w1
