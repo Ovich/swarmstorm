@@ -1,3 +1,3 @@
 exit 1
 --- stderr
-you have 1 unread mention: run `node <cli> deliver --as g/w1` first
+end: refused, run 1 is open: a member never ends itself; your seat stays, wait in the foreground for your next task (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/w1 --timeout 170000

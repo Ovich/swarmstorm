@@ -67,7 +67,7 @@ test("F15: release takes several paths and releases each", () => {
 
 test("F16: the 'written without a claim' lines are followed by what they mean", () => {
   fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
-  const out = run("end");
+  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /reconciled 1 written without a claim: src\/a\.ts\n\(not a flag: a write without a claim is allowed, and was claimed for you/);
 });
@@ -79,7 +79,7 @@ const commitAll = (msg: string): void => {
 
 test("F24: many unclaimed writes print one summary line: count, first few, …", () => {
   for (const f of ["c", "d", "e", "f"]) fs.writeFileSync(path.join(repo, "src", `${f}.ts`), "x\n");
-  const out = run("end");
+  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
   assert.equal(out.status, 0, out.stderr);
   const lines = out.stdout.split("\n").filter((l) => l.startsWith("reconciled "));
   assert.deepEqual(lines, ["reconciled 4 written without a claim: src/c.ts, src/d.ts, src/e.ts, …"]);
@@ -87,7 +87,7 @@ test("F24: many unclaimed writes print one summary line: count, first few, …",
 
 test("rename: unclaimed, one old → new entry; both sides claimed, nothing told", () => {
   git("mv", "src/a.ts", "src/a2.ts");
-  const out = run("end");
+  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /reconciled 1 written without a claim: src\/a\.ts → src\/a2\.ts/);
 });

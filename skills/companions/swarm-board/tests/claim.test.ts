@@ -165,7 +165,7 @@ test("end reconciles git status before releasing: a shell write and a rename cla
   assert.equal(shell.status, 0, shell.stderr);
   git(wtB, "mv", "src/old.ts", "src/renamed.ts");
   fs.writeFileSync(path.join(wtB, "src", "a.ts"), "// S3's\n");
-  const r = JSON.parse(cli(wtB, "end", "--json"));
+  const r = JSON.parse(cli(wtB, "end", "--seat", "S5", "--as", "review-tool/orchestrator", "--json"));
   assert.equal(r.ended, true);
   assert.deepEqual([...r.reconciled].sort(), ["src/a.ts", "src/new.ts", "src/old.ts", "src/renamed.ts"]);
   assert.deepEqual(
@@ -183,7 +183,7 @@ test("end lists what it reconciled, then the end", () => {
   running();
   fs.writeFileSync(path.join(wtB, "src", "new.ts"), "export const x = 1;\n");
   fs.writeFileSync(path.join(wtB, "src", "a.ts"), "// S3's\n");
-  const out = cli(wtB, "end").split("\n");
+  const out = cli(wtB, "end", "--seat", "S5", "--as", "review-tool/orchestrator").split("\n");
   const lines = out.filter((l) => l.startsWith("reconciled "));
   assert.equal(lines.length, 1, out.join("\n"));
   assert.match(lines[0], /^reconciled 2 written without a claim: (src\/a\.ts, src\/new\.ts|src\/new\.ts, src\/a\.ts)$/);
@@ -351,7 +351,7 @@ test("a flag is posted once, whether merge-lock or end finds it; it is the flag 
   fs.writeFileSync(path.join(wtB, "src", "a.ts"), "// S3's\n");
   commit(wtB, "a");
   assert.equal(JSON.parse(cli(wtB, "merge-lock", "--onto", "main", "--json")).flags.length, 1);
-  assert.deepEqual(JSON.parse(cli(wtB, "end", "--json")).flags, []);
+  assert.deepEqual(JSON.parse(cli(wtB, "end", "--seat", "S5", "--as", "review-tool/orchestrator", "--json")).flags, []);
   const heard = cli(wtA, "deliver");
   assert.match(heard, /settle it: .* agree "@review-tool\/S5 <who changes what>" --about src\/a\.ts/);
   const board = await openBoard(path.join(home, "swarm.sqlite"));
@@ -402,7 +402,7 @@ test("merge-lock tells nothing of a file written under a claim", () => {
 
 test("a mention of a member who has ended says so", () => {
   running();
-  cli(wtB, "end");
+  cli(wtB, "end", "--seat", "S5", "--as", "review-tool/orchestrator");
   const out = cli(wtA, "post", "@review-tool/S5 I resolved it");
   assert.match(out, /^@review-tool\/S5 has ended: the post stays on the thread, read at the seat's next join$/m);
 });

@@ -1,3 +1,3 @@
 exit 1
 --- stderr
-swarm: member g/s1 has ended
+swarm: release: refused, a seat has no code pack: release is a worker's verb; your verbs are in --help

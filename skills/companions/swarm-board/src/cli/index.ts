@@ -575,9 +575,14 @@ const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id
 const isPackRefusal = (fact: unknown): fact is PackRefusal => typeof fact === "object" && fact !== null && "refused" in fact;
 function refusedCodeVerb(p: Participant, fact: PackRefusal): never {
   const r = fact.refused;
-  // the old gate's words until T9 words the no-pack line in the answer module (D12)
-  // thrown, as the board's own refusals are, so the answer reads as one (`swarm: …`)
-  throw new Error(r.reason === "git" ? `worktree: ${r.detail}` : `${r.verb}: a ${p.kind} run has no claims`);
+  // D12: one answer-module line naming the verb and the caller's seat kind; thrown, as the board's own refusals are,
+  // so the answer reads as one (`swarm: …`)
+  void p;
+  throw new Error(r.reason === "git" ? `worktree: ${r.detail}` : WORDING.packVerbRefused(r.verb, r.seatKind));
+}
+/** D12: a code verb the board gates itself (release, merged) refused up front to a member with no pack, in the same line. */
+function refuseWithoutPack(p: Participant, verb: string): void {
+  if (p.pack === null) refusedCodeVerb(p, { refused: { reason: "no-pack", verb, seatKind: p.verify ? "verifier" : "seat" } });
 }
 /** The server side of a code verb, its refusal failing the verb before anything else runs (D9). */
 async function packVerb(p: Participant, verb: string, input: Record<string, unknown> = {}): Promise<unknown> {
@@ -827,12 +832,16 @@ async function main(): Promise<void> {
       const link = startLinkLine({ name: member.name, run: member.run });
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
       const shared = member.pack === null;
-      const as = shared
+      // a verifier seat (verify set at join, D22) reads the merged branch and judges by post: its own lines (D12)
+      const verifier = shared && member.verify;
+      const as = verifier
+        ? WORDING.verifierAs(member.name)
+        : shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
           ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
-      const commands = shared ? seatCommands(member.name) : null;
+      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord(member.name), FOREGROUND_WAIT_MS) : shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
       // the run's current phase after the roster: a late or restarted member starts in it; then the owed phase and the
@@ -1062,6 +1071,7 @@ async function main(): Promise<void> {
     }
     case "release": {
       const p = await caller();
+      refuseWithoutPack(p, "release");
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       // F15: every path given is released; F27: --all, every claim the caller holds
@@ -1120,6 +1130,7 @@ async function main(): Promise<void> {
     }
     case "merged": {
       const p = await caller();
+      refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
       // the report rides on the merge: one post, the orchestrator's one wake; "-" merges silently, recorded in the run only
       // G25: a long report comes from a file
@@ -1181,19 +1192,25 @@ async function main(): Promise<void> {
       break;
     }
     case "end": {
-      const p = await caller();
+      const asker = await caller();
       // its run closed: the close ended it; end answers what the closed line promised, the summary to return
-      if ((await board.runs()).every((r) => r.id !== p.run)) {
-        const line = `run ${p.run} closed: ${p.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
+      if ((await board.runs()).every((r) => r.id !== asker.run)) {
+        const line = `run ${asker.run} closed: ${asker.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
         // ended: no link to start
         linkToStart = null;
-        emit({ member: p.name, ended: true, closed: true, next: line }, line);
+        emit({ member: asker.name, ended: true, closed: true, next: line }, line);
         break;
       }
+      // board-split D30, D38: a member never ends itself while its run is open; the orchestrator ends a seat
+      // (`end --seat <id>`), its context spent, and a fresh agent joins it
+      const endedSeat = args.flag("--seat");
+      if (endedSeat !== undefined && asker.seat !== "orchestrator") fail(`end --seat: only the orchestrator ends a seat; ${asker.name} is not ${asker.plan}/orchestrator`);
+      if (endedSeat === undefined && asker.seat !== "orchestrator") fail(WORDING.endRefused(asker.run, WORDING.wait(self().join(" "), shellWord(asker.name), FOREGROUND_WAIT_MS)));
+      const p = endedSeat === undefined ? asker : ((await board.participant(`${asker.plan}/${endedSeat}`)) ?? fail(`end --seat: no member in seat ${endedSeat} of run ${asker.run}`));
       // a member already ended: nothing to do, nothing to say
       if (p.ended) break;
-      // a mention landed since its last look: it reads it before it ends
-      const unread = await board.unreadMentions(p);
+      // a mention landed since its last look: it reads it before it ends (the orchestrator ending a seat reads for it)
+      const unread = endedSeat === undefined ? await board.unreadMentions(p) : 0;
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       // the board's worktree with work not merged: the pack refuses the end, naming it and the merge (beforeEnd)
       const base = (await runOf(p.run))?.base ?? null;

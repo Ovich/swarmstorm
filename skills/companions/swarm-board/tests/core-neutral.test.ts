@@ -20,8 +20,7 @@ const ALLOWED: Record<string, number> = {
   "board/board.ts": 102,
   "board/events.ts": 3,
   "board/stats.ts": 8,
-  "cli/answer/usage.ts": 9,
-  "cli/answer/wording.ts": 2,
+  "cli/answer/usage.ts": 8,
 };
 
 const files = (dir: string): string[] =>

@@ -113,20 +113,22 @@ test("golden code flow: two workers, one run onto main", async () => {
     // w2 with a commit not merged (the refusal)
     // end refuses while a mention is unread: each worker reads its own first
     must("deliver", "--as", W1);
-    pin("code.end.claims-held", call("end", "--as", W1));
+    // D30, D38: a worker's own end is refused while the run is open; the orchestrator ends the seat
+    pin("code.end.own-refused", call("end", "--as", W1));
+    pin("code.end.claims-held", call("end", "--seat", "w1", "--as", ORCHESTRATOR));
     must("claim", "b.ts", "--as", W2);
     git(wt2, "rebase", "-q", "main");
     fs.writeFileSync(path.join(wt2, "b.ts"), "export const b = 2;\n");
     git(wt2, "commit", "-q", "-am", "w2 b");
     must("deliver", "--as", W2);
-    pin("code.end.unmerged", call("end", "--as", W2));
+    pin("code.end.unmerged", call("end", "--seat", "w2", "--as", ORCHESTRATOR));
     must("merge-lock", "--onto", "main", "--as", W2);
     git(wt2, "push", "-q", ".", "HEAD:main");
     must("merged", git(wt2, "rev-parse", "HEAD"), "--files", "b.ts", "--report", "w2 changed b.ts", "--as", W2);
     // the report rides on the merge, the orchestrator's one wake
     pin("code.merged.report", call("deliver", "--as", ORCHESTRATOR));
     must("deliver", "--as", W2);
-    pin("code.end.clean", call("end", "--as", W2));
+    pin("code.end.clean", call("end", "--seat", "w2", "--as", ORCHESTRATOR));
 
     // w3 leaves a commit not merged: close keeps its worktree and says why
     must("join", "--run", runId, "--seat", "w3", "--doing", "x", "--as", W3);

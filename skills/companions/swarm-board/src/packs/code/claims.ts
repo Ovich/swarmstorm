@@ -386,7 +386,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           }
           if (lock && Number(lock.participant) === me.id && lock.onto != null) onto = String(lock.onto);
           db.prepare("DELETE FROM merge_locks WHERE repo = ?").run(me.repo);
-          db.prepare("UPDATE participants SET merged = 1 WHERE id = ?").run(me.id);
+          // board-split D33 (S35): the merge is the member's latest fact, shown over an older doing
+          db.prepare("UPDATE participants SET merged = 1, doing = ? WHERE id = ?").run(`merged ${sha.slice(0, 7)}`, me.id);
           // the holder's lock turn ends with the merge (D25)
           const turn = openTurn(me);
           if (turn) db.prepare("UPDATE lock_requests SET merged_at = ? WHERE rowid = ?").run(now(), Number(turn.id));

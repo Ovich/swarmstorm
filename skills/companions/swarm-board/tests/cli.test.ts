@@ -245,7 +245,7 @@ test("--json on every verb parses", () => {
     ["roster"],
     ["seat", "S3", "--run", id, "--state", "running"],
     ["status"],
-    ["end", ...as],
+    ["end", "--seat", "S3", "--as", "review-tool/orchestrator"],
     ["close", "--run", id],
   ];
   for (const argv of verbs) {
@@ -426,7 +426,7 @@ test("claim, post and doing end on the listener line while no listener is pendin
     assert.match(posted.stdout, /^#\d+\n$/);
     assert.equal(JSON.parse(run("post", ...as, "once more", "--json").stdout).next, undefined);
   } finally {
-    run("end", ...as); // releases the child's wait
+    run("end", "--seat", "S5", "--as", "review-tool/orchestrator"); // releases the child's wait
     await exited;
   }
   // ended: no line
@@ -495,7 +495,7 @@ test("end releases a member's pending wait in another process", async () => {
   child.stdout.on("data", (b) => (out += b));
   const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
   await new Promise((r) => setTimeout(r, 1500));
-  const ended = run("end", "--as", "review-tool/S5");
+  const ended = run("end", "--seat", "S5", "--as", "review-tool/orchestrator");
   assert.equal(ended.status, 0, ended.stderr + ended.stdout);
   const t0 = Date.now();
   assert.equal(await exited, 0);
@@ -786,13 +786,14 @@ test("a seat's wait that receives an agreement prints the back-it line; a plan m
   assert.doesNotMatch(pw.stdout, /back it:/);
 });
 
-test("the code verbs, called by a seat, exit 1 naming the kind", () => {
+test("board-split D12: the code verbs, called by a seat with no code pack, exit 1 on one line naming the verb and the seat kind", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
   for (const argv of [["claim", "src/x.ts"], ["release", "src/x.ts"], ["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
     const r = run(...argv, "--as", "idea/architect");
     assert.equal(r.status, 1, argv.join(" "));
-    assert.match(r.stderr, new RegExp(`${argv[0]}: a brainstorm run has no claims`));
+    assert.equal(r.stderr, `swarm: ${argv[0]}: refused, a seat has no code pack: ${argv[0]} is a worker's verb; your verbs are in --help
+`);
   }
 });
 
@@ -986,8 +987,8 @@ test("done: a member's done is counted, roster and status show n/m done, the las
 test("end on an ended member exits 0 and says nothing; on a closed run it prints the summary prompt the closed line promised, never a link line (S62)", () => {
   const id = openRun();
   assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "x").status, 0);
-  assert.equal(run("end", "--as", "review-tool/S3").status, 0);
-  const again = run("end", "--as", "review-tool/S3");
+  assert.equal(run("end", "--seat", "S3", "--as", "review-tool/orchestrator").status, 0);
+  const again = run("end", "--seat", "S3", "--as", "review-tool/orchestrator");
   assert.deepEqual([again.status, again.stdout, again.stderr], [0, "", ""]);
   assert.equal(run("join", "--run", String(id), "--seat", "S5", "--doing", "x").status, 0);
   run("close", "--run", String(id));
@@ -1367,16 +1368,17 @@ test("join prints the run's composition after the you-are line, --json carries i
   assert.match(roster, /^ {2}seat architect /m);
 });
 
-test("end refuses while a mention is unread, naming the deliver line; ends once it is read", () => {
+test("board-split D30, D38: a member's own end is refused while its run is open; the orchestrator's end --seat ends it", () => {
   const id = openRun();
   assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "x").status, 0);
   run("deliver", "--as", "review-tool/S3");
-  run("post", "@review-tool/S3 one more thing", "--as", "review-tool/orchestrator");
   const refused = run("end", "--as", "review-tool/S3");
-  assert.notEqual(refused.status, 0);
-  assert.match(refused.stderr, /you have 1 unread mention: run `.* deliver --as review-tool\/S3` first/);
-  run("deliver", "--as", "review-tool/S3");
-  assert.equal(run("end", "--as", "review-tool/S3").status, 0);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /end: refused, run \d+ is open: a member never ends itself; your seat stays, wait in the foreground for your next task .*: .* wait --mentions --as review-tool\/S3 --timeout 170000/);
+  const notYours = run("end", "--seat", "S3", "--as", "review-tool/S3");
+  assert.match(notYours.stderr, /end --seat: only the orchestrator ends a seat/);
+  assert.equal(run("end", "--seat", "S3", "--as", "review-tool/orchestrator").status, 0);
+  assert.match(run("end", "--seat", "S3", "--as", "review-tool/orchestrator").stdout, /^$/, "S3 already ended: nothing to say");
 });
 
 test("seat is the verb; slice is its silent alias, accepted but never shown in --help (AGENTS rule 12)", () => {
@@ -1442,7 +1444,7 @@ test("V3: a foreground wait --mentions counts as listening even when the link re
     await new Promise((r) => setTimeout(r, 1500));
     assert.doesNotMatch(run("post", ...as, "hello").stdout, /start your listener/);
   } finally {
-    run("end", ...as);
+    run("end", "--seat", "S5", "--as", "review-tool/orchestrator");
     await exited;
   }
 });

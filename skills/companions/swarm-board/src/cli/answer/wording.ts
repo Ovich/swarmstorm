@@ -74,7 +74,7 @@ export const WORDING = {
 
   // ── the run ──
   paused: (run: number, why: string, wait: Command) =>
-    `run ${run} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+    `run ${run} is paused${why}. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run: number, end: Command) =>
     `run ${run} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
   // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
@@ -82,7 +82,7 @@ export const WORDING = {
   phaseDoneWhen: (name: string, tasks: string[], done: Command) =>
     `when your part of ${name}${tasks.length ? ` (your task${tasks.length > 1 ? "s" : ""} ${tasks.join(", ")})` : ""} is posted: ${done}`,
   pauseStop: (person: string | null, wait: Command) =>
-    `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+    `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
   // board-split D30: parked by the orchestrator; ending the turn is the member's, `end` the orchestrator's alone
   parkedStop: "you are parked: end your turn now, without end; the orchestrator resumes you at your next task",
@@ -91,7 +91,7 @@ export const WORDING = {
   unparked: (member: string) => `${member} is unparked: its alerts and its share of all-done are back`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
   packVerbRefused: (verb: string, seatKind: string) =>
-    `${verb}: refused, a ${seatKind} seat has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
+    `${verb}: refused, a ${seatKind} has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
@@ -115,6 +115,15 @@ export const WORDING = {
   stalledEach: (moves: { member: string; move: string }[]) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
 
   // ── the seat's commands at its join (D21, D36) ──
+  /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
+  verifierAs: (as: string) =>
+    `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
+  verifierCommands: (cli: Command, as: string, holdMs: number) => [
+    `${cli} post --file <findings.md> --as ${as}    # your verdict and findings table, to @orchestrator`,
+    `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
+    `${cli} done <phase> --as ${as}`,
+    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
+  ],
   seatCommands: (cli: Command, as: string, holdMs: number) => [
     `${cli} post "…" --about <D id> --as ${as}`,
     `${cli} agree "…" --about <D id> --as ${as}`,

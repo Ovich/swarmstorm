@@ -104,12 +104,12 @@ test("end refuses while the worktree holds work not merged, naming it and the me
   fs.writeFileSync(path.join(dir, "c.txt"), "c\n");
   git(dir, "add", ".");
   git(dir, "commit", "-q", "-m", "c");
-  const refused = swarm("end", "--as", "g/w1");
+  const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
   assert.ok(refused.stderr.includes(`holds work not merged: branch swarm/${run}-g/w1 has commits not merged into main. Merge it: `), refused.stderr);
   assert.match(refused.stderr, /merge-lock --onto main/);
   git(repo, "merge", "-q", "--ff-only", `swarm/${run}-g/w1`);
-  assert.match(ok("end", "--as", "g/w1"), /worktree .*w1 removed \(branch kept\)/);
+  assert.match(ok("end", "--seat", "w1", "--as", "g/orchestrator"), /worktree .*w1 removed \(branch kept\)/);
   assert.equal(fs.existsSync(dir), false);
   assert.ok(hasBranch(`swarm/${run}-g/w1`));
 });
@@ -151,7 +151,7 @@ test("end with uncommitted work says to commit it, then merge it", () => {
   join(run, "g", "w1");
   ok("deliver", "--as", "g/w1");
   fs.writeFileSync(path.join(wt(run, "w1"), "c.txt"), "c\n");
-  const refused = swarm("end", "--as", "g/w1");
+  const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /1 uncommitted change\. Commit it, then merge it: /);
 });
@@ -167,7 +167,7 @@ test("end stops only the link whose pid this data home recorded; a process with 
     fs.mkdirSync(path.join(home, "links"), { recursive: true });
     fs.writeFileSync(path.join(home, "links", `${run}-g_w1.pid`), String(link.pid));
     const linkGone = new Promise((r) => link.once("exit", r));
-    assert.match(ok("end", "--as", "g/w1"), /removed \(branch kept\)/);
+    assert.match(ok("end", "--seat", "w1", "--as", "g/orchestrator"), /removed \(branch kept\)/);
     await linkGone;
     assert.equal(decoy.exitCode, null);
     assert.doesNotThrow(() => process.kill(decoy.pid!, 0));
