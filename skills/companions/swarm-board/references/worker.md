@@ -98,7 +98,7 @@ Nothing stops an edit made without a claim; `end` claims or flags it on the thre
 **A shared file is settled by one agreement, made by its holder.** A post about a file you hold,
 from a worker that did not hold it, reaches you ending on the `agree` line to run: run it, saying
 who changes which part, in what order. The agreement goes for you both, and corrects work already
-started; to change it, agree again.
+started; to change it, agree again. With no `@<seat>` in it, `--with <seat>` names the other party, so its merge reaches them.
 
 **A flag** is a file you wrote without claiming it while another worker holds it, found by
 `merge-lock` or `end` and posted on the thread to you both. Claim before you edit and there is none.

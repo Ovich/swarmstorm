@@ -493,6 +493,15 @@ function claimsOf(deps) {
         return x === f || x.endsWith(`/${f}`);
       });
     },
+    holderNames(repo, about) {
+      const f = fold(relPath(repo, about) ?? slashes(about));
+      if (!f) return [];
+      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo);
+      return [...new Set(rows.filter((r) => {
+        const x = fold(String(r.path));
+        return x === f || x.endsWith(`/${f}`);
+      }).map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
+    },
     holds(p, about) {
       const f = fold(relPath(p.repo, about) ?? slashes(about));
       if (!f) return false;
@@ -1795,7 +1804,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return new Map(rows.map((r) => [nameHandle(nickOf(r)), `${r.plan}/${r.seat}`]));
   };
   const insertMessage = (p, body, about, kind, named, extra = {}) => {
-    const mentions2 = named ?? (kind === "event" ? [] : parseMentions(body, p.plan, openPlans(p.repo), activeNames(p.repo)));
+    const mentions2 = named ?? extra.parties ?? (kind === "event" ? [] : parseMentions(body, p.plan, openPlans(p.repo), activeNames(p.repo)));
     const run2 = p.run;
     if (runRow(run2).state === "closed") throw new Error(`run ${run2} is closed`);
     const r = db.prepare("INSERT INTO messages (repo, author, body, about, kind, mentions, at, by_board, run, endorses, event, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(p.repo, p.id, body, about, kind, JSON.stringify(mentions2), now(), named ? 1 : 0, run2, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
@@ -2826,7 +2835,16 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     },
     post(p, body, opts = {}) {
       const fresh = live(p);
-      const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg");
+      let named;
+      if (opts.kind === "agreement") {
+        const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
+        const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
+        const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
+        const holders = !parsed.length && !given.length && opts.about ? claims.holderNames(fresh.repo, opts.about).filter((n) => n !== fresh.name) : [];
+        named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
+      }
+      const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
+      if (named && !named.length) return { ...m, noParty: true };
       const claimed = profileOf(fresh.kind).claims ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
@@ -8166,6 +8184,7 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--file",
   "--as",
   "--about",
+  "--with",
   "--timeout",
   "--repo",
   "--port",
@@ -8372,7 +8391,7 @@ var USAGE = [
   "  unsubscribe [--as <member>] <events>",
   "  doing   [--as <member>] <text>",
   "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
-  "  agree   [--as <member>] <terms> [--about <path|decision id>]  # prints the seq",
+  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
   "  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add",
@@ -8673,6 +8692,7 @@ var emitHeard = async (p, json, human) => {
     if (next) console.log(next);
   });
 };
+var DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
 function resolveClaimPath(file, about = false) {
   if (path9.isAbsolute(file)) return file;
   const here = path9.resolve(file);
@@ -8980,18 +9000,22 @@ ${USAGE}`);
       const body = (file ? fs9.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
+      if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
       if (urgent && p.seat !== "orchestrator") fail("--urgent is the orchestrator's: it wakes every waiter of the run, even in a pause; ask @orchestrator on the thread instead");
       const m = await board.post(p, body, {
         about: aboutArg(),
-        kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg"
+        kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
+        ...args.verb === "agree" && args.flag("--with") ? { with: args.flag("--with").split(",") } : {}
       });
+      const noParty = m.noParty ? "no other party: name one with @<seat> or --with <seat>" : null;
       const unmatched = await unmatchedLines(p, body);
       const phaseNext = args.verb === "post" ? await firstTaskPostLine(p) : null;
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...noParty ? { warning: noParty } : {}, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
       const human = () => {
         console.log(seqLine(m));
         if (m.claimed) console.log(`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`);
         for (const line of unmatched) console.log(line);
+        if (noParty) console.log(noParty);
       };
       if (phaseNext) {
         const listen2 = await heardStep(p);
@@ -9099,10 +9123,12 @@ only then wait again, in the foreground (${SHELL_TOOL_TIMEOUT}): ${foregroundLin
       const next = owes && !pausedNow && !listensInForeground(p) ? `${owes}
 ${rearm}` : rearm;
       const { printed: phase, full: phaseFull } = await phaseHeaders(p.run, p, !pausedNow);
-      emit({ phase: phaseFull, next, ...d }, () => {
+      const delivered = mentionsOnly ? DELIVERED_LINE : null;
+      emit({ phase: phaseFull, next, ...d, ...delivered ? { delivered } : {} }, () => {
         if (phase) console.log(phase);
         console.log(next);
         printDelivery(d);
+        if (delivered) console.log(delivered);
       });
       break;
     }
@@ -9368,3 +9394,6 @@ if (args.verb === "serve") {
     board?.close();
   }
 }
+export {
+  DELIVERED_LINE
+};

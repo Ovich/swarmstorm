@@ -9,6 +9,7 @@ const VALUE_FLAGS = new Set([
   "--file",
   "--as",
   "--about",
+  "--with",
   "--timeout",
   "--repo",
   "--port",
