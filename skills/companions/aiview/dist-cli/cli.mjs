@@ -192,7 +192,15 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
   if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
-  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path4.join(path4.resolve(p), ".git")).filter((g) => fs3.existsSync(g)).map((g) => g.split("\\").join("/"));
+  const commonGitDir = (dotGit) => {
+    if (!fs3.statSync(dotGit).isFile()) return dotGit;
+    const own = /^gitdir:\s*(.+)$/m.exec(fs3.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (!own) return dotGit;
+    const dir = path4.resolve(path4.dirname(dotGit), own);
+    const common = path4.join(dir, "commondir");
+    return fs3.existsSync(common) ? path4.resolve(dir, fs3.readFileSync(common, "utf8").trim()) : dir;
+  };
+  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path4.join(path4.resolve(p), ".git")).filter((g) => fs3.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
   const boardReposOf = (slug) => {
     const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
     if (!row) return [];
@@ -9119,8 +9127,10 @@ var init_wire = __esm({
       "owedPhase",
       "idle",
       "unreadMentions",
+      "guidesUntold",
       "setting",
       "runs",
+      "worktrees",
       "join",
       "participant",
       "identify",

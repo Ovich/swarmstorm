@@ -323,7 +323,8 @@ var init_events = __esm({
         toAuthor: true,
         next: (m, me) => {
           const member = m.meta && "breach" in m.meta ? m.meta.breach : null;
-          return member && me.seat === "orchestrator" ? `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"` : null;
+          if (!member || me.seat !== "orchestrator") return null;
+          return member === me.name ? "stop only the PIDs you started, or lock the port first: machine.md" : `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`;
         }
       },
       // a member whose agent finished without end, or whose link is lost (D12); to the orchestrator alone
@@ -2516,11 +2517,14 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
         const unknown = only.filter((s) => s === ORCHESTRATOR2 || !db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
-        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
+        const since = Number(db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name).s ?? 0);
+        const tasks = db.prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq").all(fresh.run, since, ORCHESTRATOR2).map((m) => ({ seq: Number(m.seq), seats: JSON.parse(String(m.mentions ?? "[]")).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR2}`)) })).filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
+        const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
+        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR2, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
+        return insertMessage(fresh, `phase ${name}: ${told}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
       });
     },
     currentPhase(run3) {
@@ -2687,8 +2691,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         );
         db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run3, member, at.toISOString(), act.tokens);
         const kill = act.breach ?? null;
-        if (kill) {
-          const me = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member);
+        const me = kill ? db.prepare("SELECT id, joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member) : null;
+        if (kill && me && kill.at >= Date.parse(String(me.joined_at))) {
           const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
           const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
           const command = kill.command.slice(0, 120);
@@ -8566,16 +8570,16 @@ import { spawnSync as spawnSync3 } from "node:child_process";
 import fs9 from "node:fs";
 import os4 from "node:os";
 import path9 from "node:path";
-var WORKTREES_ROOT = path9.join(DATA_ROOT, "worktrees");
+var worktreesRoot = (repo) => path9.join(repo, "swarm", "worktrees");
 var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
 var fold = (s) => CASELESS3 ? path9.resolve(s).toLowerCase() : path9.resolve(s);
 var safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-var worktreeDir = (run3, seat) => path9.join(WORKTREES_ROOT, String(run3), safe(seat));
+var worktreeDir = (repo, run3, seat) => path9.join(worktreesRoot(repo), String(run3), safe(seat));
 var branchFor = (run3, group, seat) => `swarm/${run3}-${group}/${seat}`;
-var owned = (wt) => !!wt && fold(path9.dirname(path9.dirname(wt))) === fold(WORKTREES_ROOT);
-var worktreeDirs = () => {
+var owned = (wt, repo) => !!wt && fold(path9.dirname(path9.dirname(wt))) === fold(worktreesRoot(repo));
+var worktreeDirs = (repos) => {
   const sub = (d) => fs9.existsSync(d) ? fs9.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path9.join(d, e.name)) : [];
-  return sub(WORKTREES_ROOT).flatMap(sub);
+  return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
 };
 var same = (a, b) => fold(a) === fold(b);
 function run2(cwd, ...argv) {
@@ -8593,8 +8597,8 @@ function inLinkedWorktree(cwd) {
 }
 var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
-function ensureWorktree(cwd, runId, group, seat, base) {
-  const at = worktreeDir(runId, seat);
+function ensureWorktree(cwd, repo, runId, group, seat, base) {
+  const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
   const top = fs9.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
@@ -8764,6 +8768,7 @@ function worktreeOf(dir) {
   return top ? path11.resolve(top) : null;
 }
 function changedIn(worktree) {
+  if (!fs11.existsSync(worktree)) return [];
   const r = spawnSync4("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
@@ -9000,9 +9005,11 @@ var unmatchedLines = async (p, body) => {
   const names = new Map(members.map((r) => [nameHandle(r.nick), r.name]));
   const nickOf = new Map(members.map((r) => [r.name, r.nick.replace(/\s+/g, "")]));
   const ended = new Set(await board.endedMembers(p.repo));
+  const declared = new Set((await board.runs()).filter((r) => r.repo === p.repo).flatMap((r) => r.seats.map((s) => `${r.group}/${s.id}`)));
   return unmatchedMentions(body, p.plan, plans, names).map(({ name, closest }) => {
     const member = name.includes("/") ? name : `${p.plan}/${name}`;
     if (ended.has(member)) return `@${name} has ended: the post stays on the thread, but they will not read it`;
+    if (declared.has(member)) return `@${name} has not joined yet: the post waits for it, read at its join`;
     const guesses = closest.map((c) => nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`);
     return `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`;
   });
@@ -9136,12 +9143,23 @@ async function memberWorktree(runId, seat) {
   const cwd = process.cwd();
   const base = run3.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd))) return null;
+  if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), run3.repo)) return null;
   if (repoOf(cwd) !== run3.repo) fail(`join: run ${runId} is on ${run3.repo}; join from a checkout of that repository`);
+  const at = worktreeDir(run3.repo, run3.id, seat);
+  return { path: at, branch: branchFor(run3.id, run3.group, seat), base, reused: fs11.existsSync(at) };
+}
+async function madeWorktree(p) {
+  if (!p.worktree || !owned(p.worktree, p.repo) || fs11.existsSync(p.worktree)) return;
+  const run3 = await runOf(p.run);
+  if (!run3) return;
+  const cwd = worktreeOf(process.cwd()) && repoOf(process.cwd()) === p.repo ? process.cwd() : path11.dirname(p.repo);
+  const base = run3.base ?? baseAt(cwd);
+  if (!base) fail(`${p.name}: no base to make the worktree from`);
   try {
-    return { ...ensureWorktree(cwd, run3.id, run3.group, seat, base), base };
+    ensureWorktree(cwd, p.repo, run3.id, run3.group, p.seat, base);
+    callerWorktree = p.worktree;
   } catch (e) {
-    return fail(`join: ${e.message}`);
+    fail(`worktree: ${e.message}`);
   }
 }
 async function main() {
@@ -9239,7 +9257,7 @@ ${USAGE}`);
     }
     case "close": {
       const run3 = runArg();
-      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree) && fs11.existsSync(w.worktree));
+      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree, w.repo) && fs11.existsSync(w.worktree));
       await board.closeRun(run3);
       if (trees.length) stopLinks(run3, trees.map((w) => w.member));
       const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
@@ -9333,7 +9351,7 @@ ${USAGE}`);
       const link = startLinkLine({ name: member.name, run: member.run });
       const next = await nextStep(member);
       const shared = !profileOf(member.kind).worktree;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
+      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
       const commands = shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const phase = await phaseHeader(member.run);
@@ -9536,6 +9554,7 @@ ${owes}` : rearm;
     case "claim": {
       const p = await caller();
       if (await refusedPaused(p, "claim")) break;
+      await madeWorktree(p);
       if (!args.positional.length) fail("claim: which path?");
       const answers = [];
       for (const file of args.positional) {
@@ -9577,6 +9596,7 @@ ${owes}` : rearm;
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
+      await madeWorktree(p);
       const onto = need("--onto");
       const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
       if (holding) {
@@ -9650,7 +9670,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree) && fs11.existsSync(p.worktree) ? slashed(p.worktree) : null;
+      const mine = owned(p.worktree, p.repo) && fs11.existsSync(p.worktree) ? slashed(p.worktree) : null;
       const left = mine ? leftover(mine, base) : null;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
@@ -9678,7 +9698,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
 ${USAGE}`);
       const known = await board.worktrees();
-      const dirs = worktreeDirs();
+      const dirs = worktreeDirs([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)]);
       const fold2 = (s) => process.platform === "win32" ? path11.resolve(s).toLowerCase() : path11.resolve(s);
       const out = dirs.map((dir) => {
         const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);
@@ -9687,8 +9707,8 @@ ${USAGE}`);
         return { worktree: slashed(dir), ...sweep(dir, w.repo, w.base) };
       });
       const kept = out.filter((o) => !o.removed);
-      emit({ root: WORKTREES_ROOT, removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
-        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed under ${slashed(WORKTREES_ROOT)} (branches kept)`);
+      emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
+        console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
         for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
       });
       break;
