@@ -63,6 +63,10 @@ file the person was looking for. Refresh the cache with
 
 6. **MUST bump `version` to the same value in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, rebuild, and commit `dist/` and `dist-cli/` before pushing `main`.** Without the bump no existing user receives the change, and without the build they receive the old viewer. The sequence is `RELEASING.md`.
 
+## swarm-board
+
+13. **MUST write a command or next-step line a member reads in the answer module (`skills/companions/swarm-board/src/cli/answer/`: wording in `wording.ts`, the choice in `rules.ts`), never in a verb or a board event.** Each verb writing its own lines is what repeated the phase three times and set verbs contradicting each other; fixed per verb, the fixes looped. The sites predating the rule are counted by `tests/answer-ratchet.test.ts`, whose baseline only falls.
+
 ## Documents
 
 7. **MUST NOT commit a board, spec, plan, prototype or report to this repository.** They are working material and go to the data home through `aiview path`; a document in the tree gets reviewed, goes stale and outlives its use. The README and `RELEASING.md` are deliverables and belong here.
