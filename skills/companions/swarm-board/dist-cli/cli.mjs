@@ -588,7 +588,7 @@ function claimsOf(deps) {
         bump(me.repo);
       });
     },
-    lockMerge(me, onto, reflogMark) {
+    lockMerge(me, onto, reflogMark, guides) {
       return transaction(() => {
         const r = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo);
         if (r && Number(r.participant) !== me.id && isLive(Number(r.participant))) {
@@ -600,20 +600,21 @@ function claimsOf(deps) {
         }
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
+          if (guides) db.prepare("UPDATE merge_locks SET guides = ? WHERE repo = ?").run(JSON.stringify(guides), me.repo);
           grantTurn(me, String(db.prepare("SELECT at FROM merge_locks WHERE repo = ?").get(me.repo).at), false);
           return { granted: true };
         }
         db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(me.repo);
         const at = now();
-        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark) VALUES (?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null);
+        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
         grantTurn(me, at, true);
         bump(me.repo);
         return { granted: true };
       });
     },
     heldMergeLock(me) {
-      const r = db.prepare("SELECT at, onto, reflog_mark FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id);
-      return r ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark) } : null;
+      const r = db.prepare("SELECT at, onto, reflog_mark, guides FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id);
+      return r ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark), guides: r.guides == null ? [] : JSON.parse(String(r.guides)) } : null;
     },
     merged(me, sha, files, conflicts) {
       const rels = [...new Set(files.map((f) => relPath(me.repo, f)).filter((x) => x !== null))];
@@ -704,8 +705,8 @@ function distinctFlags(messages) {
   const seen = /* @__PURE__ */ new Set();
   return messages.filter((m) => {
     if (!isBoardFlag(m)) return false;
-    const [, path11 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
-    const key = JSON.stringify([Number(m.author), foldPath(String(path11)), holder]);
+    const [, path12 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
+    const key = JSON.stringify([Number(m.author), foldPath(String(path12)), holder]);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -908,7 +909,7 @@ function computeRun(db, r, now, silentAfterMs) {
     if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
     holdersByPath.set(key, entry2);
   }
-  const sharersOf = (path11) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path11)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
+  const sharersOf = (path12) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path12)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
   const byId = new Map(people.map((p) => [Number(p.id), p]));
   const membershipOf = (pid) => {
     const p = byId.get(pid);
@@ -920,10 +921,10 @@ function computeRun(db, r, now, silentAfterMs) {
     return x.from < y.to && y.from < x.to;
   };
   const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
-  const namesPath = (m, path11) => {
-    if (aboutNames(m.about, path11)) return true;
+  const namesPath = (m, path12) => {
+    if (aboutNames(m.about, path12)) return true;
     const body = foldPath(String(m.body));
-    return body.includes(foldPath(path11)) || body.includes(foldPath(path11.split("/").pop()));
+    return body.includes(foldPath(path12)) || body.includes(foldPath(path12.split("/").pop()));
   };
   const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
   const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
@@ -931,14 +932,14 @@ function computeRun(db, r, now, silentAfterMs) {
   let everyHolderTold = 0;
   let agreed = 0;
   let agreedBeforeMerge = 0;
-  for (const { path: path11, holders: everyHolder } of holdersByPath.values()) {
-    const sharers = sharersOf(path11);
+  for (const { path: path12, holders: everyHolder } of holdersByPath.values()) {
+    const sharers = sharersOf(path12);
     const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
     if (holders.length < 2) continue;
     const tellTimes = [];
     let told = true;
     for (let i = 1; i < holders.length; i++) {
-      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path11));
+      const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path12));
       tellTimes.push(...tells.map((m) => ms(m.at)));
       const mentioned = (e) => tells.some((m) => {
         const named = JSON.parse(String(m.mentions));
@@ -947,8 +948,8 @@ function computeRun(db, r, now, silentAfterMs) {
       if (!holders.slice(0, i).every(mentioned)) told = false;
     }
     const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
-    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path11));
-    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path11)) : holders.includes(m.participant));
+    const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path12));
+    const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path12)) : holders.includes(m.participant));
     const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
     if (told) {
       everyHolderTold++;
@@ -958,13 +959,13 @@ function computeRun(db, r, now, silentAfterMs) {
       }
     }
     const met = mergedWith.map((m) => m.conflicts);
-    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path11))) ? true : met.some((c) => c === null) ? null : false;
+    const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path12))) ? true : met.some((c) => c === null) ? null : false;
     const declaredInterface = holders.some(
-      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path11))
+      (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path12))
     );
-    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path11));
+    const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path12));
     perFile.push({
-      path: path11,
+      path: path12,
       holders: holders.map((h) => nameOf(byId.get(h))),
       interface: declaredInterface || claimedInterface,
       told,
@@ -1204,8 +1205,8 @@ function filesAcross(runs) {
       byPath.set(key, entry2);
     }
   }
-  return [...byPath.values()].map(({ path: path11, perRun }) => ({
-    path: path11,
+  return [...byPath.values()].map(({ path: path12, perRun }) => ({
+    path: path12,
     runs: perRun.map((x) => x.run),
     holders: new Set(perRun.flatMap((x) => x.holders)).size,
     agreements: perRun.filter((x) => x.agreed).length,
@@ -1272,10 +1273,10 @@ var init_stats = __esm({
     ms = (at) => Date.parse(String(at));
     iso = (t) => new Date(t).toISOString();
     firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
-    aboutNames = (about, path11) => {
+    aboutNames = (about, path12) => {
       if (about == null) return false;
       const a = foldPath(String(about).replace(/\\/g, "/"));
-      const f = foldPath(path11);
+      const f = foldPath(path12);
       return a === f || f.endsWith(`/${a}`);
     };
     MERGED_BODY = /^merged \S+/;
@@ -1638,6 +1639,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "link", "link TEXT");
   upkeep("messages", "meta", "meta TEXT");
   upkeep("merge_locks", "onto", "onto TEXT");
+  upkeep("merge_locks", "guides", "guides TEXT");
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
   upkeep("seats", "link", "link TEXT");
   upkeep("seats", "role", "role TEXT");
@@ -1668,6 +1670,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "phase_for", "phase_for TEXT");
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
+  db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
     CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
@@ -2938,6 +2941,10 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     unreadMentions(p) {
       return unreadOf(p.id);
     },
+    guidesUntold(p, guides) {
+      const tell = db.prepare("INSERT OR IGNORE INTO guides_told (participant, guide) VALUES (?, ?)");
+      return transaction(() => guides.filter((g) => tell.run(p.id, g).changes > 0));
+    },
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
       const column = mentionsOnly ? "listening" : "waiting";
@@ -3013,8 +3020,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     release(p, file) {
       claims.release(gated(live(p), "release"), file);
     },
-    lockMerge(p, onto, reflogMark) {
-      return claims.lockMerge(gated(live(p), "merge-lock"), onto, reflogMark);
+    lockMerge(p, onto, reflogMark, guides) {
+      return claims.lockMerge(gated(live(p), "merge-lock"), onto, reflogMark, guides);
     },
     merged(p, sha, files, conflicts) {
       return claims.merged(gated(live(p), "merged"), sha, files, conflicts);
@@ -3071,7 +3078,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
         }
       }
-      const sharedBy = (path11, id) => live2.some((c) => String(c.path) === path11 && Number(c.participant) !== id);
+      const sharedBy = (path12, id) => live2.some((c) => String(c.path) === path12 && Number(c.participant) !== id);
       const roster = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
@@ -3355,6 +3362,7 @@ var init_wire = __esm({
       "owedPhase",
       "idle",
       "unreadMentions",
+      "guidesUntold",
       "setting",
       "runs",
       "worktrees",
@@ -7021,9 +7029,9 @@ __export(server_exports, {
   stopBoardServer: () => stopBoardServer
 });
 import crypto4 from "node:crypto";
-import fs9 from "node:fs";
+import fs10 from "node:fs";
 import http from "node:http";
-import path9 from "node:path";
+import path10 from "node:path";
 async function startBoardServer(opts) {
   logStart(opts.dataRoot);
   await takeStartLock(opts.dataRoot);
@@ -7035,26 +7043,26 @@ async function startBoardServer(opts) {
   }
 }
 function logStart(dataRoot) {
-  fs9.mkdirSync(dataRoot, { recursive: true });
-  fs9.appendFileSync(serverLogFile(dataRoot), `serve: home ${path9.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs10.mkdirSync(dataRoot, { recursive: true });
+  fs10.appendFileSync(serverLogFile(dataRoot), `serve: home ${path10.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
   if (passed) return passed;
   try {
-    const read = fs9.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+    const read = fs10.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
     if (read) return read;
   } catch {
   }
   return "unknown";
 }
 async function takeStartLock(dataRoot) {
-  fs9.mkdirSync(dataRoot, { recursive: true });
+  fs10.mkdirSync(dataRoot, { recursive: true });
   const lock = serverStartLock(dataRoot);
   for (let emptyReads = 0; ; ) {
     try {
-      fs9.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs10.writeFileSync(lock, String(process.pid), { flag: "wx" });
       return;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -7073,29 +7081,29 @@ async function takeStartLock(dataRoot) {
 async function removeStaleStartLock(dataRoot, seen) {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs9.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs10.writeFileSync(breaker, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
     try {
-      if (Date.now() - fs9.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs9.rmSync(breaker, { force: true });
+      if (Date.now() - fs10.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs10.rmSync(breaker, { force: true });
     } catch {
     }
     await new Promise((r) => setTimeout(r, LOCK_READ_RETRY_MS));
     return;
   }
   try {
-    if (serverLockHolder(dataRoot) === seen) fs9.rmSync(serverStartLock(dataRoot), { force: true });
+    if (serverLockHolder(dataRoot) === seen) fs10.rmSync(serverStartLock(dataRoot), { force: true });
   } finally {
-    fs9.rmSync(breaker, { force: true });
+    fs10.rmSync(breaker, { force: true });
   }
 }
 function releaseStartLock(dataRoot) {
-  if (serverLockHolder(dataRoot) === process.pid) fs9.rmSync(serverStartLock(dataRoot), { force: true });
+  if (serverLockHolder(dataRoot) === process.pid) fs10.rmSync(serverStartLock(dataRoot), { force: true });
 }
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path9.join(opts.dataRoot, "swarm.sqlite"));
+  const board2 = await openBoard(path10.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const speakers = /* @__PURE__ */ new Set();
@@ -7113,7 +7121,7 @@ async function runBoardServer(opts) {
   const grewAt = (file) => {
     if (!file) return null;
     try {
-      const st = fs9.statSync(file);
+      const st = fs10.statSync(file);
       return st.isFile() ? st.mtimeMs : null;
     } catch {
       return null;
@@ -7245,8 +7253,8 @@ async function runBoardServer(opts) {
   const port = await listen(httpServer, host, opts.port ?? 0);
   const state = { pid: process.pid, port, secret, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs9.mkdirSync(opts.dataRoot, { recursive: true });
-  fs9.writeFileSync(stateFile, JSON.stringify(state));
+  fs10.mkdirSync(opts.dataRoot, { recursive: true });
+  fs10.writeFileSync(stateFile, JSON.stringify(state));
   const stopTellingReaders = board2.onChange((repo) => {
     for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
   });
@@ -7280,8 +7288,8 @@ async function runBoardServer(opts) {
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
     try {
-      const written = JSON.parse(fs9.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs9.rmSync(stateFile);
+      const written = JSON.parse(fs10.readFileSync(stateFile, "utf8"));
+      if (written.pid === state.pid && written.port === state.port) fs10.rmSync(stateFile);
     } catch {
     }
     releaseStartLock(opts.dataRoot);
@@ -7298,7 +7306,7 @@ async function stopBoardServer(dataRoot) {
   const file = serverStateFile(dataRoot);
   let state;
   try {
-    state = JSON.parse(fs9.readFileSync(file, "utf8"));
+    state = JSON.parse(fs10.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -7306,12 +7314,12 @@ async function stopBoardServer(dataRoot) {
     const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
-    fs9.rmSync(file, { force: true });
+    fs10.rmSync(file, { force: true });
     const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs9.rmSync(serverStartLock(dataRoot), { force: true });
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs10.rmSync(serverStartLock(dataRoot), { force: true });
     return false;
   }
-  for (let i = 0; i < 100 && fs9.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 100 && fs10.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
   return true;
 }
 function listen(server, host, port) {
@@ -7357,8 +7365,8 @@ init_kinds();
 init_events();
 init_home();
 import { spawnSync as spawnSync4 } from "node:child_process";
-import fs10 from "node:fs";
-import path10 from "node:path";
+import fs11 from "node:fs";
+import path11 from "node:path";
 
 // src/client/remote.ts
 init_wire();
@@ -8396,6 +8404,75 @@ function unclaimedLines(paths, renames = []) {
   return [`reconciled ${entries.length} written without a claim: ${shown}`];
 }
 
+// src/cli/guides.ts
+import fs8 from "node:fs";
+import path8 from "node:path";
+function parseGuide(text, folder) {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  if (!fm) return null;
+  const lines = fm.split(/\r?\n/);
+  const unquote = (s) => s.trim().replace(/^["'](.*)["']$/, "$1");
+  let skill = folder;
+  let paths = null;
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\w[\w-]*):\s*(.*)$/.exec(lines[i]);
+    if (!m) continue;
+    if (m[1] === "name" && m[2].trim()) skill = unquote(m[2]);
+    if (m[1] !== "paths") continue;
+    const v = m[2].trim();
+    if (v.startsWith("[")) paths = v.replace(/^\[|\]$/g, "").split(",").map(unquote).filter(Boolean);
+    else if (v) paths = [unquote(v)];
+    else {
+      paths = [];
+      while (i + 1 < lines.length && /^\s*-\s*/.test(lines[i + 1])) paths.push(unquote(lines[++i].replace(/^\s*-\s*/, "")));
+    }
+  }
+  if (!paths?.length) return null;
+  return { name: folder.replace(/^guide-/, ""), skill, paths };
+}
+function guidesIn(dir, keep) {
+  let folders;
+  try {
+    folders = fs8.readdirSync(dir).filter(keep).sort();
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const f of folders) {
+    try {
+      const g = parseGuide(fs8.readFileSync(path8.join(dir, f, "SKILL.md"), "utf8"), f);
+      if (g) out.push(g);
+    } catch {
+    }
+  }
+  return out;
+}
+function discoverGuides(toolRoot2, repoRoot) {
+  const shipped = guidesIn(path8.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
+  const project = repoRoot ? guidesIn(path8.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const names = new Set(project.map((g) => g.name));
+  return [...shipped.filter((g) => !names.has(g.name)), ...project];
+}
+function globRegex(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      const slash = glob[i + 2] === "/";
+      re += slash ? "(?:.*/)?" : ".*";
+      i += slash ? 2 : 1;
+    } else if (c === "*") re += "[^/]*";
+    else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`);
+}
+function guidesFor(guides, files) {
+  return guides.filter((g) => g.paths.some((glob) => files.some((f) => globRegex(glob).test(f))));
+}
+var guidesLine = (guides) => guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
+var guidesNamed = (arg) => arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((e) => /^\s*([^:\s]+)\s*:/.exec(e)?.[1]).filter((n) => !!n);
+
 // src/cli/git.ts
 import { spawnSync as spawnSync2 } from "node:child_process";
 var gitAnswer = (cwd, ...argv) => {
@@ -8465,18 +8542,18 @@ function conflictsOf(worktree, onto, reflogMark) {
 // src/cli/worktrees.ts
 init_home();
 import { spawnSync as spawnSync3 } from "node:child_process";
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import os4 from "node:os";
-import path8 from "node:path";
-var WORKTREES_ROOT = path8.join(DATA_ROOT, "worktrees");
+import path9 from "node:path";
+var WORKTREES_ROOT = path9.join(DATA_ROOT, "worktrees");
 var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
-var fold = (s) => CASELESS3 ? path8.resolve(s).toLowerCase() : path8.resolve(s);
+var fold = (s) => CASELESS3 ? path9.resolve(s).toLowerCase() : path9.resolve(s);
 var safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-var worktreeDir = (run3, seat) => path8.join(WORKTREES_ROOT, String(run3), safe(seat));
+var worktreeDir = (run3, seat) => path9.join(WORKTREES_ROOT, String(run3), safe(seat));
 var branchFor = (run3, group, seat) => `swarm/${run3}-${group}/${seat}`;
-var owned = (wt) => !!wt && fold(path8.dirname(path8.dirname(wt))) === fold(WORKTREES_ROOT);
+var owned = (wt) => !!wt && fold(path9.dirname(path9.dirname(wt))) === fold(WORKTREES_ROOT);
 var worktreeDirs = () => {
-  const sub = (d) => fs8.existsSync(d) ? fs8.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path8.join(d, e.name)) : [];
+  const sub = (d) => fs9.existsSync(d) ? fs9.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path9.join(d, e.name)) : [];
   return sub(WORKTREES_ROOT).flatMap(sub);
 };
 var same = (a, b) => fold(a) === fold(b);
@@ -8491,25 +8568,25 @@ var baseAt = (cwd) => {
 function inLinkedWorktree(cwd) {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
   const common = git(cwd, "rev-parse", "--git-common-dir");
-  return !!dir && !!common && !same(dir, path8.resolve(cwd, common));
+  return !!dir && !!common && !same(dir, path9.resolve(cwd, common));
 }
 var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
 var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
 function ensureWorktree(cwd, runId, group, seat, base) {
   const at = worktreeDir(runId, seat);
   const branch = branchFor(runId, group, seat);
-  const top = fs8.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
+  const top = fs9.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
-  if (fs8.existsSync(at) && fs8.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
+  if (fs9.existsSync(at) && fs9.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   run2(cwd, "worktree", "prune");
-  fs8.mkdirSync(path8.dirname(at), { recursive: true });
+  fs9.mkdirSync(path9.dirname(at), { recursive: true });
   const argv = !branchExists(cwd, branch) ? ["-b", branch, at, base] : isAncestor(cwd, branch, base) ? ["-B", branch, at, base] : [at, branch];
   const r = run2(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
 }
 function leftover(wt, into) {
-  if (!fs8.existsSync(wt)) return null;
+  if (!fs9.existsSync(wt)) return null;
   const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
   if (!status.ok) return `git status failed: ${status.err}`;
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
@@ -8519,7 +8596,7 @@ function leftover(wt, into) {
   return null;
 }
 function removeWorktree(wt, repo) {
-  if (!fs8.existsSync(wt)) {
+  if (!fs9.existsSync(wt)) {
     run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
     return null;
   }
@@ -8545,7 +8622,7 @@ function stopLinks(runId, members) {
     const file = linkPidFile(DATA_ROOT, runId, member);
     let pid;
     try {
-      pid = Number(fs8.readFileSync(file, "utf8").trim());
+      pid = Number(fs9.readFileSync(file, "utf8").trim());
     } catch {
       continue;
     }
@@ -8557,7 +8634,7 @@ function stopLinks(runId, members) {
       }
     }
     try {
-      fs8.rmSync(file);
+      fs9.rmSync(file);
     } catch {
     }
   }
@@ -8617,7 +8694,7 @@ var CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
+  `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
 ].join("\n");
 var STATS_USAGE = [
   "usage: swarm stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]",
@@ -8654,16 +8731,16 @@ ${USAGE}`);
 function repoOf(dir) {
   const common = git(dir, "rev-parse", "--git-common-dir");
   if (!common) fail(`not in a git repository: ${dir}`);
-  const abs = path10.resolve(dir, common);
+  const abs = path11.resolve(dir, common);
   try {
-    return fs10.realpathSync.native(abs);
+    return fs11.realpathSync.native(abs);
   } catch {
     return abs;
   }
 }
 function worktreeOf(dir) {
   const top = git(dir, "rev-parse", "--show-toplevel");
-  return top ? path10.resolve(top) : null;
+  return top ? path11.resolve(top) : null;
 }
 function changedIn(worktree) {
   const r = spawnSync4("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
@@ -8704,7 +8781,7 @@ var printReconciled = (unclaimed, flags, renames = []) => {
   if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? path10.dirname(path10.resolve(process.argv[1]));
+var toolRoot = () => process.env.SWARM_ROOT ?? path11.dirname(path11.resolve(process.argv[1]));
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${USAGE}`);
 var runArg = () => {
@@ -8914,21 +8991,28 @@ var emitHeard = async (p, json, human) => {
     if (next) console.log(next);
   });
 };
+var guidesHere = (p) => discoverGuides(toolRoot(), p.worktree ?? worktreeOf(process.cwd()));
+var guidesToTell = async (p, files) => {
+  const matching = guidesFor(guidesHere(p), files);
+  if (!matching.length) return [];
+  const untold = new Set(await board.guidesUntold(p, matching.map((g) => g.name)));
+  return matching.filter((g) => untold.has(g.name));
+};
 var DELIVERED_LINE = "these lines are delivered; the task-end notice is the same event";
 function resolveClaimPath(file, about = false) {
-  if (path10.isAbsolute(file)) return file;
-  const here = path10.resolve(file);
-  if (fs10.existsSync(here)) return here;
+  if (path11.isAbsolute(file)) return file;
+  const here = path11.resolve(file);
+  if (fs11.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  const fromRoot = root ? path10.resolve(root, file) : null;
-  if (fromRoot && fs10.existsSync(fromRoot)) return fromRoot;
+  const fromRoot = root ? path11.resolve(root, file) : null;
+  if (fromRoot && fs11.existsSync(fromRoot)) return fromRoot;
   if (args.has("--new")) return here;
   return fail(`no such file: ${here}${fromRoot && fromRoot !== here ? ` nor ${fromRoot}` : ""}; pass --new if you are creating it${about ? " (--about takes a file not yet on disk with --new)" : ""}`);
 }
 function repoRelative(abs) {
   const root = worktreeOf(process.cwd());
-  const rel = root ? path10.relative(root, abs) : abs;
-  return rel.split(path10.sep).join("/");
+  const rel = root ? path11.relative(root, abs) : abs;
+  return rel.split(path11.sep).join("/");
 }
 function aboutArg() {
   const about = args.flag("--about");
@@ -8941,16 +9025,16 @@ function parseFile(spec) {
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
 function declaredPath(file) {
-  if (path10.isAbsolute(file)) return file;
-  const here = path10.resolve(file);
-  if (fs10.existsSync(here)) return here;
+  if (path11.isAbsolute(file)) return file;
+  const here = path11.resolve(file);
+  if (fs11.existsSync(here)) return here;
   const root = worktreeOf(process.cwd());
-  return root ? path10.resolve(root, file) : here;
+  return root ? path11.resolve(root, file) : here;
 }
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs10.readFileSync(path10.resolve(file), "utf8"));
+    raw = JSON.parse(fs11.readFileSync(path11.resolve(file), "utf8"));
   } catch (e) {
     return fail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9120,7 +9204,7 @@ ${USAGE}`);
     }
     case "close": {
       const run3 = runArg();
-      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree) && fs10.existsSync(w.worktree));
+      const trees = (await board.worktrees(run3)).filter((w) => owned(w.worktree) && fs11.existsSync(w.worktree));
       await board.closeRun(run3);
       if (trees.length) stopLinks(run3, trees.map((w) => w.member));
       const swept = trees.map((w) => ({ worktree: w.worktree, member: w.member, ...sweep(w.worktree, w.repo, w.base) }));
@@ -9252,7 +9336,7 @@ ${USAGE}`);
       const p = await caller();
       if (await answeredClosed(p)) break;
       const file = args.flag("--file");
-      const body = (file ? fs10.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const body = (file ? fs11.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
@@ -9391,7 +9475,7 @@ ${rearm}` : rearm;
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf(path10.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf(path11.resolve(args.flag("--repo") ?? process.cwd()));
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -9420,9 +9504,12 @@ ${rearm}` : rearm;
       const verdict = await board.checkEdit(p, abs, { interface: args.has("--interface") });
       if (!verdict.allowed) process.exitCode = 3;
       const also = verdict.allowed && verdict.notice ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} \xB7 ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ") : "";
-      await emitHeard(p, verdict, () => {
+      const told = verdict.allowed ? await guidesToTell(p, [rel]) : [];
+      const guidesNow = guidesLine(told);
+      await emitHeard(p, told.length ? { ...verdict, guides: told } : verdict, () => {
         if (!verdict.allowed) return console.log(verdict.refusal);
         console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
+        if (guidesNow) console.log(guidesNow);
       });
       break;
     }
@@ -9431,7 +9518,7 @@ ${rearm}` : rearm;
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       const released = [];
-      const targets = all ? (await board.heldBy(p)).map((f) => path10.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
+      const targets = all ? (await board.heldBy(p)).map((f) => path11.resolve(worktreeOf(process.cwd()) ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
       if (all && !targets.length) {
         emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
         break;
@@ -9460,10 +9547,12 @@ ${rearm}` : rearm;
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", onto, "HEAD") ?? "HEAD") : [];
       const reflogMark = p.worktree ? headReflogLength(p.worktree) ?? void 0 : void 0;
-      const r = await board.lockMerge(p, onto, reflogMark);
-      emit({ member: p.name, ...r, reconciled, flags }, () => {
+      const guides = guidesFor(guidesHere(p), reconciled);
+      const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
+      emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(r.granted ? "granted: merge, then swarm merged <sha> --files <path>..." : `held by ${r.holder}: swarm wait --mentions for its merged event`);
+        if (r.granted && guides.length) console.log(`guides of this merge: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`);
+        console.log(r.granted ? `granted: merge, then swarm merged <sha> --files <path>...${guides.length ? ' --guides "..."' : ""}` : `held by ${r.holder}: swarm wait --mentions for its merged event`);
       });
       break;
     }
@@ -9481,9 +9570,13 @@ ${rearm}` : rearm;
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
       }
+      const guidesArg = args.flag("--guides")?.trim();
+      const unsettled = (lock?.guides ?? []).filter((g) => !guidesNamed(guidesArg ?? "").includes(g));
+      if (unsettled.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${unsettled.join(", ")}. Pass --guides "${unsettled.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await board.merged(p, sha, files.map((f) => path10.resolve(f)), conflicts);
-      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
+      const sharers = await board.merged(p, sha, files.map((f) => path11.resolve(f)), conflicts);
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `
+guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.map(
@@ -9506,7 +9599,7 @@ ${rearm}` : rearm;
       const unread = await board.unreadMentions(p);
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
-      const mine = owned(p.worktree) && fs10.existsSync(p.worktree) ? p.worktree : null;
+      const mine = owned(p.worktree) && fs11.existsSync(p.worktree) ? p.worktree : null;
       const left = mine ? leftover(mine, base) : null;
       if (mine && left) {
         const who = `--as ${shellWord(p.name)}`;
@@ -9534,7 +9627,7 @@ ${rearm}` : rearm;
 ${USAGE}`);
       const known = await board.worktrees();
       const dirs = worktreeDirs();
-      const fold2 = (s) => process.platform === "win32" ? path10.resolve(s).toLowerCase() : path10.resolve(s);
+      const fold2 = (s) => process.platform === "win32" ? path11.resolve(s).toLowerCase() : path11.resolve(s);
       const out = dirs.map((dir) => {
         const w = known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1);
         if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
@@ -9563,7 +9656,7 @@ ${USAGE}`);
         }
       });
       const stats = await board.stats({
-        repo: repoOf(path10.resolve(args.flag("--repo") ?? process.cwd())),
+        repo: repoOf(path11.resolve(args.flag("--repo") ?? process.cwd())),
         ...run3 !== void 0 ? { run: run3 } : {},
         // a named run is read whatever its age: no default period (plan D40)
         ...all ? {} : since !== void 0 ? { since } : run3 !== void 0 ? {} : { since: "30d" },

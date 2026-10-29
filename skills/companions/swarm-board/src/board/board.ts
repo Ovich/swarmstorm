@@ -298,6 +298,8 @@ export interface Board {
   idle(p: Participant): boolean;
   /** How many undelivered messages wake `p` (mentions, urgent posts, its subscribed events): `end` refuses while any. */
   unreadMentions(p: Participant): number;
+  /** Of `guides`, those not yet named to `p`, now marked named: a guide is told to a member once. */
+  guidesUntold(p: Participant, guides: string[]): string[];
   /** The run's current phase, as `phase` last set it; null until one is opened. Throws on an unknown run. */
   currentPhase(run: RunId): Phase | null;
   /** The current phase for `p`'s header (B15): `first` the first time it is asked for this member since the phase
@@ -415,7 +417,8 @@ export interface Board {
   reconcileWrites(p: Participant, changed: string[]): Flag[];
   release(p: Participant, path: string): void;
   /** `reflogMark`: the length of the caller's HEAD reflog at the call, kept with a new grant so `merged` replays only a later rebase (D36). */
-  lockMerge(p: Participant, onto?: string, reflogMark?: number): { granted: true } | { granted: false; holder: string };
+  /** `guides`: the guides the branch's changes fall under, which `merged --guides` must settle. */
+  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
   /** Releases the lock; tells whoever holds or declared one of `files` to rebase onto `sha`,
    *  every plan on the repository when one of them is an interface (D26). Returns, for each
    *  merged path, every other member that holds it, or held it during `p`'s run (D63); once `conflicts` are known,
@@ -709,6 +712,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("messages", "meta", "meta TEXT");
   // the branch a merge lands in, named by merge-lock --onto (D9)
   upkeep("merge_locks", "onto", "onto TEXT");
+  // the guides merge-lock listed for the branch, JSON; merged refuses until each is settled
+  upkeep("merge_locks", "guides", "guides TEXT");
   // the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
   upkeep("seats", "link", "link TEXT");
@@ -759,6 +764,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   // ended on an idle answer: the seat stays in the run's later phases, owing until a member is dispatched into it again
   upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
+  // the architecture guides already named to a member, each once
+  db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   // idea 2: a carried message past CARRY_MAX_MS for a member, marked by the tick: it wakes that member's wait
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   // idea 4: named locks, store-wide (a port is the machine's, not a repository's), and who waits on each
@@ -2361,6 +2368,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return unreadOf(p.id);
     },
 
+    guidesUntold(p, guides) {
+      const tell = db.prepare("INSERT OR IGNORE INTO guides_told (participant, guide) VALUES (?, ?)");
+      return transaction(() => guides.filter((g) => tell.run(p.id, g).changes > 0));
+    },
+
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
       const column = mentionsOnly ? "listening" : "waiting";
@@ -2446,8 +2458,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       claims.release(gated(live(p), "release"), file);
     },
 
-    lockMerge(p, onto, reflogMark) {
-      return claims.lockMerge(gated(live(p), "merge-lock"), onto, reflogMark);
+    lockMerge(p, onto, reflogMark, guides) {
+      return claims.lockMerge(gated(live(p), "merge-lock"), onto, reflogMark, guides);
     },
 
     merged(p, sha, files, conflicts) {

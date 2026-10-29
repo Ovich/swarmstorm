@@ -26,7 +26,7 @@ export interface Claims {
   reconcileWrites(p: Participant, changed: string[]): Flag[];
   release(p: Participant, file: string): void;
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
-  lockMerge(p: Participant, onto?: string, reflogMark?: number): { granted: true } | { granted: false; holder: string };
+  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
   /** After a refused claim, `m` (by `p`, about the path, mentioning every holder, in it or before it) makes `p` a sharer, as the second claim would (D7). */
   claimByPost(p: Participant, m: Message): PostClaim | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
@@ -54,7 +54,7 @@ export interface Claims {
 export type PostClaim = { path: string; sharedWith: string[] };
 /** `grantedAt` ISO; `onto` null for a lock taken without a branch; `reflogMark` the holder's HEAD reflog
  *  length at the grant, null when none was given (D36). */
-export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null };
+export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[] };
 
 type Row = Record<string, unknown>;
 type ClaimRow = { participant: number; kind: string; since: number };
@@ -329,7 +329,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       });
     },
 
-    lockMerge(me, onto, reflogMark) {
+    lockMerge(me, onto, reflogMark, guides) {
       return transaction(() => {
         const r = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo) as Row | undefined;
         if (r && Number(r.participant) !== me.id && isLive(Number(r.participant))) {
@@ -342,6 +342,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
+          if (guides) db.prepare("UPDATE merge_locks SET guides = ? WHERE repo = ?").run(JSON.stringify(guides), me.repo);
           // a lock granted before the records began has no turn yet: it gets one, at the grant
           grantTurn(me, String((db.prepare("SELECT at FROM merge_locks WHERE repo = ?").get(me.repo) as Row).at), false);
           return { granted: true as const };
@@ -350,7 +351,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(me.repo);
         // the mark is the grant's: a holder asking again keeps it, as it keeps the grant's time (D36)
         const at = now();
-        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark) VALUES (?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null);
+        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
         grantTurn(me, at, true);
         bump(me.repo);
         return { granted: true as const };
@@ -358,9 +359,9 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     },
 
     heldMergeLock(me) {
-      const r = db.prepare("SELECT at, onto, reflog_mark FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
+      const r = db.prepare("SELECT at, onto, reflog_mark, guides FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
       return r
-        ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark) }
+        ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark), guides: r.guides == null ? [] : (JSON.parse(String(r.guides)) as string[]) }
         : null;
     },
 

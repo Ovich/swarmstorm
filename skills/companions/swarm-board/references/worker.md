@@ -39,6 +39,8 @@ the foreground: an agent that ends its turn on a background task of its own is n
    repository-relative. Read its answer and do what it says (*Claiming a file*). A task that
    changes no file (research, a review, a draft) claims nothing.
    A rename is two claims: the old path, and the new one with --new.
+   **A claim's answer may name guides** (`guides for this work: …`): the project's architecture
+   guides that file falls under, each named once. Load each skill it names before you edit.
 5. **A message for you arrives** (your listener's output, or a message the orchestrator sends you
    directly): act on it, answer on the thread if it asks (`$S post "@<them> …" --about <path>`; a
    message ending on `swarm agree …` is answered with that agreement, *Sharing a file*), then go
@@ -54,10 +56,13 @@ the foreground: an agent that ends its turn on a background task of its own is n
       is yours, but the other worker hears of it: `merged` ends, for each such file, on `if you
       resolved a conflict in <file>, tell them: swarm post "@<them> I resolved <file>: <how>"
       --about <file>`. For each file you resolved, run that post with `<how>` filled in.
-   4. Run the task's done-when on the rebased branch, then fast-forward `<target>` from your own
+   4. **Guides**: a grant that names `guides of this merge` lists the guides your changes fall
+      under; check the change against each, then settle each in step 6.
+   5. Run the task's done-when on the rebased branch, then fast-forward `<target>` from your own
       worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
-   5. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`: the
+   6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with
+      `--guides "<name>:ok|n/a <why>, …"` naming every guide the grant listed (refused otherwise): the
       report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
       orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
       change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.

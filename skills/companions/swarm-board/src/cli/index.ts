@@ -13,6 +13,7 @@ import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines, type Rename } from "./unclaimed.ts";
+import { discoverGuides, guidesFor, guidesLine, guidesNamed, type Guide } from "./guides.ts";
 import { git, worktreeHolding } from "./git.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
@@ -70,7 +71,7 @@ const CODE_USAGE = [
   "  claim   [--as <member>] <path> [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
   "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
   "  merge-lock --onto <branch> [--as <member>]                      # one merge at a time per repository; claims or flags what your branch wrote unclaimed",
-  "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
+  "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
 ].join("\n");
 
 /** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
@@ -496,6 +497,17 @@ const emitHeard = async (p: Participant, json: object, human: string | (() => vo
     else human();
     if (next) console.log(next);
   });
+};
+
+/** The guides of the caller's repository: shipped beside this tool, and the project's own. */
+const guidesHere = (p: Participant): Guide[] => discoverGuides(toolRoot(), p.worktree ?? worktreeOf(process.cwd()));
+
+/** The guides `files` fall under that `p` has not been told of; marked told. */
+const guidesToTell = async (p: Participant, files: string[]): Promise<Guide[]> => {
+  const matching = guidesFor(guidesHere(p), files);
+  if (!matching.length) return [];
+  const untold = new Set(await board.guidesUntold(p, matching.map((g) => g.name)));
+  return matching.filter((g) => untold.has(g.name));
 };
 
 /** The last line of a `wait --mentions` that delivered (F28). */
@@ -1096,9 +1108,13 @@ ${rearm}` : rearm;
         verdict.allowed && verdict.notice
           ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} · ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ")
           : "";
-      await emitHeard(p, verdict, () => {
+      // the guides this file falls under that the member has not been told of yet, each once per member
+      const told = verdict.allowed ? await guidesToTell(p, [rel]) : [];
+      const guidesNow = guidesLine(told);
+      await emitHeard(p, told.length ? { ...verdict, guides: told } : verdict, () => {
         if (!verdict.allowed) return console.log(verdict.refusal);
         console.log(also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`);
+        if (guidesNow) console.log(guidesNow);
       });
       break;
     }
@@ -1142,10 +1158,13 @@ ${rearm}` : rearm;
       const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", onto, "HEAD") ?? "HEAD") : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.worktree ? (headReflogLength(p.worktree) ?? undefined) : undefined;
-      const r = await board.lockMerge(p, onto, reflogMark);
-      emit({ member: p.name, ...r, reconciled, flags }, () => {
+      // the guides the branch's changes fall under: merged refuses until each is settled
+      const guides = guidesFor(guidesHere(p), reconciled);
+      const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
+      emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(r.granted ? "granted: merge, then swarm merged <sha> --files <path>..." : `held by ${r.holder}: swarm wait --mentions for its merged event`);
+        if (r.granted && guides.length) console.log(`guides of this merge: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; check your change against each, then settle each in merged --guides "<name>:ok|n/a <why>, ..."`);
+        console.log(r.granted ? `granted: merge, then swarm merged <sha> --files <path>...${guides.length ? ' --guides "..."' : ""}` : `held by ${r.holder}: swarm wait --mentions for its merged event`);
       });
       break;
     }
@@ -1166,9 +1185,13 @@ ${rearm}` : rearm;
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
       }
+      // every guide merge-lock listed is settled, ok or n/a with why, before the merge is recorded
+      const guidesArg = args.flag("--guides")?.trim();
+      const unsettled = (lock?.guides ?? []).filter((g) => !guidesNamed(guidesArg ?? "").includes(g));
+      if (unsettled.length) fail(`merged: --guides must settle every guide merge-lock listed; missing: ${unsettled.join(", ")}. Pass --guides "${unsettled.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`);
       const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
-      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
       // a merge past the lock is recorded in the run, with its why
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       // the post after a resolved conflict, prompted by the command just run (D63)
