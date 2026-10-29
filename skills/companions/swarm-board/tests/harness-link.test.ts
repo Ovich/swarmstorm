@@ -151,6 +151,7 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
   // the page's reading, straight to the server: no link of S3 is started by it
   const reader = await connectBoard({ dataRoot: h.r.home });
   let state = "";
+  let goneEvent = false;
   try {
     const repo = (await reader.participant(h.member.name))!.repo;
     while (Date.now() - killedAt < 35000) {
@@ -158,15 +159,19 @@ test("a member whose only link is killed reads gone within 35 s and draws no sta
       if (state === "gone") break;
       await new Promise((res) => setTimeout(res, 250));
     }
+    // the gone event follows at the server's next tick: waited for in the store, as the roster was, not by a timer
+    // of the verb's own (a loaded machine runs few `deliver` spawns in a few seconds, S31)
+    for (const end = Date.now() + 10000; state === "gone" && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
+      goneEvent = (await reader.snapshot(repo)).events.some((e) => e.event === "gone" && e.body.startsWith("gone harness-plan/S3"));
+      if (goneEvent) break;
+    }
   } finally {
     reader.close();
   }
   assert.equal(state, "gone", `S3 reads ${state} ${Date.now() - killedAt} ms after its link was killed`);
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
-  // the gone event follows at the server's next tick
-  let told = "";
-  for (const end = Date.now() + 5000; !/gone harness-plan\/S3/.test(told) && Date.now() < end; await new Promise((res) => setTimeout(res, 250)))
-    told += h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
+  assert.ok(goneEvent, "the server's tick posted gone harness-plan/S3");
+  const told = h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
   assert.match(told, /gone harness-plan\/S3/);
   assert.doesNotMatch(told, /stalled/);
 });
