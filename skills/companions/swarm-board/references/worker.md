@@ -74,8 +74,9 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 
 ## Along the way
 
-- **One command per shell call**, never chained with `&&`, `;` or pipes into git: a worktree
-  guard refuses what it cannot verify stays in your worktree.
+- **One command per shell call**: run from the worktree root, no `cd … &&`, no pipes into
+  xargs, no `$(…)`; `git -C <dir>` instead of cd. The harness's worktree guard refuses what it
+  cannot verify stays in your worktree, and each refusal costs a retry.
 - **`$S doing "<text>"`** at each step another worker would want to know: the module you are
   in, a test going green, a merge coming.
 - **A mention that asks you something is answered before you go on.**
