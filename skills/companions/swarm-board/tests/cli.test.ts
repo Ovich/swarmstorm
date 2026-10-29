@@ -1316,3 +1316,16 @@ test("end refuses while a mention is unread, naming the deliver line; ends once 
   run("deliver", "--as", "review-tool/S3");
   assert.equal(run("end", "--as", "review-tool/S3").status, 0);
 });
+
+test("seat is the verb; slice is its silent alias, accepted but never shown in --help (AGENTS rule 12)", () => {
+  const id = String(openRun());
+  const added = run("slice", "add", "S9", "--run", id);
+  assert.equal(added.status, 0, added.stderr);
+  assert.match(added.stdout, /S9 added/);
+  const set = run("slice", "S9", "--run", id, "--state", "running");
+  assert.equal(set.status, 0, set.stderr);
+  assert.match(set.stdout, /S9 running/);
+  const help = run("--help");
+  assert.match(help.stdout, /^ {2}seat +add /m);
+  assert.doesNotMatch(help.stdout, /^ {2}slice /m);
+});
