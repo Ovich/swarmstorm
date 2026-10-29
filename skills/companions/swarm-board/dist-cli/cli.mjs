@@ -4440,7 +4440,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     thread(p, name) {
       const fresh = participantById(p.id);
       const phase = name ?? phaseOf(runRow(fresh.run))?.name;
-      if (!phase) return [];
+      if (!phase) return this.runThread(fresh.run);
       return phasePosts(fresh.run, phase);
     },
     runThread(run3, name) {
@@ -9097,7 +9097,8 @@ function parseArgs(argv) {
     positional: rest.filter((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(rest[i - 1] ?? "") && !listed.has(i)),
     flag: (name) => {
       const i = rest.indexOf(name);
-      return i >= 0 ? rest[i + 1] : void 0;
+      const value = i >= 0 ? rest[i + 1] : void 0;
+      return value === void 0 || value.startsWith("--") ? void 0 : value;
     },
     flags: (name) => rest.flatMap((a, i) => a === name && rest[i + 1] ? [rest[i + 1]] : []),
     list: (name) => {
@@ -9441,10 +9442,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   phaseShort: (name, thread) => `phase ${name} (unchanged; its text: ${thread})`,
   phasePaused: (head, why) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
   pauseWhy: (person, text) => person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : "",
-  owedOpen: (name, text, read, done) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then: ${done}`,
-  owedBrief: (name, read, done) => `phase ${name} is yours: ${read}Do your part now, then: ${done}`,
+  owedOpen: (name, text, read, done) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then mark it done: ${done}`,
+  owedBrief: (name, read, done) => `you owe phase ${name}: ${read}${read ? "Do" : "do"} your part, then mark it done: ${done}`,
   readWholePhase: (thread) => `Read the whole phase first: ${thread}. `,
-  noPostYet: (name) => `no post yet in phase ${name}`,
+  noPostYet: (name) => name === null ? "no post yet in this run" : `no post yet in phase ${name}`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   // ── a post's @-names (D63) ──
@@ -9477,7 +9478,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   parked: (member, cli, seat, as) => `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
   unparked: (member) => `${member} is unparked: its alerts and its share of all-done are back`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
-  packVerbRefused: (verb, seatKind) => `${verb}: refused, a ${seatKind} has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
+  packVerbRefused: (verb, seatKind) => `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run3, wait) => `end: refused, run ${run3} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli, as, run3) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
@@ -9510,11 +9511,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the seat's commands at its join (D21, D36) ──
   /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
   verifierAs: (as) => `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
-  verifierCommands: (cli, as, holdMs) => [
+  verifierCommands: (cli, as) => [
     `${cli} post --file <findings.md> --as ${as}    # your verdict and findings table, to @orchestrator`,
     `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
-    `${cli} done <phase> --as ${as}`,
-    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`
+    `${cli} done <phase> --as ${as}`
   ],
   seatCommands: (cli, as, holdMs) => [
     `${cli} post "\u2026" --about <D id> --as ${as}`,
@@ -9525,7 +9525,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── a lock granted, and status's forgotten run ──
   unlockWhenDone: (cli, name, as) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
   // ── board-split D36: a seat's state is derived, never set ──
-  seatStateDerived: (cli, seat) => `seat: --state is gone (D36): a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" (${cli} unblock ${seat} lifts it); finished: ${cli} end --seat ${seat}; kept with no agent: ${cli} park ${seat}`,
+  seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
   forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
@@ -9568,7 +9568,7 @@ var joinStep = (s, showedPosts) => {
 };
 var heardStep = (s) => {
   if (s.ended || s.listenerRunning) return null;
-  if (s.listens !== "foreground") return nextStep(s, true);
+  if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
   return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 var phaseHeaders = (s, showPause = true) => {
@@ -9781,7 +9781,7 @@ ${owes}` : rearm;
     case "thread": {
       const headers = phaseHeaders(s);
       const owes = owedLine(s, { thread: false, brief: !!headers.printed });
-      const none = r.shown.length ? [] : [WORDING.noPostYet(r.phase ?? s.phase?.name ?? "-")];
+      const none = r.shown.length ? [] : [WORDING.noPostYet(r.phase ?? s.phase?.name ?? null)];
       return { lines: [...headers.printed ? [headers.printed] : [], ...none, ...shownLines(r.shown), ...owes ? [owes] : []], next: owes, phase: headers.full };
     }
     case "done": {
@@ -10294,7 +10294,7 @@ ${verbHelp()}`);
       const id = args.positional[0] ?? fail(`seat: which seat?
 ${verbHelp()}`);
       refuseTranscriptFlag("seat");
-      fail(WORDING.seatStateDerived(self().join(" "), shellWord2(id)));
+      fail(WORDING.seatStateDerived(self().join(" "), shellWord2(id), asWord()));
     }
     case "close": {
       const run3 = runArg();
@@ -10360,7 +10360,7 @@ ${verbHelp()}`);
     case "pause":
     case "resume": {
       const p = await caller();
-      const person = args.verb === "pause" ? args.flag("--person") : void 0;
+      const person = args.verb === "pause" && args.has("--person") ? args.flag("--person") ?? args.positional.join(" ") : void 0;
       const text = person ?? args.positional.join(" ");
       const cli = self().join(" ");
       if (args.verb === "pause") {
@@ -10412,7 +10412,7 @@ ${verbHelp()}`);
       const shared = member.pack === null;
       const verifier = shared && member.verify;
       const as = verifier ? WORDING.verifierAs(member.name) : shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
-      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord2(member.name), FOREGROUND_WAIT_MS) : shared ? seatCommands(member.name) : null;
+      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord2(member.name)) : shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const waiting = await board.deliverMentions(member);
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;

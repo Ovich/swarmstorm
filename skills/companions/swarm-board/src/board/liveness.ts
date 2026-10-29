@@ -85,7 +85,8 @@ export const readTranscript: TranscriptReader = (file, from) => {
 /** Every member but the orchestrator `waiting`: an `idle` to the orchestrator at once, then again after each IDLE_MS while it holds (swarm-relay D34). */
 export const IDLE_MS = 15 * 60 * 1000;
 /** A member whose link has sent no activity this long after its join has no transcript: named once, its state presence only (D33). */
-export const NO_TRANSCRIPT_MS = 30 * 1000;
+// SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
+export const NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1000;
 /** The default stall threshold of a run, in ms: a member silent this long is `quiet` (swarm-relay D9, D11). */
 export const STALL_MS_DEFAULT = 60000;
 /** Readings older than this are pruned. */

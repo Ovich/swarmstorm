@@ -43,7 +43,7 @@ test("golden code flow: two workers, one run onto main", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-golden-code-"));
   const repo = path.join(home, "repo");
   fs.mkdirSync(repo, { recursive: true });
-  const env = { ...process.env, SWARM_ROOT: home, SWARMSTORM_HOME: home, SWARM_NO_POLLER: "1", GIT_EDITOR: "true" };
+  const env = { ...process.env, SWARM_ROOT: home, SWARMSTORM_HOME: home, SWARM_NO_POLLER: "1", SWARM_NO_TRANSCRIPT_MS: String(60 * 60 * 1000), GIT_EDITOR: "true" };
   const git = (cwd: string, ...argv: string[]) => {
     const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...argv], { cwd, encoding: "utf8", env });
     assert.equal(r.status, 0, `git ${argv.join(" ")}: ${r.stderr}`);
