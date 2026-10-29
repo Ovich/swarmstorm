@@ -77,8 +77,15 @@ test("a member row from before the registry reads as its kind's default", async 
   }
 });
 
+// interim until P3 (D13): T5 left src/cli/index.ts the one import of the worktrees entry; P3 removes this exception
+const INTERIM_CLI_PACK_IMPORTS: Record<string, string[]> = { "index.ts": ["../packs/code/worktrees.ts"] };
+
 test("no file under src/cli/ imports src/packs/ (D9)", () => {
   const cli = path.resolve(import.meta.dirname, "..", "src", "cli");
   const files = fs.readdirSync(cli, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".ts"));
-  for (const f of files) assert.doesNotMatch(fs.readFileSync(path.join(cli, f), "utf8"), /from\s+["'][^"']*\/packs\//, f);
+  for (const f of files) {
+    const allowed = INTERIM_CLI_PACK_IMPORTS[f.split(path.sep).join("/")] ?? [];
+    const imported = [...fs.readFileSync(path.join(cli, f), "utf8").matchAll(/from\s+["']([^"']*\/packs\/[^"']*)["']/g)].map((m) => m[1]);
+    assert.deepEqual(imported.filter((i) => !allowed.includes(i)), [], f);
+  }
 });
