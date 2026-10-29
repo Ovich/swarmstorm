@@ -16,8 +16,9 @@ const PINNED = path.join(HERE, "pinned");
 const UPDATING = process.env.GOLDEN_UPDATE === "1";
 
 /** Who answers: the run's orchestrator, a worker of a task run (background listener, own worktree),
- *  a seat of a brainstorm run (foreground waits, shared checkout). */
-export type Role = "orchestrator" | "worker" | "seat";
+ *  a seat of a brainstorm run (foreground waits, shared checkout); beyond ROLES, a verifier seat of a task run
+ *  (seat row role "verifier", busyMax 300000) and a brainstorm seat whose row has no role (board-split D11). */
+export type Role = "orchestrator" | "worker" | "seat" | "verifier" | "seat-norole";
 /** The member's situation when the verbs are called. */
 export type Situation = "idle" | "owes-first" | "owes-again" | "paused" | "listening" | "closed";
 
@@ -25,7 +26,10 @@ export const ROLES: Role[] = ["orchestrator", "worker", "seat"];
 export const SITUATIONS: Situation[] = ["idle", "owes-first", "owes-again", "paused", "listening", "closed"];
 
 const GROUP = "g";
-const SEAT_OF: Record<Exclude<Role, "orchestrator">, string> = { worker: "w1", seat: "s1" };
+const SEAT_OF: Record<Exclude<Role, "orchestrator">, string> = { worker: "w1", seat: "s1", verifier: "v1", "seat-norole": "s1" };
+/** The seat row each role's run is opened with, beyond its id and blockers. */
+const SEAT_ROW_OF: Partial<Record<Role, object>> = { verifier: { role: "verifier", busyMax: 300000 } };
+const isBrainstormRole = (role: Role) => role === "seat" || role === "seat-norole";
 
 /** A verb's answer as pinned: the exit code, stdout, then stderr when there is any. */
 export type Answer = { status: number | null; text: string };
@@ -80,10 +84,10 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stderr}${r.stdout}`);
     return r.stdout;
   };
-  const kind = role === "seat" ? "brainstorm" : "task";
-  const seatId = role === "seat" ? SEAT_OF.seat : SEAT_OF.worker;
+  const kind = isBrainstormRole(role) ? "brainstorm" : "task";
+  const seatId = role === "orchestrator" ? SEAT_OF.worker : SEAT_OF[role];
   const seats = path.join(home, "seats.json");
-  fs.writeFileSync(seats, JSON.stringify([{ id: seatId, blockers: [] }]));
+  fs.writeFileSync(seats, JSON.stringify([{ id: seatId, blockers: [], ...SEAT_ROW_OF[role] }]));
   const opened = raw(["open", "--kind", kind, "--group", GROUP, "--title", "T", "--seats", seats, "--onto", "main"]);
   assert.equal(opened.status, 0, opened.stderr);
   const runId = opened.stdout.split("\n")[0].trim();

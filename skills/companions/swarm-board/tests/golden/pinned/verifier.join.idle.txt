@@ -1,0 +1,10 @@
+exit 0
+you are g/v1, <nick:v1>: @v1 or @<Nick:v1> mentions you
+orchestrator <nick:orchestrator>: joined
+v1 <nick:v1>: joined
+g/orchestrator  run 1  quiet  <n> unread  doing: -  on: ended, stale, all-joined, done (carried), joined (carried), idle (carried)
+<nick:v1> · g/v1  run 1  quiet  doing: x  busy max: 300 s (non-shell calls)
+your worktree: <home>/repo/.git/swarm/worktrees/1/v1 (branch swarm/1-g/v1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C <home>/repo/.git/swarm/worktrees/1/v1, never cd into it; pass --as g/v1 on every call
+posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>
+start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/v1
+nothing yet; wait again (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/v1 --timeout 170000

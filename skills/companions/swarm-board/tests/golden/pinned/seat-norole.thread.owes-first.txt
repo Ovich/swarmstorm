@@ -1,0 +1,5 @@
+exit 0
+phase build: build the thing
+#<seq> g/s1  <ts>
+a note
+phase build is yours: Do your part now, then: node <cli> done build --as g/s1

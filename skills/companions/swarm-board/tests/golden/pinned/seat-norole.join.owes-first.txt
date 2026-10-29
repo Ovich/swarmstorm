@@ -1,0 +1,15 @@
+exit 0
+you are g/s1, <nick:s1>: @s1 or @<Nick:s1> mentions you
+orchestrator <nick:orchestrator>: joined
+s1 <nick:s1>: joined
+g/orchestrator  run 1  quiet  <n> unread  doing: -  on: agreement, endorsement, ended, stale, all-joined, done (carried), joined (carried), idle (carried)
+<nick:s1> · g/s1  run 1  quiet  <n> unread  doing: x
+pass --as g/s1 on every call: this checkout is shared, the board cannot tell you apart
+node <cli> post "…" --about <D id> --as g/s1
+node <cli> agree "…" --about <D id> --as g/s1
+node <cli> endorse <seq> --as g/s1
+node <cli> wait --mentions --as g/s1 --timeout 170000    # in the foreground, when waiting; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty
+posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>
+start your link now, in the background (your harness's background task): node <cli> link --run 1 --as g/s1
+phase build is open and asks: build the thing. Read the whole phase first: node <cli> thread --as g/s1. Do your part now, then: node <cli> done build --as g/s1
+only then wait, in the foreground (never a background listener: a seat that ends its turn is gone; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/s1 --timeout 170000
