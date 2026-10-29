@@ -55,6 +55,8 @@ file the person was looking for. Refresh the cache with
 
 11. **MUST NOT ship a harness hook (`hooks/hooks.json`, a `hooks` key in the plugin manifest, any PreToolUse, PostToolUse, Stop or other event hook), nor write to the person's harness settings (`settings.json`, `settings.local.json`, user or project).** A plugin hook runs in every session on the machine, in every project, whether or not a skill of this collection is in use, and a settings change outlives the session that made it. What a skill needs from the agent goes through the skill, its CLI's answers and the agent's own tools. A swarm member hears the board through its own listener or its own wait, and the orchestrator may always message a member directly; no skill forbids that.
 
+12. **MUST name one concept with one word across the skills, the CLI and its answers: a `seat` is a place in a run (a worker, a verifier, a brainswarm role are seats), a `member` is the agent holding a seat, a `slice` is only a plan's cut of work, which a seat carries out; never `runner`.** Two words for one thing read as two things, and an agent looks for the second. A seat's role may be absent; the seats file always exists, empty for a run with none declared.
+
 ## aiview
 
 5. **MUST bundle a new runtime dependency into `dist-cli/` through `skills/companions/aiview/build.mjs`, never require `node_modules` at runtime.** An installed plugin has no `node_modules`; a bare import fails only for users. `parse5` and `mermaid` are bundled this way, the checker as its own bundle.
