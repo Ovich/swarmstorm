@@ -1302,3 +1302,15 @@ test("join prints the run's composition after the you-are line, --json carries i
   const roster = run("roster").stdout;
   assert.match(roster, /^ {2}seat architect /m);
 });
+
+test("end refuses while a mention is unread, naming the deliver line; ends once it is read", () => {
+  const id = openRun();
+  assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "x").status, 0);
+  run("deliver", "--as", "review-tool/S3");
+  run("post", "@review-tool/S3 one more thing", "--as", "review-tool/orchestrator");
+  const refused = run("end", "--as", "review-tool/S3");
+  assert.notEqual(refused.status, 0);
+  assert.match(refused.stderr, /you have 1 unread mention: run `.* deliver --as review-tool\/S3` first/);
+  run("deliver", "--as", "review-tool/S3");
+  assert.equal(run("end", "--as", "review-tool/S3").status, 0);
+});

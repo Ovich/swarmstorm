@@ -55,7 +55,7 @@ test("four members, one gone, the three others done: all-done once, naming the g
   assert.equal(all.length, 1);
   assert.equal(all[0].body, "all done diverge: every member is done (3/3) (1 gone: idea/d); open the next phase");
   const progress = board.phaseProgress(run.id)!;
-  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"] });
+  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], dormant: [] });
   assert.equal(progressText(progress), "3/3 done, 1 gone");
 });
 
@@ -86,11 +86,11 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
   board.livenessTick(run.id, at(base, 30), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], dormant: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
   board.livenessTick(run.id, at(base, 31), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], dormant: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
   board.livenessTick(run.id, at(base, 32), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");

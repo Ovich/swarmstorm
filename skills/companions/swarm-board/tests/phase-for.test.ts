@@ -81,3 +81,40 @@ test("a member is idle after its second empty wait --mentions in a row while it 
   assert.equal(board.idle(architect), true);
   assert.equal(board.idle(orchestrator), false);
 });
+
+test("an idle-ended seat is dormant: a later phase counts it, all-done waits for it, and it is named", async () => {
+  const { r, orchestrator, architect, skeptic } = run();
+  board.phase(orchestrator, "p1", "first");
+  board.done(architect, "p1");
+  board.done(skeptic, "p1");
+  board.deliver(skeptic);
+  await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 50 });
+  await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 50 });
+  assert.equal(board.idle(skeptic), true);
+  board.end(skeptic);
+  board.phase(orchestrator, "p2", "second");
+  const d = board.done(architect, "p2");
+  assert.deepEqual([d.progress.done, d.progress.of, d.all], [1, 2, false]);
+  assert.deepEqual(d.progress.dormant, ["idea/skeptic"]);
+  // dispatched again into the same seat: no longer dormant, its done completes the phase
+  const back = board.join({ run: r.id, seat: "skeptic", doing: "x", files: [] }).member;
+  assert.deepEqual(board.phaseProgress(r.id)?.dormant, []);
+  assert.equal(board.done(back, "p2").all, true);
+});
+
+test("phase --for refuses a seat the run does not have", () => {
+  const { orchestrator } = run();
+  assert.throws(() => board.phase(orchestrator, "p", "x", { for: ["idea/nobody"] }), /no seat of run \d+: nobody/);
+});
+
+test("an unread mention: not idle, and counted for end's refusal", async () => {
+  const { orchestrator, architect } = run();
+  await board.wait(architect, { mentionsOnly: true, timeoutMs: 50 });
+  await board.wait(architect, { mentionsOnly: true, timeoutMs: 50 });
+  assert.equal(board.idle(architect), true);
+  board.post(orchestrator, "@idea/architect one more");
+  assert.equal(board.idle(architect), false);
+  assert.equal(board.unreadMentions(architect), 1);
+  board.deliverMentions(architect);
+  assert.equal(board.unreadMentions(architect), 0);
+});

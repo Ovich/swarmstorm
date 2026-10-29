@@ -171,8 +171,9 @@ open task.
 
 **An idle member ends itself.** One that owes nothing (no phase part, no mention, no claim) and
 whose wait returned empty twice in a row is told to `end` and return; you hear it as `ended`.
-That seat is not done: when work for it comes, dispatch into it again, a fresh agent that joins
-the same seat, or the ended one resumed (`SendMessage`) with the task.
+That seat is not done, only dormant: it stays in the run's phases, all-done waits for it, and
+the `phase` answer names it with how to wake it; dispatch into it again, a fresh agent that
+joins the same seat, or the ended one resumed (`SendMessage`) with the task.
 
 ## Close
 

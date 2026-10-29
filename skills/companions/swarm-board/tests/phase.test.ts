@@ -95,11 +95,11 @@ test("done is stored once per run, member and phase; the last member's done post
   assert.throws(() => board.done(orchestrator, "diverge"), /orchestrator opens phases/);
   assert.throws(() => board.done(skeptic, "converge"), /the current phase is diverge/);
   const first = board.done(skeptic, "diverge");
-  assert.deepEqual([first.progress, first.all, first.already], [{ phase: "diverge", done: 1, of: 2, gone: [] }, false, false]);
+  assert.deepEqual([first.progress, first.all, first.already], [{ phase: "diverge", done: 1, of: 2, gone: [], dormant: [] }, false, false]);
   assert.deepEqual(first.message!.mentions, ["idea/orchestrator"]);
   assert.equal(first.message!.event, "done");
   assert.deepEqual(board.done(skeptic, "diverge").already, true);
-  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 1, of: 2, gone: [] });
+  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 1, of: 2, gone: [], dormant: [] });
   const last = board.done(architect, "diverge");
   assert.equal(last.all, true);
   // idea 2: the first done (the straggler case) and all-done in full; the last plain done carried, as a line
@@ -110,10 +110,10 @@ test("done is stored once per run, member and phase; the last member's done post
   assert.match(told[1].body, /^all done diverge: every member is done \(2\/2\)/);
   assert.match(EVENTS["all-done"].next!(told[1], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
   assert.equal(EVENTS["all-done"].next!(told[1], skeptic, "swarm"), null);
-  assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [] });
+  assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [], dormant: [] });
   board.phase(orchestrator, "converge", "pick");
   board.phase(orchestrator, "diverge", "again");
-  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 0, of: 2, gone: [] });
+  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 0, of: 2, gone: [], dormant: [] });
 });
 
 test("a phase event is not a post in the stats", () => {

@@ -41,7 +41,8 @@ export type Flag = { path: string; holder: string; seq: number };
 export type Phase = { name: string; text: string };
 /** How many of the run's members (the orchestrator apart) ran `done` for its current phase. */
 /** `of` leaves out the members gone and not done (swarm-relay D41); `gone` names them, `<group>/<member>`. */
-export type PhaseProgress = { phase: string; done: number; of: number; gone: string[] };
+/** `dormant`: the seats counted though their member ended (idle-ended, or named by `--for`): each needs a dispatch to be done. */
+export type PhaseProgress = { phase: string; done: number; of: number; gone: string[]; dormant: string[] };
 /** The progress as every line prints it: `3/3 done`, and `, 1 gone` only when a member is gone (D41). */
 export const progressText = (p: PhaseProgress): string => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} gone` : ""}`;
 /** The gone members as a line's suffix: ` (1 gone: idea/b)`, empty when none (D41). */
@@ -283,6 +284,8 @@ export interface Board {
   /** True when `p`, a member, has nothing to do: its last two `wait --mentions` in a row returned empty on their hold,
    *  and it owes no phase part and holds no claim (an unread mention would have ended the wait). */
   idle(p: Participant): boolean;
+  /** How many undelivered messages wake `p` (mentions, urgent posts, its subscribed events): `end` refuses while any. */
+  unreadMentions(p: Participant): number;
   /** The run's current phase, as `phase` last set it; null until one is opened. Throws on an unknown run. */
   currentPhase(run: RunId): Phase | null;
   /** The current phase for `p`'s header (B15): `first` the first time it is asked for this member since the phase
@@ -738,6 +741,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "phase_for", "phase_for TEXT");
   // the member's `wait --mentions` that returned empty on their hold, in a row: two while it owes nothing make it idle
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
+  // ended on an idle answer: the seat stays in the run's later phases, owing until a member is dispatched into it again
+  upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
   // idea 2: a carried message past CARRY_MAX_MS for a member, marked by the tick: it wakes that member's wait
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   // idea 4: named locks, store-wide (a port is the machine's, not a repository's), and who waits on each
@@ -1436,7 +1441,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (phase == null) return null;
     const rows = db
       .prepare(
-        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}'`,
       )
@@ -1444,10 +1449,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // D41: a member gone (as the last tick told it) and not done holds no phase; it counts again once back
     // `phase --for`: only the seats it is for owe it, and count
     const runR = runRow(run);
-    const live = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
-    const gone = live.filter((r) => Number(r.done) !== 1 && Number(r.gone) === 1);
+    // a dormant seat (idle-ended) still owes; so does an ended seat the current phase names in --for
+    const named = (seat: string): boolean => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
+    const live = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
+    const gone = live.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
     const counted = live.filter((r) => !gone.includes(r));
-    return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.seat}`) };
+    const dormant = counted.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
+    return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), dormant };
   };
   /** `all-done` to the orchestrator, once per run and phase whoever reaches it first: the last `done`, or the tick
    *  that finds the last member not done gone (D41). */
@@ -1688,7 +1696,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const fresh = (): string => unusedNick(String(r.repo));
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
-          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
+          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
@@ -1779,6 +1787,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     end(p) {
       const fresh = live(p);
+      // ended on an idle answer: dormant, the seat still owes the run's later phases
+      const dormant = board.idle(fresh) ? 1 : 0;
       transaction(() => {
         // a held lock released by the end frees whoever was refused it (D65)
         const waiters = claims.lockWaitersFreedBy(fresh);
@@ -1789,7 +1799,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // idea 4: the named locks it held are released, their waiters woken
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
         // the card's last word: what the member's run came to, not its last doing (D66)
-        db.prepare("UPDATE participants SET ended_at = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), fresh.id);
+        db.prepare("UPDATE participants SET ended_at = ?, dormant = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), dormant, fresh.id);
         claims.releaseAll(fresh.id);
       });
     },
@@ -1808,6 +1818,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const watch = (opts.watch ?? []).map(seatOf).filter(Boolean);
         // `--for`: only these seats are woken and owe their done; the others read the phase as their next header
         const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
+        const unknown = only.filter((s) => s === ORCHESTRATOR || (!db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s)));
+        if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
@@ -2316,7 +2328,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
       // a member holding the merge lock is mid-merge, never idle
       if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== undefined) return false;
-      return db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) === undefined;
+      if (db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== undefined) return false;
+      // rechecked at answer time: a mention landed since the wait returned empty means work
+      return unreadOf(p.id) === 0;
+    },
+
+    unreadMentions(p) {
+      return unreadOf(p.id);
     },
 
     wait(p, opts = {}) {

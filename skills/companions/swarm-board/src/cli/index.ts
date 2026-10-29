@@ -733,8 +733,11 @@ ${USAGE}`);
       const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
-      emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
+      // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
+      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => `${s.slice(s.lastIndexOf("/") + 1)} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`);
+      emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
         console.log(seqLine(m));
+        for (const line of dormant) console.log(line);
         console.log(brief);
         console.log(next);
       });
@@ -1136,6 +1139,9 @@ ${rearm}` : rearm;
       }
       // a member already ended: nothing to do, nothing to say
       if (p.ended) break;
+      // a mention landed since its last look: it reads it before it ends
+      const unread = await board.unreadMentions(p);
+      if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       // what the member wrote without claiming it, once, before its claims go (D58)
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told

@@ -1666,6 +1666,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "phase_shown", "phase_shown TEXT");
   upkeep("runs", "phase_for", "phase_for TEXT");
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "dormant", "dormant INTEGER NOT NULL DEFAULT 0");
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
   db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
     CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
@@ -2193,15 +2194,17 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const progressOf = (run2, phase) => {
     if (phase == null) return null;
     const rows = db.prepare(
-      `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+      `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.dormant, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
            EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR2}'`
     ).all(phase, run2);
     const runR = runRow(run2);
-    const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
-    const gone = live2.filter((r) => Number(r.done) !== 1 && Number(r.gone) === 1);
+    const named = (seat) => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
+    const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
+    const gone = live2.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
     const counted2 = live2.filter((r) => !gone.includes(r));
-    return { phase, done: counted2.filter((r) => Number(r.done) === 1).length, of: counted2.length, gone: gone.map((r) => `${r.plan}/${r.seat}`) };
+    const dormant = counted2.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
+    return { phase, done: counted2.filter((r) => Number(r.done) === 1).length, of: counted2.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), dormant };
   };
   const allDoneOnce = (author, progress) => {
     if (!(progress.of > 0 && progress.done === progress.of)) return false;
@@ -2404,7 +2407,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           const fresh = () => unusedNick(String(r.repo));
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
-            db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
+            db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?) WHERE id = ?").run(
               doing,
               JSON.stringify(files),
               where,
@@ -2475,6 +2478,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     },
     end(p) {
       const fresh = live(p);
+      const dormant = board2.idle(fresh) ? 1 : 0;
       transaction(() => {
         const waiters = claims.lockWaitersFreedBy(fresh);
         const ended = { event: EVENTS.ended.name };
@@ -2483,7 +2487,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
 the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event", waiters, ended);
         else insertMessage(fresh, "ended", null, "event", void 0, ended);
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
-        db.prepare("UPDATE participants SET ended_at = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), fresh.id);
+        db.prepare("UPDATE participants SET ended_at = ?, dormant = ?, doing = CASE merged WHEN 1 THEN 'merged and ended' ELSE 'ended' END WHERE id = ?").run(now(), dormant, fresh.id);
         claims.releaseAll(fresh.id);
       });
     },
@@ -2498,6 +2502,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const seatOf = (w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "");
         const watch = (opts.watch ?? []).map(seatOf).filter(Boolean);
         const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
+        const unknown = only.filter((s) => s === ORCHESTRATOR2 || !db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s));
+        if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR2, `all-done ${name}`);
@@ -2920,7 +2926,11 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR2 || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
       if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? LIMIT 1").get(p.id) !== void 0) return false;
-      return db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) === void 0;
+      if (db.prepare("SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id) !== void 0) return false;
+      return unreadOf(p.id) === 0;
+    },
+    unreadMentions(p) {
+      return unreadOf(p.id);
     },
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
@@ -3338,6 +3348,7 @@ var init_wire = __esm({
       "lastActivity",
       "owedPhase",
       "idle",
+      "unreadMentions",
       "setting",
       "runs",
       "join",
@@ -8974,8 +8985,10 @@ ${USAGE}`);
       const forWhom = only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "";
       const next = `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${shellWord(p.name)}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${shellWord(p.name)}; after the last, ${cli} close --run ${m.run}`;
       const brief = "brief the person: the list of what is done since the session began, one short phrase each, then what comes next";
-      emit({ seq: m.seq, run: m.run, phase: name, brief, next }, () => {
+      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => `${s.slice(s.lastIndexOf("/") + 1)} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`);
+      emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
         console.log(seqLine(m));
+        for (const line of dormant) console.log(line);
         console.log(brief);
         console.log(next);
       });
@@ -9318,6 +9331,8 @@ ${rearm}` : rearm;
         break;
       }
       if (p.ended) break;
+      const unread = await board.unreadMentions(p);
+      if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
       const reconciled = p.worktree ? changedIn(p.worktree) : [];
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
