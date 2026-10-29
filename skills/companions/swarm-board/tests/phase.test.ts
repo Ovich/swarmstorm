@@ -140,3 +140,14 @@ test("the run keeps its current phase, plan runs too: runs(), currentPhase and t
   board.phase(orchestrator, "end", "merged and verified");
   assert.deepEqual(board.currentPhase(plan.id), { name: "end", text: "merged and verified" });
 });
+
+test("a phase names the tasks the orchestrator posted before it that its text does not cite (G17)", () => {
+  const { orchestrator } = twoRuns();
+  const cited = board.post(orchestrator, "@architect the map");
+  const uncited = board.post(orchestrator, "@skeptic the holes");
+  board.post(orchestrator, "@swarm a note to all");
+  const m = board.phase(orchestrator, "build", `the first wave: #${cited.seq} architect`);
+  assert.equal(m.body, `phase build: the first wave: #${cited.seq} architect; its tasks posted before it: #${uncited.seq} skeptic`);
+  // the next phase counts only what came after this one
+  assert.equal(board.phase(orchestrator, "verify", "check").body, "phase verify: check");
+});

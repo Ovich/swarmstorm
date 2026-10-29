@@ -1854,13 +1854,23 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
         const unknown = only.filter((s) => s === ORCHESTRATOR || (!db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s)));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
-        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
+        // G17: the tasks the orchestrator posted since the previous phase belong to this one; the text names those it does not cite
+        const since = Number((db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row).s ?? 0);
+        const tasks = (
+          db
+            .prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq")
+            .all(fresh.run, since, ORCHESTRATOR) as Row[]
+        )
+          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`)) }))
+          .filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
+        const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
+        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         // D41: its all-done told once per opening
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
+        return insertMessage(fresh, `phase ${name}: ${told}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
       });
     },
 
