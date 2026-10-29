@@ -8,6 +8,7 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -105,4 +106,21 @@ test("D30: every member but a parked one waiting is idle; every member parked is
   board.livenessTick(run.id, at(base, 1), linked);
   assert.equal(eventsOf("idle").length, 1);
   await held;
+});
+
+test("S22 (board-split D25): a fresh agent re-joining a seat joined long ago draws no 'no transcript found' before its link speaks", () => {
+  const { run, b } = setup();
+  const later = Date.now() + 10 * 60_000;
+  // the seat's first member joined ten minutes ago and finished; a fresh one joins it now
+  const raw = openRawStore(path.join(dir, "swarm.sqlite"));
+  raw.prepare("UPDATE participants SET joined_at = ? WHERE seat = 'b'").run(new Date(Date.now() - 10 * 60_000).toISOString());
+  raw.close();
+  board.recordActivity(run.id, "b", act({ grewAt: Date.now(), finished: true }), new Date());
+  const rejoinedAt = Date.now();
+  board.join({ run: run.id, seat: "b", doing: "again", files: [] });
+  board.livenessTick(run.id, new Date(rejoinedAt + 1000), linked);
+  assert.deepEqual(eventsOf("liveness").filter((e) => e.body.includes("g/b")), [], "measured from the re-join, not the seat's first join");
+  board.livenessTick(run.id, new Date(Math.max(later, rejoinedAt + 31_000)), linked);
+  assert.equal(eventsOf("liveness").filter((e) => e.body.includes("no transcript found for g/b")).length, 1, "still told once 30 s after the re-join");
+  void b;
 });

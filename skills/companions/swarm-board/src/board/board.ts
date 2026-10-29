@@ -803,6 +803,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // board-split D30: parked by the orchestrator (`park <seat>`): dormant, no alert of any kind, out of all-done, until
   // its next call or `unpark`
   upkeep("participants", "parked", "parked INTEGER NOT NULL DEFAULT 0");
+  // S22 (board-split D25): when the seat's current member joined, a re-join included; joined_at keeps the seat's first
+  // join. Null on a row from before: read as joined_at
+  upkeep("participants", "seated_at", "seated_at TEXT");
   // D34: the phase `park --until` named; null when none was
   upkeep("participants", "parked_until", "parked_until TEXT");
   // the architecture guides already named to a member, each once
@@ -1330,13 +1333,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const activityOf = (run: RunId, member: string): Row | undefined =>
     db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run, member) as Row | undefined;
   /** A participant row's state at `t`: gone, waiting (its open call is the board wait), busy, working, else quiet. */
+  /** S22: when the seat's current member joined (a re-join included), ISO. */
+  const seatedAtOf = (p: Row): string => String(p.seated_at ?? p.joined_at);
   /** When the member's last progress was (D36): its transcript growing, or a post, `done` or `doing`; never through
    *  a pause (from the resume), else from the join. */
   const progressAtOf = (p: Row, run: Row, a: Row | undefined): number =>
     Math.max(
       a?.grew_at == null ? 0 : Number(a.grew_at),
       p.progress_at == null ? 0 : Date.parse(String(p.progress_at)),
-      Date.parse(String(p.joined_at)),
+      Date.parse(seatedAtOf(p)),
       run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)),
     );
   /** Idea 5: the seat's bound for a non-shell call (ms), from its row or `seat add --busy-max`; null when it has none. */
@@ -1386,7 +1391,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // no activity (no link has spoken): presence only, never working without evidence (D9, D33)
     if (!a) {
       if (inWait) return { member, state: "waiting", doing: null, since: null };
-      const joined = Date.parse(String(p.joined_at));
+      const joined = Date.parse(seatedAtOf(p));
       return { member, state: "quiet", doing: null, since: joined, reason: t - joined >= NO_TRANSCRIPT_MS ? "no transcript found" : "no activity yet" };
     }
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
@@ -1881,7 +1886,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
           // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
-          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ? WHERE id = ?").run(
+          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
@@ -1889,6 +1894,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
             existing.nick == null ? fresh() : null,
             packName,
             verify,
+            now(),
             now(),
             Number(existing.id),
           );
@@ -2319,8 +2325,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           const a = activityOf(run, st.member);
           if (!a) {
             // D33: no link activity 30 s after the join: named once to the orchestrator
-            const p = db.prepare("SELECT joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
-            if (p && t - Date.parse(String(p.joined_at)) >= NO_TRANSCRIPT_MS) {
+            const p = db.prepare("SELECT joined_at, seated_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
+            // S22: from the current member's join; a re-joined seat's first join made this fire at once
+            if (p && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS) {
               const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run, st.member);
               if (Number(warned.changes) === 1)
                 livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
