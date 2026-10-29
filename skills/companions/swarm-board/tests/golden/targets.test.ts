@@ -74,7 +74,7 @@ test("G16 target: a post while the listener runs prints no listener line", async
 });
 
 // G17: a task posted before its phase opened is named in the phase-open wake, so the worker knows its task is that phase's
-test("G17 target: the phase-open wake names the worker's task posted before it", { skip }, async () => {
+test("G17 target: the phase-open wake names the worker's task posted before it", async () => {
   const s = await scene("worker", "idle");
   try {
     s.must("post", "@w1 the task", "--as", O);
