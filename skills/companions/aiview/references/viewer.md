@@ -1,10 +1,11 @@
 # What the person sees
 
 **Left, the sidebar.** Documents newest-activity first: a search field, kind chips (one
-colour per kind, click to filter), tag chips (multi-select; the most recently active first, twelve shown and the rest behind "+ n more", a chosen one always in sight, the active project's own slug left out), grouped documents inside
+colour per kind, click to filter), tag chips (multi-select; the most recently active first, twelve shown and the rest behind "+ n more", a chosen one always in sight, the tab's project's own slug left out), grouped documents inside
 collapsible containers (display title and member count, members in reading order),
-ungrouped documents flat, missing files struck through. The active project scopes the
-list; the selector at the top switches it, and the agent's `use` does the same.
+ungrouped documents flat, missing files struck through. The tab's own project scopes the
+list; the selector at the top switches this tab only and sets where a new tab opens. The
+agent's `use` moves no tab. A project with news since the tab last visited it carries a dot.
 
 **Right, the document.** Title, absolute local path (click to copy), kind, started,
 tags, updated, then the rendered document: Markdown with GFM and mermaid, an HTML
@@ -25,7 +26,7 @@ here; the in-page bar is hidden, the chosen variant persists across reloads.
 used at its size, so viewport and Composition are not offered, and the person's choices
 for prototypes are kept for the next one.
 
-**Pointing.** When the agent points at components of a prototype (`show`), the tab goes to
+**Pointing.** When the agent points at components of a prototype (`show`), one tab (the one on that project, else the last used) goes to
 that prototype, switches to the variant named, scrolls to the first component and outlines
 each one with its name, the rest of the page dimmed. The page still takes the mouse. A
 chip in the toolbar says what is pointed at. Its cross stops it and takes the tab back
@@ -33,10 +34,10 @@ to what the person was reading before the agent pointed, as the agent's `show --
 does; a tab the person has since moved is left where it is. The address bar
 holds the pointer (`#doc=12&show=Strip,Menu&variant=step-2`), so the link can be kept.
 
-**The board.** Board, first in the menu, is the page `/board`: the active project's swarm
+**The board.** Board, first in the menu, is the page `/board`: the tab's project's swarm
 board, drawn by aiview itself from swarm's store, for the repositories the project's runs
 were opened in: one tab per run, the phase strip, the conversation, the agents beside it,
-the archive behind ☰. Switching the project shows that project's board. It follows aiview's theme and updates live as agents write; there is no second server
+the archive behind ☰. Switching the tab's project shows that project's board; a new run's board reaches one tab, as a new document does. It follows aiview's theme and updates live as agents write; there is no second server
 to start.
 
 **Bindings.** An html prototype that pulls components from siblings (`data-bind`) is
