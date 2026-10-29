@@ -1,0 +1,42 @@
+exit 1
+--- stderr
+seat: which seat?
+usage: node <cli> <verb> [--json]        (node <cli> --help code: the claim and merge verbs)
+  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)
+          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch
+          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link
+          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>
+          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]
+  seat    <id> --run <id> --state ready|running|done|blocked     # (orchestrator)
+  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)
+  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)
+          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header
+  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; claim and merge-lock refused, no stall, quiet or stale alert until resume (orchestrator)
+  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)
+  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it
+  close   --run <id>                                              # (orchestrator); removes the run's worktrees that are clean and merged, names those it kept and why
+  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it
+          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. agreement,any:merged; else the seat row's on, else the kind's defaults
+  subscribe   [--as <member>] <events>                            # prints your subscriptions after
+  unsubscribe [--as <member>] <events>
+  doing   [--as <member>] <text>
+  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting
+  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders
+  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq
+  read    <seq>
+  thread  [--as <member>] [<phase>]                               # every post of a phase in full (the current one by default): read it before you decide or add
+  thread  --run <id> [<phase>]                                    # a run read from outside, closed ones too: its phase, or every post of the run; read-only
+  deliver [--as <member>]                                         # what you have not had: mentions in full, the rest one line (a seat's run: every post in full)
+  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it
+          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end …
+          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)
+  roster  [--repo <path>] [--as <member>]
+  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock
+  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command
+  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept
+  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait
+  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, gone and close release too)
+  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now
+  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why
+events: agreement, endorsement, merged, joined, ended, stale, quiet, back, opened, closed, urgent, phase, pause, resume, done, all-done, idle, stalled, recovered, unlocked, breach, gone, liveness, flag, composition, all-joined; any:<event> for one posted in any run
+a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree

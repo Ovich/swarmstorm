@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+swarm: agree needs another party: @<seat> or --with <seat>; to inform, use post

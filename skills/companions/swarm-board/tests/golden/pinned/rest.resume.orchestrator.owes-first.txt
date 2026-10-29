@@ -1,0 +1,5 @@
+exit 0
+#<seq>
+#<seq> g/w1 (event): joined: x · + w1 <nick:w1>
+#<seq> g/w1 (event): all joined: 1 seat
+run 1 resumed; 2 held while paused, above; listen again in the background: node <cli> wait --mentions --as g/orchestrator

@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+you have 1 unread mention: run `node <cli> deliver --as g/s1` first

@@ -1,0 +1,3 @@
+exit 0
+#<seq>
+phase build is open and asks: build the thing. Read the whole phase first: node <cli> thread --as g/s1. Do your part now, then: node <cli> done build --as g/s1

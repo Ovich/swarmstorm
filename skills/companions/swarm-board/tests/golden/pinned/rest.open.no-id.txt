@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+<seats>\no-id.json: a seat without an id
