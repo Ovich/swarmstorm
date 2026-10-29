@@ -367,11 +367,13 @@ test("a flag is posted once, whether merge-lock or end finds it; it is the flag 
 test("the merged event names the branch from merge-lock --onto and stores whom it told (D9, D11)", async () => {
   running();
   cli(wtB, "merge-lock", "--onto", "main");
-  cli(wtB, "merged", "--report", "-", "abc123", "--files", "src/a.ts");
+  // V1: a sha git knows on main: main's own head stands in for the merge
+  const sha = spawnSync("git", ["rev-parse", "--short", "main"], { cwd: wtB, encoding: "utf8" }).stdout.trim();
+  cli(wtB, "merged", "--report", "-", sha, "--files", "src/a.ts");
   const board = await openBoard(path.join(home, "swarm.sqlite"));
   try {
     const merged = board.snapshot(board.repos()[0].repo).events.find((e) => e.event === "merged")!;
-    assert.match(merged.body, /^merged abc123 into main: rebase your branch onto it\.\n/);
+    assert.ok(merged.body.startsWith(`merged ${sha} into main: rebase your branch onto it.\n`), merged.body);
     // no rebase since the grant: conflicts known and empty, so nobody is told (D5)
     assert.deepEqual(merged.meta, { rebase: ["review-tool/S3"], tell: [] });
   } finally {

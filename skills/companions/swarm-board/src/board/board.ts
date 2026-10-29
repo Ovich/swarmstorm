@@ -1078,13 +1078,21 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // for a member other than the orchestrator), and nothing is carried; what came meanwhile stays for the resume
       const silentWhilePaused = runRow(me.run).paused != null;
       const due = db.prepare("SELECT 1 FROM carry_due WHERE participant = ? AND seq = ?");
+      // G27: an agreement answering the caller's own post about its path; G35: an endorsement, to the orchestrator.
+      // Both ride on the caller's next wake instead of waking it
+      const asked = db.prepare("SELECT 1 FROM messages WHERE author = ? AND about = ? AND kind = 'msg' AND seq < ? LIMIT 1");
+      const ridesOn = (m: Message): boolean =>
+        m.from !== me.name &&
+        ((m.kind === "agreement" && m.about != null && asked.get(me.id, m.about, m.seq) != null) || (m.kind === "endorsement" && me.seat === ORCHESTRATOR));
       // idea 2: carried to the caller, riding on its next wake; one the tick marked due wakes by itself
-      const carried = (r: Row): boolean => !silentWhilePaused && carries(toMessage(r), me, me.subscriptions);
+      const carried = (r: Row): boolean => !silentWhilePaused && (ridesOn(toMessage(r)) || carries(toMessage(r), me, me.subscriptions));
       // a wake (D59): a mention, an urgent post, or an event the caller subscribed to in its scope
       const woken = (r: Row): boolean =>
         silentWhilePaused
           ? eventOf(toMessage(r)) === "urgent" || (me.seat !== ORCHESTRATOR && eventOf(toMessage(r)) === "pause")
-          : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
+          : ridesOn(toMessage(r))
+            ? due.get(me.id, Number(r.seq)) != null
+            : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || (carried(r) && due.get(me.id, Number(r.seq)) != null);
       // of its own run, everything; of another run, only what wakes the caller (plan D2)
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried(r));
       // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone; a wake
@@ -1263,6 +1271,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // posted at one moment, they reach a waiting orchestrator in one wake, each line its own event
     for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...(i.meta ? { meta: i.meta } : {}) });
   };
+  /** G40: the stalled set last told per run, and when. */
+  const stalledToldOf = new Map<RunId, { set: string; at: number }>();
   const idleSince = new Map<RunId, { since: number; postedAt: number | null; spellPosted: boolean; postedSeq: number; stirred: boolean }>();
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
@@ -1321,7 +1331,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
       // idea 1, rule 5: a wait while owing the phase is quiet once the owing span is long enough
-      const owing = owingOf(p, run, a, t, stallMs);
+      // G39: a member waiting on a background task of its own (its tests) is waiting, not owing
+      const owing = a.bg_target == null ? owingOf(p, run, a, t, stallMs) : null;
       if (owing) return { member, state: "quiet", doing: open, since: owing.since, reason: `waiting, not done ${owing.phase}${said}`, rule: "owing", owes: owing.phase };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
@@ -2239,7 +2250,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         }
         // D11: the stalled set is told when a member joins it, or again after STALLED_AGAIN_MS: one line naming each
         // stalled member, its rule and its move (the members told within the 15 min ride along, their time renewed)
-        if (stalledNow.some((x) => x.due)) {
+        // G40: the very set told last, again within STALLED_AGAIN_MS and with no progress since, is not news
+        // (each member with its rule and the moment it last progressed: progress in between makes a new episode, told again)
+        const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
+        const lastTold = stalledToldOf.get(run);
+        const sameSetTold = lastTold != null && lastTold.set === stalledSet && t - lastTold.at < STALLED_AGAIN_MS;
+        if (stalledNow.some((x) => x.due) && !sameSetTold) {
+          stalledToldOf.set(run, { set: stalledSet, at: t });
           if (stalledNow.length === 1) {
             const [{ st, meta }] = stalledNow;
             raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.reason}; ${where}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });

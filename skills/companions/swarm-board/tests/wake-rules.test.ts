@@ -78,3 +78,34 @@ test("D8: a member waiting when the pause is posted wakes on it", async () => {
   const p = board.pause(orchestrator, "hold");
   assert.deepEqual((await waiting).full.map((m) => m.seq), [p.seq]);
 });
+
+test("G27: an agreement replying to the member's own post rides on its next answer, never waking it", () => {
+  const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
+  board.post(w3, "@g/w1 I change the helper in src/x.ts", { about: "src/x.ts" });
+  board.deliver(w1);
+  const agreed = board.post(w1, "@g/w3 w3 the helper, w1 the rest", { kind: "agreement", about: "src/x.ts" });
+  assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [], "no wake");
+  board.post(w1, "@g/w3 a question");
+  const next = board.deliverMentions(w3);
+  assert.ok(next.full.some((m) => m.seq === agreed.seq) || next.lines.some((l) => l.includes(`#${agreed.seq}`)), "rides on the next wake");
+});
+
+test("G27: an agreement about a file the member holds, not replying to its own post, still wakes it", () => {
+  const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
+  board.checkEdit(w3, "src/y.ts");
+  const agreed = board.post(w1, "@g/w3 w1 the top, w3 the rest", { kind: "agreement", about: "src/y.ts" });
+  assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [agreed.seq]);
+});
+
+test("G35: an endorsement is carried for the orchestrator, never waking it", () => {
+  const { members: [w1, w3], orchestrator } = setup("task", ["w1", "w3"]);
+  board.deliver(orchestrator);
+  // the orchestrator's own ruling, endorsed by a member: the endorsement names it
+  const ruled = board.post(orchestrator, "@g/w1 @g/w3 w1 first, then w3", { kind: "agreement", about: "src/z.ts" });
+  board.deliver(w1);
+  const endorsed = board.endorse(w3, ruled.seq);
+  assert.deepEqual(board.deliverMentions(orchestrator).full.map((m) => m.seq), [], "no wake");
+  board.post(w1, "@g/orchestrator merged");
+  const next = board.deliverMentions(orchestrator);
+  assert.ok([...next.full.map((m) => `#${m.seq}`), ...next.lines].some((l) => l.includes(`#${endorsed.seq}`)), "rides on the next wake");
+});

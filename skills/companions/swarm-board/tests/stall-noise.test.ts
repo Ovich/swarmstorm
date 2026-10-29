@@ -143,3 +143,33 @@ test("f: a background listener returning is not progress that hides a stall of a
   const after = r.alerts.filter((x) => x.s > 201);
   assert.ok(after.length > 0 && after[0].s <= 201 + 61, `told after the return: ${r.events}`);
 });
+
+test("G39: a member owing its phase that waits on a background task of its own (its tests) is waiting, never stalled owing", async () => {
+  const { run, m, orch } = setup(["a"]);
+  board.phase(orch, "p1", "@a your part");
+  board.deliver(m.a);
+  board.deliver(orch);
+  const base = Date.now();
+  const held = waitOf(m.a, 3000);
+  for (const s of [0, 30, 60, 90]) {
+    board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: true, openTool: { name: "Bash", target: "swarm wait", since: base, boardWait: true, shell: true }, background: { target: "npm test", since: base, outputGrewAt: base + s * 1000 } }), at(base, s));
+    board.livenessTick(run.id, at(base, s), presence);
+  }
+  assert.equal(board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")?.state, "waiting");
+  assert.deepEqual(stalled(run.id).map((e) => e.body), []);
+  board.post(orch, "@a go");
+  await held;
+});
+
+test("G40: the same stalled set, no member progressed since, is not told again within 15 min (a link blip clears no episode)", () => {
+  const { run } = setup(["a"]);
+  const base = Date.now();
+  board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: false, lastTool: "Bash x" }), at(base, 0));
+  board.livenessTick(run.id, at(base, 10), presence);
+  assert.equal(stalled(run.id).length, 1);
+  // a link blip clears its stalled mark; nothing progressed, the same silence again
+  board.livenessTick(run.id, at(base, 11), () => ({ connected: false, lostAt: base + 11_000 }));
+  board.livenessTick(run.id, at(base, 15), presence);
+  board.livenessTick(run.id, at(base, 40), presence);
+  assert.equal(stalled(run.id).length, 1, "not repeated");
+});

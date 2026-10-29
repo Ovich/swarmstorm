@@ -369,18 +369,20 @@ test("merged carries the worker's report: refused without --report, naming it an
   const s5 = ["--as", "review-tool/S5"];
   const orch = ["--as", "review-tool/orchestrator"];
   run("deliver", ...orch);
-  const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts");
+  // V1: merged takes only a sha git knows on the branch: the repository's HEAD, trunk once locked, stands in for the merge
+  const sha = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+  const bare = run("merged", ...s5, sha, "--files", "src/a.ts");
   assert.notEqual(bare.status, 0);
   assert.match(bare.stderr, /--report "<what you did>".*--report - merges silently/);
   lock(s5);
-  const r = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
+  const r = run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(typeof JSON.parse(r.stdout).reported, "number");
   const heard = run("deliver", ...orch).stdout;
-  assert.match(heard, /^@orchestrator merged abc123: T1 done, tests green$/m);
+  assert.match(heard, new RegExp(`^@orchestrator merged ${sha}: T1 done, tests green$`, "m"));
   lock(s5);
-  assert.equal(run("merged", ...s5, "def456", "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], "merged def456: lock released");
-  assert.equal(/@orchestrator merged def456/.test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
+  assert.equal(run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], `merged ${sha}: lock released`);
+  assert.equal(new RegExp(`@orchestrator merged ${sha}`).test(run("deliver", ...orch).stdout), false, "a silent merge posts no report");
 });
 
 test("merged on a code run is refused without the merge lock, naming merge-lock; --unlocked is the orchestrator's alone, its why posted in the run", () => {
