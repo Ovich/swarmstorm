@@ -55,6 +55,7 @@ const member = (
   const i = name.lastIndexOf("/");
   return {
     member: name,
+    badge: null,
     nick: nickOf(name),
     plan: name.slice(0, i),
     seat: name.slice(i + 1),

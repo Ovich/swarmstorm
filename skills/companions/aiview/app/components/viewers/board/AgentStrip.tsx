@@ -8,8 +8,9 @@ import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/cl
 import { hhmm, ORCHESTRATOR } from "../../../lib/board/view.ts";
 import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 
-/** A member's activity as the server computes it (swarm-relay#D9, #D20), its two ages' instants included (swarm-relay#D38). */
-type MemberActivity = Liveness;
+/** A member's activity as the server computes it (swarm-relay#D9, #D20), its two ages' instants included (swarm-relay#D38);
+ *  an older board's also says quiet or gone, with its reason. */
+type MemberActivity = Omit<Liveness, "state"> & { state: string; reason?: string };
 /** The activity words, today's (board-split#D36: working, busy, waiting) and an older board's (quiet, gone). */
 const ACTIVITY_STATES: ReadonlySet<string> = new Set(["working", "busy", "waiting", "quiet", "gone"]);
 
@@ -29,14 +30,13 @@ function ageSince(at: number, now: number): string {
   return `${Math.round(secs / 3600)} h`;
 }
 
-/** board-split#D36: trouble beside the state, never a state. */
-export type BadgeName = "stalled" | "lost" | "blocked";
-type BoardBadge = { name: BadgeName; reason: string; since: number | null };
+/** board-split#D36: trouble beside the state, never a state, as the board sends it. */
+type BoardBadge = NonNullable<SnapshotMember["badge"]>;
+export type BadgeName = BoardBadge["name"];
 
-/** What the board may tell beyond today's reader type: the state word's own vocabulary (D36: working, waiting,
- *  parked, ended, the code pack's merging), its badge (D36), a parked seat's phase (D34), the open calls (D31, D32).
- *  Absent from an older board: the card reads its older words as the new ones. */
-type MemberOnBoard = Omit<SnapshotMember, "state"> & {
+/** The member as any board sends it: an older one's state words (watching, done) and no badge (D36), a parked seat's
+ *  phase (D34), the open calls (D31, D32). The card reads an older board's words as the new ones. */
+type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
   state: string;
   badge?: BoardBadge | null;
   parkedUntil?: string | null;

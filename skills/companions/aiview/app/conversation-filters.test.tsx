@@ -17,6 +17,7 @@ afterEach(cleanup);
 const AT = "2026-10-14T10:00:00Z";
 const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
 const member = (seat: string, nick: string): SnapshotMember => ({
+  badge: null,
   member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working", stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });

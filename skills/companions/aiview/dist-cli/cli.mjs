@@ -9191,6 +9191,8 @@ var init_wire = __esm({
       "pausedOf",
       "park",
       "unpark",
+      "block",
+      "unblock",
       "done",
       "phaseProgress",
       "lastActivity",

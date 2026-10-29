@@ -428,7 +428,7 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   }
   if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", "↺ recovered", TIPS.recovered);
   // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
-  if (e.kind === "event" && ((e.event as string) === "lost" || e.event === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
+  if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
@@ -506,13 +506,13 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
   const livenessOf = new Map(snap.roster.map((r) => [r.member, r.liveness]));
   // board-split#D36: the board's badge, when it sends one, says the trouble; else the older liveness words do
-  const badgeOf = new Map(snap.roster.map((r) => [r.member, (r as { badge?: { name: string } | null }).badge]));
+  const badgeOf = new Map(snap.roster.map((r) => [r.member, r.badge as SnapshotMember["badge"] | undefined]));
   const stallPassed = (i: Item, member: string): boolean => {
     const key = `${groupOf.get(i.run)}/${member}`;
     const badge = badgeOf.get(key);
     if (badge !== undefined) return badge === null;
     const l = livenessOf.get(key);
-    return !!l && l.state !== "quiet" && l.state !== "gone" && !l.rule;
+    return !!l && (l.state as string) !== "quiet" && (l.state as string) !== "gone" && !l.rule;
   };
   // F9: a link-down row leaves once the member's link reads it again after the row; a gone row once a
   // `recovered` of the member follows, or its liveness reads anything but gone
@@ -526,7 +526,7 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     const badge = badgeOf.get(member);
     if (badge !== undefined) return badge?.name === "lost";
     const l = livenessOf.get(member);
-    return !l || l.state === "gone";
+    return !l || (l.state as string) === "gone";
   };
   return items.filter((i) => {
     const member = toldOf.get(i.seq);

@@ -8,7 +8,7 @@ const AT = "2026-10-14T10:00:00Z";
 const run = (id: number, group: string, code: string, open = true): RunSummary => ({
   run: id, kind: "plan", plan: group, group, code, title: `${group} title`, link: null, open, members: 0, done: 1, of: 3,
 });
-const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({
+const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({ badge: undefined as unknown as null /* an older board: no badge, its liveness says the trouble */,
   member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state, stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });
@@ -46,7 +46,7 @@ describe("runTabs", () => {
   });
 
   test("a run whose orchestrator is quiet reads quiet until it is back (D15)", () => {
-    const quiet = item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" });
+    const quiet = item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>);
     expect(runTabs(board(RUNS, ROSTER, [quiet]))[0].state).toBe("quiet");
     const back = item(1, "alpha/orchestrator", "back", { kind: "event", event: "back" });
     expect(runTabs(board(RUNS, ROSTER, [quiet, back]))[0].state).toBe("live");
@@ -129,7 +129,7 @@ describe("conversation: what an item is (D8, D16)", () => {
   });
 
   test("idea 1: recovered and gone each render as their own row (I2)", () => {
-    const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
+    const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as unknown as Partial<SnapshotEvent>);
     const back = item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
     // F9: a gone row leaves once its recovered follows, so each is rendered on its own here
     const alone = conversation(board(RUNS, ROSTER, [gone]), { run: 1, follow: null });
@@ -157,7 +157,7 @@ describe("conversation: what an item is (D8, D16)", () => {
     const events = [
       item(1, "alpha/orchestrator", "do this first", { kind: "urgent" }),
       item(1, "alpha/S1", "flag", { kind: "event", event: "flag", about: "a.ts", mentions: ["beta/S2", "alpha/S1"] }),
-      item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" }),
+      item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>),
       item(2, "beta/S2", "@AL·S1 S1 the top, S2 the bottom", { kind: "agreement" }),
       item(1, "alpha/S1", "just talk"),
       item(1, "alpha/S1", "merged abc: rebase your branch onto it.", { kind: "event", event: "merged" }),
@@ -414,7 +414,7 @@ describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is 
   const AT_MS = Date.parse(AT);
   const withLiveness = (liveness: object) => ROSTER.map((r) => (r.member === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotMember[];
   const down = () => item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
-  const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as Partial<SnapshotEvent>);
+  const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as unknown as Partial<SnapshotEvent>);
   const back = () => item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
   const kinds = (roster: SnapshotMember[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
 
@@ -427,5 +427,13 @@ describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is 
     expect(kinds(withLiveness({ state: "gone" }), [gone()])).toEqual(["gone"]);
     expect(kinds(withLiveness({ state: "gone" }), [gone(), back()])).toEqual(["recovered"]);
     expect(kinds(withLiveness({ state: "working" }), [gone()])).toEqual([]);
+  });
+
+  // board-split#D36: the board's `lost` event and badge; the badge, when sent, says whether the member is still lost
+  test("a lost row stays while the board's badge says lost, and leaves once the badge is gone", () => {
+    const lost = () => item(1, "alpha/orchestrator", "lost alpha/S1: its link was lost", { kind: "event", event: "lost" } as Partial<SnapshotEvent>);
+    const withBadge = (badge: object | null) => ROSTER.map((r) => (r.member === "alpha/S1" ? { ...r, badge } : r)) as SnapshotMember[];
+    expect(kinds(withBadge({ name: "lost", reason: "its link was lost", since: null }), [lost()])).toEqual(["gone"]);
+    expect(kinds(withBadge(null), [lost()])).toEqual([]);
   });
 });

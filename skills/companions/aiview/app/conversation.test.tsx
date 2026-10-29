@@ -22,6 +22,7 @@ vi.stubGlobal("matchMedia", () => ({ matches: false }));
 const AT = "2026-10-14T10:00:00Z";
 const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
 const member = (seat: string, nick: string): SnapshotMember => ({
+  badge: null,
   member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working", stale: false,
   files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
 });
@@ -34,7 +35,7 @@ const EVENTS = [
   item("alpha/S1", "flag", { kind: "event", event: "flag", about: "b.ts", mentions: ["alpha/S2", "alpha/S1"] }),
   item("alpha/S2", "@S1 I add a call in a.ts", { about: "a.ts" }),
   item("alpha/S1", "@orchestrator new question: keep the old route?"),
-  item("alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" }),
+  item("alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>),
   item("alpha/S2", "@S1 S1 the top", { kind: "agreement", about: "c.ts" }),
   item("alpha/S1", "just talk"),
   item("alpha/S1", "merged abc: rebase your branch onto it.", { kind: "event", event: "merged" }),

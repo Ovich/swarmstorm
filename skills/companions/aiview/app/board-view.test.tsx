@@ -223,7 +223,7 @@ const swarmOf = (n: number): BoardSnapshot => {
     seat: `W${i + 1}`,
     role: `worker ${i + 1}`,
     state: (i % 5 === 4 ? "ended" : "working") as typeof SEAT.state,
-    liveness: i % 7 === 6 ? { state: "gone", doing: null, since: null, tokens: null, movedAt: null } : undefined,
+    badge: i % 7 === 6 ? { name: "lost" as const, reason: "its link was lost", since: null } : null,
   }));
   return { ...LIVE, roster: [...LIVE.roster, ...extra] } as BoardSnapshot;
 };
@@ -268,7 +268,8 @@ test("a large swarm: the search and a state chip narrow the rows; a row clicked 
 // ── the member's activity (swarm-relay S24, D9, D20) ─────────────────────────────
 
 const ACTIVE = LIVE.roster.find((r) => r.member.startsWith("refresh-tokens/") && r.seat !== "orchestrator" && r.state !== "ended")!;
-const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, liveness } : r)) }) as BoardSnapshot;
+// an older board's member: its liveness, and no badge (board-split#D36)
+const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, liveness, badge: undefined } : r)) }) as BoardSnapshot;
 const activeCard = () => within(strip()!).getAllByRole("button").find((c) => c.textContent?.includes(ACTIVE.nick))!;
 const minutesAgo = (m: number) => Date.now() - m * 60000;
 
