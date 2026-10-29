@@ -185,9 +185,9 @@ async function caller(): Promise<Participant> {
   const wt = as ? null : worktreeOf(process.cwd());
   const p = as
     ? ((await board.participant(as)) ?? fail(`unknown member ${as}`))
-    : ((wt ? await board.identify({ worktree: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
+    : ((wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
   const direct = board;
-  if (p.worktree && fs.existsSync(p.worktree)) callerWorktree = p.worktree;
+  if (p.place && fs.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   // S62: a member ended, or of a closed run, has no link: its verb stays on the server, waits for no link and never
   // prints the link line; it answers the closed line, or end its summary prompt
@@ -443,7 +443,7 @@ const slashed = (s: string): string => s.replace(/\\/g, "/");
 
 /** The guides of the caller's repository: shipped beside this tool, and the project's own. */
 const guidesHere = (p: Participant, onto?: string): Guide[] => {
-  const root = p.worktree ?? worktreeOf(process.cwd());
+  const root = p.place ?? worktreeOf(process.cwd());
   // with the branch merged into: its project guides too, the ones the rebase brings (G12)
   const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
@@ -610,12 +610,12 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
  *  member that never claims or merges gets none; a member with no pack is refused the verb. */
 async function madeWorktree(p: Participant, verb: "claim" | "merge-lock"): Promise<void> {
   // there already: nothing for the pack to make, and the verb's own gate stands
-  if (p.worktree && fs.existsSync(p.worktree)) return;
+  if (p.place && fs.existsSync(p.place)) return;
   // any checkout of the repository gives the base: the caller's, else the repository's own beside its git dir
   const cwd = worktreeOf(process.cwd()) && repoOf(process.cwd()) === p.repo ? process.cwd() : path.dirname(p.repo);
   const made = (await packVerb(p, verb, { cwd })) as { made: boolean } | null;
   // claim and release resolve paths in it from now on (G19)
-  if (made?.made) callerWorktree = p.worktree;
+  if (made?.made) callerWorktree = p.place;
 }
 
 async function main(): Promise<void> {
@@ -825,7 +825,7 @@ async function main(): Promise<void> {
         seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
-        worktree: own?.path ?? worktreeOf(process.cwd()) ?? undefined,
+        place: own?.path ?? worktreeOf(process.cwd()) ?? undefined,
         ...(args.flag("--on") !== undefined ? { on: subscriptionsArg(args.flag("--on")!) } : {}),
       });
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
@@ -1095,7 +1095,7 @@ async function main(): Promise<void> {
       const onto = need("--onto");
       await madeWorktree(p, "merge-lock");
       // a branch checked out in a worktree refuses the push: say where, grant nothing (validation finding 4)
-      const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
+      const holding = p.place ? worktreeHolding(p.place, onto) : null;
       if (holding) {
         process.exitCode = 5;
         // G36: the member whose worktree holds it, so the orchestrator knows whom to ask
@@ -1106,17 +1106,17 @@ async function main(): Promise<void> {
       }
       // what the branch wrote without a claim, committed or not, before the lock; a flag informs, never blocks
       // V8: a base only on origin is read as origin's, as the worktree was made from it (G36)
-      const ontoRef = p.worktree && fs.existsSync(p.worktree) ? baseRef(p.worktree, onto) : onto;
-      const reconciled = p.worktree ? branchChangedIn(p.worktree, ontoRef) : [];
+      const ontoRef = p.place && fs.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      const reconciled = p.place ? branchChangedIn(p.place, ontoRef) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
       // G28: build outputs are claimed like any file, never exempted, and never flagged: whoever merges second rebuilds them
-      const generated = p.worktree ? generatedAmong(p.worktree, reconciled) : [];
+      const generated = p.place ? generatedAmong(p.place, reconciled) : [];
       const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled, generated) : [];
-      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
+      const renames = p.place && unclaimed.length ? renamesIn(p.place, git(p.place, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
-      const reflogMark = p.worktree ? (headReflogLength(p.worktree) ?? undefined) : undefined;
+      const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
       const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
@@ -1169,11 +1169,11 @@ async function main(): Promise<void> {
       if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
       // V1: a sha git does not know was never merged
-      if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
-        fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
-      if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
-        fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.worktree)} push . HEAD:${lock.onto}, then merged again`);
-      const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : undefined;
+      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+        fail(`merged: ${sha} is no commit git knows in ${slashed(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.place)} rev-parse --short HEAD`);
+      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+        fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
+      const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = await board.merged(p, sha, files.map((f) => path.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
       // a silent merge still records how it settled its guides, in the run, waking no one (V3)
@@ -1223,12 +1223,12 @@ async function main(): Promise<void> {
         );
       }
       // what the member wrote without claiming it, once, before its claims go (D58)
-      const reconciled = p.worktree ? changedIn(p.worktree) : [];
+      const reconciled = p.place ? changedIn(p.place) : [];
       // what it held before the reconcile claims the rest: only those written without a claim are told
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
-      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
+      const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
       await board.end(p);
       // ended: no link to start
       linkToStart = null;

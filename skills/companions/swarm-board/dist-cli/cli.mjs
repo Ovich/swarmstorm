@@ -47,6 +47,19 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
+// src/proc.ts
+import { spawn, spawnSync } from "node:child_process";
+function hiddenSpawnSync(command, args2, options = {}) {
+  return spawnSync(command, args2, { ...options, windowsHide: true });
+}
+var hiddenSpawn;
+var init_proc = __esm({
+  "src/proc.ts"() {
+    "use strict";
+    hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
+  }
+});
+
 // src/board/home.ts
 import fs from "node:fs";
 import os from "node:os";
@@ -140,6 +153,68 @@ var init_mentions = __esm({
         prev = row;
       }
       return prev[b.length];
+    };
+  }
+});
+
+// src/board/kinds.ts
+function profileOf(kind) {
+  const profile = PROFILES[kind];
+  if (!profile || !Object.hasOwn(PROFILES, kind)) throw new Error(`unknown kind ${kind}: the kinds are ${Object.keys(PROFILES).join(", ")}`);
+  return profile;
+}
+var run, carried, PROFILES;
+var init_kinds = __esm({
+  "src/board/kinds.ts"() {
+    "use strict";
+    run = (...events) => events.map((event) => ({ event, scope: "run" }));
+    carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
+    PROFILES = {
+      plan: { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } },
+      brainstorm: {
+        kind: "brainstorm",
+        member: "seat",
+        wholeThread: true,
+        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
+      },
+      // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
+      task: { kind: "task", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } }
+    };
+  }
+});
+
+// src/git.ts
+var gitAnswer, git, worktreeHolding, baseAt, baseRef;
+var init_git = __esm({
+  "src/git.ts"() {
+    "use strict";
+    init_proc();
+    gitAnswer = (cwd, ...argv) => {
+      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
+    };
+    git = (cwd, ...argv) => {
+      const r = gitAnswer(cwd, ...argv);
+      return r.status === 0 ? r.stdout.trim() : null;
+    };
+    worktreeHolding = (cwd, branch) => {
+      const list = git(cwd, "worktree", "list", "--porcelain");
+      if (!list) return null;
+      const ref = branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
+      let at = null;
+      for (const line of list.split(/\r?\n/)) {
+        if (line.startsWith("worktree ")) at = line.slice("worktree ".length);
+        else if (line === `branch ${ref}`) return at;
+      }
+      return null;
+    };
+    baseAt = (cwd) => {
+      const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
+      return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
+    };
+    baseRef = (cwd, base) => {
+      for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+      return base;
     };
   }
 });
@@ -247,442 +322,9 @@ var init_events = __esm({
   }
 });
 
-// src/board/kinds.ts
-function profileOf(kind) {
-  const profile = PROFILES[kind];
-  if (!profile || !Object.hasOwn(PROFILES, kind)) throw new Error(`unknown kind ${kind}: the kinds are ${Object.keys(PROFILES).join(", ")}`);
-  return profile;
-}
-var run, carried, PROFILES;
-var init_kinds = __esm({
-  "src/board/kinds.ts"() {
-    "use strict";
-    run = (...events) => events.map((event) => ({ event, scope: "run" }));
-    carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
-    PROFILES = {
-      plan: { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } },
-      brainstorm: {
-        kind: "brainstorm",
-        member: "seat",
-        wholeThread: true,
-        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] }
-      },
-      // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-      task: { kind: "task", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stale", "all-joined"), ...carried("done", "joined", "idle")] } }
-    };
-  }
-});
-
-// src/board/stats-math.ts
-function percentile(values, p) {
-  if (!values.length) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
-}
-function sumKnown(values) {
-  const known = values.filter((v) => typeof v === "number");
-  return known.length ? known.reduce((a, b) => a + b, 0) : null;
-}
-var CASELESS, foldPath, ms, iso, firstLine;
-var init_stats_math = __esm({
-  "src/board/stats-math.ts"() {
-    "use strict";
-    CASELESS = process.platform === "win32";
-    foldPath = (p) => CASELESS ? p.toLowerCase() : p;
-    ms = (at) => Date.parse(String(at));
-    iso = (t) => new Date(t).toISOString();
-    firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
-  }
-});
-
-// src/packs/code/stats.ts
-function distinctFlags(messages) {
-  const seen = /* @__PURE__ */ new Set();
-  return messages.filter((m) => {
-    if (!isBoardFlag(m)) return false;
-    const [, path13 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
-    const key = JSON.stringify([Number(m.author), foldPath(String(path13)), holder]);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-function mergesFromEvents(messages) {
-  return messages.filter((m) => m.kind === "event" && (m.event === "merged" || m.event == null && MERGED_BODY.test(String(m.body)))).map((m) => {
-    const line = String(m.body).match(FILES_LINE)?.[1].trim();
-    const files = line === void 0 ? null : line === "-" ? [] : line.split(", ").map((f) => f.trim()).filter(Boolean);
-    return { participant: Number(m.author), at: ms(m.at), files, conflicts: null };
-  });
-}
-function estimatedTimeline(joined, over, mergedAt) {
-  if (!(over > joined)) return [];
-  const merges = mergedAt.filter((t) => t > joined && t <= over).sort((a, b) => a - b);
-  const working = { from: iso(joined), to: iso(merges[0] ?? over), what: "working", inferred: true };
-  return [working, ...merges.map((t) => ({ from: iso(t), to: iso(t), what: "merging", inferred: true }))];
-}
-function ofRun(input) {
-  const { db, run: r, people, messages, recorded, runOver, orchestrators, nameOf } = input;
-  const id = Number(r.id);
-  const repo = String(r.repo);
-  const ids = people.map((p) => Number(p.id));
-  const marks = ids.map(() => "?").join(", ") || "NULL";
-  const sharesSince = db.prepare("SELECT value FROM settings WHERE name = ?").get(SHARES_SINCE);
-  const sharesRecorded = sharesSince !== void 0 && ms(r.opened_at) >= ms(sharesSince.value);
-  const merges = recorded ? db.prepare("SELECT * FROM merges WHERE run = ? ORDER BY rowid").all(id) : [];
-  const claimLog = db.prepare(`SELECT path, participant, kind FROM claim_log WHERE participant IN (${marks}) ORDER BY rowid`).all(...ids);
-  const shares = db.prepare(`SELECT path, participant, other FROM shares WHERE participant IN (${marks}) AND other IN (${marks})`).all(...ids, ...ids);
-  const conflictedOf = (m) => m.conflicts == null ? null : JSON.parse(String(m.conflicts));
-  const mergesRead = recorded ? merges.map((m) => ({ participant: Number(m.participant), at: ms(m.at), files: JSON.parse(String(m.files)), conflicts: conflictedOf(m) })) : mergesFromEvents(messages);
-  const mergeTimesOf = (pid) => mergesRead.filter((m) => m.participant === pid).map((m) => m.at);
-  const grants = recorded ? db.prepare(
-    `SELECT t.participant, t.asked_at, t.granted_at, p.seat, r.plan FROM lock_requests t
-             LEFT JOIN participants p ON p.id = t.participant LEFT JOIN runs r ON r.id = p.run
-           WHERE t.repo = ? AND t.granted_at IS NOT NULL ORDER BY t.granted_at`
-  ).all(repo) : [];
-  const lockWaitsMs = [];
-  const boardFlags = distinctFlags(messages);
-  const racesLost = [];
-  const memberOf = (p, window) => {
-    const pid = Number(p.id);
-    const turns = recorded ? db.prepare("SELECT * FROM lock_requests WHERE participant = ? ORDER BY rowid").all(pid).map((t) => {
-      const asked = ms(t.asked_at);
-      const merged = t.merged_at == null ? null : ms(t.merged_at);
-      return {
-        asked,
-        granted: t.granted_at == null ? null : ms(t.granted_at),
-        merged,
-        refused: Number(t.refused),
-        // a turn without a merge is closed by the member's next end call (D25), else by its end
-        over: merged ?? window.endCalls.find((e) => e >= asked) ?? window.over
-      };
-    }) : [];
-    const memberMarks = [];
-    let lost = 0;
-    let waitedMs = null;
-    for (const t of turns) {
-      if (t.granted !== null) lockWaitsMs.push(t.granted - t.asked);
-      if (t.refused === 0) continue;
-      const until = t.granted ?? t.over;
-      for (const g of grants) {
-        const at = ms(g.granted_at);
-        if (Number(g.participant) === pid || !(ms(g.asked_at) > t.asked) || !(at > t.asked && at < until)) continue;
-        lost++;
-        waitedMs = Math.max(waitedMs ?? 0, at - t.asked);
-        const winner = g.seat == null ? "a member" : `${g.plan}/${g.seat}`;
-        memberMarks.push({ at: iso(at), what: "race", note: `the merge lock went to ${winner}, who asked later` });
-      }
-    }
-    if (lost) racesLost.push({ member: nameOf(p), lost, waitedMs });
-    const flagged = boardFlags.filter((m) => Number(m.author) === pid);
-    for (const m of flagged) {
-      memberMarks.push({ at: String(m.at), what: "flag", seq: Number(m.seq), ...m.about != null ? { path: String(m.about) } : {}, note: firstLine(String(m.body)) });
-    }
-    for (const m of mergesRead.filter((x) => x.participant === pid)) {
-      for (const f of m.conflicts ?? []) memberMarks.push({ at: iso(m.at), what: "conflict", path: f, note: `the rebase met a conflict in ${f}` });
-    }
-    const spans = [
-      ...turns.flatMap((t) => t.granted !== null ? [{ from: t.granted, to: t.merged ?? t.over, what: "merging" }] : []),
-      ...turns.flatMap((t) => t.refused > 0 ? [{ from: t.asked, to: t.granted ?? t.over, what: "waiting" }] : [])
-    ];
-    return {
-      spans,
-      marks: memberMarks,
-      estimated: recorded ? null : estimatedTimeline(window.joined, window.over, mergeTimesOf(pid)),
-      counts: { claims: claimLog.filter((c) => Number(c.participant) === pid).length, flags: flagged.length },
-      // read from its spans once they are whole, in `fill` (D40)
-      late: { waitingMs: null }
-    };
-  };
-  const runFields = () => {
-    const firstMerge = mergesRead.length ? Math.min(...mergesRead.map((m) => m.at)) : null;
-    return {
-      firstMergeAtMs: firstMerge === null ? null : firstMerge - ms(r.opened_at),
-      racesLost: recorded ? racesLost.reduce((n, x) => n + (x.lost ?? 0), 0) : null
-    };
-  };
-  const kindFields = () => {
-    if (String(r.kind ?? "plan") !== "plan") return null;
-    const sliceMembers = people.filter((p) => !orchestrators.has(Number(p.id)));
-    const timesMs = sliceMembers.flatMap((p) => {
-      const mergedAt = mergeTimesOf(Number(p.id));
-      const end = mergedAt.length ? Math.min(...mergedAt) : p.ended_at == null ? null : ms(p.ended_at);
-      return end === null ? [] : [end - ms(p.joined_at)];
-    });
-    const sliceCount = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(id).n);
-    const addedMidRun = messages.filter((m) => m.kind === "event" && orchestrators.has(Number(m.author)) && /^added \S+: /.test(String(m.body))).length;
-    const holdersByPath = /* @__PURE__ */ new Map();
-    for (const c of claimLog) {
-      const key = foldPath(String(c.path));
-      const entry2 = holdersByPath.get(key) ?? { path: String(c.path), holders: [] };
-      if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
-      holdersByPath.set(key, entry2);
-    }
-    const sharersOf = (path13) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path13)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
-    const byId = new Map(people.map((p) => [Number(p.id), p]));
-    const membershipOf = (pid) => {
-      const p = byId.get(pid);
-      return { from: ms(p.joined_at), to: p.ended_at == null ? runOver : ms(p.ended_at) };
-    };
-    const membersTogether = (a, b) => {
-      const x = membershipOf(a);
-      const y = membershipOf(b);
-      return x.from < y.to && y.from < x.to;
-    };
-    const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
-    const namesPath = (m, path13) => {
-      if (aboutNames(m.about, path13)) return true;
-      const body = foldPath(String(m.body));
-      return body.includes(foldPath(path13)) || body.includes(foldPath(path13.split("/").pop()));
-    };
-    const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
-    const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
-    const perFile = [];
-    let everyHolderTold = 0;
-    let agreed = 0;
-    let agreedBeforeMerge = 0;
-    for (const { path: path13, holders: everyHolder } of holdersByPath.values()) {
-      const sharers = sharersOf(path13);
-      const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
-      if (holders.length < 2) continue;
-      const tellTimes = [];
-      let told = true;
-      for (let i = 1; i < holders.length; i++) {
-        const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path13));
-        tellTimes.push(...tells.map((m) => ms(m.at)));
-        const mentioned = (e) => tells.some((m) => {
-          const named = JSON.parse(String(m.mentions));
-          return named.includes(nameOf(byId.get(e))) || named.includes(`${r.plan}/*`);
-        });
-        if (!holders.slice(0, i).every(mentioned)) told = false;
-      }
-      const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
-      const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path13));
-      const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path13)) : holders.includes(m.participant));
-      const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
-      if (told) {
-        everyHolderTold++;
-        if (agreement) {
-          agreed++;
-          if (firstMergeOfPath === null || ms(agreement.at) < firstMergeOfPath) agreedBeforeMerge++;
-        }
-      }
-      const met = mergedWith.map((m) => m.conflicts);
-      const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path13))) ? true : met.some((c) => c === null) ? null : false;
-      const declaredInterface = holders.some(
-        (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path13))
-      );
-      const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path13));
-      perFile.push({
-        path: path13,
-        holders: holders.map((h) => nameOf(byId.get(h))),
-        interface: declaredInterface || claimedInterface,
-        told,
-        agreement: agreement ? Number(agreement.seq) : null,
-        // below 0: agreed before the tell (D46)
-        agreedAfterMs: agreement && sharedAt !== null ? ms(agreement.at) - sharedAt : null,
-        conflict
-      });
-    }
-    let known = 0;
-    let inShared = 0;
-    let unknownMerges = 0;
-    for (const m of merges) {
-      const files = conflictedOf(m);
-      if (files === null) {
-        unknownMerges++;
-        continue;
-      }
-      known += files.length;
-      inShared += files.filter((f) => claimLog.some((c) => Number(c.participant) !== Number(m.participant) && foldPath(String(c.path)) === foldPath(f))).length;
-    }
-    const mergedSlices = recorded ? new Set(merges.map((m) => Number(m.participant)).filter((pid) => !orchestrators.has(pid))).size : sliceMembers.filter((p) => Number(p.merged ?? 0) === 1).length;
-    return {
-      plan: {
-        slices: { merged: mergedSlices, of: sliceCount, addedMidRun, timesMs, timesEstimated: !recorded },
-        lock: { waitsMs: lockWaitsMs, racesLost },
-        shared: { files: perFile.length, everyHolderTold, agreed, agreedBeforeMerge, perFile, estimated: !sharesRecorded },
-        flags: boardFlags.length,
-        conflicts: recorded ? { known, inShared, unknownMerges } : { known: null, inShared: null, unknownMerges: null }
-      }
-    };
-  };
-  return { member: memberOf, runFields, kindFields };
-}
-function slicesOfSummary(slices) {
-  const { estimated, ...rest } = slices;
-  return { ...rest, timesEstimated: slices.timesEstimated ?? estimated ?? false };
-}
-function fill(run3) {
-  const codeRun = run3;
-  const lengthOf = (i) => ms(i.to) - ms(i.from);
-  const members = codeRun.members.map(
-    (m) => "waitingMs" in m ? { ...m, waitingMs: m.waitingMs ?? (run3.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null) } : m
-  );
-  const plan = codeRun.plan && {
-    ...codeRun.plan,
-    slices: slicesOfSummary(codeRun.plan.slices),
-    shared: {
-      ...codeRun.plan.shared,
-      estimated: codeRun.plan.shared.estimated ?? false,
-      // a summary from before `told` (D46) reads each file told, as its list read it
-      perFile: codeRun.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
-    }
-  };
-  return { ...run3, members, ...plan ? { plan } : {} };
-}
-function totals(runs) {
-  const codeRuns = runs;
-  const plans = codeRuns.flatMap((r) => r.plan ? [r.plan] : []);
-  const recordedPlans = codeRuns.filter((r) => r.recorded).flatMap((r) => r.plan ? [r.plan] : []);
-  const times = plans.flatMap((p) => p.slices.timesMs);
-  const waits = recordedPlans.flatMap((p) => p.lock.waitsMs);
-  const bounds = waitBinsMs();
-  const bins = [...bounds, Infinity].map((upper, i) => waits.filter((w) => w >= (bounds[i - 1] ?? 0) && w < upper).length);
-  const shared = (pick) => sumKnown(plans.map((p) => pick(p.shared)));
-  const files = shared((s) => s.files);
-  const agreed = shared((s) => s.agreed);
-  const series = (figure) => codeRuns.map((r) => r.recorded ? figure(r) : null);
-  const everyRun = (figure) => codeRuns.map(figure);
-  return {
-    fields: {
-      slices: {
-        merged: sumKnown(plans.map((p) => p.slices.merged)),
-        of: sumKnown(plans.map((p) => p.slices.of)),
-        p50Ms: percentile(times, 0.5),
-        p90Ms: percentile(times, 0.9),
-        timesEstimatedRuns: plans.filter((p) => p.slices.timesEstimated).length
-      },
-      // merges: the lock turns granted, each one merge's wait
-      lockWait: { merges: recordedPlans.length ? waits.length : null, p50Ms: percentile(waits, 0.5), p90Ms: percentile(waits, 0.9), bins: recordedPlans.length ? bins : [] },
-      shared: {
-        files,
-        everyHolderTold: shared((s) => s.everyHolderTold),
-        agreed,
-        agreedBeforeMerge: shared((s) => s.agreedBeforeMerge),
-        withoutAgreement: files === null || agreed === null ? null : files - agreed,
-        estimatedRuns: plans.filter((p) => p.shared.estimated).length
-      },
-      flags: sumKnown(plans.map((p) => p.flags)),
-      runsWithoutFlag: plans.length ? plans.filter((p) => p.flags === 0).length : null,
-      conflicts: {
-        known: sumKnown(plans.map((p) => p.conflicts.known)),
-        inShared: sumKnown(plans.map((p) => p.conflicts.inShared)),
-        unknownMerges: sumKnown(plans.map((p) => p.conflicts.unknownMerges))
-      }
-    },
-    series: {
-      slicesMerged: everyRun((r) => r.plan?.slices.merged ?? null),
-      sliceTimeP50: everyRun((r) => r.plan ? percentile(r.plan.slices.timesMs, 0.5) : null),
-      lockWaitP50: series((r) => r.plan ? percentile(r.plan.lock.waitsMs, 0.5) : null),
-      sharedAgreed: everyRun((r) => r.plan?.shared.agreed ?? null),
-      // flags come from the board's messages, kept for a run before the records too (D43)
-      flags: everyRun((r) => r.plan?.flags ?? null),
-      conflicts: series((r) => r.plan?.conflicts.known ?? null)
-    }
-  };
-}
-function filesAcross(runs) {
-  const byPath = /* @__PURE__ */ new Map();
-  for (const r of runs) {
-    for (const f of r.plan?.shared.perFile ?? []) {
-      const key = foldPath(f.path);
-      const entry2 = byPath.get(key) ?? { path: f.path, perRun: [] };
-      entry2.perRun.push({ run: r.run, holders: f.holders, agreed: f.agreement !== null, conflict: f.conflict, interface: f.interface ?? null });
-      byPath.set(key, entry2);
-    }
-  }
-  return [...byPath.values()].map(({ path: path13, perRun }) => ({
-    path: path13,
-    runs: perRun.map((x) => x.run),
-    holders: new Set(perRun.flatMap((x) => x.holders)).size,
-    agreements: perRun.filter((x) => x.agreed).length,
-    conflicts: perRun.every((x) => x.conflict === null) ? null : perRun.filter((x) => x.conflict === true).length,
-    // the runs in which a holder declared or claimed it an interface; null when none knows (summaries from before D37)
-    declaredInterface: perRun.every((x) => x.interface === null) ? null : perRun.filter((x) => x.interface === true).length,
-    perRun: perRun.map((x) => ({ run: x.run, holders: x.holders.length, conflict: x.conflict }))
-  })).sort((a, b) => b.runs.length - a.runs.length || a.path.localeCompare(b.path));
-}
-var MINUTE_MS, SHARES_SINCE, FLAG_BODY, waitBinsMs, isBoardFlag, aboutNames, MERGED_BODY, FILES_LINE, codeStats;
-var init_stats = __esm({
-  "src/packs/code/stats.ts"() {
-    "use strict";
-    init_stats_math();
-    MINUTE_MS = 60 * 1e3;
-    SHARES_SINCE = "shares-since";
-    FLAG_BODY = /flag:\s*\S+\s+wrote\s+(\S+)\s+outside its claim(?:;\s*(\S+)\s+holds it)?/;
-    waitBinsMs = () => [1, 2, 5, 10].map((m) => m * MINUTE_MS);
-    isBoardFlag = (m) => Number(m.by_board ?? 0) === 1 && (m.event === "flag" || m.event == null && FLAG_BODY.test(String(m.body)));
-    aboutNames = (about, path13) => {
-      if (about == null) return false;
-      const a = foldPath(String(about).replace(/\\/g, "/"));
-      const f = foldPath(path13);
-      return a === f || f.endsWith(`/${a}`);
-    };
-    MERGED_BODY = /^merged \S+/;
-    FILES_LINE = /^files: (.*)$/m;
-    codeStats = { ofRun, fill, totals, files: filesAcross };
-  }
-});
-
-// src/packs/code/index.ts
-var claimsOf, codePack;
-var init_code = __esm({
-  "src/packs/code/index.ts"() {
-    "use strict";
-    init_stats();
-    claimsOf = (ctx) => ctx.tables;
-    codePack = {
-      name: "code",
-      verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
-      stats: codeStats,
-      // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
-      alsoFor: (member, message, ctx) => (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && claimsOf(ctx).holderNames(member.repo, message.about).includes(member.name),
-      // an agreement with no party named binds the file's other holders (F25)
-      defaultParties: (about, ctx) => claimsOf(ctx).holderNames(ctx.repo, about),
-      // a member holding a claim or the merge lock is mid-work, never idle
-      busy: (member, ctx) => claimsOf(ctx).holdsAny(member)
-    };
-  }
-});
-
-// src/packs/registry.ts
-var PACKS, MEMBER_ROWS, rowOf, registry;
-var init_registry = __esm({
-  "src/packs/registry.ts"() {
-    "use strict";
-    init_kinds();
-    init_code();
-    PACKS = { [codePack.name]: codePack };
-    MEMBER_ROWS = [
-      { kind: "plan", role: null, pack: "code", verify: false },
-      { kind: "plan", role: "verifier", pack: null, verify: true },
-      { kind: "task", role: null, pack: "code", verify: false },
-      { kind: "task", role: "verifier", pack: null, verify: true },
-      { kind: "brainstorm", role: null, pack: null, verify: false }
-    ];
-    rowOf = (spec) => ({ pack: spec.pack === null ? null : PACKS[spec.pack], verify: spec.verify });
-    registry = {
-      /** The member's pack and verify setting for a seat of `role` in a run of `kind`; throws on an unknown kind. */
-      forMember(kind, role) {
-        const known = profileOf(kind).kind;
-        const own = role === null ? void 0 : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
-        return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null));
-      },
-      /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
-      statsFigures() {
-        return Object.values(PACKS).flatMap((p) => p.stats ? [p.stats] : []);
-      },
-      /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
-      packNamed(name) {
-        return name !== null && Object.hasOwn(PACKS, name) ? PACKS[name] : null;
-      }
-    };
-  }
-});
-
-// src/board/claims.ts
-function claimsOf2(deps) {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf } = deps;
+// src/packs/code/claims.ts
+function claimsOf(deps) {
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf, kindHasClaims } = deps;
   const clearFlags = () => {
     db.prepare("DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path)").run();
     db.prepare(
@@ -941,7 +583,7 @@ function claimsOf2(deps) {
           }
           if (lock && Number(lock.participant) === me.id && lock.onto != null) onto = String(lock.onto);
           db.prepare("DELETE FROM merge_locks WHERE repo = ?").run(me.repo);
-          db.prepare("UPDATE participants SET merged = 1 WHERE id = ?").run(me.id);
+          db.prepare("UPDATE participants SET merged = 1, doing = ? WHERE id = ?").run(`merged ${sha.slice(0, 7)}`, me.id);
           const turn = openTurn(me);
           if (turn) db.prepare("UPDATE lock_requests SET merged_at = ? WHERE rowid = ?").run(now(), Number(turn.id));
           waiters = takeLockWaiters(me.repo).filter((n) => n !== me.name);
@@ -969,7 +611,7 @@ function claimsOf2(deps) {
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => registry.forMember(String(r.kind), null).pack !== null).map((r) => String(r.plan));
+        const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => kindHasClaims(String(r.kind))).map((r) => String(r.plan));
         const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
@@ -995,16 +637,1784 @@ function claimsOf2(deps) {
           JSON.stringify(rels),
           conflicts && "files" in conflicts ? JSON.stringify(conflicts.files.map(slashes)) : null
         );
+        const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
+        for (const rel of rels) release.run(me.repo, rel, me.id);
+        clearFlags();
       });
       return sharers;
     }
   };
 }
 var init_claims = __esm({
-  "src/board/claims.ts"() {
+  "src/packs/code/claims.ts"() {
     "use strict";
     init_events();
-    init_registry();
+  }
+});
+
+// src/packs/code/snapshot.ts
+function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
+  const { db, isLive, nameOf, relPath } = deps;
+  const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo);
+  const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
+  const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
+  const live = db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
+  const files = /* @__PURE__ */ new Map();
+  for (const c of live) {
+    const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
+    f.holders.push(`${c.plan}/${c.seat}`);
+    f.interface ||= c.kind === "interface";
+    files.set(f.path, f);
+  }
+  const everClaimed = db.prepare("SELECT 1 FROM claim_log WHERE repo = ? AND path = ? AND participant = ?");
+  for (const r of people) {
+    if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
+    const name = `${r.plan}/${r.seat}`;
+    for (const d of JSON.parse(String(r.files))) {
+      const f = files.get(relPath(repo, d.path) ?? d.path);
+      if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
+    }
+  }
+  const sharedBy = (path14, id) => live.some((c) => String(c.path) === path14 && Number(c.participant) !== id);
+  const flags = db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
+  const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t) => ({
+    member: `${t.plan}/${t.seat}`,
+    askedAt: String(t.asked_at),
+    grantedAt: t.granted_at == null ? null : String(t.granted_at),
+    mergedAt: t.merged_at == null ? null : String(t.merged_at),
+    refused: Number(t.refused)
+  }));
+  return {
+    fields: {
+      lockHistory,
+      lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow.at) } : null,
+      files: [...files.values()],
+      flags
+    },
+    lockHolder,
+    heldFilesOf: (id) => heldBy.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) }))
+  };
+}
+function heldOf(db, id) {
+  return db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface" }));
+}
+var init_snapshot = __esm({
+  "src/packs/code/snapshot.ts"() {
+    "use strict";
+  }
+});
+
+// src/packs/code/schema.ts
+function migrateCodeTables(db) {
+  const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === void 0;
+  db.exec(`
+    -- claims are global by repository-relative path, across every run on a repository (D12, D20);
+    -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed
+    CREATE TABLE IF NOT EXISTS claims (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'inside',
+      since_seq INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (repo, path, participant)
+    );
+    -- every claim made, kept past its release: who held a path during a run (D63), and whether as an
+    -- interface: widened to 'interface' when the claim is made or widened so, never narrowed (D42)
+    CREATE TABLE IF NOT EXISTS claim_log (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'inside',
+      PRIMARY KEY (repo, path, participant)
+    );
+    -- a claim granted beside a live holder of the path, kept past both claims' release: who held a path
+    -- at the same time as whom during a run, from the seq it began (D39); append-only, deleted with its run
+    CREATE TABLE IF NOT EXISTS shares (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      other INTEGER NOT NULL,
+      seq INTEGER NOT NULL,
+      PRIMARY KEY (repo, path, participant, other)
+    );
+    -- a holder of a shared path already told of another holder (D41): once per member and path
+    CREATE TABLE IF NOT EXISTS notices (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      other INTEGER NOT NULL,
+      PRIMARY KEY (repo, path, participant, other)
+    );
+    CREATE TABLE IF NOT EXISTS merge_locks (
+      repo TEXT PRIMARY KEY,
+      participant INTEGER NOT NULL,
+      at TEXT NOT NULL
+    );
+    -- a member refused the merge lock since its holder took it: mentioned when it is released (D65)
+    CREATE TABLE IF NOT EXISTS lock_waiters (
+      repo TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      PRIMARY KEY (repo, participant)
+    );
+    -- a path written outside its writer's claim, by reconcileWrites; lives while a claim on it does (D39)
+    CREATE TABLE IF NOT EXISTS flags (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      PRIMARY KEY (repo, path, participant)
+    );
+    -- a claim refused as held: the post that settles it claims it (D7)
+    CREATE TABLE IF NOT EXISTS claim_requests (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      PRIMARY KEY (repo, path, participant)
+    );
+    -- a flag posted, once per writer, path and holder (D8)
+    CREATE TABLE IF NOT EXISTS flag_posts (
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      participant INTEGER NOT NULL,
+      holder INTEGER NOT NULL,
+      PRIMARY KEY (repo, path, participant, holder)
+    );
+    -- one row per merge, written by merged, deleted with its run by prune (D25): files and conflicts JSON, conflicts NULL for unknown
+    CREATE TABLE IF NOT EXISTS merges (
+      participant INTEGER NOT NULL,
+      run INTEGER NOT NULL,
+      sha TEXT NOT NULL,
+      at TEXT NOT NULL,
+      files TEXT NOT NULL,
+      conflicts TEXT
+    );
+    CREATE INDEX IF NOT EXISTS merges_run ON merges (run);
+    -- one row per merge-lock turn: asked, granted, merged; refused counts the refusals (D25); deleted with its run
+    CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
+      granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
+  `);
+  if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, (/* @__PURE__ */ new Date()).toISOString());
+  const upkeep = (table, column, ddl) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  };
+  upkeep("claim_log", "kind", "kind TEXT NOT NULL DEFAULT 'inside'");
+  upkeep("merge_locks", "onto", "onto TEXT");
+  upkeep("merge_locks", "guides", "guides TEXT");
+  upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
+  const claimKey = db.prepare("PRAGMA table_info(claims)").all().find((c) => c.name === "participant");
+  if (claimKey && claimKey.pk === 0) {
+    db.exec(`
+      BEGIN;
+      ALTER TABLE claims RENAME TO claims_before_d40;
+      CREATE TABLE claims (
+        repo TEXT NOT NULL,
+        path TEXT NOT NULL,
+        participant INTEGER NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'inside',
+        since_seq INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (repo, path, participant)
+      );
+      INSERT INTO claims (repo, path, participant, kind) SELECT repo, path, participant, kind FROM claims_before_d40;
+      DROP TABLE claims_before_d40;
+      COMMIT;
+    `);
+  }
+}
+function forgetMemberRows(db, participant) {
+  for (const table of MEMBER_TABLES) db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(participant);
+  db.prepare("DELETE FROM notices WHERE other = ?").run(participant);
+  db.prepare("DELETE FROM shares WHERE other = ?").run(participant);
+}
+function forgetRunRows(db, run3) {
+  db.prepare("DELETE FROM merges WHERE run = ?").run(run3);
+}
+var SHARES_SINCE, MEMBER_TABLES;
+var init_schema = __esm({
+  "src/packs/code/schema.ts"() {
+    "use strict";
+    SHARES_SINCE = "shares-since";
+    MEMBER_TABLES = ["claim_log", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "claim_requests", "flag_posts", "lock_requests"];
+  }
+});
+
+// src/board/stats-math.ts
+function percentile(values, p) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
+}
+function sumKnown(values) {
+  const known = values.filter((v) => typeof v === "number");
+  return known.length ? known.reduce((a, b) => a + b, 0) : null;
+}
+var CASELESS, foldPath, ms, iso, firstLine;
+var init_stats_math = __esm({
+  "src/board/stats-math.ts"() {
+    "use strict";
+    CASELESS = process.platform === "win32";
+    foldPath = (p) => CASELESS ? p.toLowerCase() : p;
+    ms = (at) => Date.parse(String(at));
+    iso = (t) => new Date(t).toISOString();
+    firstLine = (body) => body.split(/\r?\n/)[0].slice(0, 120);
+  }
+});
+
+// src/packs/code/stats.ts
+function distinctFlags(messages) {
+  const seen = /* @__PURE__ */ new Set();
+  return messages.filter((m) => {
+    if (!isBoardFlag(m)) return false;
+    const [, path14 = m.about ?? "", holder = ""] = String(m.body).match(FLAG_BODY) ?? [];
+    const key = JSON.stringify([Number(m.author), foldPath(String(path14)), holder]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function mergesFromEvents(messages) {
+  return messages.filter((m) => m.kind === "event" && (m.event === "merged" || m.event == null && MERGED_BODY.test(String(m.body)))).map((m) => {
+    const line = String(m.body).match(FILES_LINE)?.[1].trim();
+    const files = line === void 0 ? null : line === "-" ? [] : line.split(", ").map((f) => f.trim()).filter(Boolean);
+    return { participant: Number(m.author), at: ms(m.at), files, conflicts: null };
+  });
+}
+function estimatedTimeline(joined, over, mergedAt) {
+  if (!(over > joined)) return [];
+  const merges = mergedAt.filter((t) => t > joined && t <= over).sort((a, b) => a - b);
+  const working = { from: iso(joined), to: iso(merges[0] ?? over), what: "working", inferred: true };
+  return [working, ...merges.map((t) => ({ from: iso(t), to: iso(t), what: "merging", inferred: true }))];
+}
+function ofRun(input) {
+  const { db, run: r, people, messages, recorded, runOver, orchestrators, nameOf } = input;
+  const id = Number(r.id);
+  const repo = String(r.repo);
+  const ids = people.map((p) => Number(p.id));
+  const marks = ids.map(() => "?").join(", ") || "NULL";
+  const sharesSince = db.prepare("SELECT value FROM settings WHERE name = ?").get(SHARES_SINCE);
+  const sharesRecorded = sharesSince !== void 0 && ms(r.opened_at) >= ms(sharesSince.value);
+  const merges = recorded ? db.prepare("SELECT * FROM merges WHERE run = ? ORDER BY rowid").all(id) : [];
+  const claimLog = db.prepare(`SELECT path, participant, kind FROM claim_log WHERE participant IN (${marks}) ORDER BY rowid`).all(...ids);
+  const shares = db.prepare(`SELECT path, participant, other FROM shares WHERE participant IN (${marks}) AND other IN (${marks})`).all(...ids, ...ids);
+  const conflictedOf = (m) => m.conflicts == null ? null : JSON.parse(String(m.conflicts));
+  const mergesRead = recorded ? merges.map((m) => ({ participant: Number(m.participant), at: ms(m.at), files: JSON.parse(String(m.files)), conflicts: conflictedOf(m) })) : mergesFromEvents(messages);
+  const mergeTimesOf = (pid) => mergesRead.filter((m) => m.participant === pid).map((m) => m.at);
+  const grants = recorded ? db.prepare(
+    `SELECT t.participant, t.asked_at, t.granted_at, p.seat, r.plan FROM lock_requests t
+             LEFT JOIN participants p ON p.id = t.participant LEFT JOIN runs r ON r.id = p.run
+           WHERE t.repo = ? AND t.granted_at IS NOT NULL ORDER BY t.granted_at`
+  ).all(repo) : [];
+  const lockWaitsMs = [];
+  const boardFlags = distinctFlags(messages);
+  const racesLost = [];
+  const memberOf = (p, window) => {
+    const pid = Number(p.id);
+    const turns = recorded ? db.prepare("SELECT * FROM lock_requests WHERE participant = ? ORDER BY rowid").all(pid).map((t) => {
+      const asked = ms(t.asked_at);
+      const merged = t.merged_at == null ? null : ms(t.merged_at);
+      return {
+        asked,
+        granted: t.granted_at == null ? null : ms(t.granted_at),
+        merged,
+        refused: Number(t.refused),
+        // a turn without a merge is closed by the member's next end call (D25), else by its end
+        over: merged ?? window.endCalls.find((e) => e >= asked) ?? window.over
+      };
+    }) : [];
+    const memberMarks = [];
+    let lost = 0;
+    let waitedMs = null;
+    for (const t of turns) {
+      if (t.granted !== null) lockWaitsMs.push(t.granted - t.asked);
+      if (t.refused === 0) continue;
+      const until = t.granted ?? t.over;
+      for (const g of grants) {
+        const at = ms(g.granted_at);
+        if (Number(g.participant) === pid || !(ms(g.asked_at) > t.asked) || !(at > t.asked && at < until)) continue;
+        lost++;
+        waitedMs = Math.max(waitedMs ?? 0, at - t.asked);
+        const winner = g.seat == null ? "a member" : `${g.plan}/${g.seat}`;
+        memberMarks.push({ at: iso(at), what: "race", note: `the merge lock went to ${winner}, who asked later` });
+      }
+    }
+    if (lost) racesLost.push({ member: nameOf(p), lost, waitedMs });
+    const flagged = boardFlags.filter((m) => Number(m.author) === pid);
+    for (const m of flagged) {
+      memberMarks.push({ at: String(m.at), what: "flag", seq: Number(m.seq), ...m.about != null ? { path: String(m.about) } : {}, note: firstLine(String(m.body)) });
+    }
+    for (const m of mergesRead.filter((x) => x.participant === pid)) {
+      for (const f of m.conflicts ?? []) memberMarks.push({ at: iso(m.at), what: "conflict", path: f, note: `the rebase met a conflict in ${f}` });
+    }
+    const spans = [
+      ...turns.flatMap((t) => t.granted !== null ? [{ from: t.granted, to: t.merged ?? t.over, what: "merging" }] : []),
+      ...turns.flatMap((t) => t.refused > 0 ? [{ from: t.asked, to: t.granted ?? t.over, what: "waiting" }] : [])
+    ];
+    return {
+      spans,
+      marks: memberMarks,
+      estimated: recorded ? null : estimatedTimeline(window.joined, window.over, mergeTimesOf(pid)),
+      counts: { claims: claimLog.filter((c) => Number(c.participant) === pid).length, flags: flagged.length },
+      // read from its spans once they are whole, in `fill` (D40)
+      late: { waitingMs: null }
+    };
+  };
+  const runFields = () => {
+    const firstMerge = mergesRead.length ? Math.min(...mergesRead.map((m) => m.at)) : null;
+    return {
+      firstMergeAtMs: firstMerge === null ? null : firstMerge - ms(r.opened_at),
+      racesLost: recorded ? racesLost.reduce((n, x) => n + (x.lost ?? 0), 0) : null
+    };
+  };
+  const kindFields = () => {
+    if (String(r.kind ?? "plan") !== "plan") return null;
+    const sliceMembers = people.filter((p) => !orchestrators.has(Number(p.id)));
+    const timesMs = sliceMembers.flatMap((p) => {
+      const mergedAt = mergeTimesOf(Number(p.id));
+      const end = mergedAt.length ? Math.min(...mergedAt) : p.ended_at == null ? null : ms(p.ended_at);
+      return end === null ? [] : [end - ms(p.joined_at)];
+    });
+    const sliceCount = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(id).n);
+    const addedMidRun = messages.filter((m) => m.kind === "event" && orchestrators.has(Number(m.author)) && /^added \S+: /.test(String(m.body))).length;
+    const holdersByPath = /* @__PURE__ */ new Map();
+    for (const c of claimLog) {
+      const key = foldPath(String(c.path));
+      const entry2 = holdersByPath.get(key) ?? { path: String(c.path), holders: [] };
+      if (!entry2.holders.includes(Number(c.participant))) entry2.holders.push(Number(c.participant));
+      holdersByPath.set(key, entry2);
+    }
+    const sharersOf = (path14) => new Set(shares.filter((sh) => foldPath(String(sh.path)) === foldPath(path14)).flatMap((sh) => [Number(sh.participant), Number(sh.other)]));
+    const byId = new Map(people.map((p) => [Number(p.id), p]));
+    const membershipOf = (pid) => {
+      const p = byId.get(pid);
+      return { from: ms(p.joined_at), to: p.ended_at == null ? runOver : ms(p.ended_at) };
+    };
+    const membersTogether = (a, b) => {
+      const x = membershipOf(a);
+      const y = membershipOf(b);
+      return x.from < y.to && y.from < x.to;
+    };
+    const claimersTogether = (claimers) => claimers.filter((h) => claimers.some((o) => o !== h && membersTogether(h, o)));
+    const namesPath = (m, path14) => {
+      if (aboutNames(m.about, path14)) return true;
+      const body = foldPath(String(m.body));
+      return body.includes(foldPath(path14)) || body.includes(foldPath(path14.split("/").pop()));
+    };
+    const said = messages.filter((m) => m.kind !== "event" && Number(m.by_board ?? 0) === 0);
+    const interfaceClaims = claimLog.filter((c) => c.kind === "interface");
+    const perFile = [];
+    let everyHolderTold = 0;
+    let agreed = 0;
+    let agreedBeforeMerge = 0;
+    for (const { path: path14, holders: everyHolder } of holdersByPath.values()) {
+      const sharers = sharersOf(path14);
+      const holders = sharesRecorded ? everyHolder.filter((h) => sharers.has(h)) : claimersTogether(everyHolder);
+      if (holders.length < 2) continue;
+      const tellTimes = [];
+      let told = true;
+      for (let i = 1; i < holders.length; i++) {
+        const tells = said.filter((m) => Number(m.author) === holders[i] && namesPath(m, path14));
+        tellTimes.push(...tells.map((m) => ms(m.at)));
+        const mentioned = (e) => tells.some((m) => {
+          const named = JSON.parse(String(m.mentions));
+          return named.includes(nameOf(byId.get(e))) || named.includes(`${r.plan}/*`);
+        });
+        if (!holders.slice(0, i).every(mentioned)) told = false;
+      }
+      const sharedAt = tellTimes.length ? Math.min(...tellTimes) : null;
+      const agreement = messages.find((m) => m.kind === "agreement" && aboutNames(m.about, path14));
+      const mergedWith = mergesRead.filter((m) => m.files ? m.files.some((f) => foldPath(f) === foldPath(path14)) : holders.includes(m.participant));
+      const firstMergeOfPath = mergedWith.length ? Math.min(...mergedWith.map((m) => m.at)) : null;
+      if (told) {
+        everyHolderTold++;
+        if (agreement) {
+          agreed++;
+          if (firstMergeOfPath === null || ms(agreement.at) < firstMergeOfPath) agreedBeforeMerge++;
+        }
+      }
+      const met = mergedWith.map((m) => m.conflicts);
+      const conflict = !recorded ? null : met.some((c) => c?.some((f) => foldPath(f) === foldPath(path14))) ? true : met.some((c) => c === null) ? null : false;
+      const declaredInterface = holders.some(
+        (h) => JSON.parse(String(byId.get(h).files ?? "[]")).some((d) => d.interface === true && aboutNames(d.path, path14))
+      );
+      const claimedInterface = interfaceClaims.some((c) => holders.includes(Number(c.participant)) && foldPath(String(c.path)) === foldPath(path14));
+      perFile.push({
+        path: path14,
+        holders: holders.map((h) => nameOf(byId.get(h))),
+        interface: declaredInterface || claimedInterface,
+        told,
+        agreement: agreement ? Number(agreement.seq) : null,
+        // below 0: agreed before the tell (D46)
+        agreedAfterMs: agreement && sharedAt !== null ? ms(agreement.at) - sharedAt : null,
+        conflict
+      });
+    }
+    let known = 0;
+    let inShared = 0;
+    let unknownMerges = 0;
+    for (const m of merges) {
+      const files = conflictedOf(m);
+      if (files === null) {
+        unknownMerges++;
+        continue;
+      }
+      known += files.length;
+      inShared += files.filter((f) => claimLog.some((c) => Number(c.participant) !== Number(m.participant) && foldPath(String(c.path)) === foldPath(f))).length;
+    }
+    const mergedSlices = recorded ? new Set(merges.map((m) => Number(m.participant)).filter((pid) => !orchestrators.has(pid))).size : sliceMembers.filter((p) => Number(p.merged ?? 0) === 1).length;
+    return {
+      plan: {
+        slices: { merged: mergedSlices, of: sliceCount, addedMidRun, timesMs, timesEstimated: !recorded },
+        lock: { waitsMs: lockWaitsMs, racesLost },
+        shared: { files: perFile.length, everyHolderTold, agreed, agreedBeforeMerge, perFile, estimated: !sharesRecorded },
+        flags: boardFlags.length,
+        conflicts: recorded ? { known, inShared, unknownMerges } : { known: null, inShared: null, unknownMerges: null }
+      }
+    };
+  };
+  return { member: memberOf, runFields, kindFields };
+}
+function slicesOfSummary(slices) {
+  const { estimated, ...rest } = slices;
+  return { ...rest, timesEstimated: slices.timesEstimated ?? estimated ?? false };
+}
+function fill(run3) {
+  const codeRun = run3;
+  const lengthOf = (i) => ms(i.to) - ms(i.from);
+  const members = codeRun.members.map(
+    (m) => "waitingMs" in m ? { ...m, waitingMs: m.waitingMs ?? (run3.recorded ? m.intervals.filter((i) => i.what === "waiting").reduce((n, i) => n + lengthOf(i), 0) : null) } : m
+  );
+  const plan = codeRun.plan && {
+    ...codeRun.plan,
+    slices: slicesOfSummary(codeRun.plan.slices),
+    shared: {
+      ...codeRun.plan.shared,
+      estimated: codeRun.plan.shared.estimated ?? false,
+      // a summary from before `told` (D46) reads each file told, as its list read it
+      perFile: codeRun.plan.shared.perFile.map((f) => ({ ...f, told: f.told ?? true }))
+    }
+  };
+  return { ...run3, members, ...plan ? { plan } : {} };
+}
+function totals(runs) {
+  const codeRuns = runs;
+  const plans = codeRuns.flatMap((r) => r.plan ? [r.plan] : []);
+  const recordedPlans = codeRuns.filter((r) => r.recorded).flatMap((r) => r.plan ? [r.plan] : []);
+  const times = plans.flatMap((p) => p.slices.timesMs);
+  const waits = recordedPlans.flatMap((p) => p.lock.waitsMs);
+  const bounds = waitBinsMs();
+  const bins = [...bounds, Infinity].map((upper, i) => waits.filter((w) => w >= (bounds[i - 1] ?? 0) && w < upper).length);
+  const shared = (pick) => sumKnown(plans.map((p) => pick(p.shared)));
+  const files = shared((s) => s.files);
+  const agreed = shared((s) => s.agreed);
+  const series = (figure) => codeRuns.map((r) => r.recorded ? figure(r) : null);
+  const everyRun = (figure) => codeRuns.map(figure);
+  return {
+    fields: {
+      slices: {
+        merged: sumKnown(plans.map((p) => p.slices.merged)),
+        of: sumKnown(plans.map((p) => p.slices.of)),
+        p50Ms: percentile(times, 0.5),
+        p90Ms: percentile(times, 0.9),
+        timesEstimatedRuns: plans.filter((p) => p.slices.timesEstimated).length
+      },
+      // merges: the lock turns granted, each one merge's wait
+      lockWait: { merges: recordedPlans.length ? waits.length : null, p50Ms: percentile(waits, 0.5), p90Ms: percentile(waits, 0.9), bins: recordedPlans.length ? bins : [] },
+      shared: {
+        files,
+        everyHolderTold: shared((s) => s.everyHolderTold),
+        agreed,
+        agreedBeforeMerge: shared((s) => s.agreedBeforeMerge),
+        withoutAgreement: files === null || agreed === null ? null : files - agreed,
+        estimatedRuns: plans.filter((p) => p.shared.estimated).length
+      },
+      flags: sumKnown(plans.map((p) => p.flags)),
+      runsWithoutFlag: plans.length ? plans.filter((p) => p.flags === 0).length : null,
+      conflicts: {
+        known: sumKnown(plans.map((p) => p.conflicts.known)),
+        inShared: sumKnown(plans.map((p) => p.conflicts.inShared)),
+        unknownMerges: sumKnown(plans.map((p) => p.conflicts.unknownMerges))
+      }
+    },
+    series: {
+      slicesMerged: everyRun((r) => r.plan?.slices.merged ?? null),
+      sliceTimeP50: everyRun((r) => r.plan ? percentile(r.plan.slices.timesMs, 0.5) : null),
+      lockWaitP50: series((r) => r.plan ? percentile(r.plan.lock.waitsMs, 0.5) : null),
+      sharedAgreed: everyRun((r) => r.plan?.shared.agreed ?? null),
+      // flags come from the board's messages, kept for a run before the records too (D43)
+      flags: everyRun((r) => r.plan?.flags ?? null),
+      conflicts: series((r) => r.plan?.conflicts.known ?? null)
+    }
+  };
+}
+function filesAcross(runs) {
+  const byPath = /* @__PURE__ */ new Map();
+  for (const r of runs) {
+    for (const f of r.plan?.shared.perFile ?? []) {
+      const key = foldPath(f.path);
+      const entry2 = byPath.get(key) ?? { path: f.path, perRun: [] };
+      entry2.perRun.push({ run: r.run, holders: f.holders, agreed: f.agreement !== null, conflict: f.conflict, interface: f.interface ?? null });
+      byPath.set(key, entry2);
+    }
+  }
+  return [...byPath.values()].map(({ path: path14, perRun }) => ({
+    path: path14,
+    runs: perRun.map((x) => x.run),
+    holders: new Set(perRun.flatMap((x) => x.holders)).size,
+    agreements: perRun.filter((x) => x.agreed).length,
+    conflicts: perRun.every((x) => x.conflict === null) ? null : perRun.filter((x) => x.conflict === true).length,
+    // the runs in which a holder declared or claimed it an interface; null when none knows (summaries from before D37)
+    declaredInterface: perRun.every((x) => x.interface === null) ? null : perRun.filter((x) => x.interface === true).length,
+    perRun: perRun.map((x) => ({ run: x.run, holders: x.holders.length, conflict: x.conflict }))
+  })).sort((a, b) => b.runs.length - a.runs.length || a.path.localeCompare(b.path));
+}
+var MINUTE_MS, FLAG_BODY, waitBinsMs, isBoardFlag, aboutNames, MERGED_BODY, FILES_LINE, codeStats;
+var init_stats = __esm({
+  "src/packs/code/stats.ts"() {
+    "use strict";
+    init_schema();
+    init_stats_math();
+    MINUTE_MS = 60 * 1e3;
+    FLAG_BODY = /flag:\s*\S+\s+wrote\s+(\S+)\s+outside its claim(?:;\s*(\S+)\s+holds it)?/;
+    waitBinsMs = () => [1, 2, 5, 10].map((m) => m * MINUTE_MS);
+    isBoardFlag = (m) => Number(m.by_board ?? 0) === 1 && (m.event === "flag" || m.event == null && FLAG_BODY.test(String(m.body)));
+    aboutNames = (about, path14) => {
+      if (about == null) return false;
+      const a = foldPath(String(about).replace(/\\/g, "/"));
+      const f = foldPath(path14);
+      return a === f || f.endsWith(`/${a}`);
+    };
+    MERGED_BODY = /^merged \S+/;
+    FILES_LINE = /^files: (.*)$/m;
+    codeStats = { ofRun, fill, totals, files: filesAcross };
+  }
+});
+
+// src/wire.ts
+import crypto from "node:crypto";
+import fs2 from "node:fs";
+import path2 from "node:path";
+function encode(f) {
+  return JSON.stringify(f);
+}
+function decode(text) {
+  const f = JSON.parse(text);
+  const type = f && typeof f === "object" ? f.type : void 0;
+  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
+  return f;
+}
+function bundleVersion(entry2 = process.argv[1] ?? "") {
+  const file = path2.resolve(entry2);
+  let v = versionsByEntry.get(file);
+  if (v === void 0) {
+    v = crypto.createHash("sha256").update(fs2.readFileSync(file)).digest("hex").slice(0, 16);
+    versionsByEntry.set(file, v);
+  }
+  return v;
+}
+function serverStateFile(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.json");
+}
+function serverLogFile(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.log");
+}
+function serverStartLock(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.lock");
+}
+function serverLockHolder(dataRoot) {
+  try {
+    const pid = Number(fs2.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+function liveStartLockHolder(dataRoot) {
+  const holder = serverLockHolder(dataRoot);
+  if (holder === null || !isAlive(holder)) return null;
+  try {
+    if (JSON.parse(fs2.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+  } catch {
+  }
+  try {
+    return Date.now() - fs2.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+  } catch {
+    return null;
+  }
+}
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+var RPC_METHODS, FRAME_TYPES, versionsByEntry, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var init_wire = __esm({
+  "src/wire.ts"() {
+    "use strict";
+    RPC_METHODS = [
+      "openRun",
+      "setSeatState",
+      "addSeat",
+      "closeRun",
+      "phase",
+      "currentPhase",
+      "showPhase",
+      "lock",
+      "unlock",
+      "locks",
+      "pause",
+      "resume",
+      "pausedOf",
+      "park",
+      "unpark",
+      "done",
+      "phaseProgress",
+      "lastActivity",
+      "owedPhase",
+      "idle",
+      "unreadMentions",
+      "guidesUntold",
+      "setting",
+      "runs",
+      "worktrees",
+      "packCall",
+      "join",
+      "participant",
+      "identify",
+      "setDoing",
+      "subscribe",
+      "unsubscribe",
+      "end",
+      "roster",
+      "endedMembers",
+      "heldBy",
+      "post",
+      "endorse",
+      "read",
+      "thread",
+      "runThread",
+      "deliver",
+      "deliverMentions",
+      "wait",
+      "checkEdit",
+      "reconcileWrites",
+      "release",
+      "lockMerge",
+      "merged",
+      "heldMergeLock",
+      "stats",
+      "repos",
+      "snapshot",
+      "composition"
+    ];
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    versionsByEntry = /* @__PURE__ */ new Map();
+    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
+    START_LOCK_GRACE_MS = 15e3;
+  }
+});
+
+// src/board/liveness.ts
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var init_liveness = __esm({
+  "src/board/liveness.ts"() {
+    "use strict";
+    claudeCodeJsonl = {
+      name: "claude-code-jsonl",
+      read(chunk, from) {
+        const end = chunk.lastIndexOf(10);
+        if (end < 0) return from;
+        let tokens = from.tokens;
+        let parsed = 0;
+        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+          const text = line.trim();
+          if (!text) continue;
+          let obj;
+          try {
+            obj = JSON.parse(text);
+          } catch {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          parsed++;
+          const usage = obj.message?.usage;
+          if (!usage) continue;
+          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+            const n = usage[k];
+            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
+          }
+        }
+        return { offset: from.offset + end + 1, tokens };
+      }
+    };
+    IDLE_MS = 15 * 60 * 1e3;
+    NO_TRANSCRIPT_MS = 30 * 1e3;
+    STALL_MS_DEFAULT = 6e4;
+    READINGS_KEPT_MS = 10 * 60 * 1e3;
+    BUSY_MAX_MS = 15 * 60 * 1e3;
+    STALLED_AGAIN_MS = 15 * 60 * 1e3;
+    LINK_LOST_MS = 30 * 1e3;
+    IN_TURN_MS = 120 * 1e3;
+    OWE_WAIT_MS = 10 * 60 * 1e3;
+    CARRY_MAX_MS = 5 * 60 * 1e3;
+    LOCK_HELD_MS = 10 * 60 * 1e3;
+  }
+});
+
+// src/link/transcripts.ts
+import fs3 from "node:fs";
+import os2 from "node:os";
+import path3 from "node:path";
+function shellWords(command, backslashEscapes = true) {
+  const words = [];
+  let word = "";
+  let inWord = false;
+  const flush = () => {
+    if (inWord) words.push(word);
+    word = "";
+    inWord = false;
+  };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (c === "'" || c === '"') {
+      const close = command.indexOf(c, i + 1);
+      const end = close < 0 ? command.length : close;
+      word += command.slice(i + 1, end);
+      inWord = true;
+      i = end;
+    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
+      word += command[++i];
+      inWord = true;
+    } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
+      flush();
+      const two = command.slice(i, i + 2);
+      if (two === "&&" || two === "||") {
+        words.push(two);
+        i++;
+      } else words.push(c);
+    } else if (/\s/.test(c)) flush();
+    else {
+      word += c;
+      inWord = true;
+    }
+  }
+  flush();
+  return words;
+}
+function optionValue(words, names) {
+  for (let i = 0; i < words.length; i++) {
+    for (const n of names) {
+      if (words[i] === n && i + 1 < words.length) return words[i + 1];
+      if (words[i].startsWith(n + "=")) return words[i].slice(n.length + 1);
+    }
+  }
+  return void 0;
+}
+function commandRunsWait(command, backslashEscapes = true) {
+  return commandRunsVerb(command, "wait", backslashEscapes);
+}
+function commandRunsVerb(command, verb, backslashEscapes) {
+  const words = shellWords(command, backslashEscapes);
+  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
+}
+function commandRunsBinding(command, binding, backslashEscapes = true) {
+  const words = shellWords(command, backslashEscapes);
+  let start = 0;
+  for (let i = 0; i <= words.length; i++) {
+    if (i < words.length && !SEPARATORS.has(words[i])) continue;
+    const segment = words.slice(start, i);
+    start = i + 1;
+    const at = segment.indexOf(binding.verb);
+    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
+    const args2 = segment.slice(at + 1);
+    if (binding.verb === "join") {
+      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
+    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
+  }
+  return false;
+}
+function transcriptRunsBinding(file, binding) {
+  let text;
+  try {
+    text = fs3.readFileSync(file, "utf8");
+  } catch {
+    return false;
+  }
+  const value = binding.verb === "join" ? binding.seat : binding.group;
+  if (!text.includes(binding.verb) || !text.includes(value) || !text.includes('"tool_use"')) return false;
+  for (const line of text.split("\n")) {
+    if (!line.includes('"tool_use"') || !line.includes(binding.verb)) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
+    for (const part of obj.message.content) {
+      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
+    }
+  }
+  return false;
+}
+function locate(binding, env) {
+  for (const l of LOCATORS) {
+    const found = l.locate(binding, env);
+    if (found) return found;
+  }
+  return null;
+}
+function toolTarget(input) {
+  let text = "";
+  if (input && typeof input === "object") {
+    const fields = input;
+    for (const k of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
+      if (typeof fields[k] === "string") {
+        text = fields[k];
+        break;
+      }
+    }
+    if (!text) text = JSON.stringify(input);
+  } else if (input !== void 0) text = String(input);
+  return text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
+}
+function commandSegments(text) {
+  const out = [];
+  let cur = "";
+  const flush = () => {
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const close = text.indexOf(c, i + 1);
+      const end = close < 0 ? text.length : close;
+      const inner = text.slice(i + 1, end);
+      if (RUNS_QUOTED.test(cur)) {
+        flush();
+        out.push(...commandSegments(inner));
+      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
+      i = end;
+    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
+    else cur += c;
+  }
+  flush();
+  return out;
+}
+function headOf(segment) {
+  const words = segment.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
+  if (!words.length) return null;
+  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
+  return { head, rest: words.slice(1).join(" ") };
+}
+function portsOf(command) {
+  const found = /* @__PURE__ */ new Set();
+  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
+  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
+  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
+}
+function classifyKill(command) {
+  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
+  let kill = null;
+  for (const segment of commandSegments(command)) {
+    const h = headOf(segment);
+    if (!h || !KILL_HEADS.has(h.head)) continue;
+    const { head, rest } = h;
+    if (head === "pkill" || head === "killall") kill = "name";
+    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? kill ?? null : "fed";
+    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? kill ?? null : "fed";
+    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? kill ?? null : "fed";
+    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
+    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
+    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
+    if (kill === "name") break;
+  }
+  if (kill === "name") return { kind: "pattern" };
+  if (kill !== "fed") return null;
+  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
+  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
+  return null;
+}
+function textOf(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
+}
+function closeNotified(cursor, text, at) {
+  if (!text.includes("<task-notification>")) return;
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
+    cursor.background.delete(m[1]);
+    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
+  }
+}
+function awaitedBackground(cursor) {
+  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
+  let oldest = null;
+  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
+  if (!oldest) return null;
+  let outputGrewAt = null;
+  if (oldest.output) {
+    try {
+      outputGrewAt = fs3.statSync(oldest.output).mtimeMs;
+    } catch {
+    }
+  }
+  return { target: oldest.target, since: oldest.since, outputGrewAt };
+}
+function commandActsAsOther(command, binding, backslashEscapes = true) {
+  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
+  if (as === void 0) return false;
+  const slash = as.lastIndexOf("/");
+  const group = slash < 0 ? null : as.slice(0, slash);
+  const seat = as.slice(slash + 1);
+  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
+}
+function observe(transcript, from, binding) {
+  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
+  let chunk = Buffer.alloc(0);
+  let mtime = Date.now();
+  try {
+    const fd = fs3.openSync(transcript, "r");
+    try {
+      const stat = fs3.fstatSync(fd);
+      mtime = stat.mtimeMs;
+      if (stat.size < cursor.offset) cursor = freshCursor();
+      chunk = Buffer.alloc(stat.size - cursor.offset);
+      fs3.readSync(fd, chunk, 0, chunk.length, cursor.offset);
+    } finally {
+      fs3.closeSync(fd);
+    }
+  } catch {
+    cursor = freshCursor();
+  }
+  const counted = claudeCodeJsonl.read(chunk, { offset: cursor.offset, tokens: cursor.tokens });
+  const consumed = (counted?.offset ?? cursor.offset) - cursor.offset;
+  if (consumed > 0) {
+    for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
+      if (!raw.trim()) continue;
+      let line;
+      try {
+        line = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
+      if (line.type !== "assistant" && line.type !== "user") continue;
+      const at = timeOf(line, mtime);
+      const content = Array.isArray(line.message?.content) ? line.message.content : [];
+      if (line.type === "assistant") {
+        const usage = line.message?.usage;
+        if (usage) {
+          const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
+          cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+        }
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
+          if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
+          const name = part.name ?? "?";
+          const target = toolTarget(part.input);
+          const input = part.input;
+          const command = input?.command;
+          const escapes = toolEscapesBackslash(name);
+          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
+          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
+          const shell = typeof command === "string";
+          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {} });
+          cursor.lastTool = target ? `${name} ${target}` : name;
+          cursor.lastLine = cursor.lastTool;
+          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
+          if (boardsOwn) cursor.boardsOwn.add(part.id);
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
+          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
+          const kill = typeof command === "string" ? classifyKill(command) : null;
+          if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
+        }
+        const inTurn = line.message?.stop_reason === "tool_use";
+        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
+        cursor.inTurn = inTurn;
+      } else {
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
+          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
+          const result = textOf(part.content);
+          const call = cursor.open.get(part.tool_use_id);
+          if (MOVED_TO_BACKGROUND.test(result)) {
+            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const task = cursor.background.get(part.tool_use_id);
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
+            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
+          }
+          cursor.open.delete(part.tool_use_id);
+          cursor.boardsOwn.delete(part.tool_use_id);
+        }
+        cursor.inTurn = true;
+      }
+    }
+    cursor.offset += consumed;
+    cursor.tokens = counted.tokens;
+    cursor.grewAt = mtime;
+  }
+  let openTool = null;
+  for (const t of cursor.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
+  let finished = false;
+  for (const l of LOCATORS) {
+    const said = l.finished(transcript);
+    if (said !== null) {
+      finished = said;
+      break;
+    }
+  }
+  return {
+    activity: {
+      grewAt: cursor.grewAt,
+      tokens: cursor.tokens,
+      context: cursor.context,
+      openTool: openTool && { ...openTool },
+      lastTool: cursor.lastTool,
+      finished,
+      inTurn: cursor.inTurn,
+      lastLine: cursor.lastLine,
+      background: awaitedBackground(cursor),
+      breach: cursor.breach,
+      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
+    },
+    cursor
+  };
+}
+var TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
+var init_transcripts = __esm({
+  "src/link/transcripts.ts"() {
+    "use strict";
+    init_liveness();
+    TARGET_CHARS = 50;
+    SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
+    isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
+    toolEscapesBackslash = (toolName) => toolName === void 0 || toolName === "Bash";
+    commandIsBoardsOwn = (command, backslashEscapes) => commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
+    metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
+    mtimeOf = (file) => {
+      try {
+        return fs3.statSync(file).mtimeMs;
+      } catch {
+        return 0;
+      }
+    };
+    claudeCode = {
+      name: "claude-code",
+      locate(binding, env) {
+        const session = env.CLAUDE_CODE_SESSION_ID;
+        if (!session) return null;
+        const root = env.SWARM_TRANSCRIPTS_ROOT || path3.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
+        let projects;
+        try {
+          projects = fs3.readdirSync(root);
+        } catch {
+          return null;
+        }
+        const candidates = [];
+        for (const project of projects) {
+          const main2 = path3.join(root, project, `${session}.jsonl`);
+          if (fs3.existsSync(main2)) candidates.push(main2);
+          const subagents = path3.join(root, project, session, "subagents");
+          let names = [];
+          try {
+            names = fs3.readdirSync(subagents);
+          } catch {
+          }
+          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path3.join(subagents, n));
+        }
+        const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
+        for (const { file } of newestFirst) {
+          if (this.finished(file) === true) continue;
+          if (transcriptRunsBinding(file, binding)) return file;
+        }
+        return null;
+      },
+      finished(transcript) {
+        let text;
+        try {
+          text = fs3.readFileSync(metaFileOf(transcript), "utf8");
+        } catch {
+          return null;
+        }
+        try {
+          return JSON.parse(text).finished === true;
+        } catch {
+          return false;
+        }
+      }
+    };
+    LOCATORS = [claudeCode];
+    timeOf = (line, fallback) => {
+      const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
+      return Number.isFinite(t) ? t : fallback;
+    };
+    freshCursor = () => ({
+      offset: 0,
+      tokens: 0,
+      open: /* @__PURE__ */ new Map(),
+      lastTool: null,
+      context: null,
+      grewAt: null,
+      lastLine: null,
+      inTurn: false,
+      endedTurns: 0,
+      background: /* @__PURE__ */ new Map(),
+      boardsOwn: /* @__PURE__ */ new Set(),
+      breach: null,
+      listeners: /* @__PURE__ */ new Set(),
+      listenerEndedAt: null
+    });
+    KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
+    WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
+    PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
+    PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
+    RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
+    MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
+    OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
+    NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+    commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
+  }
+});
+
+// src/link/link.ts
+import crypto2 from "node:crypto";
+import fs4 from "node:fs";
+import net from "node:net";
+import os3 from "node:os";
+import path4 from "node:path";
+function linkPipe(dataRoot, run3, member) {
+  const home = crypto2.createHash("sha256").update(path4.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const name = `swarm-${home}-${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path4.join(os3.tmpdir(), `${name}.sock`);
+}
+function linkPidFile(dataRoot, run3, member) {
+  return path4.join(dataRoot, "links", `${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
+}
+function readServerState(dataRoot) {
+  try {
+    return JSON.parse(fs4.readFileSync(serverStateFile(dataRoot), "utf8"));
+  } catch {
+    return null;
+  }
+}
+function describeStop(stop) {
+  if (stop.why === "refused") return `refused ${stop.reason}`;
+  if (stop.why === "no server") return `no server for ${Math.round(stop.forMs / 1e3)} s`;
+  if (stop.why === "closed") return "run closed";
+  return stop.why;
+}
+function sayStop(dataRoot, member, stop, toServerLog) {
+  const line = `link ${member}: ${describeStop(stop)}`;
+  process.stderr.write(line + "\n");
+  const state = toServerLog ? readServerState(dataRoot) : null;
+  if (!state || !isAlive(state.pid)) return;
+  try {
+    fs4.appendFileSync(serverLogFile(dataRoot), line + "\n");
+  } catch {
+  }
+}
+async function listenOnPipe(pipe, onPipe) {
+  if (await pipeAnswers(pipe)) return null;
+  const tryListen = () => new Promise((resolve) => {
+    const server = net.createServer(onPipe);
+    server.once("error", () => resolve("taken"));
+    server.listen(pipe, () => resolve(server));
+  });
+  const first = await tryListen();
+  if (first !== "taken") return first;
+  if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
+  fs4.rmSync(pipe, { force: true });
+  const second = await tryListen();
+  return second === "taken" ? null : second;
+}
+async function runLink(opts) {
+  const timing = { ...DEFAULT_TIMING, ...opts.timing };
+  const pipeTaken = () => {
+    const stop = { why: "pipe taken" };
+    sayStop(opts.dataRoot, opts.member, stop, false);
+    return stop;
+  };
+  if (await pipeAnswers(linkPipe(opts.dataRoot, opts.run, opts.member))) return pipeTaken();
+  let state = readServerState(opts.dataRoot);
+  for (const startedAt = Date.now(); !state && Date.now() - startedAt < timing.stateFileWaitMs; ) {
+    await pause(100);
+    state = readServerState(opts.dataRoot);
+  }
+  if (!state) throw new Error(`no board server state file in ${opts.dataRoot}`);
+  const unanswered = /* @__PURE__ */ new Map();
+  const pipes = /* @__PURE__ */ new Set();
+  let socket = null;
+  let welcomed = false;
+  let exiting = false;
+  let lastStirAt = Date.now();
+  let finish;
+  const finished = new Promise((r) => finish = r);
+  const sendUp = (f) => {
+    if (socket && welcomed && socket.readyState === WebSocket.OPEN) socket.send(encode(f));
+  };
+  let queuedActivity = null;
+  let lastActivitySentAt = -Infinity;
+  const flushActivity = (now = false) => {
+    if (!queuedActivity || !socket || !welcomed || socket.readyState !== WebSocket.OPEN) return;
+    if (!now && (socket.bufferedAmount > 0 || Date.now() - lastActivitySentAt < timing.activityGapMs)) return;
+    socket.send(encode(queuedActivity));
+    lastActivitySentAt = Date.now();
+    queuedActivity = null;
+  };
+  let transcript = null;
+  let cursor = null;
+  let lastSeen = null;
+  const env = opts.env ?? process.env;
+  const watchTranscript = () => {
+    if (exiting) return;
+    transcript ??= locate(opts.binding, env);
+    if (!transcript) return;
+    const read = observe(transcript, cursor, opts.binding);
+    const grew = read.cursor.offset !== cursor?.offset;
+    cursor = read.cursor;
+    if (grew) lastStirAt = Date.now();
+    const activity = { ...read.activity, transcript };
+    const seen = JSON.stringify(activity);
+    if (seen !== lastSeen) {
+      lastSeen = seen;
+      queuedActivity = { type: "activity", at: Date.now(), activity };
+    }
+    if (read.activity.finished) {
+      flushActivity(true);
+      return exit({ why: "finished" }, "finished");
+    }
+    flushActivity();
+  };
+  const exit = (stop, bye) => {
+    if (exiting) return;
+    exiting = true;
+    if (bye) sendUp({ type: "bye", reason: bye });
+    sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
+    clearInterval(idleCheck);
+    clearInterval(watch);
+    pipeServer?.close();
+    for (const p of pipes) p.end();
+    socket?.close();
+    finish(stop);
+  };
+  const onDown = (f) => {
+    if (f.type === "welcome") {
+      welcomed = true;
+      for (const { call } of unanswered.values()) sendUp(call);
+      flushActivity();
+    } else if (f.type === "refused") {
+      exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
+    } else if (f.type === "result") {
+      const asked = unanswered.get(f.id);
+      if (!asked) return;
+      unanswered.delete(f.id);
+      if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
+      if (asked.call.method === "end" && f.ok) exit({ why: "ended" }, "ended");
+    }
+  };
+  const connectOnce = (s) => new Promise((resolve) => {
+    welcomed = false;
+    let wasWelcomed = false;
+    let ws;
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
+    } catch {
+      return resolve(false);
+    }
+    socket = ws;
+    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), secret: s.secret, member: { name: opts.member, run: opts.run }, supersede: true }));
+    ws.onmessage = (ev) => {
+      try {
+        onDown(decode(String(ev.data)));
+      } catch {
+      }
+      wasWelcomed ||= welcomed;
+    };
+    ws.onclose = () => {
+      welcomed = false;
+      resolve(wasWelcomed);
+    };
+    ws.onerror = () => {
+    };
+  });
+  const connectionLoop = async () => {
+    let lastAnsweredAt = Date.now();
+    let s = state;
+    while (!exiting) {
+      if (s) {
+        const welcomedThisTime = await connectOnce(s);
+        if (exiting) return;
+        if (welcomedThisTime) lastAnsweredAt = Date.now();
+      }
+      if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
+      await pause(timing.reconnectEveryMs);
+      s = readServerState(opts.dataRoot);
+    }
+  };
+  const onPipe = (pipe) => {
+    pipes.add(pipe);
+    let buffered = "";
+    pipe.setEncoding("utf8");
+    pipe.on("data", (chunk) => {
+      buffered += chunk;
+      for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
+        const line = buffered.slice(0, nl).trim();
+        buffered = buffered.slice(nl + 1);
+        if (!line) continue;
+        let f;
+        try {
+          f = decode(line);
+        } catch {
+          continue;
+        }
+        if (f.type === "call") {
+          lastStirAt = Date.now();
+          unanswered.set(f.id, { call: f, pipe });
+          sendUp(f);
+        } else if (f.type === "cancel") {
+          unanswered.delete(f.id);
+          sendUp(f);
+        }
+      }
+    });
+    pipe.on("error", () => {
+    });
+    pipe.on("close", () => {
+      pipes.delete(pipe);
+      for (const [id, asked] of unanswered) {
+        if (asked.pipe !== pipe) continue;
+        unanswered.delete(id);
+        if (asked.call.method === "wait") sendUp({ type: "cancel", id });
+      }
+    });
+  };
+  const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
+  if (!pipeServer) return pipeTaken();
+  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
+  try {
+    fs4.mkdirSync(path4.dirname(pidFile), { recursive: true });
+    fs4.writeFileSync(pidFile, String(process.pid));
+  } catch {
+  }
+  const dropPid = () => {
+    try {
+      if (fs4.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs4.rmSync(pidFile);
+    } catch {
+    }
+  };
+  process.once("exit", dropPid);
+  void finished.then(dropPid, dropPid);
+  const idleCheck = setInterval(() => {
+    if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
+  }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
+  const watch = setInterval(watchTranscript, timing.watchEveryMs);
+  if (state.version !== bundleVersion()) exit({ why: "server of another version" });
+  if (!exiting) {
+    void connectionLoop();
+    watchTranscript();
+  }
+  return finished;
+}
+function commandLine(pid) {
+  const r = process.platform === "win32" ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
+  return (r.stdout ?? "").trim() || null;
+}
+function stopLinks(runId, members) {
+  const pids = [];
+  for (const member of members) {
+    const file = linkPidFile(DATA_ROOT, runId, member);
+    let pid;
+    try {
+      pid = Number(fs4.readFileSync(file, "utf8").trim());
+    } catch {
+      continue;
+    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
+      try {
+        process.kill(pid);
+        pids.push(pid);
+      } catch {
+      }
+    }
+    try {
+      fs4.rmSync(file);
+    } catch {
+    }
+  }
+  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+}
+var DEFAULT_TIMING, pause, pipeAnswers, alive;
+var init_link = __esm({
+  "src/link/link.ts"() {
+    "use strict";
+    init_proc();
+    init_home();
+    init_wire();
+    init_transcripts();
+    DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
+    pause = (ms2) => new Promise((r) => setTimeout(r, ms2));
+    pipeAnswers = (pipe) => new Promise((resolve) => {
+      const probe = net.connect(pipe, () => (probe.destroy(), resolve(true)));
+      probe.once("error", () => resolve(false));
+    });
+    alive = (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+  }
+});
+
+// src/place/place.ts
+import fs5 from "node:fs";
+import path5 from "node:path";
+function repoOf(dir) {
+  const common = gitOut(dir, "rev-parse", "--git-common-dir");
+  return common ? real(path5.resolve(dir, common)) : null;
+}
+function worktreeOf(dir) {
+  const top = gitOut(dir, "rev-parse", "--show-toplevel");
+  return top ? path5.resolve(top) : null;
+}
+function resolveIn(root, spec, opts = {}) {
+  if (path5.isAbsolute(spec)) return { abs: spec, missing: [] };
+  const cwd = opts.cwd ?? process.cwd();
+  const here = root && !inside(root, cwd) ? path5.resolve(root, spec) : path5.resolve(cwd, spec);
+  if (fs5.existsSync(here)) return { abs: here, missing: [] };
+  const fromRoot = root ? path5.resolve(root, spec) : null;
+  if (fromRoot && fs5.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
+  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
+}
+function relativeIn(root, abs) {
+  return (root ? path5.relative(root, abs) : abs).split(path5.sep).join("/");
+}
+var gitOut, real, inside;
+var init_place = __esm({
+  "src/place/place.ts"() {
+    "use strict";
+    init_proc();
+    gitOut = (cwd, ...argv) => {
+      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
+      return r.status === 0 ? r.stdout.trim() : null;
+    };
+    real = (p) => {
+      try {
+        return fs5.realpathSync.native(p);
+      } catch {
+        return p;
+      }
+    };
+    inside = (root, dir) => {
+      const rel = path5.relative(path5.resolve(root), path5.resolve(dir));
+      return !rel.startsWith("..") && !path5.isAbsolute(rel);
+    };
+  }
+});
+
+// src/packs/code/worktrees.ts
+import fs6 from "node:fs";
+import os4 from "node:os";
+import path6 from "node:path";
+function run2(cwd, ...argv) {
+  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
+  return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
+}
+function inLinkedWorktree(cwd) {
+  const dir = git(cwd, "rev-parse", "--absolute-git-dir");
+  const common = git(cwd, "rev-parse", "--git-common-dir");
+  return !!dir && !!common && !same(dir, path6.resolve(cwd, common));
+}
+function ensureWorktree(cwd, repo, runId, group, seat, base) {
+  const at = worktreeDir(repo, runId, seat);
+  const branch = branchFor(runId, group, seat);
+  const top = fs6.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
+  if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
+  if (fs6.existsSync(at) && fs6.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
+  run2(cwd, "worktree", "prune");
+  fs6.mkdirSync(path6.dirname(at), { recursive: true });
+  const from = baseRef(cwd, base);
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
+  const r = run2(cwd, "worktree", "add", "-q", ...argv);
+  if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
+  return { path: at, branch, reused: false };
+}
+function leftover(wt, into) {
+  if (!fs6.existsSync(wt)) return null;
+  const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
+  if (!status.ok) return `git status failed: ${status.err}`;
+  const changed = status.out.split(/\r?\n/).filter(Boolean).length;
+  if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
+  if (!into) return "no base branch recorded for its run";
+  if (!isAncestor(wt, "HEAD", baseRef(wt, into))) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
+  return null;
+}
+function removeWorktree(wt, repo) {
+  if (!fs6.existsSync(wt)) {
+    run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+    return null;
+  }
+  const r = run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
+  run2(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+  return r.ok ? null : r.err || "git worktree remove failed";
+}
+function sweep(wt, repo, into) {
+  const why = leftover(wt, into) ?? removeWorktree(wt, repo);
+  return { removed: why === null, why };
+}
+function sweepLegacyRoot() {
+  if (!fs6.existsSync(LEGACY_ROOT) || fs6.existsSync(LEGACY_SWEPT)) return [];
+  const kept = [];
+  const sub = (d) => fs6.existsSync(d) ? fs6.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path6.join(d, e.name)) : [];
+  for (const wt of sub(LEGACY_ROOT).flatMap(sub)) {
+    const common = git(wt, "rev-parse", "--git-common-dir");
+    if (!common) {
+      if (!fs6.readdirSync(wt).length) fs6.rmdirSync(wt);
+      else kept.push(`${wt}: not a git worktree, left as it is`);
+      continue;
+    }
+    const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
+    if (!status.ok || status.out) {
+      kept.push(`${wt}: uncommitted changes, kept`);
+      continue;
+    }
+    const why = removeWorktree(wt, path6.resolve(wt, common));
+    if (why) kept.push(`${wt}: ${why}`);
+  }
+  for (const runDir of sub(LEGACY_ROOT)) if (!fs6.readdirSync(runDir).length) fs6.rmdirSync(runDir);
+  if (!fs6.readdirSync(LEGACY_ROOT).length) fs6.rmdirSync(LEGACY_ROOT);
+  else fs6.writeFileSync(LEGACY_SWEPT, `${(/* @__PURE__ */ new Date()).toISOString()}
+`);
+  return kept;
+}
+function worktrees(repo) {
+  return {
+    /** Where the seat's worktree is, without making it (G20); null when `cwd` is a worktree the board did not make. */
+    place(run3, group, seat, cwd) {
+      if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
+      const at = worktreeDir(repo, run3, seat);
+      return { path: at, branch: branchFor(run3, group, seat), reused: fs6.existsSync(at) };
+    },
+    /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
+    forSeat(run3, group, seat, base) {
+      return ensureWorktree(repo, repo, run3, group, seat, base);
+    },
+    /** True when `wt` is a worktree the board made for this repository. */
+    owns(wt) {
+      return owned(wt, repo);
+    },
+    /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
+    unmerged(wt, into) {
+      return leftover(wt, into);
+    },
+    /** Stops the seat's link (Windows refuses to remove a folder a live process is in), then removes the worktree once
+     *  clean and merged into `into`; otherwise says why it stays. */
+    release(seat, into) {
+      stopLinks(seat.run, [seat.member]);
+      return sweep(seat.worktree, repo, into);
+    }
+  };
+}
+function sweepAll(repos, recordOf) {
+  return worktreeDirs(repos).map((dir) => {
+    const w = recordOf(dir);
+    if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
+    if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
+    return { worktree: dir, ...sweep(dir, w.repo, w.base) };
+  });
+}
+var worktreesRoot, CASELESS2, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
+var init_worktrees = __esm({
+  "src/packs/code/worktrees.ts"() {
+    "use strict";
+    init_proc();
+    init_home();
+    init_git();
+    init_link();
+    init_place();
+    worktreesRoot = (repo) => path6.join(repo, "swarm", "worktrees");
+    CASELESS2 = process.platform === "win32" || process.platform === "darwin";
+    fold = (s) => CASELESS2 ? path6.resolve(s).toLowerCase() : path6.resolve(s);
+    safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
+    worktreeDir = (repo, run3, seat) => path6.join(worktreesRoot(repo), String(run3), safe(seat));
+    branchFor = (run3, group, seat) => `swarm/${run3}-${group}/${seat}`;
+    owned = (wt, repo) => !!wt && fold(path6.dirname(path6.dirname(wt))) === fold(worktreesRoot(repo));
+    worktreeDirs = (repos) => {
+      const sub = (d) => fs6.existsSync(d) ? fs6.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path6.join(d, e.name)) : [];
+      return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
+    };
+    same = (a, b) => fold(a) === fold(b);
+    branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
+    isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
+    LEGACY_ROOT = path6.join(DATA_ROOT, "worktrees");
+    LEGACY_SWEPT = path6.join(LEGACY_ROOT, ".swept");
+    sweepLegacy = () => sweepLegacyRoot();
+  }
+});
+
+// src/packs/code/index.ts
+import fs7 from "node:fs";
+import path7 from "node:path";
+function makeWorktree(verb, member, input, ctx) {
+  if (!member.place || !worktrees(member.repo).owns(member.place) || fs7.existsSync(member.place)) return { made: false };
+  const base = ctx.base ?? (typeof input.cwd === "string" ? baseAt(input.cwd) : null);
+  if (!base) return { refused: { reason: "git", verb, detail: `${member.name}: no base to make the worktree from` } };
+  try {
+    worktrees(member.repo).forSeat(ctx.run, ctx.group, member.seat, base);
+    return { made: true };
+  } catch (e) {
+    return { refused: { reason: "git", verb, detail: e.message } };
+  }
+}
+var slashed, ownWorktree, tablesOf, codePack;
+var init_code = __esm({
+  "src/packs/code/index.ts"() {
+    "use strict";
+    init_git();
+    init_claims();
+    init_snapshot();
+    init_schema();
+    init_stats();
+    init_worktrees();
+    slashed = (p) => p.split("\\").join("/");
+    ownWorktree = (member) => {
+      const seatTrees = worktrees(member.repo);
+      return seatTrees.owns(member.place) && fs7.existsSync(member.place) ? slashed(member.place) : null;
+    };
+    tablesOf = (ctx) => ctx.tables;
+    codePack = {
+      name: "code",
+      verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
+      stats: codeStats,
+      // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
+      alsoFor: (member, message, ctx) => (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
+      // an agreement with no party named binds the file's other holders (F25)
+      defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
+      // a member holding a claim or the merge lock is mid-work, never idle
+      busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
+      // the code tables' DDL and an older store's upkeep, then the store over them (D20)
+      openTables: (deps) => {
+        migrateCodeTables(deps.db);
+        return claimsOf(deps);
+      },
+      snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
+      held: (db, member) => heldOf(db, member),
+      forget: (db, scope) => "member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run),
+      run(verb, member, input, ctx) {
+        switch (verb) {
+          // where a joining seat's worktree goes, named and not made (G20)
+          case "place":
+            return ctx ? worktrees(ctx.repo).place(ctx.run, ctx.group, String(input.seat), String(input.cwd)) : null;
+          case "claim":
+          case "merge-lock":
+            return member && ctx ? makeWorktree(verb, member, input, ctx) : { made: false };
+          // a run's close: its worktrees go once clean and merged, each seat's link stopped first
+          case "close": {
+            const trees = input.trees.filter((w) => worktrees(w.repo).owns(w.worktree) && fs7.existsSync(w.worktree));
+            return trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: w.run, member: w.member, worktree: w.worktree }, w.base) }));
+          }
+          // `worktree prune`: every worktree folder of each repository the board knows, judged by its latest record
+          case "prune": {
+            const known = input.known;
+            const fold2 = (s) => process.platform === "win32" ? path7.resolve(s).toLowerCase() : path7.resolve(s);
+            const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
+            return sweepAll(input.repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
+          }
+          case "legacy":
+            return sweepLegacy();
+          default:
+            return null;
+        }
+      },
+      beforeEnd(member, ctx) {
+        const mine = ownWorktree(member);
+        const left = mine ? worktrees(member.repo).unmerged(mine, ctx.base) : null;
+        return mine && left ? { reason: "unmerged", worktree: mine, left, base: ctx.base } : null;
+      },
+      afterEnd(member, ctx) {
+        const mine = ownWorktree(member);
+        if (!mine) return {};
+        const why = worktrees(member.repo).release({ run: member.run, member: member.name, worktree: mine }, ctx.base).why;
+        return { worktree: mine, removed: why === null, why };
+      }
+    };
+  }
+});
+
+// src/packs/registry.ts
+var PACKS, MEMBER_ROWS, rowOf, registry;
+var init_registry = __esm({
+  "src/packs/registry.ts"() {
+    "use strict";
+    init_kinds();
+    init_code();
+    PACKS = { [codePack.name]: codePack };
+    MEMBER_ROWS = [
+      { kind: "plan", role: null, pack: "code", verify: false },
+      { kind: "plan", role: "verifier", pack: null, verify: true },
+      { kind: "task", role: null, pack: "code", verify: false },
+      { kind: "task", role: "verifier", pack: null, verify: true },
+      { kind: "brainstorm", role: null, pack: null, verify: false }
+    ];
+    rowOf = (spec) => ({ pack: spec.pack === null ? null : PACKS[spec.pack], verify: spec.verify });
+    registry = {
+      /** The member's pack and verify setting for a seat of `role` in a run of `kind`; throws on an unknown kind. */
+      forMember(kind, role) {
+        const known = profileOf(kind).kind;
+        const own = role === null ? void 0 : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
+        return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null));
+      },
+      /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
+      statsFigures() {
+        return Object.values(PACKS).flatMap((p) => p.stats ? [p.stats] : []);
+      },
+      /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
+      packNamed(name) {
+        return name !== null && Object.hasOwn(PACKS, name) ? PACKS[name] : null;
+      },
+      /** Every registered pack, for a call no member makes (a prune, a legacy sweep). */
+      all() {
+        return Object.values(PACKS);
+      },
+      /** The pack's part of one repository's snapshot (D18): the one pack with a snapshot in this plan. */
+      snapshot(deps, repo, people, orchestratorSeat) {
+        const reader = Object.values(PACKS).find((p) => p.snapshot);
+        if (!reader?.snapshot) throw new Error("no pack has a snapshot");
+        return reader.snapshot(deps, repo, people, orchestratorSeat);
+      },
+      /** What the member holds now, every pack's (F27). */
+      heldOf(db, member) {
+        return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
+      },
+      /** Every pack's rows of a pruned member deleted (D20). */
+      forgetMember(db, member) {
+        for (const p of Object.values(PACKS)) p.forget?.(db, { member });
+      },
+      /** Every pack's rows of a pruned run deleted (D20). */
+      forgetRun(db, run3) {
+        for (const p of Object.values(PACKS)) p.forget?.(db, { run: run3 });
+      },
+      /** The packs' tables, opened once per board (D20): the one pack with tables in this plan. */
+      openTables(deps) {
+        const opener = Object.values(PACKS).find((p) => p.openTables);
+        if (!opener?.openTables) throw new Error("no pack has tables");
+        return opener.openTables(deps);
+      }
+    };
   }
 });
 
@@ -1158,7 +2568,7 @@ function debateOf(db, run3, seats, messages) {
   const lastAgreementOn = /* @__PURE__ */ new Map();
   let agreements = 0;
   let sourced = 0;
-  let claims = 0;
+  let pointsMade = 0;
   for (const m of messages) {
     const q = questionOf(m);
     if (q === null || !spoken(m)) continue;
@@ -1174,7 +2584,7 @@ function debateOf(db, run3, seats, messages) {
       continue;
     }
     if (beforeOutcome) {
-      claims++;
+      pointsMade++;
       if (SOURCE.test(String(m.body))) sourced++;
       else unsourcedOf.set(author, (unsourcedOf.get(author) ?? 0) + 1);
     }
@@ -1195,7 +2605,8 @@ function debateOf(db, run3, seats, messages) {
       questions: [...questions.values()].sort((a, b) => ms(a.firstPost) - ms(b.firstPost)),
       agreements,
       endorsed: skepticEndorsements.length,
-      claimsWithSource: { n: sourced, of: claims, inferred: true }
+      claimsWithSource: { n: sourced, of: pointsMade, inferred: true }
+      // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
     },
     marksOf,
     unsourcedOf
@@ -1255,6 +2666,7 @@ function brainstormTotalsOf(runs) {
     objectedThenAgreed: debated.length ? debated.reduce((k, d) => k + d.debate.questions.filter((q) => objectedOf(d.run, q)).length, 0) : null,
     sourcedShare: n === null || !of ? null : n / of,
     claimsWithSource: { n, of },
+    // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
     silentSeats: sumKnown(debated.filter((d) => d.run.recorded).map((d) => silentSeatsOf(d.run)))
   };
 }
@@ -1394,60 +2806,9 @@ var init_names = __esm({
   }
 });
 
-// src/board/liveness.ts
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
-var init_liveness = __esm({
-  "src/board/liveness.ts"() {
-    "use strict";
-    claudeCodeJsonl = {
-      name: "claude-code-jsonl",
-      read(chunk, from) {
-        const end = chunk.lastIndexOf(10);
-        if (end < 0) return from;
-        let tokens = from.tokens;
-        let parsed = 0;
-        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
-          const text = line.trim();
-          if (!text) continue;
-          let obj;
-          try {
-            obj = JSON.parse(text);
-          } catch {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          parsed++;
-          const usage = obj.message?.usage;
-          if (!usage) continue;
-          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-            const n = usage[k];
-            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
-          }
-        }
-        return { offset: from.offset + end + 1, tokens };
-      }
-    };
-    IDLE_MS = 15 * 60 * 1e3;
-    NO_TRANSCRIPT_MS = 30 * 1e3;
-    STALL_MS_DEFAULT = 6e4;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    BUSY_MAX_MS = 15 * 60 * 1e3;
-    STALLED_AGAIN_MS = 15 * 60 * 1e3;
-    LINK_LOST_MS = 30 * 1e3;
-    IN_TURN_MS = 120 * 1e3;
-    OWE_WAIT_MS = 10 * 60 * 1e3;
-    CARRY_MAX_MS = 5 * 60 * 1e3;
-    LOCK_HELD_MS = 10 * 60 * 1e3;
-  }
-});
-
 // src/board/board.ts
-import fs2 from "node:fs";
-import path2 from "node:path";
+import fs8 from "node:fs";
+import path8 from "node:path";
 function messageLine(m) {
   const first = m.body.split(/\r?\n/)[0];
   const text = first.length > LINE_WIDTH ? `${first.slice(0, LINE_WIDTH - 1)}\u2026` : first;
@@ -1461,15 +2822,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (w.name !== "ExperimentalWarning") console.warn(w);
   });
   const { DatabaseSync } = await import("node:sqlite");
-  fs2.mkdirSync(path2.dirname(dbPath), { recursive: true });
+  fs8.mkdirSync(path8.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath, { timeout: 5e3 });
   const recordsAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'call_log'").get() === void 0;
-  const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === void 0;
   const hasTable = (name) => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== void 0;
   const columnsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => String(c.name));
   if (hasTable("slices") && !hasTable("seats")) db.exec("ALTER TABLE slices RENAME TO seats");
   if (hasTable("seats") && columnsOf("seats").includes("title")) db.exec("ALTER TABLE seats DROP COLUMN title");
   if (hasTable("participants") && columnsOf("participants").includes("slice")) db.exec("ALTER TABLE participants RENAME COLUMN slice TO seat");
+  if (hasTable("participants") && columnsOf("participants").includes("worktree") && !columnsOf("participants").includes("place")) db.exec("ALTER TABLE participants RENAME COLUMN worktree TO place");
   db.exec(`
     PRAGMA journal_mode = DELETE;
     -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
@@ -1498,7 +2859,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       id INTEGER PRIMARY KEY,
       run INTEGER NOT NULL,
       seat TEXT NOT NULL,
-      worktree TEXT,
+      place TEXT,
       doing TEXT NOT NULL DEFAULT '',
       files TEXT NOT NULL DEFAULT '[]',
       since_seq INTEGER NOT NULL DEFAULT 0,
@@ -1523,99 +2884,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
       seq INTEGER NOT NULL,
       PRIMARY KEY (participant, seq)
     );
-    -- claims are global by repository-relative path, across every run on a repository (D12, D20);
-    -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed
-    CREATE TABLE IF NOT EXISTS claims (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'inside',
-      since_seq INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- every claim made, kept past its release: who held a path during a run (D63), and whether as an
-    -- interface: widened to 'interface' when the claim is made or widened so, never narrowed (D42)
-    CREATE TABLE IF NOT EXISTS claim_log (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'inside',
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim granted beside a live holder of the path, kept past both claims' release: who held a path
-    -- at the same time as whom during a run, from the seq it began (D39); append-only, deleted with its run
-    CREATE TABLE IF NOT EXISTS shares (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
-    );
-    -- a holder of a shared path already told of another holder (D41): once per member and path
-    CREATE TABLE IF NOT EXISTS notices (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
-    );
-    CREATE TABLE IF NOT EXISTS merge_locks (
-      repo TEXT PRIMARY KEY,
-      participant INTEGER NOT NULL,
-      at TEXT NOT NULL
-    );
-    -- a member refused the merge lock since its holder took it: mentioned when it is released (D65)
-    CREATE TABLE IF NOT EXISTS lock_waiters (
-      repo TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, participant)
-    );
-    -- a path written outside its writer's claim, by reconcileWrites; lives while a claim on it does (D39)
-    CREATE TABLE IF NOT EXISTS flags (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim refused as held: the post that settles it claims it (D7)
-    CREATE TABLE IF NOT EXISTS claim_requests (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a flag posted, once per writer, path and holder (D8)
-    CREATE TABLE IF NOT EXISTS flag_posts (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      holder INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, holder)
-    );
     -- a version per repository, moved by every write: what onChange compares (D39)
     CREATE TABLE IF NOT EXISTS changes (
       repo TEXT PRIMARY KEY,
       version INTEGER NOT NULL
     );
-    -- one row per merge, written by merged, deleted with its run by prune (D25): files and conflicts JSON, conflicts NULL for unknown
-    CREATE TABLE IF NOT EXISTS merges (
-      participant INTEGER NOT NULL,
-      run INTEGER NOT NULL,
-      sha TEXT NOT NULL,
-      at TEXT NOT NULL,
-      files TEXT NOT NULL,
-      conflicts TEXT
-    );
-    CREATE INDEX IF NOT EXISTS merges_run ON merges (run);
     -- one row per counted call, written by countCall in the verb's transaction (D25); deleted with its run
     CREATE TABLE IF NOT EXISTS call_log (participant INTEGER NOT NULL, at TEXT NOT NULL, verb TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);
-    -- one row per merge-lock turn: asked, granted, merged; refused counts the refusals (D25); deleted with its run
-    CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
-      granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
-    CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
     -- a closed run's figures, RunStats JSON, written once at close or by prune first; never pruned (D20, D21)
     CREATE TABLE IF NOT EXISTS run_stats (run INTEGER PRIMARY KEY, repo TEXT NOT NULL, kind TEXT NOT NULL,
       closed_at TEXT NOT NULL, body TEXT NOT NULL);
@@ -1647,13 +2923,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
       PRIMARY KEY (run, member));
   `);
   if (recordsAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(RECORDS_SINCE2, (/* @__PURE__ */ new Date()).toISOString());
-  if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE2, (/* @__PURE__ */ new Date()).toISOString());
   const upkeep = (table, column, ddl) => {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
-  upkeep("participants", "worktree", "worktree TEXT");
-  upkeep("claim_log", "kind", "kind TEXT NOT NULL DEFAULT 'inside'");
+  upkeep("participants", "place", "place TEXT");
   upkeep("participants", "last_call", "last_call TEXT");
   upkeep("participants", "calls", "calls INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "waiting", "waiting INTEGER NOT NULL DEFAULT 0");
@@ -1668,9 +2942,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("messages", "by_board", "by_board INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "link", "link TEXT");
   upkeep("messages", "meta", "meta TEXT");
-  upkeep("merge_locks", "onto", "onto TEXT");
-  upkeep("merge_locks", "guides", "guides TEXT");
-  upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
   upkeep("seats", "link", "link TEXT");
   upkeep("seats", "role", "role TEXT");
   upkeep("seats", "area", "area TEXT");
@@ -1719,24 +2990,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
-  const claimKey = db.prepare("PRAGMA table_info(claims)").all().find((c) => c.name === "participant");
-  if (claimKey && claimKey.pk === 0) {
-    db.exec(`
-      BEGIN;
-      ALTER TABLE claims RENAME TO claims_before_d40;
-      CREATE TABLE claims (
-        repo TEXT NOT NULL,
-        path TEXT NOT NULL,
-        participant INTEGER NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'inside',
-        since_seq INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (repo, path, participant)
-      );
-      INSERT INTO claims (repo, path, participant, kind) SELECT repo, path, participant, kind FROM claims_before_d40;
-      DROP TABLE claims_before_d40;
-      COMMIT;
-    `);
-  }
   const localWakers = /* @__PURE__ */ new Set();
   const touch = () => {
     for (const wake of [...localWakers]) queueMicrotask(wake);
@@ -1831,7 +3084,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     name: `${r.plan}/${r.seat}`,
     nick: nickOf(r),
     ended: r.ended_at != null,
-    worktree: r.worktree == null ? null : String(r.worktree),
+    place: r.place == null ? null : String(r.place),
     listening: listensNow(r),
     subscriptions: subsOf(r),
     // pack_chosen 0: a member from before the registry (or an orchestrator), read as its kind's default (D22)
@@ -1873,7 +3126,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return board2.read(seq);
   };
   const gated = (p, verb) => {
-    if (p.kindPack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
+    if (p.pack === null) throw new Error(`${verb}: a ${p.kind} run has no claims`);
     return p;
   };
   const live = (p) => {
@@ -1882,28 +3135,39 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fresh;
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
-  const fold2 = (s) => CASELESS2 ? s.toLowerCase() : s;
+  const fold2 = (s) => CASELESS3 ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
-    if (path2.basename(repo).toLowerCase() === ".git") out.add(path2.resolve(path2.dirname(repo)));
-    const rows = db.prepare("SELECT DISTINCT p.worktree FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.worktree IS NOT NULL").all(repo);
-    for (const r of rows) out.add(path2.resolve(String(r.worktree)));
+    if (path8.basename(repo).toLowerCase() === ".git") out.add(path8.resolve(path8.dirname(repo)));
+    const rows = db.prepare("SELECT DISTINCT p.place FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.place IS NOT NULL").all(repo);
+    for (const r of rows) out.add(path8.resolve(String(r.place)));
     return [...out].sort((a, b) => b.length - a.length);
   };
   const relPath = (repo, file) => {
-    if (!path2.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
-    const abs = fold2(path2.resolve(file));
+    if (!path8.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
+    const abs = fold2(path8.resolve(file));
     for (const root of roots(repo)) {
       const r = fold2(root);
-      if (abs.startsWith(r.endsWith(path2.sep) ? r : r + path2.sep)) return slashes(path2.resolve(file).slice(root.length)) || null;
+      if (abs.startsWith(r.endsWith(path8.sep) ? r : r + path8.sep)) return slashes(path8.resolve(file).slice(root.length)) || null;
     }
     return null;
   };
   const doingOf = (id) => String(db.prepare("SELECT doing FROM participants WHERE id = ?").get(id).doing) || "no note";
-  const claims = claimsOf2({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf });
-  const packOf = (p) => registry.packNamed(p.kindPack);
-  const packCtxOf = (p) => ({ run: p.run, repo: p.repo, tables: claims, insertMessage: (author, body, about) => insertMessage(author, body, about, "msg") });
+  const claims = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, doingOf, kindHasClaims: (kind) => kindPackOf(kind) !== null });
+  const runPackCtx = (runId) => {
+    const r = runRow(runId);
+    return {
+      run: runId,
+      repo: String(r.repo),
+      group: String(r.plan),
+      base: r.base == null ? null : String(r.base),
+      tables: claims,
+      insertMessage: (author, body, about) => insertMessage(author, body, about, "msg")
+    };
+  };
+  const packOf = (p) => registry.packNamed(p.pack);
+  const packCtxOf = (p) => runPackCtx(p.run);
   const unseenRows = (me) => db.prepare(
     `SELECT m.* FROM messages m
          WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
@@ -1996,8 +3260,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     };
   };
   const repoName = (repo) => {
-    const base = path2.basename(repo);
-    return base.toLowerCase() === ".git" ? path2.basename(path2.dirname(repo)) : base.replace(/\.git$/i, "");
+    const base = path8.basename(repo);
+    return base.toLowerCase() === ".git" ? path8.basename(path8.dirname(repo)) : base.replace(/\.git$/i, "");
   };
   const listeners = /* @__PURE__ */ new Set();
   let watching = null;
@@ -2430,15 +3694,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
         for (const run3 of runIds) {
           for (const r of db.prepare("SELECT id FROM participants WHERE run = ?").all(run3)) {
             const id = Number(r.id);
-            for (const table of ["claim_log", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "deliveries", "claim_requests", "flag_posts", "call_log", "lock_requests"]) {
-              db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(id);
-            }
-            db.prepare("DELETE FROM notices WHERE other = ?").run(id);
-            db.prepare("DELETE FROM shares WHERE other = ?").run(id);
+            for (const table of ["deliveries", "call_log"]) db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(id);
+            registry.forgetMember(db, id);
             if (!db.prepare("SELECT 1 FROM messages WHERE author = ? LIMIT 1").get(id)) db.prepare("DELETE FROM participants WHERE id = ?").run(id);
           }
           db.prepare("DELETE FROM seats WHERE run = ?").run(run3);
-          db.prepare("DELETE FROM merges WHERE run = ?").run(run3);
+          registry.forgetRun(db, run3);
           for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run3);
           db.prepare("UPDATE runs SET pruned_at = ? WHERE id = ?").run(at.toISOString(), run3);
         }
@@ -2501,32 +3762,32 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all().map(toRun);
     },
     worktrees(run3) {
-      const rows = db.prepare(`SELECT p.run, r.plan, p.seat, p.worktree, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.worktree IS NOT NULL${run3 === void 0 ? "" : " AND p.run = ?"} ORDER BY p.id`).all(...run3 === void 0 ? [] : [run3]);
-      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.worktree), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
+      const rows = db.prepare(`SELECT p.run, r.plan, p.seat, p.place, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.place IS NOT NULL${run3 === void 0 ? "" : " AND p.run = ?"} ORDER BY p.id`).all(...run3 === void 0 ? [] : [run3]);
+      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.place), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
     },
-    join({ run: run3, seat, doing, files, worktree, on }) {
+    join({ run: run3, seat, doing, files, place, on }) {
       const r = runRow(run3);
       if (r.state !== "open") throw new Error(`run ${run3} is closed`);
       if (seat === ORCHESTRATOR2) throw new Error(`"${ORCHESTRATOR2}" is not a seat`);
       const profile = profileOf(String(r.kind ?? "plan"));
-      const kindPack = kindPackOf(profile.kind);
-      if (files.length && kindPack === null) throw new Error(`join: a ${profile.kind} run has no claims`);
-      const where = worktree && kindPack !== null ? path2.resolve(worktree) : null;
+      const role = db.prepare("SELECT role FROM seats WHERE run = ? AND id = ?").get(run3, seat);
+      const given = registry.forMember(profile.kind, role?.role == null ? null : String(role.role));
+      const packName = given.pack?.name ?? null;
+      const verify = given.verify ? 1 : 0;
+      if (files.length && packName === null) throw new Error(`join: a ${profile.kind} run has no claims`);
+      const where = place && packName !== null ? path8.resolve(place) : null;
       return transaction(() => {
         let entry2 = "new";
         const id = transaction(() => {
           const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
-          const seatRow = db.prepare("SELECT on_events, role FROM seats WHERE run = ? AND id = ?").get(run3, seat);
+          const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run3, seat);
           if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run3}: declare it first with \`seat add ${seat}\``);
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
           const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
           const fresh = () => unusedNick(String(r.repo));
-          const given = registry.forMember(profile.kind, seatRow?.role == null ? null : String(seatRow.role));
-          const packName = given.pack?.name ?? null;
-          const verify = given.verify ? 1 : 0;
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
-            db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
+            db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
               doing,
               JSON.stringify(files),
               where,
@@ -2545,7 +3806,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           }
           const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run3, `%"${String(r.plan)}/${seat}"%`);
           const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
-          const ins = db.prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)").run(run3, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs, packName, verify);
+          const ins = db.prepare("INSERT INTO participants (run, seat, place, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)").run(run3, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs, packName, verify);
           return Number(ins.lastInsertRowid);
         });
         const member = participantById(id);
@@ -2574,18 +3835,18 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const r = db.prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.state = 'open') DESC, r.id DESC LIMIT 1`).get(plan, seat);
       return r ? toParticipant(r) : null;
     },
-    identify({ worktree }) {
-      if (!worktree) return null;
-      const here = fold2(path2.resolve(worktree));
-      const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.worktree IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
+    identify({ place }) {
+      if (!place) return null;
+      const here = fold2(path8.resolve(place));
+      const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
         (r) => {
-          const root = fold2(String(r.worktree));
-          return here === root || here.startsWith(root.endsWith(path2.sep) ? root : root + path2.sep);
+          const root = fold2(String(r.place));
+          return here === root || here.startsWith(root.endsWith(path8.sep) ? root : root + path8.sep);
         }
       );
       if (!rows.length) return null;
-      const deepest = Math.max(...rows.map((r) => String(r.worktree).length));
-      const best = rows.filter((r) => String(r.worktree).length === deepest);
+      const deepest = Math.max(...rows.map((r) => String(r.place).length));
+      const best = rows.filter((r) => String(r.place).length === deepest);
       return best.length === 1 ? toParticipant(best[0]) : null;
     },
     setDoing(p, doing) {
@@ -3016,10 +4277,11 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         seat: String(r.seat),
         doing: String(r.doing),
         files: JSON.parse(String(r.files)),
-        held: db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(Number(r.id)).map((c) => ({ path: String(c.path), interface: c.kind === "interface" })),
+        held: registry.heldOf(db, Number(r.id)),
         stale: Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
         subscriptions: subsOf(r),
-        worktree: r.worktree == null ? null : String(r.worktree),
+        worktree: r.place == null ? null : String(r.place),
+        // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         state: stateIn(Number(r.run), String(r.seat))?.state ?? "working",
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
@@ -3036,10 +4298,10 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
         const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
         named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
-        if (!named.length && fresh.kindPack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
+        if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
-      const claimed = fresh.kindPack !== null ? claims.claimByPost(fresh, m) : null;
+      const claimed = fresh.pack !== null ? claims.claimByPost(fresh, m) : null;
       return claimed ? { ...m, claimed } : m;
     },
     endorse(p, seq) {
@@ -3174,6 +4436,23 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
     heldMergeLock(p) {
       return claims.heldMergeLock(p);
     },
+    packCall(p, verb, input) {
+      const member = p ? participantById(p.id) : null;
+      if (member?.ended && verb !== "afterEnd") return null;
+      const runId = member ? member.run : typeof input.run === "number" ? input.run : null;
+      const packs = member ? [registry.packNamed(member.pack)] : runId !== null && typeof input.seat === "string" ? [registry.forMember(String(runRow(runId).kind ?? "plan"), db.prepare("SELECT role FROM seats WHERE run = ? AND id = ?").get(runId, input.seat)?.role ?? null).pack] : runId !== null ? [registry.packNamed(kindPackOf(String(runRow(runId).kind ?? "plan")))] : registry.all();
+      const ctx = runId !== null ? runPackCtx(runId) : null;
+      const known = registry.all().some((k) => k.verbs.some((v) => v.name === verb));
+      const own = packs[0];
+      if (member && known && !own?.verbs.some((v) => v.name === verb)) {
+        const refusal = { refused: { reason: "no-pack", verb, seatKind: member.verify ? "verifier" : "seat" } };
+        return refusal;
+      }
+      if (member && ctx && own && verb === "beforeEnd") return own.beforeEnd?.(member, ctx) ?? null;
+      if (member && ctx && own && verb === "afterEnd") return own.afterEnd?.(member, ctx) ?? {};
+      const answers = packs.filter((k) => !!k?.run).map((k) => k.run(verb, member, input, ctx));
+      return answers.length <= 1 ? answers[0] ?? null : answers.flat();
+    },
     stats(scope) {
       return statsOf(db, scope, STALE_MS);
     },
@@ -3192,8 +4471,6 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
       if (!runRows.length) throw new Error(`no repository ${repo}`);
       const runIds = runRows.map((r) => Number(r.id));
       const marks = runIds.map(() => "?").join(", ");
-      const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo);
-      const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
       const sliceRows = db.prepare(`SELECT * FROM seats WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds);
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds);
@@ -3205,25 +4482,8 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
         return statesByRun.get(run3).get(member);
       };
       const cutoff = t - STALE_MS;
-      const claimsOf3 = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
-      const live2 = db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
-      const files = /* @__PURE__ */ new Map();
-      for (const c of live2) {
-        const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
-        f.holders.push(`${c.plan}/${c.seat}`);
-        f.interface ||= c.kind === "interface";
-        files.set(f.path, f);
-      }
-      const everClaimed = db.prepare("SELECT 1 FROM claim_log WHERE repo = ? AND path = ? AND participant = ?");
-      for (const r of people) {
-        if (String(r.seat) === ORCHESTRATOR2 || !isLive(Number(r.id))) continue;
-        const name = `${r.plan}/${r.seat}`;
-        for (const d of JSON.parse(String(r.files))) {
-          const f = files.get(relPath(repo, d.path) ?? d.path);
-          if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
-        }
-      }
-      const sharedBy = (path13, id) => live2.some((c) => String(c.path) === path13 && Number(c.participant) !== id);
+      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR2);
+      const lockHolder = packPart.lockHolder;
       const roster = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
@@ -3242,7 +4502,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           doing: String(r.doing),
           state,
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
-          files: claimsOf3.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
+          files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
           ended: r.ended_at == null ? null : String(r.ended_at),
           calls: Number(r.calls ?? 0),
@@ -3284,25 +4544,14 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
           member: nameOf.get(`${run3.id}/${s.id}`) ?? null
         }));
       }
-      const flags = db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
-      const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t2) => ({
-        member: `${t2.plan}/${t2.seat}`,
-        askedAt: String(t2.asked_at),
-        grantedAt: t2.granted_at == null ? null : String(t2.granted_at),
-        mergedAt: t2.merged_at == null ? null : String(t2.merged_at),
-        refused: Number(t2.refused)
-      }));
       return {
         repo,
         name: repoName(repo),
         runs: runRows.map(runSummary),
-        lockHistory,
-        lock: lockHolder !== null ? { holder: participantById(lockHolder).name, since: String(lockRow.at) } : null,
+        ...packPart.fields,
         roster,
         events,
-        queues,
-        files: [...files.values()],
-        flags
+        queues
       };
     },
     onChange(listener) {
@@ -3354,7 +4603,7 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   const PROGRESS_VERBS = /* @__PURE__ */ new Set(["post", "done", "setDoing", "endorse", "merged"]);
   const countCall = (p, verb) => {
     const at = now();
-    db.prepare("UPDATE participants SET parked = 0 WHERE id = ? AND parked = 1").run(p.id);
+    db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, doing = 'unparked' WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     if (PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
     db.prepare("INSERT INTO call_log (participant, at, verb) VALUES (?, ?, ?)").run(p.id, at, verb);
@@ -3394,13 +4643,12 @@ the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`, null, "event"
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, SHARES_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS2;
+var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATES, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
     init_home();
     init_mentions();
-    init_claims();
     init_stats2();
     init_kinds();
     init_registry();
@@ -3422,137 +4670,10 @@ var init_board = __esm({
     UPKEEP_EVERY_MS = 5 * 60 * 1e3;
     LAST_UPKEEP = "last-upkeep";
     RECORDS_SINCE2 = "records-since";
-    SHARES_SINCE2 = "shares-since";
     RETENTION_DEFAULT_DAYS = 30;
     DAY_MS2 = 24 * 60 * 60 * 1e3;
     EVENTS_SHOWN = 500;
-    CASELESS2 = process.platform === "win32";
-  }
-});
-
-// src/wire.ts
-import crypto from "node:crypto";
-import fs3 from "node:fs";
-import path3 from "node:path";
-function encode(f) {
-  return JSON.stringify(f);
-}
-function decode(text) {
-  const f = JSON.parse(text);
-  const type = f && typeof f === "object" ? f.type : void 0;
-  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
-  return f;
-}
-function bundleVersion(entry2 = process.argv[1] ?? "") {
-  const file = path3.resolve(entry2);
-  let v = versionsByEntry.get(file);
-  if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs3.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByEntry.set(file, v);
-  }
-  return v;
-}
-function serverStateFile(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.json");
-}
-function serverLogFile(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.log");
-}
-function serverStartLock(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.lock");
-}
-function serverLockHolder(dataRoot) {
-  try {
-    const pid = Number(fs3.readFileSync(serverStartLock(dataRoot), "utf8").trim());
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  } catch {
-    return null;
-  }
-}
-function liveStartLockHolder(dataRoot) {
-  const holder = serverLockHolder(dataRoot);
-  if (holder === null || !isAlive(holder)) return null;
-  try {
-    if (JSON.parse(fs3.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
-  } catch {
-  }
-  try {
-    return Date.now() - fs3.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
-  } catch {
-    return null;
-  }
-}
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-var RPC_METHODS, FRAME_TYPES, versionsByEntry, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
-var init_wire = __esm({
-  "src/wire.ts"() {
-    "use strict";
-    RPC_METHODS = [
-      "openRun",
-      "setSeatState",
-      "addSeat",
-      "closeRun",
-      "phase",
-      "currentPhase",
-      "showPhase",
-      "lock",
-      "unlock",
-      "locks",
-      "pause",
-      "resume",
-      "pausedOf",
-      "park",
-      "unpark",
-      "done",
-      "phaseProgress",
-      "lastActivity",
-      "owedPhase",
-      "idle",
-      "unreadMentions",
-      "guidesUntold",
-      "setting",
-      "runs",
-      "worktrees",
-      "join",
-      "participant",
-      "identify",
-      "setDoing",
-      "subscribe",
-      "unsubscribe",
-      "end",
-      "roster",
-      "endedMembers",
-      "heldBy",
-      "post",
-      "endorse",
-      "read",
-      "thread",
-      "runThread",
-      "deliver",
-      "deliverMentions",
-      "wait",
-      "checkEdit",
-      "reconcileWrites",
-      "release",
-      "lockMerge",
-      "merged",
-      "heldMergeLock",
-      "stats",
-      "repos",
-      "snapshot",
-      "composition"
-    ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
-    versionsByEntry = /* @__PURE__ */ new Map();
-    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
-    START_LOCK_GRACE_MS = 15e3;
+    CASELESS3 = process.platform === "win32";
   }
 });
 
@@ -7184,9 +8305,9 @@ __export(server_exports, {
   stopBoardServer: () => stopBoardServer
 });
 import crypto4 from "node:crypto";
-import fs11 from "node:fs";
+import fs12 from "node:fs";
 import http from "node:http";
-import path11 from "node:path";
+import path12 from "node:path";
 async function startBoardServer(opts) {
   logStart(opts.dataRoot);
   await takeStartLock(opts.dataRoot);
@@ -7198,26 +8319,26 @@ async function startBoardServer(opts) {
   }
 }
 function logStart(dataRoot) {
-  fs11.mkdirSync(dataRoot, { recursive: true });
-  fs11.appendFileSync(serverLogFile(dataRoot), `serve: home ${path11.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs12.mkdirSync(dataRoot, { recursive: true });
+  fs12.appendFileSync(serverLogFile(dataRoot), `serve: home ${path12.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
   if (passed) return passed;
   try {
-    const read = fs11.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+    const read = fs12.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
     if (read) return read;
   } catch {
   }
   return "unknown";
 }
 async function takeStartLock(dataRoot) {
-  fs11.mkdirSync(dataRoot, { recursive: true });
+  fs12.mkdirSync(dataRoot, { recursive: true });
   const lock = serverStartLock(dataRoot);
   for (let emptyReads = 0; ; ) {
     try {
-      fs11.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs12.writeFileSync(lock, String(process.pid), { flag: "wx" });
       return;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -7236,29 +8357,29 @@ async function takeStartLock(dataRoot) {
 async function removeStaleStartLock(dataRoot, seen) {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs11.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs12.writeFileSync(breaker, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
     try {
-      if (Date.now() - fs11.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs11.rmSync(breaker, { force: true });
+      if (Date.now() - fs12.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs12.rmSync(breaker, { force: true });
     } catch {
     }
     await new Promise((r) => setTimeout(r, LOCK_READ_RETRY_MS));
     return;
   }
   try {
-    if (serverLockHolder(dataRoot) === seen) fs11.rmSync(serverStartLock(dataRoot), { force: true });
+    if (serverLockHolder(dataRoot) === seen) fs12.rmSync(serverStartLock(dataRoot), { force: true });
   } finally {
-    fs11.rmSync(breaker, { force: true });
+    fs12.rmSync(breaker, { force: true });
   }
 }
 function releaseStartLock(dataRoot) {
-  if (serverLockHolder(dataRoot) === process.pid) fs11.rmSync(serverStartLock(dataRoot), { force: true });
+  if (serverLockHolder(dataRoot) === process.pid) fs12.rmSync(serverStartLock(dataRoot), { force: true });
 }
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path11.join(opts.dataRoot, "swarm.sqlite"));
+  const board2 = await openBoard(path12.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const speakers = /* @__PURE__ */ new Set();
@@ -7280,7 +8401,7 @@ async function runBoardServer(opts) {
   const grewAt = (file) => {
     if (!file) return null;
     try {
-      const st = fs11.statSync(file);
+      const st = fs12.statSync(file);
       return st.isFile() ? st.mtimeMs : null;
     } catch {
       return null;
@@ -7413,8 +8534,8 @@ async function runBoardServer(opts) {
   const port = await listen(httpServer, host, opts.port ?? 0);
   const state = { pid: process.pid, port, secret, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs11.mkdirSync(opts.dataRoot, { recursive: true });
-  fs11.writeFileSync(stateFile, JSON.stringify(state));
+  fs12.mkdirSync(opts.dataRoot, { recursive: true });
+  fs12.writeFileSync(stateFile, JSON.stringify(state));
   const stopTellingReaders = board2.onChange((repo) => {
     for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
   });
@@ -7448,8 +8569,8 @@ async function runBoardServer(opts) {
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
     try {
-      const written = JSON.parse(fs11.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs11.rmSync(stateFile);
+      const written = JSON.parse(fs12.readFileSync(stateFile, "utf8"));
+      if (written.pid === state.pid && written.port === state.port) fs12.rmSync(stateFile);
     } catch {
     }
     releaseStartLock(opts.dataRoot);
@@ -7466,7 +8587,7 @@ async function stopBoardServer(dataRoot) {
   const file = serverStateFile(dataRoot);
   let state;
   try {
-    state = JSON.parse(fs11.readFileSync(file, "utf8"));
+    state = JSON.parse(fs12.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -7474,12 +8595,12 @@ async function stopBoardServer(dataRoot) {
     const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
-    fs11.rmSync(file, { force: true });
+    fs12.rmSync(file, { force: true });
     const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs11.rmSync(serverStartLock(dataRoot), { force: true });
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs12.rmSync(serverStartLock(dataRoot), { force: true });
     return false;
   }
-  for (let i = 0; i < 100 && fs11.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 100 && fs12.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
   return true;
 }
 function listen(server, host, port) {
@@ -7523,730 +8644,24 @@ var init_server = __esm({
   }
 });
 
-// src/proc.ts
-import { spawn, spawnSync } from "node:child_process";
-var hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
-function hiddenSpawnSync(command, args2, options = {}) {
-  return spawnSync(command, args2, { ...options, windowsHide: true });
-}
-
 // src/cli/index.ts
+init_proc();
 init_board();
 init_kinds();
 init_events();
 init_home();
-import fs12 from "node:fs";
-import path12 from "node:path";
+import fs13 from "node:fs";
+import path13 from "node:path";
 
 // src/client/remote.ts
+init_proc();
 init_wire();
+init_link();
 import crypto3 from "node:crypto";
-import fs6 from "node:fs";
+import fs9 from "node:fs";
 import net2 from "node:net";
-import os4 from "node:os";
-import path6 from "node:path";
-
-// src/link/link.ts
-init_home();
-init_wire();
-import crypto2 from "node:crypto";
-import fs5 from "node:fs";
-import net from "node:net";
-import os3 from "node:os";
-import path5 from "node:path";
-
-// src/link/transcripts.ts
-init_liveness();
-import fs4 from "node:fs";
-import os2 from "node:os";
-import path4 from "node:path";
-var TARGET_CHARS = 50;
-var SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
-function shellWords(command, backslashEscapes = true) {
-  const words = [];
-  let word = "";
-  let inWord = false;
-  const flush = () => {
-    if (inWord) words.push(word);
-    word = "";
-    inWord = false;
-  };
-  for (let i = 0; i < command.length; i++) {
-    const c = command[i];
-    if (c === "'" || c === '"') {
-      const close = command.indexOf(c, i + 1);
-      const end = close < 0 ? command.length : close;
-      word += command.slice(i + 1, end);
-      inWord = true;
-      i = end;
-    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
-      word += command[++i];
-      inWord = true;
-    } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
-      flush();
-      const two = command.slice(i, i + 2);
-      if (two === "&&" || two === "||") {
-        words.push(two);
-        i++;
-      } else words.push(c);
-    } else if (/\s/.test(c)) flush();
-    else {
-      word += c;
-      inWord = true;
-    }
-  }
-  flush();
-  return words;
-}
-var isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
-function optionValue(words, names) {
-  for (let i = 0; i < words.length; i++) {
-    for (const n of names) {
-      if (words[i] === n && i + 1 < words.length) return words[i + 1];
-      if (words[i].startsWith(n + "=")) return words[i].slice(n.length + 1);
-    }
-  }
-  return void 0;
-}
-function commandRunsWait(command, backslashEscapes = true) {
-  return commandRunsVerb(command, "wait", backslashEscapes);
-}
-var toolEscapesBackslash = (toolName) => toolName === void 0 || toolName === "Bash";
-function commandRunsVerb(command, verb, backslashEscapes) {
-  const words = shellWords(command, backslashEscapes);
-  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
-}
-var commandIsBoardsOwn = (command, backslashEscapes) => commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
-function commandRunsBinding(command, binding, backslashEscapes = true) {
-  const words = shellWords(command, backslashEscapes);
-  let start = 0;
-  for (let i = 0; i <= words.length; i++) {
-    if (i < words.length && !SEPARATORS.has(words[i])) continue;
-    const segment = words.slice(start, i);
-    start = i + 1;
-    const at = segment.indexOf(binding.verb);
-    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
-    const args2 = segment.slice(at + 1);
-    if (binding.verb === "join") {
-      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
-    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
-  }
-  return false;
-}
-function transcriptRunsBinding(file, binding) {
-  let text;
-  try {
-    text = fs4.readFileSync(file, "utf8");
-  } catch {
-    return false;
-  }
-  const value = binding.verb === "join" ? binding.seat : binding.group;
-  if (!text.includes(binding.verb) || !text.includes(value) || !text.includes('"tool_use"')) return false;
-  for (const line of text.split("\n")) {
-    if (!line.includes('"tool_use"') || !line.includes(binding.verb)) continue;
-    let obj;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
-    for (const part of obj.message.content) {
-      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
-    }
-  }
-  return false;
-}
-var metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
-var mtimeOf = (file) => {
-  try {
-    return fs4.statSync(file).mtimeMs;
-  } catch {
-    return 0;
-  }
-};
-var claudeCode = {
-  name: "claude-code",
-  locate(binding, env) {
-    const session = env.CLAUDE_CODE_SESSION_ID;
-    if (!session) return null;
-    const root = env.SWARM_TRANSCRIPTS_ROOT || path4.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
-    let projects;
-    try {
-      projects = fs4.readdirSync(root);
-    } catch {
-      return null;
-    }
-    const candidates = [];
-    for (const project of projects) {
-      const main2 = path4.join(root, project, `${session}.jsonl`);
-      if (fs4.existsSync(main2)) candidates.push(main2);
-      const subagents = path4.join(root, project, session, "subagents");
-      let names = [];
-      try {
-        names = fs4.readdirSync(subagents);
-      } catch {
-      }
-      for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path4.join(subagents, n));
-    }
-    const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
-    for (const { file } of newestFirst) {
-      if (this.finished(file) === true) continue;
-      if (transcriptRunsBinding(file, binding)) return file;
-    }
-    return null;
-  },
-  finished(transcript) {
-    let text;
-    try {
-      text = fs4.readFileSync(metaFileOf(transcript), "utf8");
-    } catch {
-      return null;
-    }
-    try {
-      return JSON.parse(text).finished === true;
-    } catch {
-      return false;
-    }
-  }
-};
-var LOCATORS = [claudeCode];
-function locate(binding, env) {
-  for (const l of LOCATORS) {
-    const found = l.locate(binding, env);
-    if (found) return found;
-  }
-  return null;
-}
-function toolTarget(input) {
-  let text = "";
-  if (input && typeof input === "object") {
-    const fields = input;
-    for (const k of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
-      if (typeof fields[k] === "string") {
-        text = fields[k];
-        break;
-      }
-    }
-    if (!text) text = JSON.stringify(input);
-  } else if (input !== void 0) text = String(input);
-  return text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-}
-var timeOf = (line, fallback) => {
-  const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
-  return Number.isFinite(t) ? t : fallback;
-};
-var freshCursor = () => ({
-  offset: 0,
-  tokens: 0,
-  open: /* @__PURE__ */ new Map(),
-  lastTool: null,
-  context: null,
-  grewAt: null,
-  lastLine: null,
-  inTurn: false,
-  endedTurns: 0,
-  background: /* @__PURE__ */ new Map(),
-  boardsOwn: /* @__PURE__ */ new Set(),
-  breach: null,
-  listeners: /* @__PURE__ */ new Set(),
-  listenerEndedAt: null
-});
-var KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
-var WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
-var PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
-var PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
-var RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
-function commandSegments(text) {
-  const out = [];
-  let cur = "";
-  const flush = () => {
-    if (cur.trim()) out.push(cur.trim());
-    cur = "";
-  };
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      const close = text.indexOf(c, i + 1);
-      const end = close < 0 ? text.length : close;
-      const inner = text.slice(i + 1, end);
-      if (RUNS_QUOTED.test(cur)) {
-        flush();
-        out.push(...commandSegments(inner));
-      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
-      i = end;
-    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
-    else cur += c;
-  }
-  flush();
-  return out;
-}
-function headOf(segment) {
-  const words = segment.split(/\s+/).filter(Boolean);
-  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
-  if (!words.length) return null;
-  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
-  return { head, rest: words.slice(1).join(" ") };
-}
-function portsOf(command) {
-  const found = /* @__PURE__ */ new Set();
-  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
-  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
-  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
-}
-function classifyKill(command) {
-  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
-  let kill = null;
-  for (const segment of commandSegments(command)) {
-    const h = headOf(segment);
-    if (!h || !KILL_HEADS.has(h.head)) continue;
-    const { head, rest } = h;
-    if (head === "pkill" || head === "killall") kill = "name";
-    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? kill ?? null : "fed";
-    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? kill ?? null : "fed";
-    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? kill ?? null : "fed";
-    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
-    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
-    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
-    if (kill === "name") break;
-  }
-  if (kill === "name") return { kind: "pattern" };
-  if (kill !== "fed") return null;
-  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
-  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
-  return null;
-}
-var MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
-var OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
-var NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
-}
-function closeNotified(cursor, text, at) {
-  if (!text.includes("<task-notification>")) return;
-  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
-    cursor.background.delete(m[1]);
-    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
-  }
-}
-var commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
-function awaitedBackground(cursor) {
-  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
-  let oldest = null;
-  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
-  if (!oldest) return null;
-  let outputGrewAt = null;
-  if (oldest.output) {
-    try {
-      outputGrewAt = fs4.statSync(oldest.output).mtimeMs;
-    } catch {
-    }
-  }
-  return { target: oldest.target, since: oldest.since, outputGrewAt };
-}
-function commandActsAsOther(command, binding, backslashEscapes = true) {
-  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
-  if (as === void 0) return false;
-  const slash = as.lastIndexOf("/");
-  const group = slash < 0 ? null : as.slice(0, slash);
-  const seat = as.slice(slash + 1);
-  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
-}
-function observe(transcript, from, binding) {
-  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
-  let chunk = Buffer.alloc(0);
-  let mtime = Date.now();
-  try {
-    const fd = fs4.openSync(transcript, "r");
-    try {
-      const stat = fs4.fstatSync(fd);
-      mtime = stat.mtimeMs;
-      if (stat.size < cursor.offset) cursor = freshCursor();
-      chunk = Buffer.alloc(stat.size - cursor.offset);
-      fs4.readSync(fd, chunk, 0, chunk.length, cursor.offset);
-    } finally {
-      fs4.closeSync(fd);
-    }
-  } catch {
-    cursor = freshCursor();
-  }
-  const counted = claudeCodeJsonl.read(chunk, { offset: cursor.offset, tokens: cursor.tokens });
-  const consumed = (counted?.offset ?? cursor.offset) - cursor.offset;
-  if (consumed > 0) {
-    for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
-      if (!raw.trim()) continue;
-      let line;
-      try {
-        line = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
-      if (line.type !== "assistant" && line.type !== "user") continue;
-      const at = timeOf(line, mtime);
-      const content = Array.isArray(line.message?.content) ? line.message.content : [];
-      if (line.type === "assistant") {
-        const usage = line.message?.usage;
-        if (usage) {
-          const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
-          cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
-        }
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-          if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
-          const name = part.name ?? "?";
-          const target = toolTarget(part.input);
-          const input = part.input;
-          const command = input?.command;
-          const escapes = toolEscapesBackslash(name);
-          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
-          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
-          const shell = typeof command === "string";
-          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {} });
-          cursor.lastTool = target ? `${name} ${target}` : name;
-          cursor.lastLine = cursor.lastTool;
-          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
-          if (boardsOwn) cursor.boardsOwn.add(part.id);
-          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null });
-          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
-          const kill = typeof command === "string" ? classifyKill(command) : null;
-          if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
-        }
-        const inTurn = line.message?.stop_reason === "tool_use";
-        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
-        cursor.inTurn = inTurn;
-      } else {
-        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
-          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
-          const result = textOf(part.content);
-          const call = cursor.open.get(part.tool_use_id);
-          if (MOVED_TO_BACKGROUND.test(result)) {
-            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
-            const task = cursor.background.get(part.tool_use_id);
-            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
-            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output });
-          }
-          cursor.open.delete(part.tool_use_id);
-          cursor.boardsOwn.delete(part.tool_use_id);
-        }
-        cursor.inTurn = true;
-      }
-    }
-    cursor.offset += consumed;
-    cursor.tokens = counted.tokens;
-    cursor.grewAt = mtime;
-  }
-  let openTool = null;
-  for (const t of cursor.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
-  let finished = false;
-  for (const l of LOCATORS) {
-    const said = l.finished(transcript);
-    if (said !== null) {
-      finished = said;
-      break;
-    }
-  }
-  return {
-    activity: {
-      grewAt: cursor.grewAt,
-      tokens: cursor.tokens,
-      context: cursor.context,
-      openTool: openTool && { ...openTool },
-      lastTool: cursor.lastTool,
-      finished,
-      inTurn: cursor.inTurn,
-      lastLine: cursor.lastLine,
-      background: awaitedBackground(cursor),
-      breach: cursor.breach,
-      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
-    },
-    cursor
-  };
-}
-
-// src/link/link.ts
-var DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
-function linkPipe(dataRoot, run3, member) {
-  const home = crypto2.createHash("sha256").update(path5.resolve(dataRoot)).digest("hex").slice(0, 12);
-  const name = `swarm-${home}-${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path5.join(os3.tmpdir(), `${name}.sock`);
-}
-function linkPidFile(dataRoot, run3, member) {
-  return path5.join(dataRoot, "links", `${run3}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
-}
-function readServerState(dataRoot) {
-  try {
-    return JSON.parse(fs5.readFileSync(serverStateFile(dataRoot), "utf8"));
-  } catch {
-    return null;
-  }
-}
-function describeStop(stop) {
-  if (stop.why === "refused") return `refused ${stop.reason}`;
-  if (stop.why === "no server") return `no server for ${Math.round(stop.forMs / 1e3)} s`;
-  if (stop.why === "closed") return "run closed";
-  return stop.why;
-}
-function sayStop(dataRoot, member, stop, toServerLog) {
-  const line = `link ${member}: ${describeStop(stop)}`;
-  process.stderr.write(line + "\n");
-  const state = toServerLog ? readServerState(dataRoot) : null;
-  if (!state || !isAlive(state.pid)) return;
-  try {
-    fs5.appendFileSync(serverLogFile(dataRoot), line + "\n");
-  } catch {
-  }
-}
-var pause = (ms2) => new Promise((r) => setTimeout(r, ms2));
-var pipeAnswers = (pipe) => new Promise((resolve) => {
-  const probe = net.connect(pipe, () => (probe.destroy(), resolve(true)));
-  probe.once("error", () => resolve(false));
-});
-async function listenOnPipe(pipe, onPipe) {
-  if (await pipeAnswers(pipe)) return null;
-  const tryListen = () => new Promise((resolve) => {
-    const server = net.createServer(onPipe);
-    server.once("error", () => resolve("taken"));
-    server.listen(pipe, () => resolve(server));
-  });
-  const first = await tryListen();
-  if (first !== "taken") return first;
-  if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
-  fs5.rmSync(pipe, { force: true });
-  const second = await tryListen();
-  return second === "taken" ? null : second;
-}
-async function runLink(opts) {
-  const timing = { ...DEFAULT_TIMING, ...opts.timing };
-  const pipeTaken = () => {
-    const stop = { why: "pipe taken" };
-    sayStop(opts.dataRoot, opts.member, stop, false);
-    return stop;
-  };
-  if (await pipeAnswers(linkPipe(opts.dataRoot, opts.run, opts.member))) return pipeTaken();
-  let state = readServerState(opts.dataRoot);
-  for (const startedAt = Date.now(); !state && Date.now() - startedAt < timing.stateFileWaitMs; ) {
-    await pause(100);
-    state = readServerState(opts.dataRoot);
-  }
-  if (!state) throw new Error(`no board server state file in ${opts.dataRoot}`);
-  const unanswered = /* @__PURE__ */ new Map();
-  const pipes = /* @__PURE__ */ new Set();
-  let socket = null;
-  let welcomed = false;
-  let exiting = false;
-  let lastStirAt = Date.now();
-  let finish;
-  const finished = new Promise((r) => finish = r);
-  const sendUp = (f) => {
-    if (socket && welcomed && socket.readyState === WebSocket.OPEN) socket.send(encode(f));
-  };
-  let queuedActivity = null;
-  let lastActivitySentAt = -Infinity;
-  const flushActivity = (now = false) => {
-    if (!queuedActivity || !socket || !welcomed || socket.readyState !== WebSocket.OPEN) return;
-    if (!now && (socket.bufferedAmount > 0 || Date.now() - lastActivitySentAt < timing.activityGapMs)) return;
-    socket.send(encode(queuedActivity));
-    lastActivitySentAt = Date.now();
-    queuedActivity = null;
-  };
-  let transcript = null;
-  let cursor = null;
-  let lastSeen = null;
-  const env = opts.env ?? process.env;
-  const watchTranscript = () => {
-    if (exiting) return;
-    transcript ??= locate(opts.binding, env);
-    if (!transcript) return;
-    const read = observe(transcript, cursor, opts.binding);
-    const grew = read.cursor.offset !== cursor?.offset;
-    cursor = read.cursor;
-    if (grew) lastStirAt = Date.now();
-    const activity = { ...read.activity, transcript };
-    const seen = JSON.stringify(activity);
-    if (seen !== lastSeen) {
-      lastSeen = seen;
-      queuedActivity = { type: "activity", at: Date.now(), activity };
-    }
-    if (read.activity.finished) {
-      flushActivity(true);
-      return exit({ why: "finished" }, "finished");
-    }
-    flushActivity();
-  };
-  const exit = (stop, bye) => {
-    if (exiting) return;
-    exiting = true;
-    if (bye) sendUp({ type: "bye", reason: bye });
-    sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
-    clearInterval(idleCheck);
-    clearInterval(watch);
-    pipeServer?.close();
-    for (const p of pipes) p.end();
-    socket?.close();
-    finish(stop);
-  };
-  const onDown = (f) => {
-    if (f.type === "welcome") {
-      welcomed = true;
-      for (const { call } of unanswered.values()) sendUp(call);
-      flushActivity();
-    } else if (f.type === "refused") {
-      exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
-    } else if (f.type === "result") {
-      const asked = unanswered.get(f.id);
-      if (!asked) return;
-      unanswered.delete(f.id);
-      if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
-      if (asked.call.method === "end" && f.ok) exit({ why: "ended" }, "ended");
-    }
-  };
-  const connectOnce = (s) => new Promise((resolve) => {
-    welcomed = false;
-    let wasWelcomed = false;
-    let ws;
-    try {
-      ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
-    } catch {
-      return resolve(false);
-    }
-    socket = ws;
-    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), secret: s.secret, member: { name: opts.member, run: opts.run }, supersede: true }));
-    ws.onmessage = (ev) => {
-      try {
-        onDown(decode(String(ev.data)));
-      } catch {
-      }
-      wasWelcomed ||= welcomed;
-    };
-    ws.onclose = () => {
-      welcomed = false;
-      resolve(wasWelcomed);
-    };
-    ws.onerror = () => {
-    };
-  });
-  const connectionLoop = async () => {
-    let lastAnsweredAt = Date.now();
-    let s = state;
-    while (!exiting) {
-      if (s) {
-        const welcomedThisTime = await connectOnce(s);
-        if (exiting) return;
-        if (welcomedThisTime) lastAnsweredAt = Date.now();
-      }
-      if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
-      await pause(timing.reconnectEveryMs);
-      s = readServerState(opts.dataRoot);
-    }
-  };
-  const onPipe = (pipe) => {
-    pipes.add(pipe);
-    let buffered = "";
-    pipe.setEncoding("utf8");
-    pipe.on("data", (chunk) => {
-      buffered += chunk;
-      for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
-        const line = buffered.slice(0, nl).trim();
-        buffered = buffered.slice(nl + 1);
-        if (!line) continue;
-        let f;
-        try {
-          f = decode(line);
-        } catch {
-          continue;
-        }
-        if (f.type === "call") {
-          lastStirAt = Date.now();
-          unanswered.set(f.id, { call: f, pipe });
-          sendUp(f);
-        } else if (f.type === "cancel") {
-          unanswered.delete(f.id);
-          sendUp(f);
-        }
-      }
-    });
-    pipe.on("error", () => {
-    });
-    pipe.on("close", () => {
-      pipes.delete(pipe);
-      for (const [id, asked] of unanswered) {
-        if (asked.pipe !== pipe) continue;
-        unanswered.delete(id);
-        if (asked.call.method === "wait") sendUp({ type: "cancel", id });
-      }
-    });
-  };
-  const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
-  if (!pipeServer) return pipeTaken();
-  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
-  try {
-    fs5.mkdirSync(path5.dirname(pidFile), { recursive: true });
-    fs5.writeFileSync(pidFile, String(process.pid));
-  } catch {
-  }
-  const dropPid = () => {
-    try {
-      if (fs5.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs5.rmSync(pidFile);
-    } catch {
-    }
-  };
-  process.once("exit", dropPid);
-  void finished.then(dropPid, dropPid);
-  const idleCheck = setInterval(() => {
-    if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
-  }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
-  const watch = setInterval(watchTranscript, timing.watchEveryMs);
-  if (state.version !== bundleVersion()) exit({ why: "server of another version" });
-  if (!exiting) {
-    void connectionLoop();
-    watchTranscript();
-  }
-  return finished;
-}
-var alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-function commandLine(pid) {
-  const r = process.platform === "win32" ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
-  return (r.stdout ?? "").trim() || null;
-}
-function stopLinks(runId, members) {
-  const pids = [];
-  for (const member of members) {
-    const file = linkPidFile(DATA_ROOT, runId, member);
-    let pid;
-    try {
-      pid = Number(fs5.readFileSync(file, "utf8").trim());
-    } catch {
-      continue;
-    }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
-      try {
-        process.kill(pid);
-        pids.push(pid);
-      } catch {
-      }
-    }
-    try {
-      fs5.rmSync(file);
-    } catch {
-    }
-  }
-  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
-}
-
-// src/client/remote.ts
+import os5 from "node:os";
+import path9 from "node:path";
 var START_TIMEOUT_MS = 5e3;
 var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
@@ -8262,13 +8677,13 @@ function isAlive2(pid) {
 }
 function readServerState2(dataRoot) {
   try {
-    const s = JSON.parse(fs6.readFileSync(serverStateFile(dataRoot), "utf8"));
+    const s = JSON.parse(fs9.readFileSync(serverStateFile(dataRoot), "utf8"));
     return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
   } catch {
     return null;
   }
 }
-var DETACHED_CWD = os4.tmpdir();
+var DETACHED_CWD = os5.tmpdir();
 var isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
 async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   const found = readServerState2(dataRoot);
@@ -8285,16 +8700,16 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs6.mkdirSync(dataRoot, { recursive: true });
-      fs6.writeFileSync(serverLogFile(dataRoot), "");
-      log = fs6.openSync(serverLogFile(dataRoot), "a");
+      fs9.mkdirSync(dataRoot, { recursive: true });
+      fs9.writeFileSync(serverLogFile(dataRoot), "");
+      log = fs9.openSync(serverLogFile(dataRoot), "a");
     } catch {
     }
     const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs6.closeSync(log);
+    if (typeof log === "number") fs9.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = readServerState2(dataRoot);
@@ -8304,7 +8719,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const lines = fs6.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = fs9.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
   }
@@ -8332,14 +8747,14 @@ function connectPipe(pipe) {
 var linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
 var HARNESS_LINK_WAIT_MS = 1e4;
 var LINK_DOWN_WAIT_MS = 1e3;
-var linkDownMarker = (dataRoot, member) => path6.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+var linkDownMarker = (dataRoot, member) => path9.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 var inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
 async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs6.rmSync(marker, { force: true });
+      fs9.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -8347,15 +8762,15 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs6.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs9.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause2(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs6.mkdirSync(path6.dirname(marker), { recursive: true });
-      fs6.writeFileSync(marker, String(Date.now()));
+      fs9.mkdirSync(path9.dirname(marker), { recursive: true });
+      fs9.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
@@ -8577,11 +8992,12 @@ ${m.answer}` : ""}`;
 init_mentions();
 
 // src/cli/aiview-board.ts
-import fs7 from "node:fs";
-import path7 from "node:path";
+init_proc();
+import fs10 from "node:fs";
+import path10 from "node:path";
 function aiviewLauncher(toolRoot2) {
-  const file = process.env.SWARM_AIVIEW ?? path7.join(toolRoot2, "..", "aiview", "aiview.mjs");
-  return fs7.existsSync(file) ? file : null;
+  const file = process.env.SWARM_AIVIEW ?? path10.join(toolRoot2, "..", "aiview", "aiview.mjs");
+  return fs10.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
   const r = hiddenSpawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
@@ -8631,8 +9047,8 @@ function unclaimedLines(paths, renames = []) {
 }
 
 // src/cli/guides.ts
-import fs8 from "node:fs";
-import path8 from "node:path";
+import fs11 from "node:fs";
+import path11 from "node:path";
 function flowItems(list) {
   const items = [];
   let item = "";
@@ -8678,14 +9094,14 @@ function parseGuide(text, folder) {
 function guidesIn(dir, keep) {
   let folders;
   try {
-    folders = fs8.readdirSync(dir).filter(keep).sort();
+    folders = fs11.readdirSync(dir).filter(keep).sort();
   } catch {
     return [];
   }
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs8.readFileSync(path8.join(dir, f, "SKILL.md"), "utf8"), f);
+      const g = parseGuide(fs11.readFileSync(path11.join(dir, f, "SKILL.md"), "utf8"), f);
       if (g) out.push(g);
     } catch {
     }
@@ -8693,8 +9109,8 @@ function guidesIn(dir, keep) {
   return out;
 }
 function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
-  const shipped = guidesIn(path8.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
-  const here = repoRoot ? guidesIn(path8.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const shipped = guidesIn(path11.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
+  const here = repoRoot ? guidesIn(path11.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
@@ -8758,75 +9174,12 @@ function projectGuidesAt(show, list) {
   return out;
 }
 
-// src/git.ts
-var gitAnswer = (cwd, ...argv) => {
-  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
-};
-var git = (cwd, ...argv) => {
-  const r = gitAnswer(cwd, ...argv);
-  return r.status === 0 ? r.stdout.trim() : null;
-};
-var worktreeHolding = (cwd, branch) => {
-  const list = git(cwd, "worktree", "list", "--porcelain");
-  if (!list) return null;
-  const ref = branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
-  let at = null;
-  for (const line of list.split(/\r?\n/)) {
-    if (line.startsWith("worktree ")) at = line.slice("worktree ".length);
-    else if (line === `branch ${ref}`) return at;
-  }
-  return null;
-};
-var baseAt = (cwd) => {
-  const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
-  return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
-};
-var baseRef = (cwd, base) => {
-  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
-  return base;
-};
-
-// src/place/place.ts
-import fs9 from "node:fs";
-import path9 from "node:path";
-var gitOut = (cwd, ...argv) => {
-  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-  return r.status === 0 ? r.stdout.trim() : null;
-};
-var real = (p) => {
-  try {
-    return fs9.realpathSync.native(p);
-  } catch {
-    return p;
-  }
-};
-function repoOf(dir) {
-  const common = gitOut(dir, "rev-parse", "--git-common-dir");
-  return common ? real(path9.resolve(dir, common)) : null;
-}
-function worktreeOf(dir) {
-  const top = gitOut(dir, "rev-parse", "--show-toplevel");
-  return top ? path9.resolve(top) : null;
-}
-var inside = (root, dir) => {
-  const rel = path9.relative(path9.resolve(root), path9.resolve(dir));
-  return !rel.startsWith("..") && !path9.isAbsolute(rel);
-};
-function resolveIn(root, spec, opts = {}) {
-  if (path9.isAbsolute(spec)) return { abs: spec, missing: [] };
-  const cwd = opts.cwd ?? process.cwd();
-  const here = root && !inside(root, cwd) ? path9.resolve(root, spec) : path9.resolve(cwd, spec);
-  if (fs9.existsSync(here)) return { abs: here, missing: [] };
-  const fromRoot = root ? path9.resolve(root, spec) : null;
-  if (fromRoot && fs9.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
-  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
-}
-function relativeIn(root, abs) {
-  return (root ? path9.relative(root, abs) : abs).split(path9.sep).join("/");
-}
+// src/cli/index.ts
+init_git();
+init_place();
 
 // src/cli/conflicts.ts
+init_git();
 var MERGE_TREE_SINCE = [2, 38];
 var REBASE_START = /^(?:pull --)?rebase(?: -[a-z]+)? \(start\):/;
 function gitHasMergeTree(worktree) {
@@ -8870,6 +9223,9 @@ function conflictsOf(worktree, onto, reflogMark) {
   }
 }
 
+// src/cli/index.ts
+init_link();
+
 // src/cli/answer/rules.ts
 init_events();
 init_kinds();
@@ -8897,7 +9253,7 @@ var CODE_WORDING = {
   mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
-  tellResolved: (path13, member) => `if you resolved a conflict in ${path13}, tell them: swarm post "@${member} I resolved ${path13}: <how>" --about ${path13}`,
+  tellResolved: (path14, member) => `if you resolved a conflict in ${path14}, tell them: swarm post "@${member} I resolved ${path14}: <how>" --about ${path14}`,
   // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
   flagHolder: (cli, writer, about) => `settle it: ${cli} agree ${writer} --about ${about}`,
   flagWriter: (cli, holder, about) => `settle it: ${cli} post ${holder} --about ${about}`
@@ -8958,19 +9314,19 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   resumed: (run3, held, cli, as) => `run ${run3} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
   lockHeldNext: (cli, name, as, wait) => `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the run ──
-  paused: (run3, why, wait) => `run ${run3} is paused${why}. Stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+  paused: (run3, why, wait) => `run ${run3} is paused${why}. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run3, end) => `run ${run3} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
   // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
   backIt: (cli, seq, as) => `back it: ${cli} endorse ${seq} --as ${as}`,
   phaseDoneWhen: (name, tasks, done) => `when your part of ${name}${tasks.length ? ` (your task${tasks.length > 1 ? "s" : ""} ${tasks.join(", ")})` : ""} is posted: ${done}`,
-  pauseStop: (person, wait) => `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new, claim and merge nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
+  pauseStop: (person, wait) => `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
   // board-split D30: parked by the orchestrator; ending the turn is the member's, `end` the orchestrator's alone
   parkedStop: "you are parked: end your turn now, without end; the orchestrator resumes you at your next task",
   parked: (member, cli, seat, as) => `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
   unparked: (member) => `${member} is unparked: its alerts and its share of all-done are back`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
-  packVerbRefused: (verb, seatKind) => `${verb}: refused, a ${seatKind} seat has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
+  packVerbRefused: (verb, seatKind) => `${verb}: refused, a ${seatKind} has no code pack: ${verb} is a worker's verb; your verbs are in --help`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run3, wait) => `end: refused, run ${run3} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli, as, run3) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
@@ -8992,6 +9348,14 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** several members stalled at one tick: each member's move after its name */
   stalledEach: (moves) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
   // ── the seat's commands at its join (D21, D36) ──
+  /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
+  verifierAs: (as) => `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
+  verifierCommands: (cli, as, holdMs) => [
+    `${cli} post --file <findings.md> --as ${as}    # your verdict and findings table, to @orchestrator`,
+    `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
+    `${cli} done <phase> --as ${as}`,
+    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`
+  ],
   seatCommands: (cli, as, holdMs) => [
     `${cli} post "\u2026" --about <D id> --as ${as}`,
     `${cli} agree "\u2026" --about <D id> --as ${as}`,
@@ -9189,7 +9553,8 @@ var coreUsage = (cli, events) => [
   "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
   "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
   "  roster  [--repo <path>] [--as <member>]",
-  "  end     [--as <member>]                                         # claims or flags what you wrote unclaimed, then releases your claims and the lock",
+  "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
+  "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
   "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
   "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
@@ -9270,136 +9635,6 @@ ${owes}` : rearm;
   }
 }
 
-// src/packs/code/worktrees.ts
-init_home();
-import fs10 from "node:fs";
-import os5 from "node:os";
-import path10 from "node:path";
-var worktreesRoot = (repo) => path10.join(repo, "swarm", "worktrees");
-var CASELESS3 = process.platform === "win32" || process.platform === "darwin";
-var fold = (s) => CASELESS3 ? path10.resolve(s).toLowerCase() : path10.resolve(s);
-var safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-var worktreeDir = (repo, run3, seat) => path10.join(worktreesRoot(repo), String(run3), safe(seat));
-var branchFor = (run3, group, seat) => `swarm/${run3}-${group}/${seat}`;
-var owned = (wt, repo) => !!wt && fold(path10.dirname(path10.dirname(wt))) === fold(worktreesRoot(repo));
-var worktreeDirs = (repos) => {
-  const sub = (d) => fs10.existsSync(d) ? fs10.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path10.join(d, e.name)) : [];
-  return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
-};
-var same = (a, b) => fold(a) === fold(b);
-function run2(cwd, ...argv) {
-  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-  return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
-}
-function inLinkedWorktree(cwd) {
-  const dir = git(cwd, "rev-parse", "--absolute-git-dir");
-  const common = git(cwd, "rev-parse", "--git-common-dir");
-  return !!dir && !!common && !same(dir, path10.resolve(cwd, common));
-}
-var branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
-var isAncestor = (cwd, ref, of) => run2(cwd, "merge-base", "--is-ancestor", ref, of).ok;
-function ensureWorktree(cwd, repo, runId, group, seat, base) {
-  const at = worktreeDir(repo, runId, seat);
-  const branch = branchFor(runId, group, seat);
-  const top = fs10.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
-  if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
-  if (fs10.existsSync(at) && fs10.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
-  run2(cwd, "worktree", "prune");
-  fs10.mkdirSync(path10.dirname(at), { recursive: true });
-  const from = baseRef(cwd, base);
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
-  const r = run2(cwd, "worktree", "add", "-q", ...argv);
-  if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
-  return { path: at, branch, reused: false };
-}
-function leftover(wt, into) {
-  if (!fs10.existsSync(wt)) return null;
-  const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
-  if (!status.ok) return `git status failed: ${status.err}`;
-  const changed = status.out.split(/\r?\n/).filter(Boolean).length;
-  if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
-  if (!into) return "no base branch recorded for its run";
-  if (!isAncestor(wt, "HEAD", baseRef(wt, into))) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
-  return null;
-}
-function removeWorktree(wt, repo) {
-  if (!fs10.existsSync(wt)) {
-    run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
-    return null;
-  }
-  const r = run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
-  run2(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
-  return r.ok ? null : r.err || "git worktree remove failed";
-}
-function sweep(wt, repo, into) {
-  const why = leftover(wt, into) ?? removeWorktree(wt, repo);
-  return { removed: why === null, why };
-}
-var LEGACY_ROOT = path10.join(DATA_ROOT, "worktrees");
-var LEGACY_SWEPT = path10.join(LEGACY_ROOT, ".swept");
-function sweepLegacyRoot() {
-  if (!fs10.existsSync(LEGACY_ROOT) || fs10.existsSync(LEGACY_SWEPT)) return [];
-  const kept = [];
-  const sub = (d) => fs10.existsSync(d) ? fs10.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path10.join(d, e.name)) : [];
-  for (const wt of sub(LEGACY_ROOT).flatMap(sub)) {
-    const common = git(wt, "rev-parse", "--git-common-dir");
-    if (!common) {
-      if (!fs10.readdirSync(wt).length) fs10.rmdirSync(wt);
-      else kept.push(`${wt}: not a git worktree, left as it is`);
-      continue;
-    }
-    const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
-    if (!status.ok || status.out) {
-      kept.push(`${wt}: uncommitted changes, kept`);
-      continue;
-    }
-    const why = removeWorktree(wt, path10.resolve(wt, common));
-    if (why) kept.push(`${wt}: ${why}`);
-  }
-  for (const runDir of sub(LEGACY_ROOT)) if (!fs10.readdirSync(runDir).length) fs10.rmdirSync(runDir);
-  if (!fs10.readdirSync(LEGACY_ROOT).length) fs10.rmdirSync(LEGACY_ROOT);
-  else fs10.writeFileSync(LEGACY_SWEPT, `${(/* @__PURE__ */ new Date()).toISOString()}
-`);
-  return kept;
-}
-function worktrees(repo) {
-  return {
-    /** Where the seat's worktree is, without making it (G20); null when `cwd` is a worktree the board did not make. */
-    place(run3, group, seat, cwd) {
-      if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
-      const at = worktreeDir(repo, run3, seat);
-      return { path: at, branch: branchFor(run3, group, seat), reused: fs10.existsSync(at) };
-    },
-    /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
-    forSeat(run3, group, seat, base) {
-      return ensureWorktree(repo, repo, run3, group, seat, base);
-    },
-    /** True when `wt` is a worktree the board made for this repository. */
-    owns(wt) {
-      return owned(wt, repo);
-    },
-    /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
-    unmerged(wt, into) {
-      return leftover(wt, into);
-    },
-    /** Stops the seat's link (Windows refuses to remove a folder a live process is in), then removes the worktree once
-     *  clean and merged into `into`; otherwise says why it stays. */
-    release(seat, into) {
-      stopLinks(seat.run, [seat.member]);
-      return sweep(seat.worktree, repo, into);
-    }
-  };
-}
-function sweepAll(repos, recordOf) {
-  return worktreeDirs(repos).map((dir) => {
-    const w = recordOf(dir);
-    if (!w) return { worktree: dir, removed: false, why: "no member of any run joined from it" };
-    if (w.open) return { worktree: dir, removed: false, why: `run ${w.run} is open` };
-    return { worktree: dir, ...sweep(dir, w.repo, w.base) };
-  });
-}
-var sweepLegacy = () => sweepLegacyRoot();
-
 // src/cli/index.ts
 var args = parseArgs(process.argv.slice(2));
 var asJson = args.has("--json");
@@ -9464,7 +9699,7 @@ function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
 }
 function changedIn(worktree) {
-  if (!fs12.existsSync(worktree)) return [];
+  if (!fs13.existsSync(worktree)) return [];
   const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
@@ -9503,7 +9738,7 @@ var printReconciled = (unclaimed, flags, renames = []) => {
   if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? path12.dirname(path12.resolve(process.argv[1]));
+var toolRoot = () => process.env.SWARM_ROOT ?? path13.dirname(path13.resolve(process.argv[1]));
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${verbHelp()}`);
 var runArg = () => {
@@ -9517,9 +9752,9 @@ var linkToStart = null;
 async function caller() {
   const as = args.flag("--as");
   const wt = as ? null : worktreeOf(process.cwd());
-  const p = as ? await board.participant(as) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ worktree: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
+  const p = as ? await board.participant(as) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
-  if (p.worktree && fs12.existsSync(p.worktree)) callerWorktree = p.worktree;
+  if (p.place && fs13.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   if (p.ended || !(await direct.runs()).some((r) => r.id === p.run)) return p;
   board = await connectBoard({ dataRoot: DATA_ROOT, member });
@@ -9561,16 +9796,16 @@ var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? 
 var shellWord2 = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var fwd = (p) => p.split("\\").join("/");
 var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord2(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord2(process.argv[1].replace(/\\/g, "/"))];
-var linkToldFile = (member) => path12.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
-var linkTold = (member) => fs12.existsSync(linkToldFile(member));
+var linkToldFile = (member) => path13.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
+var linkTold = (member) => fs13.existsSync(linkToldFile(member));
 var markLinkTold = (member) => {
   try {
-    fs12.mkdirSync(path12.dirname(linkToldFile(member)), { recursive: true });
-    fs12.writeFileSync(linkToldFile(member), "");
+    fs13.mkdirSync(path13.dirname(linkToldFile(member)), { recursive: true });
+    fs13.writeFileSync(linkToldFile(member), "");
   } catch {
   }
 };
-var clearLinkTold = (member) => fs12.rmSync(linkToldFile(member), { force: true });
+var clearLinkTold = (member) => fs13.rmSync(linkToldFile(member), { force: true });
 var startLinkLine = (member) => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord2)].join(" "));
 var waitCommand2 = (name, foreground = false) => WORDING.wait(self().join(" "), shellWord2(name), foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine2 = async (p) => pausedLine(await situation(p));
@@ -9676,9 +9911,9 @@ var emitHeard = async (p, json, result) => {
   });
 };
 var generatedAmong = (worktree, files) => files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
-var slashed = (s) => s.replace(/\\/g, "/");
+var slashed2 = (s) => s.replace(/\\/g, "/");
 var guidesHere = (p, onto) => {
-  const root = p.worktree ?? worktreeOf(process.cwd());
+  const root = p.place ?? worktreeOf(process.cwd());
   const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
 };
@@ -9710,14 +9945,14 @@ function parseFile(spec) {
 var declaredPath = (file) => {
   const root = worktreeOf(process.cwd());
   const { abs, missing } = resolveIn(root, file);
-  return missing.length && root ? path12.resolve(root, file) : abs;
+  return missing.length && root ? path13.resolve(root, file) : abs;
 };
 var seatsFail = (what) => fail(`${what}
 e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]`);
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs12.readFileSync(path12.resolve(file), "utf8"));
+    raw = JSON.parse(fs13.readFileSync(path13.resolve(file), "utf8"));
   } catch (e) {
     return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9769,33 +10004,39 @@ var subscriptionsArg = (spec) => {
 };
 var NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW\xB7SL3, @swarm)";
 var runOf = async (id) => (await board.runs()).find((r) => r.id === id) ?? null;
+var isPackRefusal = (fact) => typeof fact === "object" && fact !== null && "refused" in fact;
+function refusedCodeVerb(p, fact) {
+  const r = fact.refused;
+  void p;
+  throw new Error(r.reason === "git" ? `worktree: ${r.detail}` : WORDING.packVerbRefused(r.verb, r.seatKind));
+}
+function refuseWithoutPack(p, verb) {
+  if (p.pack === null) refusedCodeVerb(p, { refused: { reason: "no-pack", verb, seatKind: p.verify ? "verifier" : "seat" } });
+}
+async function packVerb(p, verb, input = {}) {
+  const fact = await board.packCall(p, verb, input);
+  return isPackRefusal(fact) ? refusedCodeVerb(p, fact) : fact;
+}
 async function memberWorktree(runId, seat) {
   const run3 = await runOf(runId);
-  if (!run3 || run3.kindPack === null || !run3.seats.some((s) => s.id === seat)) return null;
+  if (!run3 || !run3.seats.some((s) => s.id === seat)) return null;
   const cwd = process.cwd();
   const base = run3.base ?? baseAt(cwd);
   if (!base || !worktreeOf(cwd)) return null;
-  const place = worktrees(run3.repo).place(run3.id, run3.group, seat, cwd);
+  const place = await board.packCall(null, "place", { run: run3.id, seat, cwd });
   if (!place) return null;
   if (repoOf2(cwd) !== run3.repo) fail(`join: run ${runId} is on ${run3.repo}; join from a checkout of that repository`);
   return { ...place, base };
 }
-async function madeWorktree(p) {
-  if (!p.worktree || !worktrees(p.repo).owns(p.worktree) || fs12.existsSync(p.worktree)) return;
-  const run3 = await runOf(p.run);
-  if (!run3) return;
-  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path12.dirname(p.repo);
-  const base = run3.base ?? baseAt(cwd);
-  if (!base) fail(`${p.name}: no base to make the worktree from`);
-  try {
-    worktrees(p.repo).forSeat(run3.id, run3.group, p.seat, base);
-    callerWorktree = p.worktree;
-  } catch (e) {
-    fail(`worktree: ${e.message}`);
-  }
+async function madeWorktree(p, verb) {
+  if (p.place && fs13.existsSync(p.place)) return;
+  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path13.dirname(p.repo);
+  const made = await packVerb(p, verb, { cwd });
+  if (made?.made) callerWorktree = p.place;
 }
 async function main() {
-  for (const line of sweepLegacy()) console.error(`legacy worktree ${line}`);
+  if (fs13.existsSync(path13.join(DATA_ROOT, "worktrees")) && !fs13.existsSync(path13.join(DATA_ROOT, "worktrees", ".swept")))
+    for (const line of await board.packCall(null, "legacy", {}) ?? []) console.error(`legacy worktree ${line}`);
   if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
     console.error(NO_MAIN);
     process.exitCode = 2;
@@ -9890,9 +10131,9 @@ ${verbHelp()}`);
     }
     case "close": {
       const run3 = runArg();
-      const trees = (await board.worktrees(run3)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs12.existsSync(w.worktree));
+      const trees = await board.worktrees(run3);
       await board.closeRun(run3);
-      const swept = trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: run3, member: w.member, worktree: w.worktree }, w.base) }));
+      const swept = await board.packCall(null, "close", { run: run3, trees }) ?? [];
       const kept = swept.filter((w) => !w.removed);
       emit({ run: run3, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run3} closed`);
@@ -9984,13 +10225,14 @@ ${verbHelp()}`);
         seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
-        worktree: own?.path ?? worktreeOf(process.cwd()) ?? void 0,
+        place: own?.path ?? worktreeOf(process.cwd()) ?? void 0,
         ...args.flag("--on") !== void 0 ? { on: subscriptionsArg(args.flag("--on")) } : {}
       });
       const link = startLinkLine({ name: member.name, run: member.run });
-      const shared = member.kindPack === null;
-      const as = shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
-      const commands = shared ? seatCommands(member.name) : null;
+      const shared = member.pack === null;
+      const verifier = shared && member.verify;
+      const as = verifier ? WORDING.verifierAs(member.name) : shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
+      const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord2(member.name), FOREGROUND_WAIT_MS) : shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const waiting = await board.deliverMentions(member);
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
@@ -10023,7 +10265,7 @@ ${verbHelp()}`);
       const p = await caller();
       if (await answeredClosed(p)) break;
       const file = args.flag("--file");
-      const body = (file ? fs12.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const body = (file ? fs13.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
@@ -10144,7 +10386,7 @@ ${verbHelp()}`);
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf2(path12.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf2(path13.resolve(args.flag("--repo") ?? process.cwd()));
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -10167,7 +10409,7 @@ ${verbHelp()}`);
     case "claim": {
       const p = await caller();
       if (await refusedPaused(p, "claim")) break;
-      await madeWorktree(p);
+      await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
       const answers = [];
       for (const file of args.positional) {
@@ -10188,10 +10430,11 @@ ${verbHelp()}`);
     }
     case "release": {
       const p = await caller();
+      refuseWithoutPack(p, "release");
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
       const released = [];
-      const targets = all ? (await board.heldBy(p)).map((f) => path12.resolve(pathsRoot() ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
+      const targets = all ? (await board.heldBy(p)).map((f) => path13.resolve(pathsRoot() ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
       if (all && !targets.length) {
         emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
         break;
@@ -10206,24 +10449,24 @@ ${verbHelp()}`);
     case "merge-lock": {
       const p = await caller();
       if (await refusedPaused(p, "merge-lock")) break;
-      await madeWorktree(p);
       const onto = need("--onto");
-      const holding = p.worktree ? worktreeHolding(p.worktree, onto) : null;
+      await madeWorktree(p, "merge-lock");
+      const holding = p.place ? worktreeHolding(p.place, onto) : null;
       if (holding) {
         process.exitCode = 5;
-        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path12.resolve(r2.worktree).toLowerCase() === path12.resolve(holding).toLowerCase());
+        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path13.resolve(r2.worktree).toLowerCase() === path13.resolve(holding).toLowerCase());
         const line = `${onto} is checked out at ${holding}${holder ? ` (${holder.name}'s worktree)` : ""}: ask the orchestrator to detach it, then run merge-lock again`;
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
-      const ontoRef = p.worktree && fs12.existsSync(p.worktree) ? baseRef(p.worktree, onto) : onto;
-      const reconciled = p.worktree ? branchChangedIn(p.worktree, ontoRef) : [];
+      const ontoRef = p.place && fs13.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      const reconciled = p.place ? branchChangedIn(p.place, ontoRef) : [];
       const held = new Set(await board.heldBy(p));
-      const generated = p.worktree ? generatedAmong(p.worktree, reconciled) : [];
+      const generated = p.place ? generatedAmong(p.place, reconciled) : [];
       const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled, generated) : [];
-      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, git(p.worktree, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
-      const reflogMark = p.worktree ? headReflogLength(p.worktree) ?? void 0 : void 0;
+      const renames = p.place && unclaimed.length ? renamesIn(p.place, git(p.place, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
+      const reflogMark = p.place ? headReflogLength(p.place) ?? void 0 : void 0;
       const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
       const r = await board.lockMerge(p, onto, reflogMark, guides.map((g) => g.name));
       emit({ member: p.name, ...r, reconciled, flags, ...r.granted && guides.length ? { guides } : {} }, () => {
@@ -10236,12 +10479,13 @@ ${verbHelp()}`);
     }
     case "merged": {
       const p = await caller();
+      refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
       const reportFile = args.flag("--report-file");
       let fromFile;
       if (reportFile !== void 0) {
         try {
-          fromFile = fs12.readFileSync(path12.resolve(reportFile), "utf8").trim();
+          fromFile = fs13.readFileSync(path13.resolve(reportFile), "utf8").trim();
         } catch {
           fail(`merged: --report-file ${reportFile} cannot be read`);
         }
@@ -10250,7 +10494,7 @@ ${verbHelp()}`);
       const files = args.list("--files");
       const lock = await board.heldMergeLock(p);
       const unlocked = args.flag("--unlocked")?.trim();
-      if (!lock && p.kindPack !== null) {
+      if (!lock && p.pack !== null) {
         if (unlocked === void 0) {
           return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", "<branch>", "--as", shellWord2(p.name)].join(" ")} first, then merge, then merged again`);
         }
@@ -10267,12 +10511,12 @@ ${verbHelp()}`);
       if (settled.missing.length)
         fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
       if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
-      if (lock?.onto && p.worktree && !git(p.worktree, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
-        fail(`merged: ${sha} is no commit git knows in ${slashed(p.worktree)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.worktree)} rev-parse --short HEAD`);
-      if (lock?.onto && p.worktree && gitAnswer(p.worktree, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
-        fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.worktree)} push . HEAD:${lock.onto}, then merged again`);
-      const conflicts = p.worktree && lock && lock.reflogMark !== null ? conflictsOf(p.worktree, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await board.merged(p, sha, files.map((f) => path12.resolve(f)), conflicts);
+      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+        fail(`merged: ${sha} is no commit git knows in ${slashed2(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed2(p.place)} rev-parse --short HEAD`);
+      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+        fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed2(p.place)} push . HEAD:${lock.onto}, then merged again`);
+      const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : void 0;
+      const sharers = await board.merged(p, sha, files.map((f) => path13.resolve(f)), conflicts);
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `
 guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
@@ -10286,34 +10530,39 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       break;
     }
     case "end": {
-      const p = await caller();
-      if ((await board.runs()).every((r) => r.id !== p.run)) {
-        const line = `run ${p.run} closed: ${p.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
+      const asker = await caller();
+      if ((await board.runs()).every((r) => r.id !== asker.run)) {
+        const line = `run ${asker.run} closed: ${asker.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
         linkToStart = null;
-        emit({ member: p.name, ended: true, closed: true, next: line }, line);
+        emit({ member: asker.name, ended: true, closed: true, next: line }, line);
         break;
       }
+      const endedSeat = args.flag("--seat");
+      if (endedSeat !== void 0 && asker.seat !== "orchestrator") fail(`end --seat: only the orchestrator ends a seat; ${asker.name} is not ${asker.plan}/orchestrator`);
+      if (endedSeat === void 0 && asker.seat !== "orchestrator") fail(WORDING.endRefused(asker.run, WORDING.wait(self().join(" "), shellWord2(asker.name), FOREGROUND_WAIT_MS)));
+      const p = endedSeat === void 0 ? asker : await board.participant(`${asker.plan}/${endedSeat}`) ?? fail(`end --seat: no member in seat ${endedSeat} of run ${asker.run}`);
       if (p.ended) break;
-      const unread = await board.unreadMentions(p);
+      const unread = endedSeat === void 0 ? await board.unreadMentions(p) : 0;
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord2(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
-      const seatTrees = worktrees(p.repo);
-      const mine = seatTrees.owns(p.worktree) && fs12.existsSync(p.worktree) ? slashed(p.worktree) : null;
-      const left = mine ? seatTrees.unmerged(mine, base) : null;
-      if (mine && left) {
+      const refusal = await board.packCall(p, "beforeEnd", {});
+      if (refusal) {
+        const { worktree: mine2, left } = refusal;
         const who = `--as ${shellWord2(p.name)}`;
         fail(
-          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
+          `end: your worktree ${mine2} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
         );
       }
-      const reconciled = p.worktree ? changedIn(p.worktree) : [];
+      const reconciled = p.place ? changedIn(p.place) : [];
       const held = new Set(await board.heldBy(p));
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await board.reconcileWrites(p, reconciled) : [];
-      const renames = p.worktree && unclaimed.length ? renamesIn(p.worktree, "HEAD") : [];
+      const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
       await board.end(p);
       linkToStart = null;
-      const removal = mine ? seatTrees.release({ run: p.run, member: p.name, worktree: mine }, base).why : null;
+      const after = await board.packCall(p, "afterEnd", {}) ?? {};
+      const mine = after.worktree ?? null;
+      const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
@@ -10325,9 +10574,8 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
 ${verbHelp()}`);
       const known = await board.worktrees();
-      const fold2 = (s) => process.platform === "win32" ? path12.resolve(s).toLowerCase() : path12.resolve(s);
-      const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
-      const out = sweepAll([...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)], recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
+      const repos = [...known.map((k) => k.repo), ...(await board.runs()).map((r) => r.repo)];
+      const out = await board.packCall(null, "prune", { known, repos }) ?? [];
       const kept = out.filter((o) => !o.removed);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
@@ -10350,7 +10598,7 @@ ${verbHelp()}`);
         }
       });
       const stats = await board.stats({
-        repo: repoOf2(path12.resolve(args.flag("--repo") ?? process.cwd())),
+        repo: repoOf2(path13.resolve(args.flag("--repo") ?? process.cwd())),
         ...run3 !== void 0 ? { run: run3 } : {},
         // a named run is read whatever its age: no default period (plan D40)
         ...all ? {} : since !== void 0 ? { since } : run3 !== void 0 ? {} : { since: "30d" },

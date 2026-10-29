@@ -6,6 +6,7 @@
 import type { Kind, Message, Participant, RunId } from "../board/board.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
+import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
 
 /** A verb a pack adds to the CLI's dispatch (D12: listed under the pack's section of the static help). */
 export interface VerbSpec {
@@ -30,6 +31,10 @@ export type PackRefusal = { refused: { reason: "no-pack"; verb: string; seatKind
 export type PackTables = Claims;
 /** What the core gives a pack to open its tables with: its database and the core's helpers. */
 export type PackTablesDeps = ClaimsDeps;
+
+/** The pack's part of the page's snapshot of one repository (D18); one pack ships, so its snapshot is the type. */
+export type PackSnapshot = CodeSnapshot;
+export type PackSnapshotDeps = CodeSnapshotDeps;
 
 /** One run's view for a pack call (D10): its run, group and base, its repository, the pack's tables, and the core's
  *  insertMessage. */
@@ -62,6 +67,12 @@ export interface Pack {
   busy?(member: Participant, ctx: PackCtx): boolean;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   afterEnd?(member: Participant, ctx: PackCtx): EndFacts;
+  /** Its part of one repository's snapshot, from its tables; `people` are the snapshot's participant rows. */
+  snapshot?(deps: PackSnapshotDeps, repo: string, people: Record<string, unknown>[], orchestratorSeat: string): PackSnapshot;
+  /** What the member holds now, for the roster's `held` (F27). */
+  held?(db: PackTablesDeps["db"], member: number): { path: string; interface: boolean }[];
+  /** Deletes its rows of a pruned member, or of a pruned run (D20): only the pack touches its tables. */
+  forget?(db: PackTablesDeps["db"], scope: { member: number } | { run: RunId }): void;
   /** Its part of `swarm stats`: fields on runs, members and totals, read from the store (D15). */
   stats?: StatsFigures;
 }

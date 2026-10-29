@@ -51,7 +51,7 @@ export type BrainstormRunStats = {
    *  words reads unsourced, and counts in its author's `unsourced`. An objection (a mark `objected`): the skeptic's
    *  `msg` or `urgent` post about a `D<n>` when the latest agreement on it, by another member, was not yet endorsed by the
    *  skeptic at the post's time (D46). */
-  claimsWithSource: { n: number | null; of: number | null; inferred: true };
+  claimsWithSource: { n: number | null; of: number | null; inferred: true }; // AGENTS EXCEPTION (rule D24): `claimsWithSource` is a debate's claims (its points made), not the code pack's; a `stats --json` key, frozen
 };
 export type RunStats = {
   run: RunId;
@@ -81,7 +81,7 @@ export type Totals = {
     objectedThenAgreed: number | null;
     sourcedShare: number | null /* 0–1 */;
     /** The share's numerator and denominator, summed over the debated runs (D35). */
-    claimsWithSource: { n: number | null; of: number | null };
+    claimsWithSource: { n: number | null; of: number | null }; // AGENTS EXCEPTION (rule D24): `claimsWithSource` is a debate's claims (its points made), not the code pack's; a `stats --json` key, frozen
     silentSeats: number | null;
   };
   /** One point per run, as `runs`; null: not recorded, a gap (D32); an estimated figure is a point (D44). A pack's
@@ -318,7 +318,7 @@ function debateOf(
   const lastAgreementOn = new Map<string, Row>();
   let agreements = 0;
   let sourced = 0;
-  let claims = 0;
+  let pointsMade = 0;
   for (const m of messages) {
     const q = questionOf(m);
     if (q === null || !spoken(m)) continue;
@@ -335,7 +335,7 @@ function debateOf(
       continue;
     }
     if (beforeOutcome) {
-      claims++;
+      pointsMade++;
       if (SOURCE.test(String(m.body))) sourced++;
       else unsourcedOf.set(author, (unsourcedOf.get(author) ?? 0) + 1);
     }
@@ -358,7 +358,7 @@ function debateOf(
       questions: [...questions.values()].sort((a, b) => ms(a.firstPost) - ms(b.firstPost)),
       agreements,
       endorsed: skepticEndorsements.length,
-      claimsWithSource: { n: sourced, of: claims, inferred: true },
+      claimsWithSource: { n: sourced, of: pointsMade, inferred: true }, // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
     },
     marksOf,
     unsourcedOf,
@@ -421,8 +421,8 @@ function brainstormTotalsOf(runs: RunStats[]): Totals["brainstorm"] {
   // a question objected then agreed: the skeptic objected on it before the agreement that settled it
   const objectedOf = (r: RunStats, q: QuestionStats): boolean =>
     q.outcome !== null && r.members.some((m) => m.marks.some((x) => x.what === "objected" && x.path === q.id && x.seq !== undefined && x.seq < q.outcome!.seq));
-  const n = sumKnown(debated.map((d) => d.debate.claimsWithSource.n));
-  const of = sumKnown(debated.map((d) => d.debate.claimsWithSource.of));
+  const n = sumKnown(debated.map((d) => d.debate.claimsWithSource.n)); // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
+  const of = sumKnown(debated.map((d) => d.debate.claimsWithSource.of)); // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
   // the seats (the orchestrator is none) with a silent interval, over the runs whose intervals are recorded
   const silentSeatsOf = (r: RunStats): number => r.members.filter((m) => m.seat !== ORCHESTRATOR && m.intervals.some((i) => i.what === "silent")).length;
   const brainstorms = runs.filter((r) => r.kind === "brainstorm");
@@ -433,7 +433,7 @@ function brainstormTotalsOf(runs: RunStats[]): Totals["brainstorm"] {
     exchangesMedian: percentile(settled.flatMap((q) => (q.exchanges === null ? [] : [q.exchanges])), 0.5),
     objectedThenAgreed: debated.length ? debated.reduce((k, d) => k + d.debate.questions.filter((q) => objectedOf(d.run, q)).length, 0) : null,
     sourcedShare: n === null || !of ? null : n / of,
-    claimsWithSource: { n, of },
+    claimsWithSource: { n, of }, // AGENTS EXCEPTION (rule D24): the frozen `stats --json` key
     silentSeats: sumKnown(debated.filter((d) => d.run.recorded).map((d) => silentSeatsOf(d.run))),
   };
 }

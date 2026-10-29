@@ -9,7 +9,7 @@ import { SQLITE_PATH } from "./home.ts";
 import { nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type HeldMergeLock, type PackCtx, type PackRefusal, type PackVerbInput, type Stats } from "../packs/registry.ts";
+import { registry, type HeldMergeLock, type PackCtx, type PackRefusal, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
 import { type EventName, type Subscription, carries, EVENTS, eventOf, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT } from "./liveness.ts";
@@ -109,7 +109,8 @@ export interface Participant {
   name: string; // "<plan>/<seat>"
   nick: string; // the funny name given at join (D43), and to an orchestrator at open (plan D17)
   ended: boolean;
-  worktree: string | null; // registered at join; null for the orchestrator
+  /** The folder it works in, registered at join (a code member's worktree); null for the orchestrator or a member with no pack. */
+  place: string | null;
   /** A `wait --mentions` of this participant is pending (D49, D61). */
   listening: boolean;
   /** The events that wake its `wait --mentions`, besides mentions and urgent posts (D59). */
@@ -141,7 +142,7 @@ export interface RosterEntry {
   held: Declared[];
   stale: boolean; // no tool call for ten minutes (D31)
   subscriptions: Subscription[];
-  worktree: string | null; // null for a seat or an orchestrator (D64)
+  worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
   /** Its state from its activity (D9), and the open or last tool. */
   state: MemberStateName;
   activity: string | null;
@@ -277,24 +278,18 @@ export type SnapshotEvent = {
   meta?: MessageMeta | null;
 };
 export type QueueSeat = { seat: string; role?: string; area?: string; link: string | null; state: string; blockers: string[]; member: string | null };
-/** A held file and every member holding it, in claim order (D40): the FileMap's rows. */
-export type SnapshotFile = { path: string; holders: string[]; interface: boolean };
 /** The edit goes through; `notice` names the other holders the first time only, per member and path. */
 export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
 export type EditHeld = { allowed: false; refusal: string };
-export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
-export type BoardSnapshot = {
+export type { LockTurn, SnapshotFile } from "../packs/registry.ts";
+/** One repository as the page reads it: the core's fields and the pack's (board-split#D18). */
+export type BoardSnapshot = PackSnapshotFields & {
   repo: string;
   name: string;
   runs: RunSummary[];
-  lock: { holder: string; since: string } | null;
-  /** The repository's merge-lock turns, newest first (at most 50): asked, granted, merged, refusals counted. */
-  lockHistory: LockTurn[];
   roster: SnapshotMember[];
   events: SnapshotEvent[];
   queues: Record<string, QueueSeat[]>;
-  files: SnapshotFile[];
-  flags: { path: string; member: string }[];
 };
 
 export interface Board {
@@ -385,10 +380,10 @@ export interface Board {
   /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
   worktrees(run?: RunId): MemberWorktree[];
 
-  /** `worktree` is ignored when the run's kind has none; `files` are refused when it has no claims.
+  /** `place` is ignored when the member has no pack; `files` are refused when it has no claims.
    *  Declared files become claims where free (*interface* or *inside*); a held one stays declared only. */
   /** `on`, else the seat row's `on`, else the kind's defaults for a member (D59). */
-  join(input: { run: RunId; seat: string; doing: string; files: Declared[]; worktree?: string; on?: Subscription[] }): {
+  join(input: { run: RunId; seat: string; doing: string; files: Declared[]; place?: string; on?: Subscription[] }): {
     member: Participant;
     roster: RosterEntry[];
     composition: Composition;
@@ -396,8 +391,8 @@ export interface Board {
   /** The run's composition now (D3): the orchestrator, then every declared seat in order. */
   composition(run: RunId): Composition;
   participant(name: string): Participant | null; // "<plan>/<seat>" or "<plan>/orchestrator"
-  /** Who is calling (D28): the one live member whose worktree holds `worktree`. */
-  identify(who: { worktree?: string }): Participant | null;
+  /** Who is calling (D28): the one live member whose place holds `place` (the caller's folder). */
+  identify(who: { place?: string }): Participant | null;
   setDoing(p: Participant, doing: string): void;
   /** Adds to the member's subscriptions; returns them after (D59). */
   subscribe(p: Participant, subs: Subscription[]): Subscription[];
@@ -499,8 +494,6 @@ export const UPKEEP_EVERY_MS = 5 * 60 * 1000;
 const LAST_UPKEEP = "last-upkeep";
 /** The settings row holding when the analytics records began, ISO: the board's own (D33). */
 const RECORDS_SINCE = "records-since";
-/** The settings row holding when the shares record began, ISO: a run opened before has no shares known (D39). */
-const SHARES_SINCE = "shares-since";
 const RETENTION_DEFAULT_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The page shows the last this many messages of a thread. */
@@ -533,14 +526,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the analytics records (call_log, lock_requests, run_stats) start with the store that first creates them:
   // a run opened before reads recorded: false (D33)
   const recordsAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'call_log'").get() === undefined;
-  // the shares record starts with the store that first creates it, the same way (D39)
-  const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === undefined;
   // D16: a store from before the seat vocabulary: table `slices` is `seats`, `participants.slice` is `seat`, a seat has no title
   const hasTable = (name: string): boolean => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
   const columnsOf = (table: string): string[] => (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((c) => String(c.name));
   if (hasTable("slices") && !hasTable("seats")) db.exec("ALTER TABLE slices RENAME TO seats");
   if (hasTable("seats") && columnsOf("seats").includes("title")) db.exec("ALTER TABLE seats DROP COLUMN title");
   if (hasTable("participants") && columnsOf("participants").includes("slice")) db.exec("ALTER TABLE participants RENAME COLUMN slice TO seat");
+  // board-split T12 (D18): a member's working folder is its neutral `place`; a store from before named the column for the code pack
+  if (hasTable("participants") && columnsOf("participants").includes("worktree") && !columnsOf("participants").includes("place")) db.exec("ALTER TABLE participants RENAME COLUMN worktree TO place"); // AGENTS EXCEPTION (rule D24): the old column's name, read once to rename it
   db.exec(`
     PRAGMA journal_mode = DELETE;
     -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
@@ -569,7 +562,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       id INTEGER PRIMARY KEY,
       run INTEGER NOT NULL,
       seat TEXT NOT NULL,
-      worktree TEXT,
+      place TEXT,
       doing TEXT NOT NULL DEFAULT '',
       files TEXT NOT NULL DEFAULT '[]',
       since_seq INTEGER NOT NULL DEFAULT 0,
@@ -594,99 +587,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       seq INTEGER NOT NULL,
       PRIMARY KEY (participant, seq)
     );
-    -- claims are global by repository-relative path, across every run on a repository (D12, D20);
-    -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed
-    CREATE TABLE IF NOT EXISTS claims (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'inside',
-      since_seq INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- every claim made, kept past its release: who held a path during a run (D63), and whether as an
-    -- interface: widened to 'interface' when the claim is made or widened so, never narrowed (D42)
-    CREATE TABLE IF NOT EXISTS claim_log (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'inside',
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim granted beside a live holder of the path, kept past both claims' release: who held a path
-    -- at the same time as whom during a run, from the seq it began (D39); append-only, deleted with its run
-    CREATE TABLE IF NOT EXISTS shares (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
-    );
-    -- a holder of a shared path already told of another holder (D41): once per member and path
-    CREATE TABLE IF NOT EXISTS notices (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
-    );
-    CREATE TABLE IF NOT EXISTS merge_locks (
-      repo TEXT PRIMARY KEY,
-      participant INTEGER NOT NULL,
-      at TEXT NOT NULL
-    );
-    -- a member refused the merge lock since its holder took it: mentioned when it is released (D65)
-    CREATE TABLE IF NOT EXISTS lock_waiters (
-      repo TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, participant)
-    );
-    -- a path written outside its writer's claim, by reconcileWrites; lives while a claim on it does (D39)
-    CREATE TABLE IF NOT EXISTS flags (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim refused as held: the post that settles it claims it (D7)
-    CREATE TABLE IF NOT EXISTS claim_requests (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a flag posted, once per writer, path and holder (D8)
-    CREATE TABLE IF NOT EXISTS flag_posts (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      holder INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, holder)
-    );
     -- a version per repository, moved by every write: what onChange compares (D39)
     CREATE TABLE IF NOT EXISTS changes (
       repo TEXT PRIMARY KEY,
       version INTEGER NOT NULL
     );
-    -- one row per merge, written by merged, deleted with its run by prune (D25): files and conflicts JSON, conflicts NULL for unknown
-    CREATE TABLE IF NOT EXISTS merges (
-      participant INTEGER NOT NULL,
-      run INTEGER NOT NULL,
-      sha TEXT NOT NULL,
-      at TEXT NOT NULL,
-      files TEXT NOT NULL,
-      conflicts TEXT
-    );
-    CREATE INDEX IF NOT EXISTS merges_run ON merges (run);
     -- one row per counted call, written by countCall in the verb's transaction (D25); deleted with its run
     CREATE TABLE IF NOT EXISTS call_log (participant INTEGER NOT NULL, at TEXT NOT NULL, verb TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);
-    -- one row per merge-lock turn: asked, granted, merged; refused counts the refusals (D25); deleted with its run
-    CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
-      granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
-    CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
     -- a closed run's figures, RunStats JSON, written once at close or by prune first; never pruned (D20, D21)
     CREATE TABLE IF NOT EXISTS run_stats (run INTEGER PRIMARY KEY, repo TEXT NOT NULL, kind TEXT NOT NULL,
       closed_at TEXT NOT NULL, body TEXT NOT NULL);
@@ -718,15 +626,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       PRIMARY KEY (run, member));
   `);
   if (recordsAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(RECORDS_SINCE, new Date().toISOString());
-  if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, new Date().toISOString());
   // Schema upkeep for stores created by earlier versions: add a column when it is missing.
   const upkeep = (table: string, column: string, ddl: string): void => {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
-  upkeep("participants", "worktree", "worktree TEXT");
-  // a claim's kind kept past its release, so a closed run read live still knows its interfaces (D42)
-  upkeep("claim_log", "kind", "kind TEXT NOT NULL DEFAULT 'inside'");
+  upkeep("participants", "place", "place TEXT");
   upkeep("participants", "last_call", "last_call TEXT");
   upkeep("participants", "calls", "calls INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "waiting", "waiting INTEGER NOT NULL DEFAULT 0");
@@ -748,12 +653,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "link", "link TEXT");
   // a board event's data beside its text: a merged event's recipients (D11)
   upkeep("messages", "meta", "meta TEXT");
-  // the branch a merge lands in, named by merge-lock --onto (D9)
-  upkeep("merge_locks", "onto", "onto TEXT");
-  // the guides merge-lock listed for the branch, JSON; merged refuses until each is settled
-  upkeep("merge_locks", "guides", "guides TEXT");
-  // the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
-  upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
   upkeep("seats", "link", "link TEXT");
   upkeep("seats", "role", "role TEXT");
   upkeep("seats", "area", "area TEXT");
@@ -832,26 +731,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
-  // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
-  const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
-  if (claimKey && claimKey.pk === 0) {
-    db.exec(`
-      BEGIN;
-      ALTER TABLE claims RENAME TO claims_before_d40;
-      CREATE TABLE claims (
-        repo TEXT NOT NULL,
-        path TEXT NOT NULL,
-        participant INTEGER NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'inside',
-        since_seq INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (repo, path, participant)
-      );
-      INSERT INTO claims (repo, path, participant, kind) SELECT repo, path, participant, kind FROM claims_before_d40;
-      DROP TABLE claims_before_d40;
-      COMMIT;
-    `);
-  }
-
   // Waking and watching: every write moves its repository's version; once committed, the waits
   // and watchers of this process are woken at once (swarm-relay D14): the server is the one
   // process that writes, so no file carries the wake to another (no `.signal`, D14). The poll
@@ -980,7 +859,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     name: `${r.plan}/${r.seat}`,
     nick: nickOf(r),
     ended: r.ended_at != null,
-    worktree: r.worktree == null ? null : String(r.worktree),
+    place: r.place == null ? null : String(r.place),
     listening: listensNow(r),
     subscriptions: subsOf(r),
     // pack_chosen 0: a member from before the registry (or an orchestrator), read as its kind's default (D22)
@@ -1074,9 +953,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const out = new Set<string>();
     if (path.basename(repo).toLowerCase() === ".git") out.add(path.resolve(path.dirname(repo)));
     const rows = db
-      .prepare("SELECT DISTINCT p.worktree FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.worktree IS NOT NULL")
+      .prepare("SELECT DISTINCT p.place FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.place IS NOT NULL")
       .all(repo) as Row[];
-    for (const r of rows) out.add(path.resolve(String(r.worktree)));
+    for (const r of rows) out.add(path.resolve(String(r.place)));
     return [...out].sort((a, b) => b.length - a.length);
   };
   /** Repository-relative with forward slashes; null for an absolute path outside every root. */
@@ -1786,16 +1665,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         for (const run of runIds) {
           for (const r of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) {
             const id = Number(r.id);
-            for (const table of ["claim_log", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "deliveries", "claim_requests", "flag_posts", "call_log", "lock_requests"]) {
-              db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(id);
-            }
-            db.prepare("DELETE FROM notices WHERE other = ?").run(id);
-            db.prepare("DELETE FROM shares WHERE other = ?").run(id);
+            for (const table of ["deliveries", "call_log"]) db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(id);
+            // the packs' own rows of the member (D20)
+            registry.forgetMember(db, id);
             // a member authoring a kept message stays, so the message still reads its author
             if (!db.prepare("SELECT 1 FROM messages WHERE author = ? LIMIT 1").get(id)) db.prepare("DELETE FROM participants WHERE id = ?").run(id);
           }
           db.prepare("DELETE FROM seats WHERE run = ?").run(run);
-          db.prepare("DELETE FROM merges WHERE run = ?").run(run);
+          registry.forgetRun(db, run);
           for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run);
           // the row stays, stamped: its id is never handed to a new run (D61)
           db.prepare("UPDATE runs SET pruned_at = ? WHERE id = ?").run(at.toISOString(), run);
@@ -1871,12 +1748,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     worktrees(run) {
       const rows = db
-        .prepare(`SELECT p.run, r.plan, p.seat, p.worktree, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.worktree IS NOT NULL${run === undefined ? "" : " AND p.run = ?"} ORDER BY p.id`)
+        .prepare(`SELECT p.run, r.plan, p.seat, p.place, r.repo, r.base, r.state FROM participants p JOIN runs r ON r.id = p.run WHERE p.place IS NOT NULL${run === undefined ? "" : " AND p.run = ?"} ORDER BY p.id`)
         .all(...(run === undefined ? [] : [run])) as Row[];
-      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.worktree), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
+      return rows.map((r) => ({ run: Number(r.run), member: `${r.plan}/${r.seat}`, worktree: String(r.place), repo: String(r.repo), base: r.base == null ? null : String(r.base), open: r.state === "open" }));
     },
 
-    join({ run, seat, doing, files, worktree, on }) {
+    join({ run, seat, doing, files, place, on }) {
       const r = runRow(run);
       if (r.state !== "open") throw new Error(`run ${run} is closed`);
       if (seat === ORCHESTRATOR) throw new Error(`"${ORCHESTRATOR}" is not a seat`);
@@ -1887,8 +1764,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const packName = given.pack?.name ?? null;
       const verify = given.verify ? 1 : 0;
       if (files.length && packName === null) throw new Error(`join: a ${profile.kind} run has no claims`);
-      // a member with no pack records no worktree, whatever the caller passed (D21, D11)
-      const where = worktree && packName !== null ? path.resolve(worktree) : null;
+      // a member with no pack records no place, whatever the caller passed (D21, D11)
+      const where = place && packName !== null ? path.resolve(place) : null;
       // one transaction: the page sees a join as one change
       return transaction(() => {
       let entry = "new" as "new" | "back" | "again";
@@ -1904,7 +1781,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
           // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
-          db.prepare("UPDATE participants SET doing = ?, files = ?, worktree = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
+          db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, dormant = 0, merged = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
             doing,
             JSON.stringify(files),
             where,
@@ -1930,7 +1807,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           .get(run, `%"${String(r.plan)}/${seat}"%`) as Row | undefined;
         const since = earliest?.seq != null ? Math.min(lastSeq(), Number(earliest.seq) - 1) : lastSeq();
         const ins = db
-          .prepare("INSERT INTO participants (run, seat, worktree, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")
+          .prepare("INSERT INTO participants (run, seat, place, doing, files, since_seq, joined_at, nick, subs, pack, verify, pack_chosen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)")
           .run(run, seat, where, doing, JSON.stringify(files), since, now(), fresh(), subs, packName, verify);
         return Number(ins.lastInsertRowid);
       });
@@ -1969,19 +1846,19 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return r ? toParticipant(r) : null;
     },
 
-    identify({ worktree }) {
-      if (!worktree) return null;
-      const here = fold(path.resolve(worktree));
-      const rows = (db.prepare(`${PARTICIPANT_SQL} WHERE p.worktree IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all() as Row[]).filter(
+    identify({ place }) {
+      if (!place) return null;
+      const here = fold(path.resolve(place));
+      const rows = (db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all() as Row[]).filter(
         (r) => {
-          const root = fold(String(r.worktree));
+          const root = fold(String(r.place));
           return here === root || here.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
         },
       );
       if (!rows.length) return null;
-      // the deepest worktree holding it; several members on that one worktree is no answer
-      const deepest = Math.max(...rows.map((r) => String(r.worktree).length));
-      const best = rows.filter((r) => String(r.worktree).length === deepest);
+      // the deepest place holding it; several members on that one place is no answer
+      const deepest = Math.max(...rows.map((r) => String(r.place).length));
+      const best = rows.filter((r) => String(r.place).length === deepest);
       return best.length === 1 ? toParticipant(best[0]) : null;
     },
 
@@ -2511,10 +2388,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         seat: String(r.seat),
         doing: String(r.doing),
         files: JSON.parse(String(r.files)) as Declared[],
-        held: (db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(Number(r.id)) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface" })),
+        held: registry.heldOf(db, Number(r.id)),
         stale: Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
         subscriptions: subsOf(r),
-        worktree: r.worktree == null ? null : String(r.worktree),
+        worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         state: stateIn(Number(r.run), String(r.seat))?.state ?? "working",
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
@@ -2751,8 +2628,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const runIds = runRows.map((r) => Number(r.id));
       const marks = runIds.map(() => "?").join(", ");
 
-      const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo) as Row | undefined;
-      const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
 
       const sliceRows = db.prepare(`SELECT * FROM seats WHERE run IN (${marks}) ORDER BY run, ord`).all(...runIds) as Row[];
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
@@ -2765,30 +2640,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         return statesByRun.get(run)!.get(member);
       };
       const cutoff = t - STALE_MS;
-      const claimsOf = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
-      // every live claim on the repository, in claim order: the FileMap's rows, and which paths are shared (D40)
-      const live = (
-        db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
-      ).filter((c) => isLive(Number(c.participant)));
-      const files = new Map<string, SnapshotFile>();
-      for (const c of live) {
-        const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
-        f.holders.push(`${c.plan}/${c.seat}`);
-        f.interface ||= c.kind === "interface";
-        files.set(f.path, f);
-      }
-      // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
-      // one it claimed and released since does not come back
-      const everClaimed = db.prepare("SELECT 1 FROM claim_log WHERE repo = ? AND path = ? AND participant = ?");
-      for (const r of people) {
-        if (String(r.seat) === ORCHESTRATOR || !isLive(Number(r.id))) continue;
-        const name = `${r.plan}/${r.seat}`;
-        for (const d of JSON.parse(String(r.files)) as Declared[]) {
-          const f = files.get(relPath(repo, d.path) ?? d.path);
-          if (f && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
-        }
-      }
-      const sharedBy = (path: string, id: number): boolean => live.some((c) => String(c.path) === path && Number(c.participant) !== id);
+      // the pack's fields of the repository: the lock and its turns, the files held, the flags (D18)
+      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
+      const lockHolder = packPart.lockHolder;
 
       const roster: SnapshotMember[] = people.map((r) => {
         const id = Number(r.id);
@@ -2822,7 +2676,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           doing: String(r.doing),
           state,
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
-          files: (claimsOf.all(id) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
+          files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
           ended: r.ended_at == null ? null : String(r.ended_at),
           calls: Number(r.calls ?? 0),
@@ -2872,31 +2726,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           }));
       }
 
-      const flags = (
-        db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo) as Row[]
-      ).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
-
-      const lockHistory = (
-        db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo) as Row[]
-      ).map((t) => ({
-        member: `${t.plan}/${t.seat}`,
-        askedAt: String(t.asked_at),
-        grantedAt: t.granted_at == null ? null : String(t.granted_at),
-        mergedAt: t.merged_at == null ? null : String(t.merged_at),
-        refused: Number(t.refused),
-      }));
 
       return {
         repo,
         name: repoName(repo),
         runs: runRows.map(runSummary),
-        lockHistory,
-        lock: lockHolder !== null ? { holder: participantById(lockHolder).name, since: String(lockRow!.at) } : null,
+        ...packPart.fields,
         roster,
         events,
         queues,
-        files: [...files.values()],
-        flags,
       };
     },
 

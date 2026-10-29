@@ -257,8 +257,8 @@ const wt = (name: string): string => path.resolve(`/worktrees/${name}`);
 /** S3 holds src/a.ts (declared), S5 holds src/b.ts; each in its own worktree. */
 const claimed = () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "the page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).member;
-  const s5 = board.join({ run: run.id, seat: "S5", doing: "the skill", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s5") }).member;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "the page", files: [{ path: "src/a.ts", interface: false }], place: wt("s3") }).member;
+  const s5 = board.join({ run: run.id, seat: "S5", doing: "the skill", files: [{ path: "src/b.ts", interface: false }], place: wt("s5") }).member;
   board.deliver(s3);
   board.deliver(s5);
   return { run, s3, s5 };
@@ -301,7 +301,7 @@ test("a body naming the file opens it as an about does", () => {
 
 test("a post about the path mentioning no holder does not open it", () => {
   const { run, s5 } = claimed();
-  board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") });
+  board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") });
   board.post(s5, "I add isExpired() at the end", { about: "src/a.ts" });
   board.post(s5, "@S1 I add isExpired() at the end", { about: "src/a.ts" }); // S1 does not hold it
   board.post(s5, "@S3 about something else", { about: "src/b.ts" });
@@ -312,7 +312,7 @@ test("a path held by two opens only once every holder is mentioned, in one post 
   const { run, s5 } = claimed();
   board.post(s5, "@S3 a helper at the end", { about: "src/a.ts" });
   board.checkEdit(s5, "src/a.ts");
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   board.post(s1, "@S3 one line in a.ts", { about: "src/a.ts" });
   const v = board.checkEdit(s1, "src/a.ts");
   assert.equal(v.allowed, false);
@@ -340,20 +340,20 @@ test("release drops one holder of a shared path", () => {
   board.checkEdit(s5, "src/a.ts");
   board.release(s3, "src/a.ts");
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S5"]);
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   const v = board.checkEdit(s1, "src/a.ts");
   assert.match((v as { refusal: string }).refusal, /^src\/a\.ts is also held by review-tool\/S5 \(/);
 });
 
 test("a file declared at join while another member holds it shows under both holders (D62)", () => {
   const { run } = claimed();
-  board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/a.ts", interface: true }], worktree: wt("s1") });
+  board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/a.ts", interface: true }], place: wt("s1") });
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S3", "review-tool/S1"]);
 });
 
 test("merged mentions every other holder of a shared path", () => {
   const { run, s3, s5 } = claimed();
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   for (const p of [s1, s5]) {
     board.post(p, "@S3 @S1 my part of a.ts", { about: "src/a.ts" });
     assert.equal(board.checkEdit(p, "src/a.ts").allowed, true);
@@ -390,13 +390,13 @@ test("a member is given a funny name at join, unique on the repository; @Name me
 test("holds the first edit across two runs on one repository", () => {
   claimed();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [], worktree: wt("swarm-s1") }).member;
+  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [], place: wt("swarm-s1") }).member;
   const v = board.checkEdit(s1, path.join(wt("swarm-s1"), "src/b.ts"));
   assert.equal(v.allowed, false);
   assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5 \(\w+ \w+: the skill\)/);
   // a run on another repository holds nothing here
   const far = board.openRun({ repo: "/repos/two/.git", group: "far", title: "C", seats: SLICES });
-  const f1 = board.join({ run: far.id, seat: "S1", doing: "x", files: [], worktree: wt("far") }).member;
+  const f1 = board.join({ run: far.id, seat: "S1", doing: "x", files: [], place: wt("far") }).member;
   assert.deepEqual(board.checkEdit(f1, path.join(wt("far"), "src/b.ts")), FREE);
 });
 
@@ -493,7 +493,7 @@ test("a member refused the lock hears its release by the holder's end (D65)", as
 
 test("a refusal recorded under one holder is not carried to the next (D65)", () => {
   const { run, s3, s5 } = claimed();
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], worktree: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   board.deliver(s3);
   board.deliver(s5);
   board.deliver(s1);
@@ -509,7 +509,7 @@ test("a refusal recorded under one holder is not carried to the next (D65)", () 
 test("merged releases the lock and mentions holders and declarers", () => {
   const { run, s3, s5 } = claimed();
   // S1 declares src/b.ts, which S5 holds: a declarer, not a holder
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/b.ts", interface: false }], worktree: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/b.ts", interface: false }], place: wt("s1") }).member;
   board.deliver(s3);
   board.deliver(s5);
   board.deliver(s1);
@@ -533,10 +533,10 @@ test("merged releases the lock and mentions holders and declarers", () => {
 
 test("an interface file in a merge is announced to @swarm, and reaches the other run's members", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).member;
-  const s5 = board.join({ run: run.id, seat: "S5", doing: "x", files: [], worktree: wt("s5") }).member;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], place: wt("s3") }).member;
+  const s5 = board.join({ run: run.id, seat: "S5", doing: "x", files: [], place: wt("s5") }).member;
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [], worktree: wt("far") }).member;
+  const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [], place: wt("far") }).member;
   for (const p of [s3, s5, far]) board.deliver(p);
   board.lockMerge(s3);
   board.merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
@@ -550,7 +550,7 @@ test("an interface file in a merge is announced to @swarm, and reaches the other
 
 test("a plan merge of an interface file never mentions a brainstorm seat subscribed to nothing, and stays in its run (D70)", async () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], worktree: wt("s3") }).member;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], place: wt("s3") }).member;
   const debate = board.openRun({ repo: REPO, kind: "brainstorm", group: "topic", title: "T", seats: SLICES });
   const seat = board.join({ run: debate.id, seat: "S1", doing: "arguing", files: [], on: [] }).member;
   board.deliver(seat);
@@ -566,11 +566,11 @@ test("a plan merge of an interface file never mentions a brainstorm seat subscri
 
 test("identify resolves the live member from its worktree, a subdirectory included (D28)", () => {
   const { s3, s5 } = claimed();
-  assert.equal(board.identify({ worktree: path.join(wt("s3"), "src") })?.name, s3.name);
-  assert.equal(board.identify({ worktree: wt("s5") })?.name, s5.name);
+  assert.equal(board.identify({ place: path.join(wt("s3"), "src") })?.name, s3.name);
+  assert.equal(board.identify({ place: wt("s5") })?.name, s5.name);
   assert.equal(board.identify({}), null);
   board.end(s5);
-  assert.equal(board.identify({ worktree: wt("s5") }), null);
+  assert.equal(board.identify({ place: wt("s5") }), null);
 });
 
 test("unknown run, member and seq are named", () => {
@@ -584,7 +584,7 @@ test("unknown run, member and seq are named", () => {
 test("a snapshot shows two plans on one repository", () => {
   const { s3 } = claimed();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [{ path: "src/api.ts", interface: true }], worktree: wt("swarm-s1") }).member;
+  const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [{ path: "src/api.ts", interface: true }], place: wt("swarm-s1") }).member;
   board.post(s3, "@swarm/S1 one thread", { about: "src/a.ts" });
   board.lockMerge(s1);
 
@@ -681,7 +681,7 @@ test("each write fires onChange once with its repository", async () => {
   };
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   await settle("open a run");
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "page", files: [{ path: "src/a.ts", interface: false }], worktree: wt("s3") }).member;
+  const s3 = board.join({ run: run.id, seat: "S3", doing: "page", files: [{ path: "src/a.ts", interface: false }], place: wt("s3") }).member;
   await settle("join");
   board.post(s3, "hello");
   await settle("post");
@@ -753,7 +753,7 @@ test("a member joined again starts unmerged and live (D66)", () => {
   board.lockMerge(s3);
   board.merged(s3, "abc123", []);
   board.end(s3);
-  const again = board.join({ run: run.id, seat: "S3", doing: "a second pass", files: [], worktree: wt("s3") }).member;
+  const again = board.join({ run: run.id, seat: "S3", doing: "a second pass", files: [], place: wt("s3") }).member;
   assert.equal(board.snapshot(REPO).roster.find((r) => r.member === again.name)!.ended, null);
   board.end(again);
   assert.equal(board.snapshot(REPO).roster.find((r) => r.member === again.name)!.doing, "ended");
@@ -924,8 +924,8 @@ test("a brainstorm run refuses files, worktrees and every code verb, writing not
   const before = JSON.stringify(board.snapshot(REPO));
   assert.throws(() => board.join({ run: run.id, seat: "critic", doing: "x", files: [{ path: "src/a.ts", interface: false }] }), /join: a brainstorm run has no claims/);
   assert.equal(JSON.stringify(board.snapshot(REPO)), before);
-  const seat = board.join({ run: run.id, seat: "critic", doing: "reading", files: [], worktree: dir }).member;
-  assert.equal(seat.worktree, null);
+  const seat = board.join({ run: run.id, seat: "critic", doing: "reading", files: [], place: dir }).member;
+  assert.equal(seat.place, null);
   assert.equal(seat.kind, "brainstorm");
   const unchanged = JSON.stringify(board.snapshot(REPO));
   const verbs: [string, () => unknown][] = [

@@ -6,7 +6,7 @@ import type * as CoreStats from "../board/stats.ts";
 import type { StatsFigures } from "../board/stats.ts";
 import type { CodeMemberStats, CodeRunStats, CodeTotals, FileAcrossRuns, PlanRunStats, SharedFile } from "./code/stats.ts";
 import { codePack } from "./code/index.ts";
-import type { Kind, MemberPackRow, Pack, PackTables, PackTablesDeps } from "./types.ts";
+import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
 const PACKS: Record<string, Pack> = { [codePack.name]: codePack };
@@ -43,6 +43,24 @@ export const registry = {
   all(): Pack[] {
     return Object.values(PACKS);
   },
+  /** The pack's part of one repository's snapshot (D18): the one pack with a snapshot in this plan. */
+  snapshot(deps: PackSnapshotDeps, repo: string, people: Record<string, unknown>[], orchestratorSeat: string): PackSnapshot {
+    const reader = Object.values(PACKS).find((p) => p.snapshot);
+    if (!reader?.snapshot) throw new Error("no pack has a snapshot");
+    return reader.snapshot(deps, repo, people, orchestratorSeat);
+  },
+  /** What the member holds now, every pack's (F27). */
+  heldOf(db: PackTablesDeps["db"], member: number): { path: string; interface: boolean }[] {
+    return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
+  },
+  /** Every pack's rows of a pruned member deleted (D20). */
+  forgetMember(db: PackTablesDeps["db"], member: number): void {
+    for (const p of Object.values(PACKS)) p.forget?.(db, { member });
+  },
+  /** Every pack's rows of a pruned run deleted (D20). */
+  forgetRun(db: PackTablesDeps["db"], run: number): void {
+    for (const p of Object.values(PACKS)) p.forget?.(db, { run });
+  },
   /** The packs' tables, opened once per board (D20): the one pack with tables in this plan. */
   openTables(deps: PackTablesDeps): PackTables {
     const opener = Object.values(PACKS).find((p) => p.openTables);
@@ -57,6 +75,7 @@ export type MemberStats = CoreStats.MemberStats & CodeMemberStats;
 export type RunStats = Omit<CoreStats.RunStats, "members"> & CodeRunStats & { members: MemberStats[] };
 export type Totals = Omit<CoreStats.Totals, "series"> &
   CodeTotals & { series: CoreStats.Totals["series"] & Record<"slicesMerged" | "sliceTimeP50" | "lockWaitP50" | "sharedAgreed" | "flags" | "conflicts", (number | null)[]> };
+export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile } from "./code/snapshot.ts";
 export type Stats = Omit<CoreStats.Stats, "runs" | "totals" | "files"> & { runs: RunStats[]; totals: Totals; files: FileAcrossRuns[] };
 export type { FileAcrossRuns, PlanRunStats, SharedFile };
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";

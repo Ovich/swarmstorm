@@ -7,6 +7,8 @@ import type { MemberWorktree, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
+import { codeSnapshotOf, heldOf } from "./snapshot.ts";
+import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
 import { codeStats } from "./stats.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
@@ -15,13 +17,13 @@ const slashed = (p: string): string => p.split("\\").join("/");
 /** The member's board worktree, when the board made it and it is there; null otherwise. */
 const ownWorktree = (member: Participant): string | null => {
   const seatTrees = worktrees(member.repo);
-  return seatTrees.owns(member.worktree) && fs.existsSync(member.worktree) ? slashed(member.worktree) : null;
+  return seatTrees.owns(member.place) && fs.existsSync(member.place) ? slashed(member.place) : null;
 };
 
 /** Makes the member's worktree when its join only named it (G20): a member that never claims or merges gets none.
  *  A git failure is a refusal fact; nothing is written (D19). */
 function makeWorktree(verb: string, member: Participant, input: PackVerbInput, ctx: PackCtx): PackRefusal | { made: boolean } {
-  if (!member.worktree || !worktrees(member.repo).owns(member.worktree) || fs.existsSync(member.worktree)) return { made: false };
+  if (!member.place || !worktrees(member.repo).owns(member.place) || fs.existsSync(member.place)) return { made: false };
   const base = ctx.base ?? (typeof input.cwd === "string" ? baseAt(input.cwd) : null);
   if (!base) return { refused: { reason: "git", verb, detail: `${member.name}: no base to make the worktree from` } };
   try {
@@ -47,7 +49,14 @@ export const codePack: Pack = {
   // a member holding a claim or the merge lock is mid-work, never idle
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
 
-  openTables: (deps) => claimsOf(deps),
+  // the code tables' DDL and an older store's upkeep, then the store over them (D20)
+  openTables: (deps) => {
+    migrateCodeTables(deps.db);
+    return claimsOf(deps);
+  },
+  snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
+  held: (db, member) => heldOf(db, member),
+  forget: (db, scope) => ("member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run)),
 
   run(verb, member, input, ctx) {
     switch (verb) {

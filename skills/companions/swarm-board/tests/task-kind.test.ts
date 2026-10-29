@@ -23,8 +23,8 @@ afterEach(() => {
 
 test("a task run: workers join, a task posted to w2 reaches w2 in full and w1 as nothing for it", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "chores", title: "Chores", seats: ["w1", "w2"].map((id) => ({ id, title: "worker", blockers: [] })) });
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "waiting for a task", files: [], worktree: "/wt/w1" }).member;
-  const w2 = board.join({ run: run.id, seat: "w2", doing: "waiting for a task", files: [], worktree: "/wt/w2" }).member;
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "waiting for a task", files: [], place: "/wt/w1" }).member;
+  const w2 = board.join({ run: run.id, seat: "w2", doing: "waiting for a task", files: [], place: "/wt/w2" }).member;
   const orchestrator = board.participant("chores/orchestrator")!;
   for (const p of [w1, w2, orchestrator]) board.deliver(p);
   board.post(orchestrator, "@w2 rename the config loader; done when: npm test exits 0");
@@ -40,11 +40,11 @@ test("a task posted to a seat before its worker joins is the first thing that wo
   const orchestrator = board.participant("early/orchestrator")!;
   board.post(orchestrator, "@w1 T1: the agent cards; done when: npm test exits 0");
   board.post(orchestrator, "@w2 T2: the narrow screens");
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "waiting for a task", files: [], worktree: "/wt/w1" }).member;
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "waiting for a task", files: [], place: "/wt/w1" }).member;
   const toW1 = board.deliverMentions(w1);
   assert.equal(toW1.full.length, 1);
   assert.match(toW1.full[0].body, /T1: the agent cards/);
   // a later join of an existing seat keeps its cursor: nothing is delivered twice
-  board.join({ run: run.id, seat: "w1", doing: "back", files: [], worktree: "/wt/w1" });
+  board.join({ run: run.id, seat: "w1", doing: "back", files: [], place: "/wt/w1" });
   assert.equal(board.deliverMentions(w1).full.length, 0);
 });

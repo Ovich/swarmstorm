@@ -3,11 +3,10 @@
 // as the core computed them before the split, so `stats --json` reads the same.
 import type { RunId } from "../../board/board.ts";
 import type { Interval, Mark, MemberStats, RunFigureInput, RunStats, StatsFigures, TimelineSpan } from "../../board/stats.ts";
+import { SHARES_SINCE } from "./schema.ts";
 import { firstLine, foldPath, iso, ms, percentile, sumKnown, type Row } from "../../board/stats-math.ts";
 
 const MINUTE_MS = 60 * 1000;
-/** The settings row the board writes when the shares record begins (D39). */
-const SHARES_SINCE = "shares-since";
 // a flag as the board wrote it before the `event` column (D43): its body, posted by the board (by_board 1); its path and holder
 const FLAG_BODY = /flag:\s*\S+\s+wrote\s+(\S+)\s+outside its claim(?:;\s*(\S+)\s+holds it)?/;
 /** The lock wait histogram's upper bounds, the last bin open-ended: < 1m, 1–2m, 2–5m, 5–10m, 10m + (D28). */
