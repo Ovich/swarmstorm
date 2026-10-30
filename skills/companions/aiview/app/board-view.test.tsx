@@ -596,22 +596,24 @@ test("a run that is not paused shows no pause on its head", () => {
   expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
 });
 
-// board-split#D48, D49 (A1-7, A1-8, A1-9): the word never carries doing; a parked seat's unread is held, not alarmed
+// board-split#D48, D49 (A1-7, A1-8, A1-9): the word never carries doing; a parked seat's unread is kept, not alarmed
 test("a working member's doing never reaches the word, and no card says dormant", () => {
   show([APP], 1, [withMember({ state: "working", owes: { phase: "P3", task: null }, doing: "unparked" })]);
   expect(activeCard().querySelector(".state")!.textContent).toBe("working");
   expect(strip()!.textContent).not.toMatch(/dormant/);
 });
 
-test("a parked seat's unread reads held, quiet: no alarm, no attention bucket, no rail dot", () => {
+test("a parked seat's unread reads quiet, kept for its return: no alarm, no attention bucket, no rail dot", () => {
   show([APP], 1, [withMember({ state: "parked", parkedUntil: "P5", unread: 4, doing: "parked until P5", badge: null })]);
   const card = activeCard();
   const unread = card.querySelector('[data-component="UnreadCount"]')!;
-  expect(unread.textContent).toBe("4 held");
-  expect(unread.classList.contains("held")).toBe(true);
+  expect(unread.textContent).toBe("4 unread");
+  expect(unread.classList.contains("kept")).toBe(true);
+  expect((unread as HTMLElement).title).toBe("kept for its return");
   expect(card.querySelector(".doing")).toBeNull();
   expect(badgeOf(card)).toBeNull();
   cleanup();
   show([APP], 1, [withMember({ state: "working", unread: 4 })]);
-  expect(activeCard().querySelector('[data-component="UnreadCount"]')!.textContent).toBe("4 unread");
+  const alarm = activeCard().querySelector('[data-component="UnreadCount"]')!;
+  expect([alarm.textContent, alarm.classList.contains("kept")]).toEqual(["4 unread", false]);
 });

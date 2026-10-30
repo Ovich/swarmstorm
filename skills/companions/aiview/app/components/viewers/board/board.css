@@ -236,7 +236,7 @@
 /* messages for the member not yet delivered (swarm-relay D43): the hook hands them at its next tool call */
 .board .agent-strip .unread { display: inline-block; margin-right: 6px; font-size: 10.5px; font-weight: 600; color: var(--amber); }
 .board .agent-strip .card .unread { display: block; margin: 2px 0 0; }
-.board .agent-strip .unread.held { color: var(--muted-foreground); font-weight: 400; }
+.board .agent-strip .unread.kept { color: var(--muted-foreground); font-weight: 400; }
 @media (max-width: 860px) {
   .board .run-body.with-roster { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .board .agent-strip { max-height: 40vh; }

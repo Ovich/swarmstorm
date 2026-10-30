@@ -65,14 +65,14 @@ export function stateWordOf(p: MemberOnBoard): { text: string; className: string
   return { text: state, className: state };
 }
 
-/** Unread on a parked seat is held for it, never an alarm (D48, D49). */
-const unreadHeld = (p: { state: string }): boolean => boardStateOf(p) === "parked";
+/** Unread on a parked seat is kept for its return, never an alarm (D48, D49). */
+const unreadKept = (p: { state: string }): boolean => boardStateOf(p) === "parked";
 
-/** The unread count beside the seat: `N unread`, or `N held` on a parked seat, drawn quiet. */
+/** The unread count beside the seat: `N unread`; on a parked seat drawn quiet, kept for its return ("held" is the files' word, rule 12). */
 function UnreadCount({ p }: { p: SnapshotMember }) {
   if (!p.unread) return null;
-  return unreadHeld(p) ? (
-    <span className="unread held" data-component="UnreadCount">{p.unread} held</span>
+  return unreadKept(p) ? (
+    <span className="unread kept" data-component="UnreadCount" title="kept for its return">{p.unread} unread</span>
   ) : (
     <span className="unread" data-component="UnreadCount">{p.unread} unread</span>
   );
@@ -411,7 +411,7 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
             <AgentMark name={p.member} />
             <span className={`state ${status.className}`}><i /></span>
             {trouble && <span className={`badge-dot ${trouble.kind}`} title={trouble.reason} />}
-            {!!p.unread && !unreadHeld(p) && <span className="unread-dot" />}
+            {!!p.unread && !unreadKept(p) && <span className="unread-dot" />}
           </button>
         );
       })}
