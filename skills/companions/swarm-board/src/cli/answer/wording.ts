@@ -151,6 +151,8 @@ export const WORDING = {
   stalledCall: "SendMessage it to stop the call",
   /** board-split D49: owing the phase out of a wait, no board call for the stall time */
   stalledSilent: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
+  // V-24 (D64): with no phase open, the stalled member owes its task's report, never a phase
+  stalledAsk: (id: string, phase: string | undefined) => (phase ? `@${id} your part of ${phase}` : `@${id} your task: your report?`),
   stalledOwing: (cli: Command, post: string, as: string) => `${cli} post ${post} --as ${as}: its wait returns on it`,
   stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,

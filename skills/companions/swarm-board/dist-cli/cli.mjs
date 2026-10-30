@@ -3764,7 +3764,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const unansweredOf = (run3, orch) => {
     const lastAnswer = Number(db.prepare("SELECT MAX(seq) AS s FROM messages WHERE author = ? AND kind = 'msg' AND event IS NULL").get(orch.id).s ?? 0);
-    const q = db.prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.event IS NULL AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1").get(run3, lastAnswer, orch.id, `%${JSON.stringify(orch.name)}%`);
+    const q = db.prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.kind IN ('msg', 'urgent') AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1").get(run3, lastAnswer, orch.id, `%${JSON.stringify(orch.name)}%`);
     return q ? { seq: Number(q.seq), from: String(q.seat) } : null;
   };
   const unansweredSuffix = (run3, orch) => {
@@ -9965,6 +9965,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   stalledCall: "SendMessage it to stop the call",
   /** board-split D49: owing the phase out of a wait, no board call for the stall time */
   stalledSilent: (cli, post, as) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
+  // V-24 (D64): with no phase open, the stalled member owes its task's report, never a phase
+  stalledAsk: (id, phase) => phase ? `@${id} your part of ${phase}` : `@${id} your task: your report?`,
   stalledOwing: (cli, post, as) => `${cli} post ${post} --as ${as}: its wait returns on it`,
   stalledLock: (holder, lock, cli, post, as) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli, as) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
@@ -10164,9 +10166,9 @@ function stalledMove(m, cli, as) {
     case "call":
       return WORDING.stalledCall;
     case "silent":
-      return WORDING.stalledSilent(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+      return WORDING.stalledSilent(cli, shellWord(WORDING.stalledAsk(id, meta.phase)), as);
     case "owing":
-      return WORDING.stalledOwing(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+      return WORDING.stalledOwing(cli, shellWord(WORDING.stalledAsk(id, meta.phase)), as);
     case "lock":
       return WORDING.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} \u2026`), as);
     default:

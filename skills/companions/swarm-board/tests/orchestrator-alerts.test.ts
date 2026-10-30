@@ -9,10 +9,13 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { BADGE_CONFIRM_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
 import { stalledOf } from "../src/board/stall.ts";
-import { answer } from "../src/cli/answer/index.ts";
+import { answer, eventStep } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
+import { quietMember } from "./fixtures/quiet-member.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 delete process.env.SWARM_BADGE_CONFIRM_MS;
 delete process.env.SWARM_STALL_FLOOR_MS;
@@ -143,4 +146,32 @@ test("V-12: the task-end notice is told to the orchestrator's background listene
   assert.ok(answer(woke, situation("orchestrator")).lines.includes(WORDING.delivered));
   assert.ok(!answer(woke, situation("foreground")).lines.includes(WORDING.delivered));
   assert.ok(!answer(woke, situation("background")).lines.includes(WORDING.delivered));
+});
+
+test("V-23: the board's lock-freed notice for a lost holder is never taken for a member's question", async () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
+  codeVerbs(board).lockMerge(w2);
+  codeVerbs(board).lockMerge(w1);
+  const base = Date.now();
+  quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
+  const presence: Presence = (m) => (m === "w2" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });
+  tick2(board, run.id, new Date(base), presence);
+  assert.ok(events("lost").length === 1, "w2 lost, its lock freed");
+  const question = board.post(w1, "@orchestrator which file?");
+  board.deliver(w1);
+  const w = board.wait(w1, { mentionsOnly: true, timeoutMs: 400 });
+  board.livenessTick(run.id, new Date(base + 20_000), presence);
+  await w;
+  const idle = events("idle").map((e) => e.body);
+  assert.equal(idle.length, 1);
+  assert.match(idle[0], new RegExp(`unanswered @orchestrator #${question.seq} from g/w1$`));
+});
+
+test("V-24: the no-phase stall's command points at the task, never at a phase", () => {
+  const m = { seq: 1, at: "", author: "g/orchestrator", body: "", about: null, kind: "event", mentions: [], event: "stalled", meta: { rule: "owing", member: "w1" } } as unknown as Parameters<typeof eventStep>[0];
+  const line = eventStep(m, { name: "g/orchestrator", seat: "orchestrator" } as never, "swarm") ?? "";
+  assert.doesNotMatch(line, /your part of/);
+  assert.match(line, /@w1 your task/);
 });

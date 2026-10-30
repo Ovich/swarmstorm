@@ -180,9 +180,9 @@ function stalledMove(m: Message, cli: string, as: string): string {
     case "call":
       return W.stalledCall;
     case "silent":
-      return W.stalledSilent(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+      return W.stalledSilent(cli, shellWord(W.stalledAsk(id, meta.phase)), as);
     case "owing":
-      return W.stalledOwing(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
+      return W.stalledOwing(cli, shellWord(W.stalledAsk(id, meta.phase)), as);
     case "lock":
       return W.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} …`), as);
     default:

@@ -1457,11 +1457,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
   };
   /** board-split D64: the oldest post of a run's member mentioning its orchestrator that the orchestrator has not posted
-   *  after; null when none waits on it. */
+   *  after; null when none waits on it. A member's own post or urgent only: a board notice in its name never is (D51, V-23). */
   const unansweredOf = (run: RunId, orch: Participant): { seq: number; from: string } | null => {
     const lastAnswer = Number((db.prepare("SELECT MAX(seq) AS s FROM messages WHERE author = ? AND kind = 'msg' AND event IS NULL").get(orch.id) as Row).s ?? 0);
     const q = db
-      .prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.event IS NULL AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1")
+      .prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.kind IN ('msg', 'urgent') AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1")
       .get(run, lastAnswer, orch.id, `%${JSON.stringify(orch.name)}%`) as Row | undefined;
     return q ? { seq: Number(q.seq), from: String(q.seat) } : null;
   };
