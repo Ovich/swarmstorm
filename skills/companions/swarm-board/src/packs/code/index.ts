@@ -10,7 +10,7 @@ import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../ty
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
-import { CODE_EVENTS } from "./events.ts";
+import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
 import { codeStats } from "./stats.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
@@ -72,9 +72,13 @@ export const codePack: Pack = {
   // holding the merge lock, the member is merging (D36), whatever its core state says
   memberFact: (member, ctx) => (tablesOf(ctx).heldMergeLock(member) ? "merging" : null),
   // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
+  // board-split V-26: a member refused the lock and waiting for it is queued, never stalled, as a named lock's waiter
   memberStall: (member, ctx, t) => {
     const lock = tablesOf(ctx).heldMergeLock(member);
-    if (!lock) return null;
+    if (!lock) {
+      const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
+      return holder ? { queuedBehind: holder } : null;
+    }
     const since = Date.parse(lock.grantedAt);
     // board-split D55: the fact alone; the board's reasonOf adds the state word and the age
     return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
@@ -164,7 +168,7 @@ export const codePack: Pack = {
   onLost(member, ctx) {
     // board-split D59: a lost holder's merge lock is released at once; its work stays on its branch
     const freed = tablesOf(ctx).releaseLockOfLost(member);
-    return freed ? { body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch${freed.waiters.length ? `: ${freed.waiters.map((n) => `@${n}`).join(" ")}` : ""}`, mentions: freed.waiters } : null;
+    return freed ? { unlocked: MERGE_LOCK, body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch`, mentions: freed.waiters } : null;
   },
 
   afterEnd(member, ctx) {

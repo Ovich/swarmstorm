@@ -4,6 +4,8 @@ import type { Message, Participant } from "../../board/board.ts";
 import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
 import { profileOf } from "../../board/kinds.ts";
 import { codeEventStep } from "./code-rules.ts";
+import { CODE_WORDING as CW } from "./code-wording.ts";
+import { MERGE_LOCK } from "../../packs/code/events.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 
@@ -123,7 +125,10 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       return orchestrator ? stalledMove(m, cli, as) : null;
     case "unlocked": {
       const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      return name && m.mentions.includes(me.name) ? W.lockFree(cli, shellWord(name), as) : null;
+      if (!name || !m.mentions.includes(me.name)) return null;
+      // board-split V-22: the merge lock freed from a lost holder: a waiter's step is the merge-lock command
+      if (name === MERGE_LOCK) return orchestrator ? null : CW.mergeLockFree(cli, as);
+      return W.lockFree(cli, shellWord(name), as);
     }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;

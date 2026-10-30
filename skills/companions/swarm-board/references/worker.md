@@ -73,7 +73,8 @@ the foreground: an agent that ends its turn on a background task of its own is n
    6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with
       `--guides` settling every guide the grant listed, in the form the grant's answer gives (refused otherwise): the
       report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
-      orchestrator's one wake; `--report -` merges silently, recorded in the run only. After a
+      orchestrator's one wake; a long report goes through `--report-file <path>` (a file's path given to
+      `--report` is refused); `--report -` merges silently, recorded in the run only. After a
       change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.
       Your worktree stays for your next task; `end` removes it once clean and merged.
 7. **Report**: what your agent's definition says, given as `merged --report`, never a separate

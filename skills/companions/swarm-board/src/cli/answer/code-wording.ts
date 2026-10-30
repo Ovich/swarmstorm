@@ -24,7 +24,7 @@ export const CODE_WORDING = {
       "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
       "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
       "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own; claims or flags what your branch wrote unclaimed",
-      "  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report - merges silently",
+      "  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
@@ -41,7 +41,7 @@ export const CODE_WORDING = {
   guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
   mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
     // board-split D52: the full suite ran before the lock; under it only rebase, quick check, fast-forward
-    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as} (a long report: --report-file <path> instead of --report)`,
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
   /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
@@ -50,7 +50,12 @@ export const CODE_WORDING = {
     `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
   ontoCheckedOutAtMerge: (onto: string, worktree: string, holder: string | null, detach: Command) =>
     `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
-  mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
+  // V-27: the command last
+  mergeHeld: (holder: string, wait: Command) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
+
+  /** V-32 (D69): merged's report refusals, naming --report-file */
+  reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
+  reportIsAFile: (given: string) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
 
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
@@ -62,16 +67,19 @@ export const CODE_WORDING = {
     `${path} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ` +
     `${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
   claimHeldPost: (cli: Command, mentions: string, about: string, as: string) => `${cli} post "${mentions} <what you change>" --about ${about} --as ${as}`,
+  /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
+  mergeLockFree: (cli: Command, as: string) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
+  /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
+  unmergedFact: (branch: string, left: string) => (left.startsWith("branch ") ? left : `branch ${branch} has ${left}`),
   /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
-   *  was released when it went lost) */
-  lockNotHeldAtJoin: (branch: string, left: string, cli: Command, onto: string, as: string) =>
-    `you do not hold the merge lock; your branch ${branch} carries work not merged (${left}): merge it by taking the lock again: ${cli} merge-lock --onto ${onto} --as ${as}`,
+   *  was released when it went lost); the command last */
+  lockNotHeldAtJoin: (unmerged: string, cli: Command, onto: string, as: string) =>
+    `you do not hold the merge lock; ${unmerged}: take the lock again to merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
   /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
-  endedSeatUnmerged: (member: string, branch: string, left: string) =>
-    `${member} ended; its branch ${branch} keeps its unmerged work (${left}): dispatch a member to the seat to merge it, or merge it yourself`,
-  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named */
-  unmergedAtDone: (branch: string, left: string, cli: Command, onto: string, as: string) =>
-    `your branch ${branch} holds work not merged (${left}): merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  endedSeatUnmerged: (member: string, unmerged: string) =>
+    `${member} ended; ${unmerged}, kept: dispatch a member to the seat to merge it, or merge it yourself`,
+  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
+  unmergedAtDone: (unmerged: string, cli: Command, onto: string, as: string) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
 
   // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
   flagHolder: (cli: Command, writer: string, about: string) => `settle it: ${cli} agree ${writer} --about ${about}`,

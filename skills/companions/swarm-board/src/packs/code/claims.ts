@@ -33,6 +33,8 @@ export interface Claims {
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
   /** After a refused claim, `m` (by `p`, about the path, mentioning every holder, in it or before it) makes `p` a sharer, as the second claim would (D7). */
   claimByPost(p: Participant, m: Message): PostClaim | null;
+  /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */
+  mergeLockQueuedBehind(p: Participant): string | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
   heldMergeLock(p: Participant): HeldMergeLock | null;
   /** `conflicts` absent: unknown. Writes the merge's row; known conflicts narrow the sharers to the conflicted paths (D5, D25). */
@@ -380,6 +382,12 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         bump(me.repo);
         return { granted: true as const };
       });
+    },
+
+    mergeLockQueuedBehind(me) {
+      if (db.prepare("SELECT 1 FROM lock_waiters WHERE repo = ? AND participant = ?").get(me.repo, me.id) === undefined) return null;
+      const lock = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo) as Row | undefined;
+      return lock && Number(lock.participant) !== me.id ? participantById(Number(lock.participant)).name : null;
     },
 
     heldMergeLock(me) {

@@ -8,4 +8,7 @@ export const CODE_EVENTS = {
   flag: { name: "flag" },
 } as const satisfies Record<string, EventDef<string>>;
 
+/** board-split V-22: the merge lock's name in an `unlocked` event, when the board frees it from a lost holder. */
+export const MERGE_LOCK = "merge-lock";
+
 export type CodeEventName = keyof typeof CODE_EVENTS;

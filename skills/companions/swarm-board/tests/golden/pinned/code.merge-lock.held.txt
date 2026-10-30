@@ -1,2 +1,2 @@
 exit 0
-held by g/w1: node <cli> wait --mentions --as g/w2 --timeout 170000 for its merged event
+held by g/w1: wait for its merged event, then take the lock again: node <cli> wait --mentions --as g/w2 --timeout 170000

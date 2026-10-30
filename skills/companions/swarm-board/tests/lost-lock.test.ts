@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
+import { eventStep } from "../src/cli/answer/rules.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -23,7 +24,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-const freedLines = () => board.snapshot(REPO).events.filter((e) => e.body.startsWith("the merge lock is free: its holder"));
+const freedLines = () => board.snapshot(REPO).events.filter((e) => e.event === "unlocked");
 
 test("golden V-2 (D59): the lost holder's merge lock is released at once, its waiters and the orchestrator told; a waiter takes it", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
@@ -39,8 +40,11 @@ test("golden V-2 (D59): the lost holder's merge lock is released at once, its wa
 
   const freed = freedLines();
   assert.equal(freed.length, 1);
-  assert.equal(freed[0].body, "the merge lock is free: its holder g/w2 is lost, its work not merged stays on its branch: @g/w1");
+  assert.equal(freed[0].body, "the merge lock is free: its holder g/w2 is lost, its work not merged stays on its branch");
   assert.deepEqual([...(freed[0].mentions ?? [])].sort(), ["g/orchestrator", "g/w1"]);
+  // V-22: the waiter's step ends on the merge-lock command; the orchestrator's lost alarm already tells it
+  assert.equal(eventStep(freed[0] as never, w1, "swarm"), "it is free: take it now: swarm merge-lock --as g/w1");
+  assert.equal(eventStep(freed[0] as never, board.participant("g/orchestrator")!, "swarm"), null);
   // the lock is free: the waiter takes it, nobody waits forever
   assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: true });
   // the lost seat's next member does not hold it
@@ -56,4 +60,22 @@ test("a lost member holding no merge lock: no lock line", () => {
   tick2(board, run.id, new Date(base), () => ({ connected: false, lostAt: base - 61_000 }));
   assert.equal(board.snapshot(REPO).events.filter((e) => e.event === "lost").length, 1);
   assert.equal(freedLines().length, 0);
+});
+
+test("golden V-26: a member refused the merge lock, in its wait for the merged event, owing the phase, is waiting on the lock, never stalled", async () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", stallMs: 5000, seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
+  const orch = board.participant("g/orchestrator")!;
+  board.phase(orch, "build", "go");
+  board.post(orch, "@w1 your part", { task: true });
+  board.deliver(w1);
+  codeVerbs(board).lockMerge(w2);
+  assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: false, holder: "g/w2" });
+  const linked: Presence = () => ({ connected: true, lostAt: null });
+  const held = board.wait(w1, { mentionsOnly: true, timeoutMs: 400 });
+  const t = new Date(Date.now() + 10 * 60_000);
+  tick2(board, run.id, t, linked);
+  assert.equal(board.memberStates(run.id, t).find((s) => s.member === "w1")!.badge, null, "queued on the merge lock: no stall");
+  await held;
 });

@@ -1510,18 +1510,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const seatedAt = Date.parse(seatedAtOf(p));
     // board-split D55: stalled is stall.ts's, from the facts gathered here; the merge lock held too long, owing or not
-    const lockStall = String(p.seat) === ORCHESTRATOR ? null : (() => {
-      const m = participantById(Number(p.id));
-      const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-      // the reason opens on the state the card shows: the pack's fact (merging) over the activity's word
-      return s ? { fact: s.reason, since: s.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
-    })();
+    const m = participantById(Number(p.id));
+    const packStall = String(p.seat) === ORCHESTRATOR ? null : (packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null);
+    // board-split V-26: queued on the pack's lock (the merge lock): a lock wait, as a named lock's, never stalled here
+    const lockWaited = !!lockWaitOf(Number(p.id), t) || (packStall != null && "queuedBehind" in packStall);
+    // the reason opens on the state the card shows: the pack's fact (merging) over the activity's word
+    const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     const a = activityOf(Number(run.id), member);
     // board-split D64: with no phase open, a delivered task owes its report instead
     const owedReport = run.phase == null ? taskOwedReportOf(p, run) : null;
     const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
-    const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
+    const inHeldWait = heldSince != null && !lockWaited && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
     if (spell) waitSpells.set(Number(p.id), spell);
     const stall = stalledOf(
@@ -1545,7 +1545,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       t,
     );
     // a lock wait (another's lock) is told by the lock rule, never stalled here
-    if (!stall || (heldSince != null && lockWaitOf(Number(p.id), t) && stall.rule !== "lock")) return null;
+    if (!stall || (heldSince != null && lockWaited && stall.rule !== "lock")) return null;
     const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
     return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...(owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {}) };
   };
@@ -2479,7 +2479,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
               // orchestrator and the waiters told, as the lost member, as a release by its holder would be
               const lostMember = participantById(Number(lostRow.id));
               const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
-              if (freed) insertMessage(lostMember, freed.body, null, "event", [...new Set([...freed.mentions, orch.name])]);
+              if (freed) insertMessage(lostMember, freed.body, null, "event", [...new Set([...freed.mentions, orch.name])], { event: EVENTS.unlocked.name, meta: { unlocked: freed.unlocked } });
             }
             moved = true;
           } else if (lostStep === "closed") {

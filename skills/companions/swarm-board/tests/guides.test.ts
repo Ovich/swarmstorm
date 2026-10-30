@@ -209,6 +209,19 @@ test("D11: merged refuses a sha git does not know, and takes a long report from 
   assert.match(cli(repo, "read", seq!), /a long report\nover two lines/);
 });
 
+test("golden V-32 (D69): merged --report naming an existing file is refused with the --report-file line", () => {
+  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 4;\n");
+  commit(wtA, "a");
+  cli(wtA, "merge-lock", "--onto", "main");
+  git(wtA, "push", "-q", ".", "HEAD:main");
+  const sha = git(wtA, "rev-parse", "HEAD").trim();
+  const file = path.join(home, "report-v32.md");
+  fs.writeFileSync(file, "the report\n");
+  const refused = swarm(wtA, "merged", sha, "--files", "src/a.ts", "--report", file, "--guides", "all:ok");
+  assert.equal(refused.status, 1);
+  assert.ok(refused.stderr.includes(`merged: --report takes the report's text, and ${file} is a file: pass it as --report-file ${file}`), refused.stderr);
+});
+
 test("G28: a build output another member holds is claimed at merge-lock without a flag; a source file still flags", () => {
   fs.mkdirSync(path.join(repo, "dist-cli"), { recursive: true });
   cli(wtB, "claim", "--new", "dist-cli/cli.mjs");

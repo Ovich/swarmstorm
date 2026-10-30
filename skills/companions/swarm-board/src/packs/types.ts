@@ -24,9 +24,9 @@ export type Refusal = { reason: string } & Record<string, unknown>;
 /** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event (null: none),
  *  whom it mentions (the code pack: the members refused the merge lock it held), and the doing its card keeps (D66). */
 export type EndedFreed = { note: string | null; mentions: string[]; lastDoing: string };
-/** board-split D59: what a member gone lost frees for others, inside the tick's transaction: the line posted as it,
- *  and whom it mentions besides the orchestrator. */
-export type LostFreed = { body: string; mentions: string[] };
+/** board-split D59: what a member gone lost frees for others, inside the tick's transaction: the lock it held (posted
+ *  as its `unlocked` event, V-22), the line said, and whom it mentions besides the orchestrator. */
+export type LostFreed = { unlocked: string; body: string; mentions: string[] };
 /** What `afterEnd` released. */
 export type EndFacts = Record<string, unknown>;
 
@@ -94,8 +94,9 @@ export interface Pack {
   busy?(member: Participant, ctx: PackCtx): boolean;
   /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
-  /** board-split D52: a stall of the pack's own at `t` (ms epoch), as the stalled badge's reason and since; null: none. */
-  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | null;
+  /** board-split D52: a stall of the pack's own at `t` (ms epoch), as the stalled badge's reason and since; V-26: or the
+   *  holder of a lock of the pack's the member waits on, which exempts its wait as a named lock's does; null: none. */
+  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | { queuedBehind: string } | null;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;

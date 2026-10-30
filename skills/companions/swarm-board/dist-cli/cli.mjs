@@ -285,7 +285,7 @@ var init_liveness = __esm({
 });
 
 // src/packs/code/events.ts
-var CODE_EVENTS;
+var CODE_EVENTS, MERGE_LOCK;
 var init_events = __esm({
   "src/packs/code/events.ts"() {
     "use strict";
@@ -294,6 +294,7 @@ var init_events = __esm({
       // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
       flag: { name: "flag" }
     };
+    MERGE_LOCK = "merge-lock";
   }
 });
 
@@ -546,6 +547,11 @@ function claimsOf(deps) {
         bump(me.repo);
         return { granted: true };
       });
+    },
+    mergeLockQueuedBehind(me) {
+      if (db.prepare("SELECT 1 FROM lock_waiters WHERE repo = ? AND participant = ?").get(me.repo, me.id) === void 0) return null;
+      const lock = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo);
+      return lock && Number(lock.participant) !== me.id ? participantById(Number(lock.participant)).name : null;
     },
     heldMergeLock(me) {
       const r = db.prepare("SELECT at, onto, reflog_mark, guides FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id);
@@ -2324,9 +2330,13 @@ var init_code = __esm({
       // holding the merge lock, the member is merging (D36), whatever its core state says
       memberFact: (member, ctx) => tablesOf(ctx).heldMergeLock(member) ? "merging" : null,
       // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
+      // board-split V-26: a member refused the lock and waiting for it is queued, never stalled, as a named lock's waiter
       memberStall: (member, ctx, t) => {
         const lock = tablesOf(ctx).heldMergeLock(member);
-        if (!lock) return null;
+        if (!lock) {
+          const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
+          return holder ? { queuedBehind: holder } : null;
+        }
         const since = Date.parse(lock.grantedAt);
         return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
       },
@@ -2404,7 +2414,7 @@ var init_code = __esm({
       },
       onLost(member, ctx) {
         const freed = tablesOf(ctx).releaseLockOfLost(member);
-        return freed ? { body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch${freed.waiters.length ? `: ${freed.waiters.map((n) => `@${n}`).join(" ")}` : ""}`, mentions: freed.waiters } : null;
+        return freed ? { unlocked: MERGE_LOCK, body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch`, mentions: freed.waiters } : null;
       },
       afterEnd(member, ctx) {
         const mine = ownWorktree(member);
@@ -3800,16 +3810,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const seatedAt = Date.parse(seatedAtOf(p));
-    const lockStall = String(p.seat) === ORCHESTRATOR2 ? null : (() => {
-      const m = participantById(Number(p.id));
-      const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-      return s ? { fact: s.reason, since: s.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
-    })();
+    const m = participantById(Number(p.id));
+    const packStall = String(p.seat) === ORCHESTRATOR2 ? null : packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+    const lockWaited = !!lockWaitOf(Number(p.id), t) || packStall != null && "queuedBehind" in packStall;
+    const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     const a = activityOf(Number(run3.id), member);
     const owedReport = run3.phase == null ? taskOwedReportOf(p, run3) : null;
     const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run3);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
-    const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
+    const inHeldWait = heldSince != null && !lockWaited && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
     if (spell) waitSpells.set(Number(p.id), spell);
     const stall = stalledOf(
@@ -3832,7 +3841,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       },
       t
     );
-    if (!stall || heldSince != null && lockWaitOf(Number(p.id), t) && stall.rule !== "lock") return null;
+    if (!stall || heldSince != null && lockWaited && stall.rule !== "lock") return null;
     const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
     return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {} };
   };
@@ -4582,7 +4591,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
               releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
               const lostMember = participantById(Number(lostRow.id));
               const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
-              if (freed) insertMessage(lostMember, freed.body, null, "event", [.../* @__PURE__ */ new Set([...freed.mentions, orch.name])]);
+              if (freed) insertMessage(lostMember, freed.body, null, "event", [.../* @__PURE__ */ new Set([...freed.mentions, orch.name])], { event: EVENTS.unlocked.name, meta: { unlocked: freed.unlocked } });
             }
             moved = true;
           } else if (lostStep === "closed") {
@@ -9811,7 +9820,7 @@ var CODE_WORDING = {
     "  claim   [--as <member>] <path>... [--interface] [--new]            # before editing a file: exit 0 claimed, 3 held until you post about it (the post claims it); --new: a file you create",
     "  release [--as <member>] <path>... | --all                        # gives up a claim; --all: every claim you hold",
     "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own; claims or flags what your branch wrote unclaimed",
-    `  merged  [--as <member>] <sha> --files <path>... --report <text>|- [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report - merges silently`
+    `  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently`
   ].join("\n"),
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
@@ -9826,7 +9835,7 @@ var CODE_WORDING = {
   guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
   mergeGranted: (cli, as, guidesForm) => (
     // board-split D52: the full suite ran before the lock; under it only rebase, quick check, fast-forward
-    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as} (a long report: --report-file <path> instead of --report)`
   ),
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
@@ -9834,7 +9843,11 @@ var CODE_WORDING = {
   detach: (worktree) => `git -C ${worktree} switch --detach`,
   ontoCheckedOutAtOpen: (onto, worktree, detach) => `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
   ontoCheckedOutAtMerge: (onto, worktree, holder, detach) => `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
-  mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
+  // V-27: the command last
+  mergeHeld: (holder, wait) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
+  /** V-32 (D69): merged's report refusals, naming --report-file */
+  reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
+  reportIsAFile: (given) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
   tellResolved: (path14, member) => `if you resolved a conflict in ${path14}, tell them: swarm post "@${member} I resolved ${path14}: <how>" --about ${path14}`,
@@ -9842,13 +9855,17 @@ var CODE_WORDING = {
   /** V-13: a claim held by another member (D41): the post to make, runnable as printed, its mentions the caller's own */
   claimHeld: (path14, who, many, post) => `${path14} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
   claimHeldPost: (cli, mentions2, about, as) => `${cli} post "${mentions2} <what you change>" --about ${about} --as ${as}`,
+  /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
+  mergeLockFree: (cli, as) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
+  /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
+  unmergedFact: (branch, left) => left.startsWith("branch ") ? left : `branch ${branch} has ${left}`,
   /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
-   *  was released when it went lost) */
-  lockNotHeldAtJoin: (branch, left, cli, onto, as) => `you do not hold the merge lock; your branch ${branch} carries work not merged (${left}): merge it by taking the lock again: ${cli} merge-lock --onto ${onto} --as ${as}`,
+   *  was released when it went lost); the command last */
+  lockNotHeldAtJoin: (unmerged, cli, onto, as) => `you do not hold the merge lock; ${unmerged}: take the lock again to merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
   /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
-  endedSeatUnmerged: (member, branch, left) => `${member} ended; its branch ${branch} keeps its unmerged work (${left}): dispatch a member to the seat to merge it, or merge it yourself`,
-  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named */
-  unmergedAtDone: (branch, left, cli, onto, as) => `your branch ${branch} holds work not merged (${left}): merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  endedSeatUnmerged: (member, unmerged) => `${member} ended; ${unmerged}, kept: dispatch a member to the seat to merge it, or merge it yourself`,
+  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
+  unmergedAtDone: (unmerged, cli, onto, as) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
   // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
   flagHolder: (cli, writer, about) => `settle it: ${cli} agree ${writer} --about ${about}`,
   flagWriter: (cli, holder, about) => `settle it: ${cli} post ${holder} --about ${about}`
@@ -10058,6 +10075,7 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
 // src/cli/answer/rules.ts
 init_events2();
 init_kinds();
+init_events();
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine = (s) => {
   if (s.seat === "orchestrator" || s.ended) return null;
@@ -10138,7 +10156,9 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       return orchestrator ? stalledMove(m, cli, as) : null;
     case "unlocked": {
       const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      return name && m.mentions.includes(me.name) ? WORDING.lockFree(cli, shellWord(name), as) : null;
+      if (!name || !m.mentions.includes(me.name)) return null;
+      if (name === MERGE_LOCK) return orchestrator ? null : CODE_WORDING.mergeLockFree(cli, as);
+      return WORDING.lockFree(cli, shellWord(name), as);
     }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
@@ -11027,7 +11047,7 @@ ${verbHelp()}`);
       }
       const open = (await board.currentPhase(p.run))?.name ?? name;
       const line = r.notOwed ? WORDING.doneNotOwed(name, r.notOwed) : r.already ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null) : r.late ? WORDING.doneLate(name, open, r.owesNow) : WORDING.doneCounted(name, progressText(r.progress), r.all);
-      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
+      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;
@@ -11048,7 +11068,7 @@ ${verbHelp()}`);
       const as = verifier ? WORDING.verifierAs(member.name) : shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
       const unmergedNow = !shared && own?.reused ? await board.packCall(member, "unmerged", {}) : null;
       const lockNotHeld = unmergedNow && await board.packCall(member, "held-merge-lock", {}) == null;
-      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(unmergedNow.branch, unmergedNow.left, self().join(" "), shellWord2(own.base), shellWord2(member.name)) : null;
+      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(CODE_WORDING.unmergedFact(unmergedNow.branch, unmergedNow.left), self().join(" "), shellWord2(own.base), shellWord2(member.name)) : null;
       const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord2(member.name)) : shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const waiting = await board.deliverMentions(member);
@@ -11321,7 +11341,9 @@ ${verbHelp()}`);
           fail(`merged: --report-file ${reportFile} cannot be read`);
         }
       }
-      const report = fromFile || args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently');
+      const given = args.flag("--report")?.trim();
+      if (given && given !== "-" && fs13.existsSync(path13.resolve(given)) && fs13.statSync(path13.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+      const report = fromFile || given || fail(CODE_WORDING.reportMissing);
       const files = args.list("--files");
       const lock = await packVerb(p, "held-merge-lock", {});
       const unlocked = args.flag("--unlocked")?.trim();
@@ -11400,7 +11422,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
-        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, unmergedKept.branch, unmergedKept.left));
+        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
       break;
     }

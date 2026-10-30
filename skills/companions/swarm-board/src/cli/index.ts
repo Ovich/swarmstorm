@@ -931,7 +931,7 @@ async function main(): Promise<void> {
           : r.late
             ? WORDING.doneLate(name, open, r.owesNow)
             : WORDING.doneCounted(name, progressText(r.progress), r.all);
-      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
+      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;
@@ -963,7 +963,7 @@ async function main(): Promise<void> {
       // member's was released when it went lost), is told so and how to take it again
       const unmergedNow = !shared && own?.reused ? ((await board.packCall(member, "unmerged", {})) as { branch: string; left: string } | null) : null;
       const lockNotHeld = unmergedNow && (await board.packCall(member, "held-merge-lock", {})) == null;
-      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(unmergedNow.branch, unmergedNow.left, self().join(" "), shellWord(own.base), shellWord(member.name)) : null;
+      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(CODE_WORDING.unmergedFact(unmergedNow.branch, unmergedNow.left), self().join(" "), shellWord(own.base), shellWord(member.name)) : null;
       const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord(member.name)) : shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
@@ -1283,7 +1283,10 @@ async function main(): Promise<void> {
           fail(`merged: --report-file ${reportFile} cannot be read`);
         }
       }
-      const report = fromFile || args.flag("--report")?.trim() || fail('merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently');
+      const given = args.flag("--report")?.trim();
+      // board-split V-32 (D69): a --report naming an existing file is refused: --report-file posts a file's text
+      if (given && given !== "-" && fs.existsSync(path.resolve(given)) && fs.statSync(path.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+      const report = fromFile || given || fail(CODE_WORDING.reportMissing);
       const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = (await packVerb(p, "held-merge-lock", {})) as HeldMergeLock | null;
@@ -1383,7 +1386,7 @@ async function main(): Promise<void> {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
-        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, unmergedKept.branch, unmergedKept.left));
+        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
       break;
     }
