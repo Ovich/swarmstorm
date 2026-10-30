@@ -24,6 +24,9 @@ export type Refusal = { reason: string } & Record<string, unknown>;
 /** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event (null: none),
  *  whom it mentions (the code pack: the members refused the merge lock it held), and the doing its card keeps (D66). */
 export type EndedFreed = { note: string | null; mentions: string[]; lastDoing: string };
+/** board-split D59: what a member gone lost frees for others, inside the tick's transaction: the line posted as it,
+ *  and whom it mentions besides the orchestrator. */
+export type LostFreed = { body: string; mentions: string[] };
 /** What `afterEnd` released. */
 export type EndFacts = Record<string, unknown>;
 
@@ -97,6 +100,8 @@ export interface Pack {
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;
   afterEnd?(member: Participant, ctx: PackCtx): EndFacts;
+  /** board-split D59: once, when the member's lost episode opens: releases what others wait on; null: nothing held. */
+  onLost?(member: Participant, ctx: PackCtx): LostFreed | null;
   /** Its part of one repository's snapshot, from its tables; `people` are the snapshot's participant rows. */
   snapshot?(deps: PackSnapshotDeps, repo: string, people: Record<string, unknown>[], orchestratorSeat: string): PackSnapshot;
   /** What the member holds now, for the roster's `held` (F27). */

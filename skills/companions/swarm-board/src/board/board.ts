@@ -329,7 +329,8 @@ function alarmSubjectOf(m: Message): string | null {
 export type QueueSeat = { seat: string; role?: string; area?: string; link: string | null; state: string; blockers: string[]; member: string | null };
 /** The edit goes through; `notice` names the other holders the first time only, per member and path. */
 export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
-export type EditHeld = { allowed: false; refusal: string };
+/** The edit is held (D41): another member holds `path`; the answer module words the post to make (board-split V-13). */
+export type EditHeld = { allowed: false; path: string; holders: { member: string; nick: string; doing: string }[] };
 export type { LockTurn, SnapshotFile } from "../packs/registry.ts";
 /** One project as the page reads it: the core's fields and the pack's (board-split#D18). */
 export type BoardSnapshot = PackSnapshotFields & {
@@ -397,7 +398,8 @@ export interface Board {
   /** A member finished the current phase `name`: stored once per run, member and phase, a `done` event to the
    *  orchestrator; when every member is done, one `all-done` event to it. Refused to the orchestrator, before any
    *  phase and on a phase that is not the current one. `already`: it had run done for it before (no event). */
-  done(p: Participant, name: string): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; message: Message | null };
+  /** `unmerged`: the member's branch holding work not merged (board-split D63), carried in the done's body. */
+  done(p: Participant, name: string, opts?: { unmerged?: string }): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; message: Message | null };
   /** The current phase's done count; null before the first phase. */
   phaseProgress(run: RunId): PhaseProgress | null;
   /** The run's last activity, ISO: its open, a member's join or call, a message by one of its members. Throws on an unknown run. */
@@ -2269,8 +2271,10 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       return r.paused == null ? null : String(r.paused);
     },
 
-    done(p, name) {
+    done(p, name, opts = {}) {
       const fresh = live(p);
+      // board-split D63: the orchestrator's done line carries the branch still holding work not merged
+      const unmergedSuffix = opts.unmerged ? `; unmerged ${opts.unmerged}` : "";
       if (fresh.seat === ORCHESTRATOR) throw new Error("done: the orchestrator opens phases; a member runs done");
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
@@ -2285,7 +2289,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
           const progress = progressOf(fresh.run, name)!;
           if (!added) return { progress, all: false, already: true, late: true, message: null };
-          const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
+          const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}${unmergedSuffix}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
           return { progress, all: false, already: false, late: true, message };
         });
       }
@@ -2298,7 +2302,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         // idea 2: the done wakes the orchestrator only in the person's cases, named in its body; otherwise it is carried
         const wakeCase = doneWakeCase(fresh, name, progress);
-        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
+        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${unmergedSuffix}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
@@ -2425,7 +2429,14 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             postComposition(orch, st.member, "-", "lost");
             // idea 4: a lost member's named locks are released, their waiters woken (a listener it left may still live)
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
-            if (lostRow) releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
+            if (lostRow) {
+              releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
+              // board-split D59: what its pack holds that others wait on (the merge lock) is released at once, the
+              // orchestrator and the waiters told, as the lost member, as a release by its holder would be
+              const lostMember = participantById(Number(lostRow.id));
+              const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
+              if (freed) insertMessage(lostMember, freed.body, null, "event", [...new Set([...freed.mentions, orch.name])]);
+            }
             moved = true;
           } else if (lostStep === "closed") {
             insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });

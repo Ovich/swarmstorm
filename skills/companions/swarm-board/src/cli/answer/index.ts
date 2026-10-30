@@ -27,7 +27,7 @@ export type VerbResult =
   | { verb: "read"; shown: Shown; member: boolean }
   | { verb: "thread"; phase: string | null; shown: Shown[] }
   | { verb: "done"; phase: string; none: true }
-  | { verb: "done"; phase: string; none?: false; line: string }
+  | { verb: "done"; phase: string; none?: false; line: string; facts?: string[] }
   /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
   | { verb: "heard"; lines: string[] }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
@@ -109,7 +109,7 @@ export function answer(r: VerbResult, s: Situation): Answer {
     case "done": {
       if (r.none) return { lines: [W.doneNone], next: null, phase: null };
       const next = W.doneWaitNext(waitCommand(s, true));
-      return { lines: [r.line, next], next, phase: null };
+      return { lines: [r.line, ...(r.facts ?? []), next], next, phase: null };
     }
     case "heard": {
       // D9: the result first, then the member's step: none while its listener runs

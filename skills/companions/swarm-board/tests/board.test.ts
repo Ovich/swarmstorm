@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBoard, type Board, type EditAllowed, type EditHeld } from "../src/board/board.ts";
+import { openBoard, type Board, type EditAllowed, type EditHeld, type Participant } from "../src/board/board.ts";
+import { claimHeldLine } from "../src/cli/answer/code-rules.ts";
 import { codeVerbs, PackVerbRefused } from "../src/packs/code/calls.ts";
 
 const REPO = "/repos/one/.git";
@@ -275,18 +276,21 @@ const claimed = () => {
 };
 
 const FREE = { allowed: true, sharedWith: [], notice: null };
-const noticeOf = (v: EditAllowed | EditHeld): string | null => (v.allowed ? v.notice : `refused: ${v.refusal}`);
+const noticeOf = (v: EditAllowed | EditHeld): string | null => (v.allowed ? v.notice : `refused: ${v.path}`);
+// board-split V-13: a held claim's line as the answer module words it for `me`
+const heldLine = (me: Participant, v: EditAllowed | EditHeld): string => (v.allowed ? "" : claimHeldLine(me, "swarm", v));
 
 test("the first edit of a held file is held, naming the holder and the post that opens it (D41)", () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/a.ts")), FREE);
   const v = codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/a.ts"));
   assert.equal(v.allowed, false);
-  const refusal = (v as { refusal: string }).refusal;
+  const refusal = heldLine(s5, v);
   assert.match(refusal, /review-tool\/S3/);
   assert.match(refusal, /the page/);
-  assert.match(refusal, /`swarm post "@review-tool\/S3 …" --about src\/a\.ts`/);
-  assert.match(refusal, /its holder answers with an agreement on who changes what \(`swarm agree … --about src\/a\.ts`\), and that agreement goes\. Claim again once posted; do not wait for the agreement\.$/);
+  // V-13: the post runnable as printed, its mention the caller's own run's
+  assert.match(refusal, / swarm post "@S3 <what you change>" --about src\/a\.ts --as review-tool\/S5; /);
+  assert.match(refusal, /its holder answers with an agreement on who changes what, and that agreement goes\. Claim again once posted; do not wait for the agreement\.$/);
 });
 
 test("a post about the path mentioning the holder opens it; both then hold it", () => {
@@ -326,7 +330,7 @@ test("a path held by two opens only once every holder is mentioned, in one post 
   board.post(s1, "@S3 one line in a.ts", { about: "src/a.ts" });
   const v = codeVerbs(board).checkEdit(s1, "src/a.ts");
   assert.equal(v.allowed, false);
-  assert.match((v as { refusal: string }).refusal, /`swarm post "@review-tool\/S3 @review-tool\/S5 …"/);
+  assert.match(heldLine(s1, v), / swarm post "@S3 @S5 <what you change>"/);
   board.post(s1, "@S5 one line in a.ts", { about: "src/a.ts" });
   assert.equal(codeVerbs(board).checkEdit(s1, "src/a.ts").allowed, true);
 });
@@ -352,7 +356,7 @@ test("release drops one holder of a shared path", () => {
   assert.deepEqual(board.snapshot(REPO).files.find((f) => f.path === "src/a.ts")!.holders, ["review-tool/S5"]);
   const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [], place: wt("s1") }).member;
   const v = codeVerbs(board).checkEdit(s1, "src/a.ts");
-  assert.match((v as { refusal: string }).refusal, /^src\/a\.ts is also held by review-tool\/S5 \(/);
+  assert.match(heldLine(s1, v), /^src\/a\.ts is also held by review-tool\/S5 \(/);
 });
 
 test("a file declared at join while another member holds it shows under both holders (D62)", () => {
@@ -403,7 +407,7 @@ test("holds the first edit across two runs on one repository", () => {
   const s1 = board.join({ run: other.id, seat: "S1", doing: "board", files: [], place: wt("swarm-s1") }).member;
   const v = codeVerbs(board).checkEdit(s1, path.join(wt("swarm-s1"), "src/b.ts"));
   assert.equal(v.allowed, false);
-  assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5 \(\w+ \w+: the skill\)/);
+  assert.match(heldLine(s1, v), /held by review-tool\/S5 \(\w+ \w+: the skill\)/);
   // a run on another repository holds nothing here
   const far = board.openRun({ repo: "/repos/two/.git", group: "far", title: "C", seats: SLICES });
   const f1 = board.join({ run: far.id, seat: "S1", doing: "x", files: [], place: wt("far") }).member;
@@ -415,7 +419,7 @@ test("widens the claim on a free undeclared path, silently", () => {
   assert.deepEqual(codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/new.ts")), FREE);
   const v = codeVerbs(board).checkEdit(s5, path.join(wt("s5"), "src/new.ts"));
   assert.equal(v.allowed, false);
-  assert.match((v as { refusal: string }).refusal, /src\/new\.ts is also held by review-tool\/S3/);
+  assert.match(heldLine(s5, v), /src\/new\.ts is also held by review-tool\/S3/);
 });
 
 test("a worktree path and the checkout path are one claim", () => {
@@ -440,7 +444,7 @@ test("claims a free file written outside the claim", () => {
   assert.deepEqual(codeVerbs(board).reconcileWrites(s5, ["src/free.ts", "src/b.ts"]), []);
   const v = codeVerbs(board).checkEdit(s3, path.join(wt("s3"), "src/free.ts"));
   assert.equal(v.allowed, false);
-  assert.match((v as { refusal: string }).refusal, /held by review-tool\/S5/);
+  assert.match(heldLine(s3, v), /held by review-tool\/S5/);
 });
 
 test("flags a held file written outside the claim, mentioning both", () => {

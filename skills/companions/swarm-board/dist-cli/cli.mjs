@@ -379,6 +379,14 @@ function claimsOf(deps) {
   return {
     clearFlags,
     releaseAll,
+    releaseLockOfLost(p) {
+      const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== void 0;
+      if (!held) return null;
+      const waiters = takeLockWaiters(p.repo).filter((n) => n !== p.name);
+      db.prepare("DELETE FROM merge_locks WHERE repo = ? AND participant = ?").run(p.repo, p.id);
+      bump(p.repo);
+      return { waiters };
+    },
     lockWaitersFreedBy(p) {
       const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== void 0;
       return held ? takeLockWaiters(p.repo).filter((n) => n !== p.name) : [];
@@ -463,12 +471,7 @@ function claimsOf(deps) {
               `INSERT INTO claim_requests (repo, path, participant, kind) VALUES (?, ?, ?, ?)
                ON CONFLICT (repo, path, participant) DO UPDATE SET kind = CASE WHEN claim_requests.kind = 'interface' THEN 'interface' ELSE excluded.kind END`
             ).run(me.repo, rel, me.id, kind);
-            const who = people.map((o) => `${o.name} (${o.nick}: ${doingOf(o.id)})`).join(", ");
-            const at = people.map((o) => `@${o.name}`).join(" ");
-            return {
-              allowed: false,
-              refusal: `${rel} is also held by ${who}. You may share it, but first tell ${people.length > 1 ? "them" : "its holder"} what you change in it: \`swarm post "${at} \u2026" --about ${rel}\`; ${people.length > 1 ? "they answer" : "its holder answers"} with an agreement on who changes what (\`swarm agree \u2026 --about ${rel}\`), and that agreement goes. Claim again once posted; do not wait for the agreement.`
-            };
+            return { allowed: false, path: rel, holders: people.map((o) => ({ member: o.name, nick: o.nick, doing: doingOf(o.id) })) };
           }
         }
         hold(me, rel, kind);
@@ -2143,7 +2146,11 @@ function leftover(wt, into) {
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
   if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
   if (!into) return "no base branch recorded for its run";
-  if (!isAncestor(wt, "HEAD", baseRef(wt, into))) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
+  const intoRef = baseRef(wt, into);
+  if (!isAncestor(wt, "HEAD", intoRef)) {
+    const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
+    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${into}`;
+  }
   return null;
 }
 function removeWorktree(wt, repo) {
@@ -2199,6 +2206,10 @@ function worktrees(repo) {
     /** True when `wt` is a worktree the board made for this repository. */
     owns(wt) {
       return owned(wt, repo);
+    },
+    /** The branch the worktree has checked out; its short commit when detached. */
+    branchOf(wt) {
+      return git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD";
     },
     /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
     unmerged(wt, into) {
@@ -2354,6 +2365,13 @@ var init_code = __esm({
           }
           case "legacy":
             return sweepLegacy();
+          // board-split D59, D63: the member's branch and what it holds not merged; null when all is merged
+          case "unmerged": {
+            if (!member || !ctx) return null;
+            const mine = ownWorktree(member);
+            const left = mine ? worktrees(member.repo).unmerged(mine, ctx.base) : null;
+            return mine && left ? { branch: worktrees(member.repo).branchOf(mine), left, onto: ctx.base } : null;
+          }
           default:
             return null;
         }
@@ -2379,6 +2397,10 @@ var init_code = __esm({
           mentions: waiters,
           lastDoing: tablesOf(ctx).mergedSinceJoin(member.id) ? "merged and ended" : "ended"
         };
+      },
+      onLost(member, ctx) {
+        const freed = tablesOf(ctx).releaseLockOfLost(member);
+        return freed ? { body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch${freed.waiters.length ? `: ${freed.waiters.map((n) => `@${n}`).join(" ")}` : ""}`, mentions: freed.waiters } : null;
       },
       afterEnd(member, ctx) {
         const mine = ownWorktree(member);
@@ -4365,8 +4387,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const r = runRow(run3);
       return r.paused == null ? null : String(r.paused);
     },
-    done(p, name) {
+    done(p, name, opts = {}) {
       const fresh = live(p);
+      const unmergedSuffix = opts.unmerged ? `; unmerged ${opts.unmerged}` : "";
       if (fresh.seat === ORCHESTRATOR2) throw new Error("done: the orchestrator opens phases; a member runs done");
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
@@ -4380,7 +4403,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
           const progress = progressOf(fresh.run, name);
           if (!added) return { progress, all: false, already: true, late: true, message: null };
-          const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
+          const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}${unmergedSuffix}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
           return { progress, all: false, already: false, late: true, message };
         });
       }
@@ -4391,7 +4414,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         if (!added) return { progress, all: all2, already: true, late: false, message: null };
         db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         const wakeCase = doneWakeCase(fresh, name, progress);
-        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}`;
+        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${unmergedSuffix}${wakeCase ? `: ${wakeCase}` : ""}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
@@ -4498,7 +4521,12 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             raiseAlert(run3, { body: `lost ${orch.plan}/${st.member}: ${st.badge.reason}`, event: EVENTS.lost.name });
             postComposition(orch, st.member, "-", "lost");
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
-            if (lostRow) releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
+            if (lostRow) {
+              releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
+              const lostMember = participantById(Number(lostRow.id));
+              const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
+              if (freed) insertMessage(lostMember, freed.body, null, "event", [.../* @__PURE__ */ new Set([...freed.mentions, orch.name])]);
+            }
             moved = true;
           } else if (lostStep === "closed") {
             insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
@@ -9664,10 +9692,6 @@ function conflictsOf(worktree, onto, reflogMark) {
 // src/cli/index.ts
 init_link();
 
-// src/cli/answer/rules.ts
-init_events2();
-init_kinds();
-
 // src/cli/answer/code-rules.ts
 init_events2();
 
@@ -9711,6 +9735,17 @@ var CODE_WORDING = {
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
   tellResolved: (path14, member) => `if you resolved a conflict in ${path14}, tell them: swarm post "@${member} I resolved ${path14}: <how>" --about ${path14}`,
+  // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
+  /** V-13: a claim held by another member (D41): the post to make, runnable as printed, its mentions the caller's own */
+  claimHeld: (path14, who, many, post) => `${path14} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
+  claimHeldPost: (cli, mentions2, about, as) => `${cli} post "${mentions2} <what you change>" --about ${about} --as ${as}`,
+  /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
+   *  was released when it went lost) */
+  lockNotHeldAtJoin: (branch, left, cli, onto, as) => `you do not hold the merge lock; your branch ${branch} carries work not merged (${left}): merge it by taking the lock again: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
+  endedSeatUnmerged: (member, branch, left) => `${member} ended; its branch ${branch} keeps its unmerged work (${left}): dispatch a member to the seat to merge it, or merge it yourself`,
+  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named */
+  unmergedAtDone: (branch, left, cli, onto, as) => `your branch ${branch} holds work not merged (${left}): merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
   // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
   flagHolder: (cli, writer, about) => `settle it: ${cli} agree ${writer} --about ${about}`,
   flagWriter: (cli, holder, about) => `settle it: ${cli} post ${holder} --about ${about}`
@@ -9870,6 +9905,16 @@ function decisionHolders(runs) {
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 
 // src/cli/answer/code-rules.ts
+init_mentions();
+var mentionFrom = (me, member) => {
+  const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];
+  return plan === me.plan ? `@${seat}` : `@${planCode(plan)}\xB7${seat}`;
+};
+function claimHeldLine(me, cli, held) {
+  const who = held.holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
+  const mentions2 = held.holders.map((h) => mentionFrom(me, h.member)).join(" ");
+  return CODE_WORDING.claimHeld(held.path, who, held.holders.length > 1, CODE_WORDING.claimHeldPost(cli, mentions2, shellWord(held.path), shellWord(me.name)));
+}
 function codeEventStep(m, me, cli, event = eventOf(m)) {
   if (event !== "flag") return null;
   const [holder, writer] = m.mentions;
@@ -9880,6 +9925,8 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
 }
 
 // src/cli/answer/rules.ts
+init_events2();
+init_kinds();
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine = (s) => {
   if (s.seat === "orchestrator" || s.ended || !s.pause) return null;
@@ -10165,7 +10212,7 @@ ${owes}` : rearm;
     case "done": {
       if (r.none) return { lines: [WORDING.doneNone], next: null, phase: null };
       const next = WORDING.doneWaitNext(waitCommand(s, true));
-      return { lines: [r.line, next], next, phase: null };
+      return { lines: [r.line, ...r.facts ?? [], next], next, phase: null };
     }
     case "heard": {
       const next = heardStep(s);
@@ -10812,16 +10859,18 @@ ${verbHelp()}`);
       const p = await caller();
       if (await answeredClosed(p)) break;
       const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
+      const unmerged = await board.packCall(p, "unmerged", {});
       let r;
       try {
-        r = await board.done(p, name);
+        r = await board.done(p, name, unmerged ? { unmerged: unmerged.branch } : void 0);
       } catch (e) {
         if (!/no phase is open/.test(e.message)) throw e;
         emit({ member: p.name, phase: name, done: null, none: true }, WORDING.doneNone);
         break;
       }
       const line = r.late ? `late done ${name} (not the current phase), recorded; the orchestrator is told` : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} lost` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
-      const a = answer({ verb: "done", phase: name, line }, await situation(p));
+      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
+      const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late }, a, false);
       break;
     }
@@ -10839,16 +10888,19 @@ ${verbHelp()}`);
       const shared = member.pack === null;
       const verifier = shared && member.verify;
       const as = verifier ? WORDING.verifierAs(member.name) : shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
+      const unmergedNow = !shared && own?.reused ? await board.packCall(member, "unmerged", {}) : null;
+      const lockNotHeld = unmergedNow && await board.packCall(member, "held-merge-lock", {}) == null;
+      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(unmergedNow.branch, unmergedNow.left, self().join(" "), shellWord2(own.base), shellWord2(member.name)) : null;
       const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord2(member.name)) : shared ? seatCommands(member.name) : null;
       const drawing = POSTS_MARKDOWN;
       const waiting = await board.deliverMentions(member);
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
-      const tail = [...as ? [as] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
+      const tail = [...as ? [as] : [], ...lockNotHeldLine ? [lockNotHeldLine] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
       const statedByJoin = /* @__PURE__ */ new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
       const a = answer({ verb: "join", head, shown, tail }, await situation(member));
-      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...drawing ? { drawing } : {}, link }, a);
+      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...shared ? { as: member.name, commands } : {}, ...own ? { worktree: own.path, branch: own.branch, as: member.name } : {}, ...lockNotHeldLine ? { lockNotHeld: true } : {}, ...drawing ? { drawing } : {}, link }, a);
       break;
     }
     case "subscribe":
@@ -11034,9 +11086,10 @@ ${verbHelp()}`);
       }
       const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
-      const json = answers.length === 1 ? answers[0].verdict : { claims: answers.map((a) => ({ path: a.rel, ...a.verdict })) };
+      const verdictJson = (v) => v.allowed ? v : { ...v, refusal: claimHeldLine(p, self().join(" "), v) };
+      const json = answers.length === 1 ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })) };
       await emitHeard(p, told.length ? { ...json, guides: told } : json, [
-        ...answers.map(({ rel, verdict, also }) => !verdict.allowed ? verdict.refusal : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`),
+        ...answers.map(({ rel, verdict, also }) => !verdict.allowed ? claimHeldLine(p, self().join(" "), verdict) : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`),
         ...guidesNow ? [guidesNow] : []
       ]);
       break;
@@ -11159,7 +11212,9 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord2(p.name)].join(" ")}\` first`);
       const base = (await runOf(p.run))?.base ?? null;
       const refusal = await board.packCall(p, "beforeEnd", {});
-      if (refusal) {
+      const lostSeat = refusal && endedSeat !== void 0 && (await board.composition(p.run)).entries.some((e) => e.seat === endedSeat && e.state === "lost");
+      const unmergedKept = lostSeat ? await board.packCall(p, "unmerged", {}) : null;
+      if (refusal && !lostSeat) {
         const { worktree: mine2, left } = refusal;
         const who = `--as ${shellWord2(p.name)}`;
         fail(
@@ -11180,6 +11235,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
+        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, unmergedKept.branch, unmergedKept.left));
       });
       break;
     }

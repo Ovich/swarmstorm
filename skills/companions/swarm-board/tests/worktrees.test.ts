@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopServerOf } from "./fixtures/server.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 let home: string;
@@ -106,7 +107,7 @@ test("end refuses while the worktree holds work not merged, naming it and the me
   git(dir, "commit", "-q", "-m", "c");
   const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
-  assert.ok(refused.stderr.includes(`holds work not merged: branch swarm/${run}-g/w1 has commits not merged into main. Merge it: `), refused.stderr);
+  assert.ok(refused.stderr.includes(`holds work not merged: branch swarm/${run}-g/w1 has 1 commit not merged into main. Merge it: `), refused.stderr);
   assert.match(refused.stderr, /merge-lock --onto main/);
   git(repo, "merge", "-q", "--ff-only", `swarm/${run}-g/w1`);
   assert.match(ok("end", "--seat", "w1", "--as", "g/orchestrator"), /worktree .*w1 removed \(branch kept\)/);
@@ -176,4 +177,48 @@ test("end stops only the link whose pid this data home recorded; a process with 
     link.kill();
     decoy.kill();
   }
+});
+
+/** A commit in the worker's worktree, not merged. */
+const commitOnly = (dir: string, file: string): void => {
+  fs.writeFileSync(path.join(dir, file), "x\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", file);
+};
+
+test("golden V-7 (D63): done with commits not merged is accepted, naming the branch, the count and the merge step; the orchestrator's done line carries unmerged <branch>; close names the branch", () => {
+  const run = open("task", "g", ["w1"]);
+  join(run, "g", "w1");
+  ok("phase", "build", "go", "--as", "g/orchestrator");
+  commitOnly(wt(run, "w1"), "c.txt");
+  const done = ok("done", "build", "--as", "g/w1");
+  assert.ok(done.includes(`your branch swarm/${run}-g/w1 holds work not merged (branch swarm/${run}-g/w1 has 1 commit not merged into main): merge it: `), done);
+  assert.match(done, /merge-lock --onto main --as g\/w1/);
+  const thread = ok("deliver", "--as", "g/orchestrator");
+  assert.ok(thread.includes(`done build (1/1); unmerged swarm/${run}-g/w1`), thread);
+  const closed = ok("close", "--run", run);
+  assert.ok(closed.includes(`(g/w1): branch swarm/${run}-g/w1 has 1 commit not merged into main`), closed);
+});
+
+test("golden V-2 (D59): the orchestrator ends a lost member's seat with work not merged: accepted, the branch kept and named; a live one's is still refused", () => {
+  const run = open("task", "g", ["w1"]);
+  join(run, "g", "w1");
+  ok("deliver", "--as", "g/w1");
+  commitOnly(wt(run, "w1"), "c.txt");
+  assert.equal(swarm("end", "--seat", "w1", "--as", "g/orchestrator").status, 1);
+  const db = openRawStore(path.join(home, "swarm.sqlite"));
+  db.prepare("INSERT INTO badge_episodes (run, member, badge, pending_at, opened_at) VALUES (?, 'w1', 'lost', 0, 0)").run(Number(run));
+  db.close();
+  const out = ok("end", "--seat", "w1", "--as", "g/orchestrator");
+  assert.ok(out.includes(`g/w1 ended; its branch swarm/${run}-g/w1 keeps its unmerged work (branch swarm/${run}-g/w1 has 1 commit not merged into main)`), out);
+  assert.ok(hasBranch(`swarm/${run}-g/w1`));
+});
+
+test("golden V-2 (D59): a member re-joining a seat whose branch holds work not merged, without the merge lock, is told so, its branch and how to take it", () => {
+  const run = open("task", "g", ["w1"]);
+  join(run, "g", "w1");
+  commitOnly(wt(run, "w1"), "c.txt");
+  const out = joinOnly(run, "g", "w1");
+  assert.ok(out.includes(`you do not hold the merge lock; your branch swarm/${run}-g/w1 carries work not merged (branch swarm/${run}-g/w1 has 1 commit not merged into main): merge it by taking the lock again: `), out);
+  assert.match(out, /merge-lock --onto main --as g\/w1/);
 });

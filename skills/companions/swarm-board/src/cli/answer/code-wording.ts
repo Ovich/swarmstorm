@@ -49,6 +49,23 @@ export const CODE_WORDING = {
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
   tellResolved: (path: string, member: string) => `if you resolved a conflict in ${path}, tell them: swarm post "@${member} I resolved ${path}: <how>" --about ${path}`,
 
+  // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
+  /** V-13: a claim held by another member (D41): the post to make, runnable as printed, its mentions the caller's own */
+  claimHeld: (path: string, who: string, many: boolean, post: Command) =>
+    `${path} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ` +
+    `${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
+  claimHeldPost: (cli: Command, mentions: string, about: string, as: string) => `${cli} post "${mentions} <what you change>" --about ${about} --as ${as}`,
+  /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
+   *  was released when it went lost) */
+  lockNotHeldAtJoin: (branch: string, left: string, cli: Command, onto: string, as: string) =>
+    `you do not hold the merge lock; your branch ${branch} carries work not merged (${left}): merge it by taking the lock again: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
+  endedSeatUnmerged: (member: string, branch: string, left: string) =>
+    `${member} ended; its branch ${branch} keeps its unmerged work (${left}): dispatch a member to the seat to merge it, or merge it yourself`,
+  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named */
+  unmergedAtDone: (branch: string, left: string, cli: Command, onto: string, as: string) =>
+    `your branch ${branch} holds work not merged (${left}): merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
+
   // ── a flag: a write outside the writer's claim on a path another holds (D10) ──
   flagHolder: (cli: Command, writer: string, about: string) => `settle it: ${cli} agree ${writer} --about ${about}`,
   flagWriter: (cli: Command, holder: string, about: string) => `settle it: ${cli} post ${holder} --about ${about}`,

@@ -46,6 +46,9 @@ export interface Claims {
   /** end, closeRun, seat done */
   releaseAll(participant: number): void;
   clearFlags(): void;
+  /** board-split D59: `p` went lost holding the merge lock: the lock is released at once and the live members refused
+   *  it are returned (cleared), as at a release; null when `p` held none. */
+  releaseLockOfLost(p: Participant): { waiters: string[] } | null;
   /** At `p`'s end: when `p` holds the merge lock, the members refused it, cleared (D65); else none. */
   lockWaitersFreedBy(p: Participant): string[];
   /** The path `m` asks `me` about, when `me` held it before `m` and its author did not (D62). */
@@ -183,6 +186,15 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     clearFlags,
     releaseAll,
 
+    releaseLockOfLost(p) {
+      const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== undefined;
+      if (!held) return null;
+      const waiters = takeLockWaiters(p.repo).filter((n) => n !== p.name);
+      db.prepare("DELETE FROM merge_locks WHERE repo = ? AND participant = ?").run(p.repo, p.id);
+      bump(p.repo);
+      return { waiters };
+    },
+
     lockWaitersFreedBy(p) {
       const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== undefined;
       return held ? takeLockWaiters(p.repo).filter((n) => n !== p.name) : [];
@@ -280,15 +292,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
               `INSERT INTO claim_requests (repo, path, participant, kind) VALUES (?, ?, ?, ?)
                ON CONFLICT (repo, path, participant) DO UPDATE SET kind = CASE WHEN claim_requests.kind = 'interface' THEN 'interface' ELSE excluded.kind END`,
             ).run(me.repo, rel, me.id, kind);
-            const who = people.map((o) => `${o.name} (${o.nick}: ${doingOf(o.id)})`).join(", ");
-            const at = people.map((o) => `@${o.name}`).join(" ");
-            return {
-              allowed: false,
-              refusal:
-                `${rel} is also held by ${who}. You may share it, but first tell ${people.length > 1 ? "them" : "its holder"} what you change in it: ` +
-                `\`swarm post "${at} …" --about ${rel}\`; ${people.length > 1 ? "they answer" : "its holder answers"} with an agreement on who changes what ` +
-                `(\`swarm agree … --about ${rel}\`), and that agreement goes. Claim again once posted; do not wait for the agreement.`,
-            };
+            // board-split V-13: the facts only; the answer module words the line and the post to make (rule 13)
+            return { allowed: false, path: rel, holders: people.map((o) => ({ member: o.name, nick: o.nick, doing: doingOf(o.id) })) };
           }
         }
         hold(me, rel, kind); // a new holder, or an `inside` claim widened to an interface

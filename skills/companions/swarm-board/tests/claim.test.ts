@@ -103,16 +103,17 @@ test("claim on a shared path before a post holds it: the holder, its note, the p
   const r = swarm(wtB, "claim", "src/a.ts");
   assert.equal(r.status, 3, r.stderr);
   assert.equal(
-    answer(r.stdout),
+    // V-13: the post runnable as printed, the holder mentioned as the caller's own run names it
+    answer(r.stdout).replace(/: \S+ \S+ post /, ": swarm post "),
     `src/a.ts is also held by review-tool/S3 (${nick}: the page). You may share it, but first tell its holder what you change in it: ` +
-      '`swarm post "@review-tool/S3 …" --about src/a.ts`; its holder answers with an agreement on who changes what ' +
-      "(`swarm agree … --about src/a.ts`), and that agreement goes. Claim again once posted; do not wait for the agreement.\n",
+      'swarm post "@S3 <what you change>" --about src/a.ts --as review-tool/S5; its holder answers with an agreement on who changes what, ' +
+      "and that agreement goes. Claim again once posted; do not wait for the agreement.\n",
   );
   // held again until the post is made
   assert.equal(swarm(wtB, "claim", "src/a.ts").status, 3);
   const json = swarm(wtB, "claim", "src/a.ts", "--json");
   assert.equal(json.status, 3);
-  assert.deepEqual(Object.keys(answerJson(json.stdout)).sort(), ["allowed", "refusal"]);
+  assert.deepEqual(Object.keys(answerJson(json.stdout)).sort(), ["allowed", "holders", "path", "refusal"]);
 });
 
 test("claim on a shared path after a post: claimed, the other holder named once, exit 0 (D40)", () => {

@@ -1,3 +1,3 @@
 exit 3
-a.ts is also held by g/w1 (<nick:w1>: x). You may share it, but first tell its holder what you change in it: `swarm post "@g/w1 …" --about a.ts`; its holder answers with an agreement on who changes what (`swarm agree … --about a.ts`), and that agreement goes. Claim again once posted; do not wait for the agreement.
+a.ts is also held by g/w1 (<nick:w1>: x). You may share it, but first tell its holder what you change in it: node <cli> post "@w1 <what you change>" --about a.ts --as g/w2; its holder answers with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.
 start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/w2

@@ -4,6 +4,20 @@ import type { Message, Participant } from "../../board/board.ts";
 import { type EventName, eventOf } from "../../board/events.ts";
 import { CODE_WORDING as CW } from "./code-wording.ts";
 import { shellWord } from "./wording.ts";
+import { planCode } from "../../board/mentions.ts";
+
+/** A member as `me` mentions it: `@<seat>` in its own run, `@<CODE>·<seat>` in another. */
+export const mentionFrom = (me: Participant, member: string): string => {
+  const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];
+  return plan === me.plan ? `@${seat}` : `@${planCode(plan)}·${seat}`;
+};
+
+/** board-split V-13: the line under a held claim: who holds it, and the post to make, runnable as printed. */
+export function claimHeldLine(me: Participant, cli: string, held: { path: string; holders: { member: string; nick: string; doing: string }[] }): string {
+  const who = held.holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
+  const mentions = held.holders.map((h) => mentionFrom(me, h.member)).join(" ");
+  return CW.claimHeld(held.path, who, held.holders.length > 1, CW.claimHeldPost(cli, mentions, shellWord(held.path), shellWord(me.name)));
+}
 
 /** The line under a code event for `me`; null for any other event, or one that asks nothing of it. */
 export function codeEventStep(m: Message, me: Participant, cli: string, event: EventName | null = eventOf(m)): string | null {

@@ -120,6 +120,13 @@ export const codePack: Pack = {
       }
       case "legacy":
         return sweepLegacy();
+      // board-split D59, D63: the member's branch and what it holds not merged; null when all is merged
+      case "unmerged": {
+        if (!member || !ctx) return null;
+        const mine = ownWorktree(member);
+        const left = mine ? worktrees(member.repo).unmerged(mine, ctx.base) : null;
+        return mine && left ? { branch: worktrees(member.repo).branchOf(mine), left, onto: ctx.base } : null;
+      }
       default:
         return null;
     }
@@ -152,6 +159,12 @@ export const codePack: Pack = {
       mentions: waiters,
       lastDoing: tablesOf(ctx).mergedSinceJoin(member.id) ? "merged and ended" : "ended",
     };
+  },
+
+  onLost(member, ctx) {
+    // board-split D59: a lost holder's merge lock is released at once; its work stays on its branch
+    const freed = tablesOf(ctx).releaseLockOfLost(member);
+    return freed ? { body: `the merge lock is free: its holder ${member.name} is lost, its work not merged stays on its branch${freed.waiters.length ? `: ${freed.waiters.map((n) => `@${n}`).join(" ")}` : ""}`, mentions: freed.waiters } : null;
   },
 
   afterEnd(member, ctx) {

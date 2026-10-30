@@ -75,7 +75,12 @@ function leftover(wt: string, into: string | null): string | null {
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
   if (changed) return `${changed} uncommitted change${changed === 1 ? "" : "s"}`;
   if (!into) return "no base branch recorded for its run";
-  if (!isAncestor(wt, "HEAD", baseRef(wt, into))) return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has commits not merged into ${into}`;
+  const intoRef = baseRef(wt, into);
+  if (!isAncestor(wt, "HEAD", intoRef)) {
+    // board-split D63: the branch by name and how many commits, never a bare sha
+    const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
+    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${into}`;
+  }
   return null;
 }
 
@@ -150,6 +155,10 @@ export function worktrees(repo: string) {
     /** True when `wt` is a worktree the board made for this repository. */
     owns(wt: string | null): wt is string {
       return owned(wt, repo);
+    },
+    /** The branch the worktree has checked out; its short commit when detached. */
+    branchOf(wt: string): string {
+      return git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD";
     },
     /** Why the seat's worktree cannot go yet (uncommitted changes, commits not in `into`); null when it can. */
     unmerged(wt: string, into: string | null): string | null {

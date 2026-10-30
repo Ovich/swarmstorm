@@ -21,6 +21,7 @@ import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
+import { claimHeldLine } from "./answer/code-rules.ts";
 import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
@@ -887,9 +888,11 @@ async function main(): Promise<void> {
       const p = await caller();
       if (await answeredClosed(p)) break;
       const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
+      // board-split D63: a done with work not merged is accepted, the branch named to the member and the orchestrator
+      const unmerged = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string; onto: string | null } | null;
       let r;
       try {
-        r = await board.done(p, name);
+        r = await board.done(p, name, unmerged ? { unmerged: unmerged.branch } : undefined);
       } catch (e) {
         // F20: a done with no phase open marks nothing, and is not an error
         if (!/no phase is open/.test((e as Error).message)) throw e;
@@ -900,7 +903,8 @@ async function main(): Promise<void> {
       const line = r.late
         ? `late done ${name} (not the current phase), recorded; the orchestrator is told`
         : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} lost` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
-      const a = answer({ verb: "done", phase: name, line }, await situation(p));
+      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
+      const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late }, a, false);
       break;
     }
@@ -927,6 +931,11 @@ async function main(): Promise<void> {
         : own
           ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
+      // board-split D59: a member re-joining a seat whose branch holds work not merged, without the merge lock (its last
+      // member's was released when it went lost), is told so and how to take it again
+      const unmergedNow = !shared && own?.reused ? ((await board.packCall(member, "unmerged", {})) as { branch: string; left: string } | null) : null;
+      const lockNotHeld = unmergedNow && (await board.packCall(member, "held-merge-lock", {})) == null;
+      const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(unmergedNow.branch, unmergedNow.left, self().join(" "), shellWord(own.base), shellWord(member.name)) : null;
       const commands = verifier ? WORDING.verifierCommands(self().join(" "), shellWord(member.name)) : shared ? seatCommands(member.name) : null;
       // every member posts markdown shaped to what it says: agents do what the board prints (D2)
       const drawing = POSTS_MARKDOWN;
@@ -937,12 +946,12 @@ async function main(): Promise<void> {
       // S20: the roster read after that delivery, so the member's own row counts none of it as unread
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
-      const tail = [...(as ? [as] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
+      const tail = [...(as ? [as] : []), ...(lockNotHeldLine ? [lockNotHeldLine] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
       const statedByJoin = new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
       const a = answer({ verb: "join", head, shown, tail }, await situation(member));
-      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(drawing ? { drawing } : {}), link }, a);
+      emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(lockNotHeldLine ? { lockNotHeld: true } : {}), ...(drawing ? { drawing } : {}), link }, a);
       break;
     }
     case "subscribe":
@@ -1155,9 +1164,11 @@ async function main(): Promise<void> {
       // the guides these files fall under that the member has not been told of yet, each once per member
       const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
-      const json = answers.length === 1 ? answers[0].verdict : { claims: answers.map((a) => ({ path: a.rel, ...a.verdict })) };
+      // a held claim's json carries the line it prints, as before its facts moved to the answer module (V-13)
+      const verdictJson = (v: EditAllowed | EditHeld) => (v.allowed ? v : { ...v, refusal: claimHeldLine(p, self().join(" "), v) });
+      const json = answers.length === 1 ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })) };
       await emitHeard(p, told.length ? { ...json, guides: told } : json, [
-        ...answers.map(({ rel, verdict, also }) => (!verdict.allowed ? verdict.refusal : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`)),
+        ...answers.map(({ rel, verdict, also }) => (!verdict.allowed ? claimHeldLine(p, self().join(" "), verdict) : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`)),
         ...(guidesNow ? [guidesNow] : []),
       ]);
       break;
@@ -1308,7 +1319,10 @@ async function main(): Promise<void> {
       // the board's worktree with work not merged: the pack refuses the end, naming it and the merge (beforeEnd)
       const base = (await runOf(p.run))?.base ?? null;
       const refusal = (await board.packCall(p, "beforeEnd", {})) as { reason: string; worktree: string; left: string } | null;
-      if (refusal) {
+      // board-split D59: the orchestrator ending a lost member's seat is never refused: the work stays on its branch
+      const lostSeat = refusal && endedSeat !== undefined && (await board.composition(p.run)).entries.some((e) => e.seat === endedSeat && e.state === "lost");
+      const unmergedKept = lostSeat ? ((await board.packCall(p, "unmerged", {})) as { branch: string; left: string } | null) : null;
+      if (refusal && !lostSeat) {
         const { worktree: mine, left } = refusal;
         const who = `--as ${shellWord(p.name)}`;
         fail(
@@ -1333,6 +1347,7 @@ async function main(): Promise<void> {
         printReconciled(unclaimed, flags, renames);
         console.log(`${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
+        if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, unmergedKept.branch, unmergedKept.left));
       });
       break;
     }
