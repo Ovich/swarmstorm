@@ -8948,8 +8948,21 @@ async function runBoardServer(opts) {
     for (const s of speakers) if (s.member?.run === run4) refuse(s, "closed");
   };
   const ended = (member) => {
-    for (const s of speakers) if (member && s.member?.name === member) refuse(s, "closed");
+    for (const s of speakers)
+      if (member && s.member?.name === member) {
+        s.endedPending = true;
+        refuseEndedOnceAnswered(s);
+      }
   };
+  function refuseEndedOnceAnswered(s) {
+    const busy = () => [...calls.values()].some((c) => c.speaker === s && (c.answer === null || Date.now() - c.answeredAt < ENDED_LINK_QUIET_MS));
+    if (busy()) {
+      setTimeout(() => s.endedPending && refuseEndedOnceAnswered(s), ENDED_LINK_QUIET_MS);
+      return;
+    }
+    s.endedPending = false;
+    refuse(s, "closed");
+  }
   const httpServer = http.createServer((req, res) => {
     if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
       res.end("stopping");
@@ -9108,7 +9121,7 @@ function bind(server, host, port) {
     });
   });
 }
-var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
+var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, ENDED_LINK_QUIET_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
 var init_server = __esm({
   "src/server/server.ts"() {
     "use strict";
@@ -9123,6 +9136,7 @@ var init_server = __esm({
     SECRET_HEADER = "x-swarm-secret";
     CLOSE_GRACE_MS = 500;
     CALLABLE = new Set(RPC_METHODS);
+    ENDED_LINK_QUIET_MS = 1e3;
     LOCK_READ_RETRY_MS = 50;
     LOCK_READ_RETRIES = 20;
     BREAKER_STALE_MS = 5e3;

@@ -25,9 +25,12 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 
 /** `subscribed`: a reader that sent `subscribe`, told `changed` after each commit (D23). */
 /** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause };
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
 /** A call running or answered, keyed by its id, whatever connection sent it. */
 type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
+
+/** How long an ended member's link must carry no call before the server tells it so (T53b); under stopLinks' grace. */
+const ENDED_LINK_QUIET_MS = 1000;
 
 type ServerOptions = { dataRoot: string; host?: string; port?: number; now?: () => Date };
 
@@ -237,10 +240,24 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const closed = (run: number): void => {
     for (const s of speakers) if (s.member?.run === run) refuse(s, "closed");
   };
-  // its own end, or the orchestrator's end --seat: the member's link is done as at a close
+  // its own end, or the orchestrator's end --seat: the member's link is done as at a close, once it has carried no call
+  // for ENDED_LINK_QUIET_MS: the wait the end released reaches its CLI, and that CLI's follow-up calls are answered (T53b)
   const ended = (member: string | undefined): void => {
-    for (const s of speakers) if (member && s.member?.name === member) refuse(s, "closed");
+    for (const s of speakers)
+      if (member && s.member?.name === member) {
+        s.endedPending = true;
+        refuseEndedOnceAnswered(s);
+      }
   };
+  function refuseEndedOnceAnswered(s: Speaker): void {
+    const busy = () => [...calls.values()].some((c) => c.speaker === s && (c.answer === null || Date.now() - c.answeredAt < ENDED_LINK_QUIET_MS));
+    if (busy()) {
+      setTimeout(() => s.endedPending && refuseEndedOnceAnswered(s), ENDED_LINK_QUIET_MS);
+      return;
+    }
+    s.endedPending = false;
+    refuse(s, "closed");
+  }
 
   const httpServer = http.createServer((req, res) => {
     if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
