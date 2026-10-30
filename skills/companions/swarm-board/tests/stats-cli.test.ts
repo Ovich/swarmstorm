@@ -90,7 +90,7 @@ const LENGTH = String.raw`(?:\d+h \d{2}m|\d+m|\d+s|—)`;
 const line = (title: string, kind: string, state: string, conflicts: string): RegExp =>
   new RegExp(`^\\S+ ${title} · ${kind} · ${LENGTH} · ${state} · conflicts ${conflicts}$`);
 
-test("the text line: `<code> <title> · <kind> · <length> · <open|closed> · conflicts <n|unknown>`, `conflicts —` with no merge, `<n> + <m> unknown`, then `swarm stats --json for every figure` (D34, D35)", async () => {
+test("the text line: `<code> <title> · <kind> · <length> · <open|closed> · conflicts <n|unknown>`, `conflicts —` with no merge, `<n> + <m> unknown`, a brainswarm with none (V-19), then `<cli> stats --json for every figure` (D34, D35, V-31)", async () => {
   const r = fresh();
   let knownOnly = "";
   await scene(r, (id) => {
@@ -99,7 +99,7 @@ test("the text line: `<code> <title> · <kind> · <length> · <open|closed> · c
   const one = knownOnly.split(/\r?\n/).filter(Boolean);
   assert.equal(one.length, 2, knownOnly);
   assert.match(one[0], line("A", "plan", "open", "1"));
-  assert.equal(one[1], "swarm stats --json for every figure");
+  assert.match(one[1], / stats --json for every figure$/);
 
   const lines = r.cli(r.repo, "stats", "--all").split(/\r?\n/).filter(Boolean);
   assert.equal(lines.length, 6, lines.join("\n"));
@@ -107,8 +107,9 @@ test("the text line: `<code> <title> · <kind> · <length> · <open|closed> · c
   assert.match(lines[1], line("Mid", "plan", "closed", "unknown"));
   assert.match(lines[2], line("A", "plan", "open", "1 \\+ 1 unknown"));
   assert.match(lines[3], line("B", "plan", "closed", "—"));
-  assert.match(lines[4], line("Brain", "brainstorm", "open", "—"));
-  assert.equal(lines[5], "swarm stats --json for every figure");
+  // V-19: a brainswarm merges nothing: its line ends before the conflicts
+  assert.match(lines[4], new RegExp(`^\\S+ Brain · brainstorm · ${LENGTH} · open$`));
+  assert.match(lines[5], / stats --json for every figure$/);
 });
 
 test("`--since` defaults to 30d, `--all` keeps every run, `--closed` leaves open runs out, `--kind` narrows (D34)", async () => {

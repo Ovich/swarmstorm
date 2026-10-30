@@ -1,0 +1,2 @@
+exit 0
+node <cli> stats --json for every figure

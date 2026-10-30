@@ -208,6 +208,8 @@ export const WORDING = {
   phaseStillOwed: (previous: string, members: string[]) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
   /** V-18: aiview's project add, with the same env prefix as every other command line */
   aiviewProjectAdd: (envPrefix: string, launcher: string, cwd: string): Command => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
+  /** V-31 (AGENTS rule 10): stats' last line, the --json command as this CLI runs */
+  statsJson: (cli: Command): Command => `${cli} stats --json for every figure`,
   // ── T51 (board-split#D58): open and the run's identity ──
   /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
   groupAlreadyOpen: (group: string, run: number, cli: Command) =>

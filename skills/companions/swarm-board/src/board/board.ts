@@ -2668,7 +2668,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         // board-split D50: a task is the orchestrator's, to one live member of its own run
         if (fresh.seat !== ORCHESTRATOR) throw new Error(`post --task: only the orchestrator posts a task; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
         const to = (m.mentions ?? []).filter((n) => n.startsWith(`${fresh.plan}/`) && n !== fresh.name);
-        if (to.length !== 1 || (m.mentions ?? []).length !== 1) throw new Error("post --task: mention exactly one member of your run, the one the task is for");
+        // V-33: the refusal names what it found, so the orchestrator sees which name to drop
+        if (to.length !== 1 || (m.mentions ?? []).length !== 1)
+          throw new Error(
+            `post --task: a task mentions exactly one member of your run, the one it is for; this post mentions ${(m.mentions ?? []).join(", ") || "nobody"}: keep @ on that member alone and write every other name in backticks`,
+          );
         const phase = runRow(fresh.run).phase;
         db.prepare("UPDATE messages SET task_for = ?, task_phase = ? WHERE seq = ?").run(to[0], phase == null ? null : String(phase), m.seq);
       }

@@ -77,8 +77,11 @@ const lengthText = (ms: number | null): string => {
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
   return minutes >= 1 ? `${minutes}m` : `${Math.round(ms / 1000)}s`;
 };
-/** `stats`' line for a run (D34, D35): `<code> <title> · <kind> · <length> · <open|closed> · conflicts <n|unknown>`. */
+/** `stats`' line for a run (D34, D35): `<code> <title> · <kind> · <length> · <open|closed> · conflicts <n|unknown>`; a run
+ *  whose kind merges nothing (a brainswarm: no code figures, V-19) ends before the conflicts. */
 const statsLine = (r: RunStats): string => {
+  const head = `${r.code} ${r.title} · ${r.kind} · ${lengthText(r.lengthMs)} · ${r.closedAt === null ? "open" : "closed"}`;
+  if (!("firstMergeAtMs" in r)) return head;
   const c = r.plan?.conflicts;
   // no merge: —; not recorded: unknown; some merges unknown: <n> + <m> unknown
   const conflicts =
@@ -89,7 +92,7 @@ const statsLine = (r: RunStats): string => {
         : c.unknownMerges
           ? `${c.known} + ${c.unknownMerges} unknown`
           : String(c.known);
-  return `${r.code} ${r.title} · ${r.kind} · ${lengthText(r.lengthMs)} · ${r.closedAt === null ? "open" : "closed"} · conflicts ${conflicts}`;
+  return `${head} · conflicts ${conflicts}`;
 };
 
 class CliError extends Error {}
@@ -1423,7 +1426,7 @@ async function main(): Promise<void> {
       emit(stats, () => {
         if (!stats.runs.length) console.log("no run in this scope");
         for (const r of stats.runs) console.log(statsLine(r));
-        console.log("swarm stats --json for every figure");
+        console.log(WORDING.statsJson(self().join(" ")));
       });
       break;
     }
