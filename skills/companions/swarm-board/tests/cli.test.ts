@@ -230,7 +230,7 @@ test("--json on every verb parses", () => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
   const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--seats", slices, "--json").stdout);
-  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "next", "plan", "repo", "run", "url"]);
+  assert.deepEqual(Object.keys(opened).sort(), ["decisions", "group", "kind", "link", "next", "plan", "repo", "run", "url"]);
   const id = String(opened.run);
   const as = ["--as", "review-tool/S3"];
   const verbs: string[][] = [

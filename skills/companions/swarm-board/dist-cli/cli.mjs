@@ -9829,8 +9829,17 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
   /** D34 (T36): a parked member's state on its roster line, as its card says it */
   parkedUntil: (phase) => `parked until ${phase}`,
-  forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`
+  forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`,
+  // ── board-split D28, D29: two runs holding decision authority, and the decisions run ──
+  decisionsOpen: (cli, title) => `${cli} open --kind brainstorm --group decisions --title ${title} --seats <seats.json>`,
+  decisionsSeatAdd: (cli, run3) => `${cli} seat add <your seat> --run ${run3} --role <your roles>`,
+  decisionsRunNeeded: (runs, open) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (a seat per run, its roles the seat's role): ${open}`,
+  decisionsRunOpen: (runs, decisionsRun, seatAdd) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}; a run without its seat there adds it: ${seatAdd}`
 };
+function decisionHolders(runs) {
+  const each = runs.map((r) => `run ${r.run} ${r.group} (${r.roles.join(", ")})`);
+  return each.length > 1 ? `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}` : each.join("");
+}
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 
 // src/cli/answer/code-rules.ts
@@ -9988,6 +9997,37 @@ async function readSituation(board2, me, opts) {
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null
   };
+}
+
+// src/cli/answer/decisions.ts
+var DECISION_AUTHORITY_ROLES = /* @__PURE__ */ new Set([
+  "product-owner",
+  "product-designer",
+  "ui-ux-designer",
+  "architect",
+  "editor",
+  "tech-lead",
+  "qa-lead",
+  "devops",
+  "security"
+]);
+var DECISIONS_GROUP = "decisions";
+var decisionRoles = (r) => (r.authority ?? []).filter((role) => DECISION_AUTHORITY_ROLES.has(role));
+function decisionsLines(runs, cli, only) {
+  const byRepo = /* @__PURE__ */ new Map();
+  for (const r of runs) byRepo.set(r.repo, [...byRepo.get(r.repo) ?? [], r]);
+  const lines = [];
+  for (const repoRuns of byRepo.values()) {
+    const holders = repoRuns.filter((r) => r.group !== DECISIONS_GROUP && decisionRoles(r).length > 0);
+    if (holders.length < 2) continue;
+    if (only !== void 0 && !holders.some((r) => r.id === only)) continue;
+    const named = holders.map((r) => ({ run: r.id, group: r.group, roles: decisionRoles(r) }));
+    const open = repoRuns.find((r) => r.group === DECISIONS_GROUP);
+    lines.push(
+      open ? WORDING.decisionsRunOpen(named, open.id, WORDING.decisionsSeatAdd(cli, open.id)) : WORDING.decisionsRunNeeded(named, WORDING.decisionsOpen(cli, shellWord("Decisions")))
+    );
+  }
+  return lines;
 }
 
 // src/cli/answer/usage.ts
@@ -10597,14 +10637,15 @@ ${verbHelp()}`);
       const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
       const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
-      const lines = (url) => [String(run3.id), stallClamped, url, link, next].filter((l) => l !== null).join("\n");
+      const decisions = decisionsLines(await board.runs(), self().join(" "), run3.id);
+      const lines = (url) => [String(run3.id), stallClamped, url, link, ...decisions, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, ...next ? { next } : {} }, lines(null));
+        emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, decisions, ...next ? { next } : {} }, lines(null));
         break;
       }
       const runUrl = WORDING.runBoardUrl(doc.url, run3.id);
-      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: runUrl, link, ...next ? { next } : {} }, lines(runUrl));
+      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: runUrl, link, decisions, ...next ? { next } : {} }, lines(runUrl));
       break;
     }
     case "slice":
@@ -11200,7 +11241,8 @@ ${verbHelp()}`);
       );
       const held = await board.locks();
       const merge = await mergeLocksHeld();
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge }, () => {
+      const decisions = decisionsLines(runs, cli);
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
@@ -11217,6 +11259,7 @@ ${verbHelp()}`);
           if (idle >= FORGOTTEN_MS)
             console.log(WORDING.forgottenRun(Math.floor(idle / 864e5), cli, r.id));
         }
+        for (const line of decisions) console.log(line);
       });
       break;
     }

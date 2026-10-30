@@ -1,0 +1,2 @@
+exit 0
+decision authority held by run 1 alpha (architect) and run 2 beta (architect, tech-lead): settle your common decisions in the decisions run; open it (a seat per run, its roles the seat's role): SWARMSTORM_HOME=<home> node <cli> open --kind brainstorm --group decisions --title Decisions --seats <seats.json>
