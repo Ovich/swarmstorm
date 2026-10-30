@@ -9,7 +9,10 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Delivery, type Participant, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { SCENARIOS, STALL_S, play, steps } from "./fixtures/yardstick.ts";
+import { SCENARIOS, play, steps } from "./fixtures/yardstick.ts";
+import { SILENT_MS } from "../src/board/liveness.ts";
+
+const SILENT_S = SILENT_MS / 1000;
 import { eventStep } from "../src/cli/answer/rules.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
@@ -74,18 +77,18 @@ test("b: a stalled is never carried: it wakes the orchestrator at once, the carr
   taskTo(orch, board.participant("g/w1")!);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, 16), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
   const d = await held;
   assert.match(all(d), /stalled g\/w1/);
   assert.match(all(d), /late1/, "the carried joined rides on the stalled's wake");
 });
 
-test("c: three members stalled at one tick: one wake naming each, its rule and its move; repeated only after 15 min", async () => {
+test("c: three members stalled at one tick: one wake naming each, its rule and its move; never repeated on a timer (board-split D54)", async () => {
   const { run, m, orch } = setup(["a", "b", "c", "d"]);
   oweP1(run.id, orch, [m.d]);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, 16), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
   const d = await held;
   assert.equal(d.full.filter((x) => x.body.startsWith("stalled")).length, 1);
   const s = stalled();
@@ -96,26 +99,26 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   const move = stepOf("stalled")({ ...board.read(s[0].seq), meta: { ...members[0], members } }, orch, "swarm")!;
   assert.match(move, /^a: swarm post .*your part of p1.*; b: ask it: swarm post .*your part of p1.*; c: ask OT·w9 to unlock port:1/);
   // the same set: no repeat within 15 min
-  for (const t of [20, 60, 600]) board.livenessTick(run.id, at(base, t), presence);
+  for (const t of [SILENT_S + 5, SILENT_S + 60, SILENT_S + 600]) board.livenessTick(run.id, at(base, t), presence);
   assert.equal(stalled().length, 1);
-  // the same three, 15 min on: one grouped repeat
-  board.livenessTick(run.id, at(base, 16 + 15 * 60), presence);
-  assert.equal(stalled().length, 2);
-  assert.match(stalled()[1].body, /3 members/);
+  // the same three, 15 min on and more: never repeated on a timer (board-split D54: once per episode)
+  board.livenessTick(run.id, at(base, SILENT_S + 15 * 60), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 45 * 60), presence);
+  assert.equal(stalled().length, 1);
 });
 
 test("d: a stalled member that is then mentioned and acts (done) draws no repeat; its own post or transcript does not end the stall (board-split D49)", () => {
   const { run, m, orch } = setup(["a"]);
   oweP1(run.id, orch);
   const base = Date.now();
-  board.livenessTick(run.id, at(base, 16), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled().length, 1);
   board.post(orch, "@a your report?");
   board.deliver(m.a);
   board.post(m.a, "here it is");
-  assert.equal(board.memberStates(run.id, at(base, 17)).find((x) => x.member === "a")?.badge?.name, "stalled", "a self-post is no board call");
+  assert.equal(board.memberStates(run.id, at(base, SILENT_S + 2)).find((x) => x.member === "a")?.badge?.name, "stalled", "a self-post is no board call");
   board.done(m.a, "p1");
-  for (let s = 20; s <= 20 * 60; s += 3) {
+  for (let s = SILENT_S + 5; s <= SILENT_S + 20 * 60; s += 3) {
     board.recordActivity(run.id, "a", act({ grewAt: base + s * 1000 }), at(base, s));
     board.livenessTick(run.id, at(base, s), presence);
   }
@@ -128,32 +131,36 @@ test("e: another run's stalled member never wakes this run's orchestrator", asyn
   // board-split D49: only two has a phase open, owed by b
   oweP1(two.run.id, two.orch);
   const base = Date.now();
+  // both have a transcript: no liveness line wakes either orchestrator
+  board.recordActivity(one.run.id, "a", act({ grewAt: base }), at(base, 0));
+  board.recordActivity(two.run.id, "b", act({ grewAt: base }), at(base, 0));
   const held = waitOf(one.orch, 400);
-  board.livenessTick(one.run.id, at(base, 16), presence);
-  board.livenessTick(two.run.id, at(base, 16), presence);
+  board.livenessTick(one.run.id, at(base, SILENT_S + 1), presence);
+  board.livenessTick(two.run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled(two.run.id).length, 1);
   assert.equal(all(await held), "", "one's orchestrator is not woken by two's stall");
   assert.deepEqual(stalled(two.run.id)[0].mentions, ["two/orchestrator"]);
 });
 
-test("f: a background listener returning is not progress that hides a stall of a member owing its phase (board-split D49: the badge holds through the return)", async () => {
+test("f: owing its task, a background listener returning then silence: stalled SILENT_MS after its last sign of work, told once, never recovered by the listener's return (board-split D49, D54)", async () => {
   const { work, open, startedInBackground, notifiedAsPrompt, id, WAIT } = steps;
   const a = id();
+  const lastSign = 201;
   const r = await play({
     id: "F-listener",
     what: "owes p1 from its task; its background wait --mentions returns at 200 s, then silence",
-    // board-split D54: out of a wait, stalled only after three stall windows without a board call
-    length: 3 * STALL_S + 120,
-    stuckAt: 7,
+    // board-split D54: out of a wait, stalled only after SILENT_MS with no sign of work (its transcript last grew at 201 s)
+    length: lastSign + SILENT_S + 120,
+    stuckAt: lastSign,
     owe: (bd, o) => {
       bd.phase(o, "p1", "go");
       bd.post(o, "@x your part", { task: true });
     },
-    steps: [work(0), open(5, a, WAIT, { run_in_background: true }), startedInBackground(6, a, "w.out"), work(7, "listening"), notifiedAsPrompt(200, a), work(201, "nothing for me")],
+    steps: [work(0), open(5, a, WAIT, { run_in_background: true }), startedInBackground(6, a, "w.out"), work(7, "listening"), notifiedAsPrompt(200, a), work(lastSign, "nothing for me")],
   });
   assert.equal(r.missed, 0, r.events);
-  // told within the bound, and no recovered: the stall is not cleared by the listener's return
-  assert.ok(r.alerts.length > 0 && r.alerts[0].s <= 7 + 3 * STALL_S + 61, r.events);
+  // told within the bound, once, and no recovered
+  assert.ok(r.alerts.length > 0 && r.alerts[0].s >= lastSign + SILENT_S && r.alerts[0].s <= lastSign + SILENT_S + 61, r.events);
   assert.ok(!/recovered/.test(r.events), r.events);
 });
 
@@ -175,16 +182,16 @@ test("G39, board-split D31, D49: a member owing its phase that waits on a backgr
   await held;
 });
 
-test("G40: the same stalled set, no member progressed since, is not told again within 15 min (a link blip clears no episode)", () => {
+test("G40: the same stalled set, no member progressed since, is never told again (a link blip clears no episode; board-split D54)", () => {
   const { run, orch } = setup(["a"]);
   oweP1(run.id, orch);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: false, lastTool: "Bash x" }), at(base, 0));
-  board.livenessTick(run.id, at(base, 16), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled(run.id).length, 1);
   // a link blip clears its stalled mark; nothing progressed, the same silence again
-  board.livenessTick(run.id, at(base, 17), () => ({ connected: false, lostAt: base + 17_000 }));
-  board.livenessTick(run.id, at(base, 20), presence);
-  board.livenessTick(run.id, at(base, 40), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 2), () => ({ connected: false, lostAt: base + (SILENT_S + 2) * 1000 }));
+  board.livenessTick(run.id, at(base, SILENT_S + 5), presence);
+  board.livenessTick(run.id, at(base, SILENT_S + 25 * 60), presence);
   assert.equal(stalled(run.id).length, 1, "not repeated");
 });

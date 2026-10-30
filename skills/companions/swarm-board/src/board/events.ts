@@ -56,8 +56,8 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   "all-done": { name: "all-done" },
   // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
   idle: { name: "idle", toAuthor: true },
-  // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, again every
-  // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken. board-split D36: also an orchestrator
+  // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, once per
+  // episode, never again on a timer (swarm-relay D11, board-split D54); no other member is woken. board-split D36: also an orchestrator
   // silent STALE_MS (once, in its run) and a run whose every member is silent (once, to its orchestrator)
   stalled: { name: "stalled", toAuthor: true },
   // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat

@@ -19,6 +19,11 @@ const REPO = "/repos/yardstick/.git";
 export const SESSION = "33333333-aaaa-bbbb-cccc-000000000003";
 export const PROJECT = "C--repos-yardstick";
 /** d1: a stuck episode ends at T0 + 30 min when nothing intervenes. */
+/** board-split D50, D54: open `phase` and post each seat its task (`post --task`), so it owes the phase from the task's delivery. */
+const phaseWithTasks = (bd: Board, o: Participant, phase: string, seats: string[]): void => {
+  bd.phase(o, phase, "your part");
+  for (const seat of seats) bd.post(o, `@${seat} your part of ${phase}`, { task: true });
+};
 export const EPISODE_MS = 30 * 60 * 1000;
 const ALERTS = new Set(["stalled", "lost"]);
 const WAKE_EVENTS = new Set(["stalled", "lost", "idle", "liveness", "recovered"]);
@@ -275,12 +280,12 @@ export const SCENARIOS: Scenario[] = (() => {
     // A2: an awaited task whose output stops at 100 s, never notified
     { id: "S10", what: "A2 background task, output stops at 100 s, never returns", length: STUCK_LEN, stuckAt: 100, steps: ((a) => [work(0), open(5, a, "npm test", { run_in_background: true }), startedInBackground(6, a, "a.out"), work(7), ...outputs("a.out", 8, 100, 23)])(t()) },
     // A10: owing the open phase in a re-armed wait; (a) w waiting, (b) w working; S11-2 owes a task (out of scope); S11-3 owes nothing
-    { id: "S11-1a", what: "A10 re-armed wait owing the phase, w waiting", length: STUCK_LEN, stuckAt: 5, companion: "waits", owe: (bd, o) => bd.phase(o, "p1", "@x @w your part"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
-    { id: "S11-1b", what: "A10 re-armed wait owing the phase, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.phase(o, "p1", "@x your part"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
+    { id: "S11-1a", what: "A10 re-armed wait owing the phase, w waiting", length: STUCK_LEN, stuckAt: 5, companion: "waits", owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x", "w"]), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
+    { id: "S11-1b", what: "A10 re-armed wait owing the phase, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x"]), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     // d3's guard on F2 (#12027): the span ended by a real call, then the turn ended: told again at once, not 15 min later
-    { id: "S11-guard", what: "owing span, then a real call ends it, then the turn ends", length: 20 * MIN, stuckAt: 5, companion: "waits", owe: (bd, o) => bd.phase(o, "p1", "@x @w your part"), steps: ((a) => [work(0), ...rearmedWait(5, 300), open(340, a, "npm run build"), result(341, a), work(345, "built, reporting next")])(id()) },
+    { id: "S11-guard", what: "owing span, then a real call ends it, then the turn ends", length: 20 * MIN, stuckAt: 5, companion: "waits", owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x", "w"]), steps: ((a) => [work(0), ...rearmedWait(5, 300), open(340, a, "npm run build"), result(341, a), work(345, "built, reporting next")])(id()) },
     // idea 3's C6: the first phase opens at 10 min; w works all through, x waits after its report (re-armed)
-    { id: "C6", what: "a phase opened at 600 s: w working, x waiting after its report", length: 30 * MIN, stuckAt: 600, companion: "works", oweAt: 600, owe: (bd, o) => bd.phase(o, "build", "@x @w your part"), steps: [work(0), ...rearmedWait(5, 30 * MIN)] },
+    { id: "C6", what: "a phase opened at 600 s: w working, x waiting after its report", length: 30 * MIN, stuckAt: 600, companion: "works", oweAt: 600, owe: (bd, o) => phaseWithTasks(bd, o, "build", ["x", "w"]), steps: [work(0), ...rearmedWait(5, 30 * MIN)] },
     { id: "S11-2", what: "re-armed wait owing a task, w working", length: STUCK_LEN, stuckAt: 5, companion: "works", owe: (bd, o) => bd.post(o, "@x task T1: do it"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     { id: "S11-3", what: "A10 re-armed wait after an FYI mention, owing nothing", length: STUCK_LEN, stuckAt: null, companion: "works", owe: (bd, o) => bd.post(o, "@x fyi, nothing to do"), steps: [work(0), ...rearmedWait(5, STUCK_LEN)] },
     // A3, A3b: only the board's own listener and link pending, turn ended

@@ -10,6 +10,9 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { parseSubscriptions, renamedIn, eventOf } from "../src/board/events.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { SILENT_MS } from "../src/board/liveness.ts";
+
+const SILENT_S = SILENT_MS / 1000;
 import { eventStep } from "../src/cli/answer/rules.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
 
@@ -42,30 +45,38 @@ const setup = () => {
   return { run, a, b, orch };
 };
 
-test("golden stalled (board-split D49): owing the open phase with no board call past the stall time is stalled; a self-post, a doing or the transcript never resets it", () => {
+test("golden stalled (board-split D54 amended): out of a wait, owing its task, stalled only with no transcript growth and no call of its own open past SILENT_MS; board-call silence alone never is; a self-post or a doing never resets it", () => {
   const { run, a, b, orch } = setup();
   board.phase(orch, "p1", "go");
   board.done(b, "p1");
-  // board-split D54: the owing clock starts at the member's own task, delivered
   board.post(orch, "@a your part", { task: true });
   board.deliver(a);
   const base = Date.now();
-  // the transcript growing and a self-report are no board call
-  board.recordActivity(run.id, "a", act({ grewAt: base + 5000, lastTool: "Read x", inTurn: true }), at(base, 5));
+  board.livenessTick(run.id, at(base, 0), linked);
+  // coding: its transcript grows, no board call for minutes: no stall
+  board.recordActivity(run.id, "a", act({ grewAt: base + (SILENT_S - 5) * 1000, lastTool: "Edit x", inTurn: true }), at(base, SILENT_S - 5));
+  assert.equal(badgeIn(run.id, "a", at(base, SILENT_S + 1)).badge, null, "board-call silence alone is never a stall");
+  // a call of its own open: no stall however long
+  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base } }), at(base, 0));
+  assert.equal(badgeIn(run.id, "a", at(base, 2 * SILENT_S)).badge, null, "a call open is work");
+  // nothing grows, nothing open: stalled past SILENT_MS; a self-report is no sign
+  board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read x", inTurn: false }), at(base, 0));
   board.post(a, "on it");
   board.setDoing(a, "reading");
-  // out of a wait, stalled only after three stall windows without a board call (D54)
-  assert.equal(badgeIn(run.id, "a", at(base, 14)).badge, null);
-  const st = badgeIn(run.id, "a", at(base, 16));
-  assert.equal(st.state, "working");
+  const lastSign = Date.now();
+  assert.equal(badgeIn(run.id, "a", new Date(lastSign + (SILENT_S - 1) * 1000)).badge, null);
+  const t = new Date(lastSign + (SILENT_S + 1) * 1000);
+  const st = badgeIn(run.id, "a", t);
   assert.deepEqual([st.badge?.name, st.rule, st.owes], ["stalled", "silent", "p1"]);
-  assert.match(st.badge?.reason ?? "", /^not done p1, no board call for \d+ s$/);
-  board.livenessTick(run.id, at(base, 16), linked);
+  assert.match(st.badge?.reason ?? "", new RegExp(`^${st.state}, not done p1, no activity for \\d+ s$`));
+  board.livenessTick(run.id, t, linked);
+  // one alarm per episode, never re-fired on a timer
+  board.livenessTick(run.id, new Date(t.getTime() + 20 * 60_000), linked);
   assert.equal(eventsOf("stalled").length, 1);
-  assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: not done p1/);
+  assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: \w+, not done p1/);
   // done ends the owing: no badge
   board.done(a, "p1");
-  assert.equal(badgeIn(run.id, "a", at(base, 17)).badge, null);
+  assert.equal(badgeIn(run.id, "a", new Date(t.getTime() + 1000)).badge, null);
 });
 
 test("golden owing (board-split D54): phase open, task posted later: no stall until the task is delivered and the stall window passed; with no task delivered the member owes nothing", async () => {

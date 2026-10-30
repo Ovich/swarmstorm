@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
 import type { Presence } from "../src/board/board.ts";
+import { SILENT_MS } from "../src/board/liveness.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
@@ -98,10 +99,10 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   board.markStaleRuns(new Date(Date.now() + 60 * 60_000));
   assert.equal(alerts().length, 0);
   board.resume(orchestrator);
-  board.livenessTick(run.id, new Date(Date.now() + 13_000), linked);
+  board.livenessTick(run.id, new Date(Date.now() + SILENT_MS - 2_000), linked);
   assert.equal(alerts().length, 0, "silence counts from the resume");
-  // out of a wait, three stall windows (D54)
-  board.livenessTick(run.id, new Date(Date.now() + 16_000), linked);
+  // out of a wait, no sign of work past SILENT_MS (D54)
+  board.livenessTick(run.id, new Date(Date.now() + SILENT_MS + 1_000), linked);
   // a and b both quiet past the threshold at one tick: one stalled naming each
   assert.deepEqual(alerts().map((e) => e.event), ["stalled"]);
   assert.match(alerts()[0].body, /a.*b/);

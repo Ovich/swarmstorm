@@ -13,7 +13,7 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LINK_LOST_MS, LOCK_HELD_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_STALL_WINDOWS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LINK_LOST_MS, LOCK_HELD_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
@@ -390,7 +390,7 @@ export interface Board {
   /** Every live member's state at `at` (D9, D31), through the presence the server's tick last gave. */
   memberStates(run: RunId, at: Date): MemberState[];
   /** One tick of the server (D13): states from activity and presence; `stalled <member>` to the orchestrator
-   *  for a member quiet past the run's threshold, again after STALLED_AGAIN_MS (D11); `gone` once (D12); `idle`
+   *  for a member quiet past the run's threshold, once per episode (D11, board-split D54); `gone` once (D12); `idle`
    *  at each whole IDLE_MS while every member but the orchestrator waits. False when the run is closed or unknown. */
   livenessTick(run: RunId, at: Date, presence: Presence): boolean;
   /** Past the retention: closed runs (closed_at older), their seats, members not referenced by a
@@ -709,6 +709,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "resumed_at", "resumed_at TEXT");
   // the run's stall threshold, and the stalled events posted since a counter last moved
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
+  // board-split D54: the run's silent time, out of a wait, with no sign of work (default SILENT_MS)
+  upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
   // the branch a code run's worktrees branch from, recorded at open
   upkeep("runs", "base", "base TEXT");
@@ -1434,9 +1436,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // U-F22: the reason's state word is the member's shown state (busy on a background task in its wait reads busy)
       return { badge: stalledBadge(`${shownState}, not done ${owes}, ${Math.round((t - since) / 1000)} s`, since), rule: "owing", owes };
     }
-    const lastCall = Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
-    if (t - lastCall < SILENT_STALL_WINDOWS * stallMs) return null;
-    return { badge: stalledBadge(`not done ${owes}, no board call for ${Math.round((t - lastCall) / 1000)} s`, lastCall), rule: "silent", owes };
+    // board-split D54 (amended): out of a wait, a stall is no sign of work at all: no tool call of its own open, and
+    // neither its transcript nor a board call moved for SILENT_MS; board-call silence alone is never a stall
+    const a = activityOf(Number(run.id), member);
+    if (a?.open_tool != null) return null;
+    const lastSign = Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
+    if (t - lastSign < Number(run.silent_ms ?? SILENT_MS)) return null;
+    return { badge: stalledBadge(`${shownState}, not done ${owes}, no activity for ${Math.round((t - lastSign) / 1000)} s`, lastSign), rule: "silent", owes };
   };
   const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
     const activity = activityShownOf(p, run, presence, withHolder, t);
@@ -2320,7 +2326,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           // board-split D49: stalled is troubleOf's badge alone (a background task or a long call is activity, never
           // stalled); never while paused; a member whose link is down is lost, or about to be
           if (st.badge?.name !== "stalled" || r.paused != null || !presence(st.member).connected) {
-            // F2: the working blink between two waits of one owing span keeps the stalled told; again only after STALLED_AGAIN_MS
+            // F2: the working blink between two waits of one owing span keeps the stalled told; told once per episode (D54)
             const owingSpanOpen = a?.owe_since != null;
             if (stalledAt != null && !owingSpanOpen) {
               if (a) db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run, st.member);
@@ -2330,7 +2336,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             continue;
           }
           const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
-          stalledNow.push({ st, meta, due: stalledAt == null || t - stalledAt >= STALLED_AGAIN_MS });
+          // board-split D54: one alarm per member per episode, never re-fired on a timer; the fact that ends it clears it
+          stalledNow.push({ st, meta, due: stalledAt == null });
         }
         if (livenessLines.length === 1) {
           const [l] = livenessLines;
@@ -2343,13 +2350,13 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             ...(downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}),
           });
         }
-        // D11: the stalled set is told when a member joins it, or again after STALLED_AGAIN_MS: one line naming each
+        // D11: the stalled set is told when a member joins it: one line naming each
         // stalled member, its rule and its move (the members told within the 15 min ride along, their time renewed)
-        // G40: the very set told last, again within STALLED_AGAIN_MS and with no progress since, is not news
+        // G40: the very set told last, with no progress since, is not news
         // (each member with its rule and the moment it last progressed: progress in between makes a new episode, told again)
         const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
         const lastTold = stalledToldOf.get(run);
-        const sameSetTold = lastTold != null && lastTold.set === stalledSet && t - lastTold.at < STALLED_AGAIN_MS;
+        const sameSetTold = lastTold != null && lastTold.set === stalledSet;
         if (stalledNow.some((x) => x.due) && !sameSetTold) {
           stalledToldOf.set(run, { set: stalledSet, at: t });
           if (stalledNow.length === 1) {

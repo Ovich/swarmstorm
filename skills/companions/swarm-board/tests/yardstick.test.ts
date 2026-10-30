@@ -3,12 +3,13 @@
 // M1 and the false alerts are `npm run yardstick` (tests/yardstick.harness.ts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SCENARIOS, play } from "./fixtures/yardstick.ts";
+import { SCENARIOS, STALL_S, play } from "./fixtures/yardstick.ts";
 
 /** id, the bound in s from T0, the rule (or the event) that must tell it. */
 const CORE: [string, number, string][] = [
   ["S5a", 31, "lost"],
-  ["S11-1a", 61, "owing"],
+  // board-split D54: owing in a held wait, told once the stall window passed since its task was delivered
+  ["S11-1a", STALL_S + 61, "owing"],
 ];
 
 /** board-split D49: trouble comes from board facts alone. A turn ended, a background task gone silent or a dev server

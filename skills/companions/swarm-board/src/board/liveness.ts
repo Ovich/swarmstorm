@@ -94,8 +94,6 @@ export const STALL_MS_DEFAULT = 5 * 60 * 1000;
 export const READINGS_KEPT_MS = 10 * 60 * 1000;
 /** A tool call open longer than this keeps its member `busy`, and the orchestrator is told it may be hung (stalled, D46). */
 export const BUSY_MAX_MS = 15 * 60 * 1000;
-/** `stalled <member>` is told again after this, while the member stays `quiet` (D11). */
-export const STALLED_AGAIN_MS = 15 * 60 * 1000;
 /** A member's link closed and not back this long: the member is `gone` (D12). */
 export const LINK_LOST_MS = 30 * 1000;
 /** A member in turn (its last line not an ended turn) is quiet only after this with no line (idea 1, rule 1). */
@@ -129,6 +127,6 @@ export function coreStateOf(m: CoreStateFacts): CoreMemberState {
 /** board-split D36: a seat's state, derived from its member, never set: `ready` none has sat in it, `running` its
  *  member is on the board, `done` its member left; a parked seat is `ready` again, waiting for its dispatch. */
 export type SeatState = "ready" | "running" | "done";
-/** board-split D54: out of any wait, a member owing the open phase reads stalled only after this many stall windows
- *  without a board call (SILENT_MS, 15 min at the default window): a builder codes for minutes without calling the board. */
-export const SILENT_STALL_WINDOWS = 3;
+/** board-split D54 (amended): out of any wait, a member owing the open phase reads stalled only when its transcript has
+ *  not grown and no tool call of its own is open for this long; board-call silence alone is never a stall. */
+export const SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1000;

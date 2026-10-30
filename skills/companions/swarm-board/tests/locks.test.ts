@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { LOCK_HELD_MS } from "../src/board/liveness.ts";
+import { LOCK_HELD_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
 import { observe } from "../src/link/transcripts.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
@@ -170,7 +170,9 @@ test("D8: a holder waiting past stall_ms with another run's member queued: stall
   const held = board.wait(a1, { mentionsOnly: true, timeoutMs: 1500 });
   const base = Date.now();
   board.recordActivity(runA.id, "a1", act({ grewAt: base, openTool: { name: "Bash", target: "node swarm.mjs wait --mentions --as ga/a1", since: base - 1000, boardWait: true } }), new Date(base));
-  for (const s of [30, 61, 62, 120]) board.livenessTick(runB.id, new Date(base + s * 1000), presence);
+  // past the run's stall window (board-split D54: 5 min by default)
+  const stallS = STALL_MS_DEFAULT / 1000;
+  for (const s of [30, stallS + 1, stallS + 2, stallS + 60]) board.livenessTick(runB.id, new Date(base + s * 1000), presence);
   const toB = bodies(oB).filter((b) => /· lock port:4413/.test(b));
   const toA = bodies(oA).filter((b) => /· lock port:4413/.test(b));
   assert.equal(toB.length, 1, toB.join("\n"));

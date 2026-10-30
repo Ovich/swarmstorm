@@ -227,7 +227,7 @@ function coreStateOf(m) {
   if (m.orchestrator) return "waiting";
   return m.inHeldWait ? "waiting" : "working";
 }
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
     "use strict";
@@ -265,15 +265,15 @@ var init_liveness = __esm({
     };
     IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 6e4;
+    STALL_MS_DEFAULT = 5 * 60 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
-    STALLED_AGAIN_MS = 15 * 60 * 1e3;
     LINK_LOST_MS = 30 * 1e3;
     IN_TURN_MS = 120 * 1e3;
     OWE_WAIT_MS = 10 * 60 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
     LOCK_HELD_MS = 10 * 60 * 1e3;
+    SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
   }
 });
 
@@ -2820,8 +2820,8 @@ var init_events2 = __esm({
       "all-done": { name: "all-done" },
       // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
       idle: { name: "idle", toAuthor: true },
-      // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, again every
-      // STALLED_AGAIN_MS while it lasts (swarm-relay D11); no other member is woken. board-split D36: also an orchestrator
+      // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, once per
+      // episode, never again on a timer (swarm-relay D11, board-split D54); no other member is woken. board-split D36: also an orchestrator
       // silent STALE_MS (once, in its run) and a run whose every member is silent (once, to its orchestrator)
       stalled: { name: "stalled", toAuthor: true },
       // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
@@ -3117,6 +3117,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("messages", "event", "event TEXT");
   upkeep("messages", "task_for", "task_for TEXT");
   upkeep("messages", "task_phase", "task_phase TEXT");
+  upkeep("deliveries", "at", "at TEXT");
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   upkeep("seats", "on_events", "on_events TEXT");
   upkeep("seats", "busy_max", "busy_max INTEGER");
@@ -3126,6 +3127,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "paused", "paused TEXT");
   upkeep("runs", "resumed_at", "resumed_at TEXT");
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
+  upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
   upkeep("runs", "base", "base TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
@@ -3371,8 +3373,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const woken = (r) => silentWhilePaused ? eventOf(toMessage(r)) === "urgent" || me.seat !== ORCHESTRATOR2 && eventOf(toMessage(r)) === "pause" : ridesOn(toMessage(r)) ? due.get(me.id, Number(r.seq)) != null : named(toMessage(r)) || wakes(toMessage(r), me, me.subscriptions) || carried2(r) && due.get(me.id, Number(r.seq)) != null;
       const heard = unseen.filter((r) => toMessage(r).run === me.run || woken(r) || carried2(r));
       const rows = silentWhilePaused && fromWait ? heard.some(woken) ? heard.filter(woken) : [] : !mentionsOnly ? heard : !heard.some(woken) ? [] : heard.filter((r) => woken(r) || carried2(r) || whole && ownPost(toMessage(r)));
-      const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
-      for (const r of rows) mark.run(me.id, Number(r.seq));
+      const mark = db.prepare("INSERT INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+      for (const r of rows) mark.run(me.id, Number(r.seq), now());
       const at = now();
       db.prepare("UPDATE participants SET last_call = ? WHERE id = ?").run(at, me.id);
       if (fromWait) {
@@ -3401,8 +3403,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const opened = db.prepare("SELECT seq, meta FROM messages WHERE run = ? AND event = ?").all(p.run, EVENTS.phase.name).filter(
       (r) => r.meta != null && JSON.parse(String(r.meta)).phase === phase
     );
-    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
-    for (const r of opened) mark.run(p.id, Number(r.seq));
+    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+    for (const r of opened) mark.run(p.id, Number(r.seq), now());
   };
   const retentionDays = () => {
     const r = db.prepare("SELECT value FROM settings WHERE name = 'retention-days'").get();
@@ -3597,7 +3599,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
     return { member, state: "working", doing: null, since: progressAtOf(p, run3, a), ...linkDown };
   };
-  const troubleOf = (p, run3, presence, t) => {
+  const taskDeliveredAtOf = (p, run3) => {
+    const r = db.prepare("SELECT d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)").get(Number(p.id), Number(run3.id), `${String(run3.plan)}/${String(p.seat)}`);
+    return r?.at == null ? null : Date.parse(String(r.at));
+  };
+  const troubleOf = (p, run3, presence, t, shownState = "waiting") => {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const link = presence(member);
@@ -3617,22 +3623,27 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (packStall) return { badge: stalledBadge(packStall.reason, packStall.since), rule: "lock" };
     const owes = owedNameOf(p, run3);
     if (owes == null) return null;
+    const taskDeliveredAt = taskDeliveredAtOf(p, run3);
+    if (taskDeliveredAt == null) return null;
     const stallMs = Number(run3.stall_ms ?? STALL_MS_DEFAULT);
-    const resumedAt = Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at)));
+    const resumedAt = Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at)), taskDeliveredAt);
     if (heldSince != null) {
       if (lockWaitOf(Number(p.id), t)) return null;
-      const a = activityOf(Number(run3.id), member);
-      const since = Math.max(a?.owe_since == null ? heldSince : Number(a.owe_since), resumedAt);
+      const a2 = activityOf(Number(run3.id), member);
+      const since = Math.max(a2?.owe_since == null ? heldSince : Number(a2.owe_since), resumedAt);
       if (t - since < stallMs) return null;
-      return { badge: stalledBadge(`waiting, not done ${owes}, ${Math.round((t - since) / 1e3)} s`, since), rule: "owing", owes };
+      return { badge: stalledBadge(`${shownState}, not done ${owes}, ${Math.round((t - since) / 1e3)} s`, since), rule: "owing", owes };
     }
-    const lastCall = Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
-    if (t - lastCall < stallMs) return null;
-    return { badge: stalledBadge(`not done ${owes}, no board call for ${Math.round((t - lastCall) / 1e3)} s`, lastCall), rule: "silent", owes };
+    const a = activityOf(Number(run3.id), member);
+    if (a?.open_tool != null) return null;
+    const lastSign = Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
+    if (t - lastSign < Number(run3.silent_ms ?? SILENT_MS)) return null;
+    return { badge: stalledBadge(`${shownState}, not done ${owes}, no activity for ${Math.round((t - lastSign) / 1e3)} s`, lastSign), rule: "silent", owes };
   };
   const stateOf = (p, run3, t, presence, withHolder = true) => {
-    const trouble = troubleOf(p, run3, presence, t);
-    return { ...activityShownOf(p, run3, presence, withHolder, t), badge: trouble?.badge ?? null, ...trouble?.rule ? { rule: trouble.rule } : {}, ...trouble?.owes ? { owes: trouble.owes } : {} };
+    const activity = activityShownOf(p, run3, presence, withHolder, t);
+    const trouble = troubleOf(p, run3, presence, t, activity.state);
+    return { ...activity, badge: trouble?.badge ?? null, ...trouble?.rule ? { rule: trouble.rule } : {}, ...trouble?.owes ? { owes: trouble.owes } : {} };
   };
   const stalledBadge = (reason, since) => ({ name: "stalled", reason, since });
   const minutes = (ms2) => Math.round(ms2 / 6e4);
@@ -4029,7 +4040,17 @@ async function openBoard(dbPath = SQLITE_PATH) {
     subscribe(p, subs) {
       const fresh = live(p);
       const kept = fresh.subscriptions.filter((o) => !subs.some((s) => sameSub(o, s) && o.carry && !s.carry));
-      return setSubs(fresh, [...kept, ...subs.filter((s) => !kept.some((o) => sameSub(o, s)))]);
+      const next = [...kept, ...subs.filter((s) => !kept.some((o) => sameSub(o, s)))];
+      return transaction(() => {
+        const before = fresh.subscriptions;
+        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+        for (const r of unseenRows(fresh)) {
+          const m = toMessage(r);
+          const reachedBefore = mentions(m, fresh) || wakes(m, fresh, before) || carries(m, fresh, before);
+          if (!reachedBefore && (wakes(m, fresh, next) || carries(m, fresh, next))) mark.run(fresh.id, m.seq, now());
+        }
+        return setSubs(fresh, next);
+      });
     },
     unsubscribe(p, subs) {
       const fresh = live(p);
@@ -4064,7 +4085,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const unknown = only.filter((s) => s === ORCHESTRATOR2 || !db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         const since = Number(db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name).s ?? 0);
-        const tasks = db.prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq").all(fresh.run, since, ORCHESTRATOR2).map((m) => ({ seq: Number(m.seq), seats: JSON.parse(String(m.mentions ?? "[]")).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR2}`)).filter((t) => !only.length || only.includes(seatOf(t))) })).filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
+        const tasks = db.prepare("SELECT MAX(seq) AS seq, task_for FROM messages WHERE run = ? AND seq > ? AND task_for IS NOT NULL GROUP BY task_for ORDER BY seq").all(fresh.run, since).map((m) => ({ seq: Number(m.seq), seats: [String(m.task_for)] })).filter((m) => !only.length || only.includes(seatOf(m.seats[0]))).filter((m) => !new RegExp(`#${m.seq}(?![0-9])`).test(said));
         const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
@@ -4164,8 +4185,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       return transaction(() => {
         const me = participantById(fresh.id);
         const held = unseenRows(me).map(toMessage).filter((m) => m.run === me.run && (mentions(m, me) || wakes(m, me, me.subscriptions) || carries(m, me, me.subscriptions)));
-        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
-        for (const m of held) mark.run(me.id, m.seq);
+        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+        for (const m of held) mark.run(me.id, m.seq, now());
         db.prepare("UPDATE runs SET paused = NULL, paused_person = 0, resumed_at = ?, stall_posts = 0 WHERE id = ?").run(now(), fresh.run);
         const message = insertMessage(fresh, `resume: continue${said ? `: ${said}` : ""}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.resume.name });
         return { ...message, held: held.map(messageLine) };
@@ -4343,7 +4364,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             continue;
           }
           const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
-          stalledNow.push({ st, meta, due: stalledAt == null || t - stalledAt >= STALLED_AGAIN_MS });
+          stalledNow.push({ st, meta, due: stalledAt == null });
         }
         if (livenessLines.length === 1) {
           const [l] = livenessLines;
@@ -4358,7 +4379,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         }
         const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
         const lastTold = stalledToldOf.get(run3);
-        const sameSetTold = lastTold != null && lastTold.set === stalledSet && t - lastTold.at < STALLED_AGAIN_MS;
+        const sameSetTold = lastTold != null && lastTold.set === stalledSet;
         if (stalledNow.some((x) => x.due) && !sameSetTold) {
           stalledToldOf.set(run3, { set: stalledSet, at: t });
           if (stalledNow.length === 1) {
@@ -4533,7 +4554,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     read(seq, by) {
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq);
       if (!r) throw new Error(`unknown message #${seq}`);
-      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)").run(by.id, seq);
+      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)").run(by.id, seq, now());
       return toMessage(r);
     },
     deliver(p) {
@@ -9495,7 +9516,10 @@ var CODE_WORDING = {
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
   guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
-  mergeGranted: (cli, as, guidesForm) => `granted: merge, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+  mergeGranted: (cli, as, guidesForm) => (
+    // board-split D52: the full suite ran before the lock; under it only rebase, quick check, fast-forward
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`
+  ),
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
   mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
