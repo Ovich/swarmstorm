@@ -253,3 +253,15 @@ test("golden V-45: close while a member holds the merge lock names it: its merge
   const closed = ok("close", "--run", run);
   assert.ok(closed.includes("g/w1 held the merge lock: its merge did not land; the lock is released, its branch keeps the work"), closed);
 });
+
+test("golden V-50 (D63): a run opened on no branch names its base as a commit, and says so; a branch is named by its name", () => {
+  git(repo, "checkout", "-q", "--detach");
+  const base = git(repo, "rev-parse", "HEAD");
+  const run = open("task", "g", ["w1"]);
+  join(run, "g", "w1");
+  fs.writeFileSync(path.join(wt(run, "w1"), "c.txt"), "c\n");
+  git(wt(run, "w1"), "add", ".");
+  git(wt(run, "w1"), "commit", "-q", "-m", "c");
+  const closed = ok("close", "--run", run);
+  assert.ok(closed.includes(`has 1 commit not merged into commit ${base.slice(0, 8)} (the run's base; it was opened on no branch)`), closed);
+});

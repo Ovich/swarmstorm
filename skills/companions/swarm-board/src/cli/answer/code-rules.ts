@@ -30,6 +30,11 @@ const MERGE_LOCK = "merge-lock";
 /** The line under a code event for `me`; null for one that asks nothing of it; undefined for an event not the code
  *  pack's (the core words it). */
 export function codeEventStep(m: Message, me: Participant, cli: string, event: EventName | null = eventOf(m)): string | null | undefined {
+  if (event === "merged") {
+    // V-49: a merge that frees the lock gives each member refused it the merge-lock command, as the lost path does
+    const free = m.meta && "free" in m.meta ? (m.meta.free ?? []) : [];
+    return free.includes(me.name) ? CW.mergeLockFree(cli, shellWord(me.name)) : null;
+  }
   if (event === "unlocked") {
     // board-split V-22: the merge lock freed from a lost holder: a waiter's step is the merge-lock command; the
     // orchestrator's lost alarm already told it

@@ -97,3 +97,15 @@ test("golden V-46: a member queued on the merge lock, its wait held, reads waiti
   assert.equal(st.doing, "lock merge, held by g/w2");
   await held;
 });
+
+test("golden V-49: a merge that frees the lock gives the member refused it the merge-lock command, as the lost path does", () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
+  codeVerbs(board).lockMerge(w2);
+  codeVerbs(board).lockMerge(w1);
+  codeVerbs(board).merged(w2, "abc1234", []);
+  const merged = board.snapshot(REPO).events.find((e) => e.event === "merged")!;
+  assert.equal(eventStep(merged as never, w1, "swarm"), "it is free: take it now: swarm merge-lock --as g/w1");
+  assert.equal(eventStep(merged as never, board.participant("g/orchestrator")!, "swarm"), null);
+});

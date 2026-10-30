@@ -67,6 +67,13 @@ function ensureWorktree(cwd: string, repo: string, runId: number, group: string,
   return { path: at, branch, reused: false };
 }
 
+/** V-50 (D63): the run's target as a reader names it: the branch; a commit only when the run was opened on no branch,
+ *  said so. */
+function targetName(cwd: string, into: string): string {
+  if (git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", `refs/remotes/origin/${into}`) !== null) return into;
+  return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
+}
+
 /** Why the worktree cannot go yet: uncommitted changes, or commits not in `into`; null when it can (or is gone). */
 function leftover(wt: string, into: string | null): string | null {
   if (!fs.existsSync(wt)) return null;
@@ -79,7 +86,7 @@ function leftover(wt: string, into: string | null): string | null {
   if (!isAncestor(wt, "HEAD", intoRef)) {
     // board-split D63: the branch by name and how many commits, never a bare sha
     const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
-    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${into}`;
+    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${targetName(wt, into)}`;
   }
   return null;
 }

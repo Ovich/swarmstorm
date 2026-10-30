@@ -476,7 +476,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           ids.delete(me.id);
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
-        const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
+        const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...(waiters.length ? { free: waiters } : {}) };
         insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: CODE_EVENTS.merged.name, meta });
         // the merge, for the stats: its files and conflicts, null for unknown (D25)
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(

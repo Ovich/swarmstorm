@@ -10,7 +10,8 @@ export type Flag = { path: string; holder: string; seq: number };
 
 /** What a merged event told, as data (D11): `rebase` holds or declared a changed file, `tell` is whom to tell of a resolved conflict,
  *  of a conflicted path only once the conflicts are known (D5). */
-export type MergedMeta = { rebase: string[]; tell: string[] };
+/** `free` (V-49): the members refused the merge lock, told it is free by this merge, as its body says. */
+export type MergedMeta = { rebase: string[]; tell: string[]; free?: string[] };
 
 /** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
 export interface MemberWorktree {

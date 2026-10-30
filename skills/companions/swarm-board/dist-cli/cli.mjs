@@ -618,7 +618,7 @@ function claimsOf(deps) {
           ids.delete(me.id);
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
-        const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))] };
+        const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...waiters.length ? { free: waiters } : {} };
         insertMessage(me, lines.join("\n"), null, "event", [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters, ...all2])], { event: CODE_EVENTS.merged.name, meta });
         db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(
           me.id,
@@ -2150,6 +2150,10 @@ function ensureWorktree(cwd, repo, runId, group, seat, base) {
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
 }
+function targetName(cwd, into) {
+  if (git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", `refs/remotes/origin/${into}`) !== null) return into;
+  return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
+}
 function leftover(wt, into) {
   if (!fs6.existsSync(wt)) return null;
   const status = run2(wt, "status", "--porcelain", "--untracked-files=all");
@@ -2160,7 +2164,7 @@ function leftover(wt, into) {
   const intoRef = baseRef(wt, into);
   if (!isAncestor(wt, "HEAD", intoRef)) {
     const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
-    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${into}`;
+    return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${targetName(wt, into)}`;
   }
   return null;
 }
@@ -10114,6 +10118,10 @@ function claimHeldLine(me, cli, held) {
 }
 var MERGE_LOCK2 = "merge-lock";
 function codeEventStep(m, me, cli, event = eventOf(m)) {
+  if (event === "merged") {
+    const free = m.meta && "free" in m.meta ? m.meta.free ?? [] : [];
+    return free.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
+  }
   if (event === "unlocked") {
     if (!m.meta || !("unlocked" in m.meta) || m.meta.unlocked !== MERGE_LOCK2) return void 0;
     return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
