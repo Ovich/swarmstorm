@@ -10,7 +10,7 @@ import path from "node:path";
 import { openBoard, type Board, type Delivery, type Participant, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { SCENARIOS, play, steps } from "./fixtures/yardstick.ts";
-import { SILENT_MS } from "../src/board/liveness.ts";
+import { BUSY_MAX_MS, SILENT_MS } from "../src/board/liveness.ts";
 
 const SILENT_S = SILENT_MS / 1000;
 import { eventStep } from "../src/cli/answer/rules.ts";
@@ -169,7 +169,7 @@ test("f: owing its task, a background listener returning then silence: stalled S
   assert.ok(!/recovered/.test(r.events), r.events);
 });
 
-test("G39, board-split D31, D49: a member owing its phase that waits on a background task of its own is busy on it, and stalled owing past the stall time from the held wait, never from the task", async () => {
+test("G39, board-split D31, D55 amended (O-F3): a member owing its phase that waits on a background task of its own is busy on it, never held-wait stalled; stalled only once the task shows no growth past BUSY_MAX", async () => {
   const { run, m, orch } = setup(["a"]);
   board.phase(orch, "p1", "go");
   taskTo(orch, m.a);
@@ -182,9 +182,13 @@ test("G39, board-split D31, D49: a member owing its phase that waits on a backgr
   assert.deepEqual([early.state, early.badge], ["busy", null]);
   tick2(board, run.id, at(base, 90), presence);
   const late = board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")!;
-  assert.deepEqual([late.state, late.badge?.name, late.rule], ["busy", "stalled", "owing"]);
-  // U-F28: the reason names the state the card shows
-  assert.match(late.badge?.reason ?? "", /^waiting, not done p1, in a wait \d+ (s|min)$/);
+  assert.deepEqual([late.state, late.badge], ["busy", null]);
+  const hungS = BUSY_MAX_MS / 1000 + 2;
+  tick2(board, run.id, at(base, hungS), presence);
+  const hung = board.memberStates(run.id, at(base, hungS)).find((x) => x.member === "a")!;
+  assert.deepEqual([hung.badge?.name, hung.rule], ["stalled", "call"]);
+  // U-F28: the reason names the state the card shows, then the busy bound's fact
+  assert.match(hung.badge?.reason ?? "", /not done p1, a background task, no growth \d+ (s|min)$/);
   board.post(orch, "@a go");
   await held;
 });

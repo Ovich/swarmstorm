@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { LOST_MS } from "../src/board/liveness.ts";
+import { BUSY_MAX_MS, LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { tick2 } from "./fixtures/tick2.ts";
@@ -95,7 +95,7 @@ test("2: the agent ends mid-wait, not parked: lost once its link is lost past LO
   assert.equal(events("lost").length, 1);
 });
 
-test("3: a background task of its own while in a board wait: busy activity, no badge; owing the open phase past the stall time, stalled from the held wait", async () => {
+test("3: a background task of its own while in a board wait: busy activity, no badge; owing the open phase past the stall time, never held-wait stalled; stalled only past BUSY_MAX with no growth (D55 amended, O-F3)", async () => {
   const { run, b, orch } = setup();
   board.phase(orch, "p1", "go", { for: ["b"] });
   // board-split D54: the owing clock starts at b's own task, delivered
@@ -109,11 +109,16 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   assert.equal(early.badge, null);
   const ticked = board.memberStates(run.id, new Date()).find((s) => s.member === "b")!;
   assert.match(ticked.doing ?? "", /background npm test/);
-  // past the stall time, still in the wait, owing p1
+  // past the stall time, still in the wait, owing p1: busy on its own task, no badge
   const lateAt = new Date(Date.now() + 6000);
   tick2(board, run.id, lateAt, presence);
   const late = board.memberStates(run.id, lateAt).find((s) => s.member === "b")!;
-  assert.deepEqual([late.badge?.name, late.rule, late.owes], ["stalled", "owing", "p1"]);
+  assert.equal(late.badge, null);
+  // its task with no growth past BUSY_MAX: stalled by the busy bound
+  const hungAt = new Date(now + BUSY_MAX_MS + 2000);
+  tick2(board, run.id, hungAt, presence);
+  const hung = board.memberStates(run.id, hungAt).find((s) => s.member === "b")!;
+  assert.deepEqual([hung.badge?.name, hung.rule, hung.owes], ["stalled", "call", "p1"]);
   board.post(orch, "@b go");
   await held;
 });
