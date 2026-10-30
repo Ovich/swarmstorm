@@ -11,6 +11,7 @@ import { openBoard, type Board, type Participant, type Presence } from "../src/b
 import { LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/status/.git";
 let dir: string;
@@ -35,7 +36,7 @@ const agentEnds = (run: number, seat: string, ago = LOST_MS + 1000) => {
   board.recordActivity(run, seat, act({ grewAt: Date.now() - ago, finished: true }), new Date());
   links.set(seat, { connected: false, lostAt: Date.now() - ago });
 };
-const tick = (run: number) => board.livenessTick(run, new Date(), presence);
+const tick = (run: number) => tick2(board, run, new Date(), presence);
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
 
 /** What every reader shows of `member` now: one state and one badge, or the readers disagree. */
@@ -109,7 +110,9 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   const ticked = board.memberStates(run.id, new Date()).find((s) => s.member === "b")!;
   assert.match(ticked.doing ?? "", /background npm test/);
   // past the stall time, still in the wait, owing p1
-  const late = board.memberStates(run.id, new Date(Date.now() + 6000)).find((s) => s.member === "b")!;
+  const lateAt = new Date(Date.now() + 6000);
+  tick2(board, run.id, lateAt, presence);
+  const late = board.memberStates(run.id, lateAt).find((s) => s.member === "b")!;
   assert.deepEqual([late.badge?.name, late.rule, late.owes], ["stalled", "owing", "p1"]);
   board.post(orch, "@b go");
   await held;

@@ -11,6 +11,7 @@ import { openRawStore } from "./fixtures/raw-store.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -65,7 +66,7 @@ test("rows 3, 4, 16: parked holds over a lost link, an ended agent and a block; 
   board.park(orch, "a", "p2");
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000, finished: true }), new Date(base));
-  board.livenessTick(run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  tick2(board, run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "parked", null);
   board.block(orch, "a", "the person picks");
   pins("g/a", "parked", null);
@@ -124,7 +125,7 @@ test("rows 12, 13: link lost or agent gone, not parked: its state, badge lost", 
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", "lost");
 });
 
@@ -148,7 +149,7 @@ test("A1-2: parked after a lost was told: no lost in composition or progress", (
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "lost");
   board.park(orch, "a");
   // U-F4: the join answer's head lines (the composition) say parked, as the roster does
@@ -183,15 +184,15 @@ test("D53: a member still calling the board, or a fresh seating, is never lost o
   const linkGone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m));
   // its link long lost, yet it calls the board: not lost
   board.setDoing(a, "still here");
-  board.livenessTick(run.id, new Date(base), linkGone);
+  tick2(board, run.id, new Date(base), linkGone);
   pins("g/a", "working", null);
   // silent long after: lost
   quietMember(path.join(dir, "swarm.sqlite"), "a");
-  board.livenessTick(run.id, new Date(base), linkGone);
+  tick2(board, run.id, new Date(base), linkGone);
   pins("g/a", "working", "lost");
   // a new agent seated in it (a rejoin): the old link's loss is not its own, and it is calling
   board.join({ run: run.id, seat: "a", doing: "fresh", files: [] });
-  board.livenessTick(run.id, new Date(base), linkGone);
+  tick2(board, run.id, new Date(base), linkGone);
   pins("g/a", "working", null);
   void orch;
 });
@@ -201,12 +202,12 @@ test("D53, D55: a link-less member whose transcript still grows, as its link las
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   const base = Date.now();
   board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", null);
 });
 
-test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'holds the merge lock N min'", () => {
-  const { a } = setup();
+test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'merging, holds the merge lock N min'", () => {
+  const { run, a } = setup();
   codeVerbs(board).lockMerge(a);
   pins("g/a", "merging", null);
   const raw = openRawStore(path.join(dir, "swarm.sqlite"));
@@ -215,8 +216,9 @@ test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'holds 
   } finally {
     raw.close();
   }
+  tick2(board, run.id, new Date(), linked);
   pins("g/a", "merging", "stalled");
-  assert.match(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge!.reason, /^holds the merge lock 11 min$/);
+  assert.match(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge!.reason, /^merging, holds the merge lock 11 min$/);
 });
 
 test("roster: a parked member carries the phase it is parked until", () => {
@@ -237,12 +239,12 @@ test("U-F20: a badge that comes with time alone is a change the readers redraw o
     }
   };
   const base = Date.now();
-  board.livenessTick(run.id, new Date(base), linked);
+  tick2(board, run.id, new Date(base), linked);
   const before = version();
-  board.livenessTick(run.id, new Date(base), linked);
+  tick2(board, run.id, new Date(base), linked);
   assert.equal(version(), before, "nothing changed, nothing told");
   // the badge comes with time alone: the version moves
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.ok(version() > before);
   pins("g/a", "working", "lost");
 });

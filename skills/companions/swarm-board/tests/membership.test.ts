@@ -10,6 +10,7 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { worktrees } from "../src/packs/code/worktrees.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -37,7 +38,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const t = Date.now() + 60_000;
   const lost: Presence = () => ({ connected: false, lostAt: t - 120_000 });
   board.recordActivity(run.id, "a", act({ grewAt: t - 120_000, finished: true }), new Date(t));
-  board.livenessTick(run.id, new Date(t), lost);
+  tick2(board, run.id, new Date(t), lost);
   assert.equal(events("lost").length, 2, "both told lost");
   board.end(a);
   const joinedBefore = events("joined").length;
@@ -46,7 +47,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const fresh: Presence = (m) => (m === "a" ? { connected: false, lostAt: null } : { connected: false, lostAt: t - 120_000 });
   // a second after the re-join, on the store's own clock (U-F3: no link LOST_MS after a join is lost)
   const soon = new Date(Date.now() + 1000);
-  board.livenessTick(run.id, soon, fresh);
+  tick2(board, run.id, soon, fresh);
   const st = board.memberStates(run.id, soon).find((s) => s.member === "a")!;
   assert.notEqual(st.badge?.name, "lost");
   assert.equal(events("joined").length, joinedBefore + 1, "one joined event per re-join");

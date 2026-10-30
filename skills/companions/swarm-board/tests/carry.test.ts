@@ -10,6 +10,7 @@ import { openBoard, type Board, type Delivery, type Participant, type Presence }
 import { CARRY_MAX_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/carry/.git";
 let dir: string;
@@ -55,7 +56,7 @@ const arrive = (run: number, tag: string) => {
   return board.join({ run, seat: tag, doing: tag, files: [] }).member;
 };
 /** A tick past the carry deadline, on the tick's own clock. */
-const pastDeadline = (run: number, from = Date.now()) => board.livenessTick(run, new Date(from + CARRY_MAX_MS + 1000), presence);
+const pastDeadline = (run: number, from = Date.now()) => tick2(board, run, new Date(from + CARRY_MAX_MS + 1000), presence);
 
 test("B1: three merges, each with its report (merged --report): 3 wakes, each the report alone; the merged event never reaches the orchestrator", async () => {
   const { run, m, orch } = setup();
@@ -128,7 +129,7 @@ test("B4, B10: a lone carried joined wakes the waiting orchestrator by the tick 
   const { run, m, orch } = setup();
   arrive(run.id, "abc123");
   const held = waitOf(orch, 3000);
-  board.livenessTick(run.id, new Date(Date.now() + CARRY_MAX_MS - 5000), presence);
+  tick2(board, run.id, new Date(Date.now() + CARRY_MAX_MS - 5000), presence);
   pastDeadline(run.id);
   const d = await held;
   assert.equal(d.lines.filter((l) => /joined.*abc123/.test(l)).length + d.full.filter((x) => /joined.*abc123/.test(x.body)).length, 1, all(d));
@@ -174,7 +175,7 @@ test("B5: with no phase open, the first idle wakes", async () => {
   const { run, m, orch } = setup(["w1", "w2"]);
   const t = new Date();
   const waits = allWaiting(run.id, ["w1", "w2"], m, t);
-  board.livenessTick(run.id, t, presence);
+  tick2(board, run.id, t, presence);
   assert.match(all(await waitOf(orch, 150)), /^idle/m);
   await waits;
 });
@@ -187,7 +188,7 @@ test("B5, B9: the first idle after all-done was told is carried, and wakes by th
   assert.match(all(await waitOf(orch, 150)), /all done p/);
   const t = new Date();
   const waits = allWaiting(run.id, ["w1", "w2"], m, t);
-  board.livenessTick(run.id, t, presence);
+  tick2(board, run.id, t, presence);
   assert.equal(woke(await waitOf(orch, 150)), false, "the idle after all-done is carried");
   const idles = board.snapshot(REPO).events.filter((e) => e.event === "idle");
   assert.equal(idles.length, 1, "the carried idle is posted");
@@ -211,7 +212,7 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   board.done(m.w2, "p");
   board.recordActivity(run.id, "w2", act({ grewAt: base }), new Date(base));
   links.set("w2", { connected: false, lostAt: base });
-  for (const s of [31, 600, 1800]) board.livenessTick(run.id, new Date(base + s * 1000), presence);
+  for (const s of [31, 600, 1800]) tick2(board, run.id, new Date(base + s * 1000), presence);
   assert.equal(woke(await waitOf(orch, 200)), false, "0 wakes while paused");
   const urgent = waitOf(orch, 2000);
   board.post(m.w1, "the build is on fire", { kind: "urgent" });
@@ -222,7 +223,7 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   for (const said of ["joined: aaa111", "all done p", "lost g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
   // g1: still lost after the resume, told once
   assert.equal(board.memberStates(run.id, new Date(base + 1801_000)).find((s) => s.member === "w2")!.badge?.name, "lost");
-  board.livenessTick(run.id, new Date(base + 1802_000), presence);
+  tick2(board, run.id, new Date(base + 1802_000), presence);
   assert.equal(/lost g\/w2/.test(all(board.deliver(orch))), false, "the held gone is not told again");
 });
 
@@ -236,7 +237,7 @@ test("d3's guard g3: a carried message held through a pause wakes within the res
   board.deliver(orch);
   arrive(run.id, "ccc333");
   const resumedAt = Date.now();
-  board.livenessTick(run.id, new Date(resumedAt + 1000), presence);
+  tick2(board, run.id, new Date(resumedAt + 1000), presence);
   assert.equal(woke(await waitOf(orch, 150)), false, "not at once after the resume");
   const held = waitOf(orch, 2000);
   pastDeadline(run.id, resumedAt);

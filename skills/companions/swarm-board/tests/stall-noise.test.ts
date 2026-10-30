@@ -14,6 +14,7 @@ import { SILENT_MS } from "../src/board/liveness.ts";
 
 const SILENT_S = SILENT_MS / 1000;
 import { eventStep } from "../src/cli/answer/rules.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/noise/.git";
@@ -41,6 +42,9 @@ const setup = (ids: string[], group = "g") => {
   const m = Object.fromEntries(ids.map((id) => [id, board.join({ run: run.id, seat: id, doing: "x", files: [] }).member])) as Record<string, Participant>;
   const orch = board.participant(`${group}/orchestrator`)!;
   for (const p of [...Object.values(m), orch]) board.deliver(p);
+  // each link spoke once, nothing grown: no 'no transcript' line opens the alert window ahead of the stalled one
+  // (board-split D55: a stalled opens at a tick's second reading, after the first tick's own alerts)
+  for (const id of ids) board.recordActivity(run.id, id, act(), new Date());
   return { run, m, orch };
 };
 
@@ -71,13 +75,14 @@ test("b: a stalled is never carried: it wakes the orchestrator at once, the carr
   board.addSeat(run.id, { id: "late1", blockers: [] });
   board.addSeat(run.id, { id: "late1-spare", blockers: [] });
   board.join({ run: run.id, seat: "late1", doing: "late1", files: [] }).member;
+  board.recordActivity(run.id, "late1", act(), new Date());
   assert.equal((await waitOf(orch)).full.length, 0, "the joined alone is carried");
   // board-split D49: w1 alone owes the open phase (`--for`), with no board call
   board.phase(orch, "p1", "your part", { for: ["w1"] });
   taskTo(orch, board.participant("g/w1")!);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, run.id, at(base, SILENT_S + 1), presence);
   const d = await held;
   assert.match(all(d), /stalled g\/w1/);
   assert.match(all(d), /late1/, "the carried joined rides on the stalled's wake");
@@ -88,7 +93,7 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   oweP1(run.id, orch, [m.d]);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, run.id, at(base, SILENT_S + 1), presence);
   const d = await held;
   assert.equal(d.full.filter((x) => x.body.startsWith("stalled")).length, 1);
   const s = stalled();
@@ -99,11 +104,11 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   const move = stepOf("stalled")({ ...board.read(s[0].seq), meta: { ...members[0], members } }, orch, "swarm")!;
   assert.match(move, /^a: swarm post .*your part of p1.*; b: ask it: swarm post .*your part of p1.*; c: ask OT·w9 to unlock port:1/);
   // the same set: no repeat within 15 min
-  for (const t of [SILENT_S + 5, SILENT_S + 60, SILENT_S + 600]) board.livenessTick(run.id, at(base, t), presence);
+  for (const t of [SILENT_S + 5, SILENT_S + 60, SILENT_S + 600]) tick2(board, run.id, at(base, t), presence);
   assert.equal(stalled().length, 1);
   // the same three, 15 min on and more: never repeated on a timer (board-split D54: once per episode)
-  board.livenessTick(run.id, at(base, SILENT_S + 15 * 60), presence);
-  board.livenessTick(run.id, at(base, SILENT_S + 45 * 60), presence);
+  tick2(board, run.id, at(base, SILENT_S + 15 * 60), presence);
+  tick2(board, run.id, at(base, SILENT_S + 45 * 60), presence);
   assert.equal(stalled().length, 1);
 });
 
@@ -111,7 +116,7 @@ test("d: a stalled member that is then mentioned and acts (done) draws no repeat
   const { run, m, orch } = setup(["a"]);
   oweP1(run.id, orch);
   const base = Date.now();
-  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled().length, 1);
   board.post(orch, "@a your report?");
   board.deliver(m.a);
@@ -120,7 +125,7 @@ test("d: a stalled member that is then mentioned and acts (done) draws no repeat
   board.done(m.a, "p1");
   for (let s = SILENT_S + 5; s <= SILENT_S + 20 * 60; s += 3) {
     board.recordActivity(run.id, "a", act({ grewAt: base + s * 1000 }), at(base, s));
-    board.livenessTick(run.id, at(base, s), presence);
+    tick2(board, run.id, at(base, s), presence);
   }
   assert.equal(stalled().length, 1);
 });
@@ -135,8 +140,8 @@ test("e: another run's stalled member never wakes this run's orchestrator", asyn
   board.recordActivity(one.run.id, "a", act({ grewAt: base }), at(base, 0));
   board.recordActivity(two.run.id, "b", act({ grewAt: base }), at(base, 0));
   const held = waitOf(one.orch, 400);
-  board.livenessTick(one.run.id, at(base, SILENT_S + 1), presence);
-  board.livenessTick(two.run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, one.run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, two.run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled(two.run.id).length, 1);
   assert.equal(all(await held), "", "one's orchestrator is not woken by two's stall");
   assert.deepEqual(stalled(two.run.id)[0].mentions, ["two/orchestrator"]);
@@ -172,12 +177,14 @@ test("G39, board-split D31, D49: a member owing its phase that waits on a backgr
   const base = Date.now();
   const held = waitOf(m.a, 3000);
   board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: true, openTool: { name: "Bash", target: "swarm wait", since: base, boardWait: true, shell: true }, background: { target: "npm test", since: base, outputGrewAt: base } }), at(base, 0));
+  tick2(board, run.id, at(base, 2), presence);
   const early = board.memberStates(run.id, at(base, 2)).find((x) => x.member === "a")!;
   assert.deepEqual([early.state, early.badge], ["busy", null]);
+  tick2(board, run.id, at(base, 90), presence);
   const late = board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")!;
   assert.deepEqual([late.state, late.badge?.name, late.rule], ["busy", "stalled", "owing"]);
   // U-F22: the reason names the state the card shows
-  assert.match(late.badge?.reason ?? "", /^busy, not done p1, \d+ s$/);
+  assert.match(late.badge?.reason ?? "", /^busy, not done p1, in a wait \d+ (s|min)$/);
   board.post(orch, "@a go");
   await held;
 });
@@ -187,11 +194,11 @@ test("G40: the same stalled set, no member progressed since, is never told again
   oweP1(run.id, orch);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: false, lastTool: "Bash x" }), at(base, 0));
-  board.livenessTick(run.id, at(base, SILENT_S + 1), presence);
+  tick2(board, run.id, at(base, SILENT_S + 1), presence);
   assert.equal(stalled(run.id).length, 1);
   // a link blip clears its stalled mark; nothing progressed, the same silence again
-  board.livenessTick(run.id, at(base, SILENT_S + 2), () => ({ connected: false, lostAt: base + (SILENT_S + 2) * 1000 }));
-  board.livenessTick(run.id, at(base, SILENT_S + 5), presence);
-  board.livenessTick(run.id, at(base, SILENT_S + 25 * 60), presence);
+  tick2(board, run.id, at(base, SILENT_S + 2), () => ({ connected: false, lostAt: base + (SILENT_S + 2) * 1000 }));
+  tick2(board, run.id, at(base, SILENT_S + 5), presence);
+  tick2(board, run.id, at(base, SILENT_S + 25 * 60), presence);
   assert.equal(stalled(run.id).length, 1, "not repeated");
 });

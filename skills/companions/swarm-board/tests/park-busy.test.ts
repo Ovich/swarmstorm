@@ -12,6 +12,7 @@ import { eventStep } from "../src/cli/answer/rules.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { observe } from "../src/link/transcripts.ts";
 import { toolCall, writeMain } from "./fixtures/transcripts.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -73,7 +74,7 @@ test("D30: a parked member draws no gone, stalled or idle, all-done does not wai
   // b's link is lost long ago and its turn ended: no gone, no stalled for it
   const base = Date.now();
   board.recordActivity(run.id, "b", act({ grewAt: base - 600_000, inTurn: false }), at(base, 0));
-  board.livenessTick(run.id, at(base, 120), (m) => (m === "b" ? lost(base - 600_000)(m) : linked(m)));
+  tick2(board, run.id, at(base, 120), (m) => (m === "b" ? lost(base - 600_000)(m) : linked(m)));
   assert.deepEqual([...eventsOf("lost"), ...eventsOf("stalled"), ...eventsOf("liveness")].filter((e) => e.body.includes("g/b")), []);
   // all-done counts a alone
   const done = board.done(a, "p1");
@@ -107,7 +108,7 @@ test("D30: every member but a parked one waiting is idle; every member parked is
   const base = Date.now();
   const held = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "swarm wait --mentions", since: base, boardWait: true } }), at(base, 0));
-  board.livenessTick(run.id, at(base, 1), linked);
+  tick2(board, run.id, at(base, 1), linked);
   assert.equal(eventsOf("idle").length, 1);
   await held;
 });
@@ -121,11 +122,11 @@ test("S22 (board-split D25, D55): a fresh agent re-joining a seat joined long ag
   board.recordActivity(run.id, "b", act({ grewAt: Date.now(), finished: true }), new Date());
   const rejoinedAt = Date.now();
   board.join({ run: run.id, seat: "b", doing: "again", files: [] });
-  board.livenessTick(run.id, new Date(rejoinedAt + 1000), linked);
+  tick2(board, run.id, new Date(rejoinedAt + 1000), linked);
   const noteOfB = () => board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.liveness?.note;
   assert.equal(noteOfB(), undefined, "measured from the re-join, not the seat's first join");
   quietMember(path.join(dir, "swarm.sqlite"), "b", 31_000);
-  board.livenessTick(run.id, new Date(rejoinedAt + 31_000), linked);
+  tick2(board, run.id, new Date(rejoinedAt + 31_000), linked);
   assert.equal(noteOfB(), "no transcript found: its state is presence only", "a note 30 s after the re-join");
   assert.deepEqual(eventsOf("liveness"), [], "never an alarm");
   void b;

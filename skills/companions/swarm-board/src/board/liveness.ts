@@ -100,10 +100,6 @@ export const BUSY_MAX_MS = 15 * 60 * 1000;
 export const LOST_MS = 60 * 1000;
 /** board-split D55: a link's heartbeat, a sign of life each time: the card's freshness, a fact on it within seconds (D55 (6)). */
 export const HEARTBEAT_MS = 5 * 1000;
-/** A member in turn (its last line not an ended turn) is quiet only after this with no line (idea 1, rule 1). */
-export const IN_TURN_MS = 120 * 1000;
-/** A member waiting on the board while it owes the open phase is `quiet · waiting, not done` once its owing span is this long (idea 1, rule 5). */
-export const OWE_WAIT_MS = 10 * 60 * 1000;
 /** A carried message pending this long (from its post, or from the resume) is due: it wakes its member by itself (idea 2). */
 export const CARRY_MAX_MS = 5 * 60 * 1000;
 /** A named lock others wait on, held this long since its first waiter queued, is `stalled · lock` to both orchestrators (idea 4). */

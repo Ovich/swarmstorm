@@ -9,6 +9,7 @@ import path from "node:path";
 import { openBoard, progressText, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { LOST_MS } from "../src/board/liveness.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -47,7 +48,7 @@ const goneD = (run: number, base: number, s = 1) => {
   quietMember(path.join(dir, "swarm.sqlite"), "d");
   board.recordActivity(run, "d", act({ grewAt: base + s * 1000 - LOST_MS, finished: true }), at(base, 0));
   links.set("d", { connected: false, lostAt: base + s * 1000 - LOST_MS });
-  board.livenessTick(run, at(base, s), presence);
+  tick2(board, run, at(base, s), presence);
 };
 
 test("four members, one gone, the three others done: all-done once, naming the gone; progress reads 3/3 done, 1 gone (D41)", () => {
@@ -55,7 +56,7 @@ test("four members, one gone, the three others done: all-done once, naming the g
   const base = Date.now() + 60_000;
   goneD(run.id, base);
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
-  board.livenessTick(run.id, at(base, 2), presence);
+  tick2(board, run.id, at(base, 2), presence);
   const all = events("all-done");
   assert.equal(all.length, 1);
   assert.equal(all[0].body, "all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase");
@@ -70,7 +71,7 @@ test("the last member not done going gone fires all-done at the tick, once (D41)
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
   assert.equal(events("all-done").length, 0);
   goneD(run.id, base);
-  board.livenessTick(run.id, at(base, 2), presence);
+  tick2(board, run.id, at(base, 2), presence);
   assert.deepEqual(events("all-done").map((e) => e.body), ["all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase"]);
 });
 
@@ -80,7 +81,7 @@ test("every member not gone in a held wait: idle fires, naming the gone (D41, D3
   const base = Date.now();
   goneD(run.id, base);
   const waits = ["a", "b", "c"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
-  for (const s of [2, 3]) board.livenessTick(run.id, at(base, s), presence);
+  for (const s of [2, 3]) tick2(board, run.id, at(base, s), presence);
   const idles = events("idle").map((e) => e.body);
   assert.equal(idles.length, 1, "once (D34)");
   assert.match(idles[0], /^idle 0s: every member is waiting \(1 lost: idea\/d\); phase diverge 0\/3 done, 1 lost$/);
@@ -91,14 +92,14 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const { run, members } = setup();
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
-  board.livenessTick(run.id, at(base, 60), presence);
+  tick2(board, run.id, at(base, 60), presence);
   assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
-  board.livenessTick(run.id, at(base, 61), presence);
+  tick2(board, run.id, at(base, 61), presence);
   assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
-  board.livenessTick(run.id, at(base, 62), presence);
+  tick2(board, run.id, at(base, 62), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");
 });
 
@@ -107,7 +108,7 @@ test("without any gone member, all-done, idle and the progress line read exactly
   // the ticks follow the held waits closely: a held wait owing past the stall time is stalled, not idle (board-split D49)
   const base = Date.now();
   const waits = ["a", "b"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
-  board.livenessTick(run.id, at(base, 1), presence);
+  tick2(board, run.id, at(base, 1), presence);
   assert.deepEqual(events("idle").map((e) => e.body), ["idle 0s: every member is waiting; phase diverge 0/2 done"]);
   await Promise.all(waits);
   for (const m of ["a", "b"]) board.done(members[m], "diverge");

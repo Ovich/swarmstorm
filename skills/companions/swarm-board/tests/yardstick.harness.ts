@@ -6,7 +6,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { BUSY_MAX_MS, IN_TURN_MS, OWE_WAIT_MS } from "../src/board/liveness.ts";
+import { BUSY_MAX_MS } from "../src/board/liveness.ts";
+// board-split D55 deleted these rules from the board; this measurement harness keeps the bounds it recorded under them
+const IN_TURN_MS = 120 * 1000;
+const OWE_WAIT_MS = 10 * 60 * 1000;
 import { locate } from "../src/link/transcripts.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
 import { PROJECT, SCENARIOS, SESSION, STALL_S, iso, play, type Row } from "./fixtures/yardstick.ts";

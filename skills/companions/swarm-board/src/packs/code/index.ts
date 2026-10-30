@@ -76,7 +76,8 @@ export const codePack: Pack = {
     const lock = tablesOf(ctx).heldMergeLock(member);
     if (!lock) return null;
     const since = Date.parse(lock.grantedAt);
-    return t - since >= LOCK_HELD_MS ? { reason: `holds the merge lock ${Math.round((t - since) / 60000)} min`, since } : null;
+    // board-split D55: the fact alone; the board's reasonOf adds the state word and the age
+    return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
   },
 
   // the code tables' DDL and an older store's upkeep, then the store over them (D20)

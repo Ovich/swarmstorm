@@ -10,11 +10,12 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { parseSubscriptions, renamedIn, eventOf } from "../src/board/events.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { SILENT_MS } from "../src/board/liveness.ts";
+import { BUSY_MAX_MS, SILENT_MS } from "../src/board/liveness.ts";
 
 const SILENT_S = SILENT_MS / 1000;
 import { eventStep } from "../src/cli/answer/rules.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -33,7 +34,8 @@ const linked: Presence = () => ({ connected: true, lostAt: null });
 const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null, tokens: 0, context: null, openTool: null, lastTool: null, finished: false, ...o });
 const at = (base: number, s: number): Date => new Date(base + s * 1000);
 const eventsOf = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
-const badgeIn = (run: number, seat: string, t: Date) => board.memberStates(run, t).find((s) => s.member === seat)!;
+// board-split D55: a badge shows once two ticks confirmed it, so a read at `t` is the server having ticked there
+const badgeIn = (run: number, seat: string, t: Date) => (tick2(board, run, t, linked), board.memberStates(run, t)).find((s) => s.member === seat)!;
 const cardOf = (member: string) => board.snapshot(REPO).roster.find((r) => r.member === member)!;
 
 const setup = () => {
@@ -52,13 +54,16 @@ test("golden stalled (board-split D54 amended): out of a wait, owing its task, s
   board.post(orch, "@a your part", { task: true });
   board.deliver(a);
   const base = Date.now();
-  board.livenessTick(run.id, at(base, 0), linked);
+  tick2(board, run.id, at(base, 0), linked);
   // coding: its transcript grows, no board call for minutes: no stall
   board.recordActivity(run.id, "a", act({ grewAt: base + (SILENT_S - 5) * 1000, lastTool: "Edit x", inTurn: true }), at(base, SILENT_S - 5));
   assert.equal(badgeIn(run.id, "a", at(base, SILENT_S + 1)).badge, null, "board-call silence alone is never a stall");
-  // a call of its own open: no stall however long
+  // a call of its own open is work until it shows no growth past BUSY_MAX_MS (board-split D55): then stalled · call
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base } }), at(base, 0));
-  assert.equal(badgeIn(run.id, "a", at(base, 2 * SILENT_S)).badge, null, "a call open is work");
+  assert.equal(badgeIn(run.id, "a", at(base, BUSY_MAX_MS / 1000 - 1)).badge, null, "a call open is work");
+  const hung = badgeIn(run.id, "a", at(base, BUSY_MAX_MS / 1000 + 1));
+  assert.deepEqual([hung.badge?.name, hung.rule], ["stalled", "call"]);
+  assert.match(hung.badge?.reason ?? "", /^busy, not done p1, a call open, no growth \d+ min$/);
   // nothing grows, nothing open: stalled past SILENT_MS; a self-report is no sign
   board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read x", inTurn: false }), at(base, 0));
   board.post(a, "on it");
@@ -68,11 +73,12 @@ test("golden stalled (board-split D54 amended): out of a wait, owing its task, s
   const t = new Date(lastSign + (SILENT_S + 1) * 1000);
   const st = badgeIn(run.id, "a", t);
   assert.deepEqual([st.badge?.name, st.rule, st.owes], ["stalled", "silent", "p1"]);
-  assert.match(st.badge?.reason ?? "", new RegExp(`^${st.state}, not done p1, no activity for \\d+ s$`));
-  board.livenessTick(run.id, t, linked);
+  assert.match(st.badge?.reason ?? "", new RegExp(`^${st.state}, not done p1, no activity \\d+ (s|min)$`));
+  tick2(board, run.id, t, linked);
   // one alarm per episode, never re-fired on a timer
-  board.livenessTick(run.id, new Date(t.getTime() + 20 * 60_000), linked);
-  assert.equal(eventsOf("stalled").length, 1);
+  tick2(board, run.id, new Date(t.getTime() + 20 * 60_000), linked);
+  // two episodes: the hung call's (closed once the call ended), then the silent one
+  assert.equal(eventsOf("stalled").length, 2);
   assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: \w+, not done p1/);
   // done ends the owing: no badge
   board.done(a, "p1");
@@ -109,18 +115,18 @@ test("golden lost (board-split D49): a link lost past LOST_MS with no wait held 
   const base = Date.now();
   // the transcript says finished: no badge from it
   board.recordActivity(run.id, "a", act({ grewAt: base - 61_000, finished: true }), at(base, 0));
-  board.livenessTick(run.id, at(base, 1), linked);
+  tick2(board, run.id, at(base, 1), linked);
   assert.equal(badgeIn(run.id, "a", at(base, 1)).badge, null);
   assert.equal(eventsOf("lost").length, 0);
   const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });
   // D53: and no board call of its own since
   quietMember(path.join(dir, "swarm.sqlite"), "a", 120_000);
-  board.livenessTick(run.id, at(base, 1), gone);
+  tick2(board, run.id, at(base, 1), gone);
   assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its link was lost"]);
   assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").liveness?.badge?.name], ["lost", "lost"]);
   const lost = eventsOf("lost")[0];
   assert.equal(eventStep(lost as never, orch, "swarm"), WORDING.lostMove);
-  board.livenessTick(run.id, at(base, 2), linked);
+  tick2(board, run.id, at(base, 2), linked);
   assert.equal(eventsOf("recovered").length, 1);
   assert.equal(badgeIn(run.id, "a", at(base, 2)).badge, null);
 });
@@ -160,7 +166,7 @@ test("S40, board-split D49: a subagent that ended its turn on a background task 
   const bg = { target: "npm test", since: base, outputGrewAt: base };
   for (let s = 0; s < 120; s += 10) {
     board.recordActivity(run.id, "a", act({ grewAt: base, finished: true, background: bg }), at(base, s));
-    board.livenessTick(run.id, at(base, s), linked);
+    tick2(board, run.id, at(base, s), linked);
     const st = badgeIn(run.id, "a", at(base, s));
     assert.equal(st.state, "busy");
     assert.equal(st.badge, null);

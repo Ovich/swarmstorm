@@ -9,6 +9,7 @@ import { openBoard, type Board } from "../src/board/board.ts";
 import type { Presence } from "../src/board/board.ts";
 import { SILENT_MS } from "../src/board/liveness.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
@@ -93,16 +94,16 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   const at = (s: number) => new Date(base + s * 1000);
   const alerts = () => board.snapshot(REPO).events.filter((e) => ["stalled", "lost"].includes(e.event ?? ""));
   for (const m of ["a", "b"]) board.recordActivity(run.id, m, { grewAt: base, tokens: 1, context: null, openTool: null, lastTool: null, finished: false }, at(0));
-  board.livenessTick(run.id, at(0), linked);
+  tick2(board, run.id, at(0), linked);
   board.pause(orchestrator);
-  for (const s of [6, 11, 30, 60]) board.livenessTick(run.id, at(s), linked);
+  for (const s of [6, 11, 30, 60]) tick2(board, run.id, at(s), linked);
   board.markStaleRuns(new Date(Date.now() + 60 * 60_000));
   assert.equal(alerts().length, 0);
   board.resume(orchestrator);
-  board.livenessTick(run.id, new Date(Date.now() + SILENT_MS - 2_000), linked);
+  tick2(board, run.id, new Date(Date.now() + SILENT_MS - 2_000), linked);
   assert.equal(alerts().length, 0, "silence counts from the resume");
   // out of a wait, no sign of work past SILENT_MS (D54)
-  board.livenessTick(run.id, new Date(Date.now() + SILENT_MS + 1_000), linked);
+  tick2(board, run.id, new Date(Date.now() + SILENT_MS + 1_000), linked);
   // a and b both quiet past the threshold at one tick: one stalled naming each
   assert.deepEqual(alerts().map((e) => e.event), ["stalled"]);
   assert.match(alerts()[0].body, /a.*b/);

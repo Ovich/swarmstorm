@@ -13,6 +13,7 @@ import { observe } from "../src/link/transcripts.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 let dir: string;
@@ -86,7 +87,7 @@ test("D3: a lock is released by end, by gone and by close, each telling its wait
       const base = Date.now();
       board.recordActivity(runA.id, "a2", act({ grewAt: base }), new Date(base));
       links.set("a2", { connected: false, lostAt: base });
-      board.livenessTick(runA.id, new Date(base + 61_000), presence);
+      tick2(board, runA.id, new Date(base + 61_000), presence);
     }],
   ] as const) {
     const holder = name === "app:one" ? a1 : a2;
@@ -172,7 +173,7 @@ test("D8: a holder waiting past stall_ms with another run's member queued: stall
   board.recordActivity(runA.id, "a1", act({ grewAt: base, openTool: { name: "Bash", target: "node swarm.mjs wait --mentions --as ga/a1", since: base - 1000, boardWait: true } }), new Date(base));
   // past the run's stall window (board-split D54: 5 min by default)
   const stallS = STALL_MS_DEFAULT / 1000;
-  for (const s of [30, stallS + 1, stallS + 2, stallS + 60]) board.livenessTick(runB.id, new Date(base + s * 1000), presence);
+  for (const s of [30, stallS + 1, stallS + 2, stallS + 60]) tick2(board, runB.id, new Date(base + s * 1000), presence);
   const toB = bodies(oB).filter((b) => /· lock port:4413/.test(b));
   const toA = bodies(oA).filter((b) => /· lock port:4413/.test(b));
   assert.equal(toB.length, 1, toB.join("\n"));
@@ -187,9 +188,9 @@ test("D8: a holder waiting past stall_ms with another run's member queued: stall
   board.lock(b1, "app:x");
   const t = Date.now();
   board.recordActivity(runA.id, "a1", act({ grewAt: t + LOCK_HELD_MS, openTool: { name: "Bash", target: "npm test", since: t } }), new Date(t + LOCK_HELD_MS));
-  board.livenessTick(runB.id, new Date(t + LOCK_HELD_MS - 2000), presence);
+  tick2(board, runB.id, new Date(t + LOCK_HELD_MS - 2000), presence);
   assert.equal(bodies(oB).filter((b) => /lock app:x/.test(b)).length, 0, "not before 10 min");
-  board.livenessTick(runB.id, new Date(t + LOCK_HELD_MS + 1000), presence);
+  tick2(board, runB.id, new Date(t + LOCK_HELD_MS + 1000), presence);
   assert.match(bodies(oB).find((b) => /lock app:x/.test(b))!, /held 10 min since its first waiter/);
 });
 
@@ -202,7 +203,7 @@ test("D9: a member waiting on a lock while owing the phase reads waiting on the 
   const held = board.wait(b1, { mentionsOnly: true, timeoutMs: 1000 });
   const base = Date.now();
   board.recordActivity(runB.id, "b1", act({ grewAt: base, openTool: { name: "Bash", target: "node swarm.mjs wait --mentions --as gb/b1", since: base - 1000, boardWait: true } }), new Date(base));
-  for (const s of [61, 601, 700]) board.livenessTick(runB.id, new Date(base + s * 1000), presence);
+  for (const s of [61, 601, 700]) tick2(board, runB.id, new Date(base + s * 1000), presence);
   const st = board.memberStates(runB.id, new Date(base + 700_000)).find((m) => m.member === "b1")!;
   assert.equal(st.state, "waiting");
   assert.match(st.doing!, /^lock port:4415, held by /);
