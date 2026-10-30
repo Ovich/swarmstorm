@@ -21,6 +21,10 @@ export const pausedLine = (s: Situation): string | null => {
   return W.paused(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 
+/** The orchestrator's reminder that its run is paused; null when not paused, for a member and an ended orchestrator. */
+export const stillPausedLine = (s: Situation): string | null =>
+  s.seat !== "orchestrator" || s.ended || !s.pause ? null : W.stillPaused(s.run, W.pauseWhy(s.pause.person, s.pause.text), s.cli, s.as);
+
 /** The step a member owing the open phase takes before any wait; the paused line instead in a pause; null when it owes none.
  *  `brief`: the answer shows the phase, or showed it before, so the step alone. */
 export const owedLine = (s: Situation, opts: { thread?: boolean; brief?: boolean } = {}): string | null => {

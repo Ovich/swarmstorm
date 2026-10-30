@@ -9984,6 +9984,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   resumed: (run3, held, cli, as) => `run ${run3} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
   lockHeldNext: (cli, name, as, wait) => `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the run ──
+  // the orchestrator's own run is paused: said first at each of its verbs until the resume, so a pause is never forgotten
+  stillPaused: (run3, why, cli, as) => `run ${run3} is PAUSED${why}: no member acts on this until you resume (${cli} resume "<message>" --as ${as})`,
   paused: (run3, why, wait) => `run ${run3} is paused${why}. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run3, end) => `run ${run3} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
   // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
@@ -10147,6 +10149,7 @@ var pausedLine = (s) => {
   if (s.pauseStep) return s.pauseStep;
   return WORDING.paused(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
+var stillPausedLine = (s) => s.seat !== "orchestrator" || s.ended || !s.pause ? null : WORDING.stillPaused(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), s.cli, s.as);
 var owedLine = (s, opts = {}) => {
   const paused = pausedLine(s);
   if (paused) return paused;
@@ -10395,6 +10398,11 @@ var hiddenUsage = (cli, verb) => verb === "serve" ? `usage: ${cli} serve [stop] 
 // src/cli/answer/index.ts
 var shownLines = (shown) => shown.flatMap((m) => m.next ? [m.text, m.next] : [m.text]);
 function answer(r, s) {
+  const a = answerOf(r, s);
+  const reminder = stillPausedLine(s);
+  return reminder ? { ...a, lines: [reminder, ...a.lines], paused: reminder } : a;
+}
+function answerOf(r, s) {
   switch (r.verb) {
     case "wait": {
       if (r.outcome === "superseded") return { lines: [WORDING.superseded], next: null, phase: null };
@@ -10646,7 +10654,7 @@ var withNext = (me, d, pausedMerging = null) => ({
   })
 });
 var pausedMergingLine = async (p) => (await situation(p)).pauseStep ?? null;
-var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? { phase: a.phase ?? null } : {}, ...a.next ? { next: a.next } : {} }, () => {
+var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? { phase: a.phase ?? null } : {}, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
   for (const l of a.lines) console.log(l);
 });
 var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null, event: eventOf(m) }));
@@ -10771,7 +10779,7 @@ var unmatchedLines = async (p, body) => {
 var emitHeard = async (p, json, result) => {
   const lines = typeof result === "string" ? [result] : result;
   const a = answer({ verb: "heard", lines }, await situation(p));
-  emit(a.next ? { ...json, next: a.next } : json, () => {
+  emit({ ...json, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
     for (const l of lines) console.log(l);
     if (linkToStart && !linkTold(linkToStart)) {
       console.log(startLinkLine(linkToStart));

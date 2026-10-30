@@ -105,6 +105,9 @@ export const WORDING = {
     `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
 
   // ── the run ──
+  // the orchestrator's own run is paused: said first at each of its verbs until the resume, so a pause is never forgotten
+  stillPaused: (run: number, why: string, cli: Command, as: string) =>
+    `run ${run} is PAUSED${why}: no member acts on this until you resume (${cli} resume "<message>" --as ${as})`,
   paused: (run: number, why: string, wait: Command) =>
     `run ${run} is paused${why}. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   closed: (run: number, end: Command) =>

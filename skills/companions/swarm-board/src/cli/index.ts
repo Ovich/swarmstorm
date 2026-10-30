@@ -307,8 +307,8 @@ const printDelivery = (d: Delivery & { full: (Message & { endorse?: string })[] 
 };
 
 /** Prints an answer of the cluster: its lines, or with --json the verb's own JSON with its phase and next. */
-const emitAnswer = (json: Record<string, unknown>, a: { lines: string[]; next: string | null; phase?: string | null }, withPhase = true): void =>
-  emit({ ...json, ...(withPhase ? { phase: a.phase ?? null } : {}), ...(a.next ? { next: a.next } : {}) }, () => {
+const emitAnswer = (json: Record<string, unknown>, a: { lines: string[]; next: string | null; phase?: string | null; paused?: string }, withPhase = true): void =>
+  emit({ ...json, ...(withPhase ? { phase: a.phase ?? null } : {}), ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of a.lines) console.log(l);
   });
 /** A delivery's messages as the answer shows them: each with the line its event registry row gives. */
@@ -494,7 +494,7 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
 const emitHeard = async (p: Participant, json: object, result: string | string[]): Promise<void> => {
   const lines = typeof result === "string" ? [result] : result;
   const a = answer({ verb: "heard", lines }, await situation(p));
-  emit(a.next ? { ...json, next: a.next } : json, () => {
+  emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
     if (linkToStart && !linkTold(linkToStart)) {

@@ -3,11 +3,11 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, waitCommand } from "./rules.ts";
+import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
+export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { decisionsLines, type WriteDecisionsSeats } from "./decisions.ts";
@@ -41,12 +41,21 @@ export type Answer = {
   next: string | null;
   /** the phase header, whole, as --json carries it */
   phase: string | null;
+  /** the orchestrator's paused reminder, as --json carries it */
+  paused?: string;
 };
 
 const shownLines = (shown: Shown[]): string[] => shown.flatMap((m) => (m.next ? [m.text, m.next] : [m.text]));
 
-/** The answer of a cluster verb, from what it did and the member's situation. */
+/** The answer of a cluster verb, from what it did and the member's situation; an orchestrator whose run is paused
+ *  reads that first, at every verb, so the pause is never forgotten. */
 export function answer(r: VerbResult, s: Situation): Answer {
+  const a = answerOf(r, s);
+  const reminder = stillPausedLine(s);
+  return reminder ? { ...a, lines: [reminder, ...a.lines], paused: reminder } : a;
+}
+
+function answerOf(r: VerbResult, s: Situation): Answer {
   switch (r.verb) {
     case "wait": {
       if (r.outcome === "superseded") return { lines: [W.superseded], next: null, phase: null };
