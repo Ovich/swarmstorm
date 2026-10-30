@@ -271,6 +271,8 @@ const ACTIVE = LIVE.roster.find((r) => r.member.startsWith("refresh-tokens/") &&
 // an older board's member: its liveness, and no badge (board-split#D36)
 const withActivity = (liveness: object | undefined) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, liveness, badge: undefined } : r)) }) as BoardSnapshot;
 const activeCard = () => within(strip()!).getAllByRole("button").find((c) => c.textContent?.includes(ACTIVE.nick))!;
+/** The fixture member's word while working (D49): the task posted to it, never its doing. */
+const WORKING_WORD = ACTIVE.owes?.task != null ? `working on #${ACTIVE.owes.task}` : "working";
 const minutesAgo = (m: number) => Date.now() - m * 60000;
 
 const withMember = (patch: object) => ({ ...LIVE, roster: LIVE.roster.map((r) => (r.member === ACTIVE.member ? { ...r, ...patch } : r)) }) as BoardSnapshot;
@@ -279,12 +281,14 @@ const activityOfCard = (card: HTMLElement) => card.querySelector('[data-componen
 
 // board-split#D35: the state word is the board's alone; trouble is a badge, its reason on hover
 test.each([
-  ["working", {}, `working on ${ACTIVE.doing}`],
+  ["working", {}, WORKING_WORD],
   ["merging", { state: "merging" }, "merging"],
   ["waiting", { state: "waiting" }, "waiting on the board"],
   ["an older board's watching", { state: "watching" }, "waiting on the board"],
   ["parked", { state: "parked" }, "parked"],
-  ["dormant", { state: "parked", parkedUntil: "P5" }, "dormant until P5"],
+  ["parked until a phase", { state: "parked", parkedUntil: "P5" }, "parked until P5"],
+  ["working on a posted task", { state: "working", owes: { phase: "P3", task: 917 }, doing: "reading the plan" }, "working on #917"],
+  ["working with no task posted", { state: "working", owes: { phase: null, task: null }, doing: "reading the plan" }, "working"],
   ["ended", { state: "ended", ended: "2026-10-29T14:09:00.000Z" }, /^ended \d\d:\d\d$/],
 ])("a %s member's card reads the board's word", (_name, patch, word) => {
   show([APP], 1, [withMember(patch)]);
@@ -297,7 +301,7 @@ test.each([
 test("the liveness never takes the word: a busy or waiting activity leaves the board's working", () => {
   for (const state of ["busy", "waiting"]) {
     show([APP], 1, [withActivity({ state, doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null })]);
-    expect(activeCard().querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+    expect(activeCard().querySelector(".state")!.textContent).toBe(WORKING_WORD);
     cleanup();
   }
 });
@@ -305,7 +309,7 @@ test("the liveness never takes the word: a busy or waiting activity leaves the b
 test("a stalled member keeps its word and carries a stalled badge, its reason on hover, never the word", () => {
   show([APP], 1, [withActivity({ state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress for 960s, link alive; last Bash", tokens: null, movedAt: null, progressAt: minutesAgo(16), aliveAt: Date.now() - 5000 })]);
   const card = activeCard();
-  expect(card.querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+  expect(card.querySelector(".state")!.textContent).toBe(WORKING_WORD);
   expect(card.querySelector(".state")!.className).not.toMatch(/stalled/);
   const badge = badgeOf(card)!;
   expect(badge.textContent).toBe("stalled");
@@ -342,7 +346,7 @@ test.each([
 ] as const)("the board's %s badge reads beside the word, its reason on hover, the member under Needs attention", (name, reason) => {
   show([APP], 1, [withMember({ badge: { name, reason, since: minutesAgo(3) } })]);
   const card = activeCard();
-  expect(card.querySelector(".state")!.textContent).toBe(`working on ${ACTIVE.doing}`);
+  expect(card.querySelector(".state")!.textContent).toBe(WORKING_WORD);
   expect(badgeOf(card)!.textContent).toBe(name);
   expect(badgeOf(card)!.title).toBe(`${name} for 3 min: ${reason}`);
   expect(card.classList.contains("lost")).toBe(name === "lost");
@@ -590,4 +594,24 @@ test.each([
 test("a run that is not paused shows no pause on its head", () => {
   show([APP], 1, [pausedRun(null)]);
   expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
+});
+
+// board-split#D48, D49 (A1-7, A1-8, A1-9): the word never carries doing; a parked seat's unread is held, not alarmed
+test("a working member's doing never reaches the word, and no card says dormant", () => {
+  show([APP], 1, [withMember({ state: "working", owes: { phase: "P3", task: null }, doing: "unparked" })]);
+  expect(activeCard().querySelector(".state")!.textContent).toBe("working");
+  expect(strip()!.textContent).not.toMatch(/dormant/);
+});
+
+test("a parked seat's unread reads held, quiet: no alarm, no attention bucket, no rail dot", () => {
+  show([APP], 1, [withMember({ state: "parked", parkedUntil: "P5", unread: 4, doing: "parked until P5", badge: null })]);
+  const card = activeCard();
+  const unread = card.querySelector('[data-component="UnreadCount"]')!;
+  expect(unread.textContent).toBe("4 held");
+  expect(unread.classList.contains("held")).toBe(true);
+  expect(card.querySelector(".doing")).toBeNull();
+  expect(badgeOf(card)).toBeNull();
+  cleanup();
+  show([APP], 1, [withMember({ state: "working", unread: 4 })]);
+  expect(activeCard().querySelector('[data-component="UnreadCount"]')!.textContent).toBe("4 unread");
 });

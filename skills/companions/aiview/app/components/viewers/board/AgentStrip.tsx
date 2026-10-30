@@ -54,15 +54,28 @@ export function boardStateOf(p: { state: string }): "working" | "waiting" | "par
 }
 const isEnded = (p: { state: string }): boolean => boardStateOf(p) === "ended";
 
-/** The state word, the board's alone (D35, D36): working on its task, merging, waiting on the board, parked or dormant
- *  until a phase, ended. `className` is the board's state. */
+/** The state word, the board's alone (D35, D36, D49): working (on the task posted to it), merging, waiting on the board,
+ *  parked (until a phase), ended; the member's `doing` never in it. `className` is the board's state. */
 export function stateWordOf(p: MemberOnBoard): { text: string; className: string } {
   const state = boardStateOf(p);
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
-  if (state === "parked") return { text: p.parkedUntil ? `dormant until ${p.parkedUntil}` : "parked", className: "parked" };
+  if (state === "parked") return { text: p.parkedUntil ? `parked until ${p.parkedUntil}` : "parked", className: "parked" };
   if (state === "waiting") return { text: "waiting on the board", className: "waiting" };
-  if (state === "working") return { text: p.doing ? `working on ${p.doing}` : "working", className: "working" };
+  if (state === "working") return { text: p.owes?.task != null ? `working on #${p.owes.task}` : "working", className: "working" };
   return { text: state, className: state };
+}
+
+/** Unread on a parked seat is held for it, never an alarm (D48, D49). */
+const unreadHeld = (p: { state: string }): boolean => boardStateOf(p) === "parked";
+
+/** The unread count beside the seat: `N unread`, or `N held` on a parked seat, drawn quiet. */
+function UnreadCount({ p }: { p: SnapshotMember }) {
+  if (!p.unread) return null;
+  return unreadHeld(p) ? (
+    <span className="unread held" data-component="UnreadCount">{p.unread} held</span>
+  ) : (
+    <span className="unread" data-component="UnreadCount">{p.unread} unread</span>
+  );
 }
 
 /** The member's badge (D35, D36): the board's, its reason on hover; from an older board, read off its activity
@@ -210,9 +223,9 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
         <TroubleBadge trouble={trouble} />
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
-      {!!p.unread && <span className="unread" data-component="UnreadCount">{p.unread} unread</span>}
-      {/* working carries its task in the word; any other live state keeps the doing line */}
-      {boardStateOf(p) !== "working" && !isEnded(p) && !!p.doing && <span className="doing">{p.doing}</span>}
+      <UnreadCount p={p} />
+      {/* the doing line, never the word (D49); a parked seat's is the park itself */}
+      {boardStateOf(p) !== "working" && boardStateOf(p) !== "parked" && !isEnded(p) && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
       <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
     </button>
@@ -257,7 +270,7 @@ function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; o
         <AgentLabel name={p.member} role={false} />
       </span>
       <span className="rseat">
-        {!!p.unread && <span className="unread" data-component="UnreadCount">{p.unread} unread</span>}
+        <UnreadCount p={p} />
         {p.role || p.seat}
       </span>
       <span className={`state ${status.className}`}>
@@ -398,7 +411,7 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
             <AgentMark name={p.member} />
             <span className={`state ${status.className}`}><i /></span>
             {trouble && <span className={`badge-dot ${trouble.kind}`} title={trouble.reason} />}
-            {!!p.unread && <span className="unread-dot" />}
+            {!!p.unread && !unreadHeld(p) && <span className="unread-dot" />}
           </button>
         );
       })}
@@ -431,8 +444,8 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
         <TroubleBadge trouble={trouble} />
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
-      {!!p.unread && <span className="unread">{p.unread} unread</span>}
-      {!ended && boardStateOf(p) !== "working" && p.doing && <span className="doing">{p.doing}</span>}
+      <UnreadCount p={p} />
+      {!ended && boardStateOf(p) !== "working" && boardStateOf(p) !== "parked" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
       <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
     </div>

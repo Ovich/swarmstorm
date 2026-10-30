@@ -9666,6 +9666,7 @@ async function openBoardReader(opts) {
   const call = (method, args2) => connection.then((conn) => callOn(conn, method, args2));
   return {
     repos: () => call("repos", []),
+    projects: () => call("repos", []),
     snapshot: (repo) => call("snapshot", [repo]),
     stats: (scope) => call("stats", [scope]),
     onChange(listener) {
