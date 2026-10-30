@@ -3,7 +3,7 @@
 ```markdown
 ---
 name: facilitator-<app>
-description: "Use when taking the facilitator seat of <app>'s leadership board, or when a decision about <app> must be checked against its vision. Holds <app>'s vision, principles and red lines. Not for how the facilitator rules (the orchestrate skill's references/authority-roles/facilitator.md)."
+description: "Use when taking the facilitator seat of <app>'s decisions run, or when a decision about <app> must be checked against its vision. Holds <app>'s vision, principles and red lines. Not for how the facilitator rules (the orchestrate skill's references/authority-roles/facilitator.md)."
 ---
 
 # Facilitator of <app>

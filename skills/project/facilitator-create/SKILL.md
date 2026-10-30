@@ -1,12 +1,12 @@
 ---
 name: facilitator-create
-description: "Use when a project's leadership board opens and the project has no facilitator skill, or when a person asks for one or for the product's vision to be written down. Produces the project's `facilitator-<app>` skill (the vision, the principles and red lines the leadership board's facilitator rules by), drafted from the product as it is and settled through an interview. Not for running the board (the orchestrate skill's leadership board), the roadmap's slots (roadmap) or the project's code conventions (write-conventions)."
+description: "Use when a project's decisions run opens and the project has no facilitator skill, or when a person asks for one or for the product's vision to be written down. Produces the project's `facilitator-<app>` skill (the vision, the principles and red lines the decisions run's facilitator rules by), drafted from the product as it is and settled through an interview. Not for running the decisions run (the orchestrate skill's decisions run), the roadmap's slots (roadmap) or the project's code conventions (write-conventions)."
 ---
 
 # Create the facilitator skill
 
 **One thing is produced**: the project's `facilitator-<app>` skill, in its local skills folder, never the
-plugin. The leadership board's facilitator session loads it, with the `orchestrate` skill's
+plugin. The decisions run's facilitator session loads it, with the `orchestrate` skill's
 `references/authority-roles/facilitator.md` for how it rules. **Stop if one exists**: update it on the
 person's yes instead.
 
@@ -16,7 +16,7 @@ person's yes instead.
   foundation reference.
 - **What it does**: the code's surfaces (screens, API, CLI), its boards and prototypes, its plans'
   stories.
-- **What was already decided**: the leadership board's decision register, if any.
+- **What was already decided**: the decisions run's decision register, if any.
 - **The conventions file, for context only**: the vision and principles never come from it. A rule
   there is how the code is kept, not what the product is for.
 

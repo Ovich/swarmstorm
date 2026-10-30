@@ -42,14 +42,14 @@ alignment. Over four roles, a second question in the same call, the next four.
 - **A level the person writes in for a role** ("decide, no need to show", "ask before any work")
   replaces it for that role.
 
-**Facilitator consent**, when the run is given a leadership role: one more option in the question,
-*Let the leadership board's facilitator settle conflicts between swarms*, recommended, with why: without
+**Facilitator consent**, when the run is given a decision-authority role: one more option in the question,
+*Let the decisions run's facilitator settle conflicts between swarms*, recommended, with why: without
 it, a conflict involving this swarm waits on the person. Written in the line as `facilitator`.
 
 ## Hold
 
-- **You hold a leadership role and another active swarm holds one too**: you decide together on
-  the leadership board (`leadership-board.md`, read then).
+- **You hold a decision-authority role and another open run holds one too**: you decide together on
+  the decisions run (`decisions-run.md`, read then); the board says when, in its answer to `open` and `status`, once you opened with `--authority`.
 - **The line**: `authority: product owner · reviewer (yours) · product designer · DevOps (theirs) · facilitator`.
 - **A decision outside every role asked is the person's.**
 - **The person may hand over or take back a role mid-run** ("you judge from now on"): the field overwritten

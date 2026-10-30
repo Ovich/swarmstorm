@@ -39,6 +39,9 @@ except `open`, `seat`, `close` and `status`.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
+   with `--authority <roles>` naming the roles the person handed you (the `orchestrate` skill's
+   `references/authority.md`): two open runs holding a decision-authority role are told so, with
+   the command opening the decisions run (its `references/decisions-run.md`),
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
    `--protocol none` for a run with no phases on purpose. A run that builds code (plan, task)
    takes `--onto <branch>`, the branch its work merges into: each member's join makes its
