@@ -51,10 +51,9 @@ test("D31 (S37): a board wait over its own un-notified background suite reads bu
   // the card's activity carries both the open wait and the background task (D32)
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
   assert.deepEqual([card.activity?.open?.boardWait, card.activity?.background?.target], [true, "npm test"]);
-  // past BUSY_MAX_MS from the task's start it stays busy and says it may be hung
+  // past BUSY_MAX_MS from the task's start it stays busy, no badge: a background task is activity only (board-split D49)
   const long = board.memberStates(run.id, new Date(base + 13 * 60_000)).find((s) => s.member === "a")!;
-  assert.equal(long.state, "busy");
-  assert.match(long.badge?.reason ?? "", /background open 15 min, may be long or hung/);
+  assert.deepEqual([long.state, long.badge], ["busy", null]);
   await held;
 });
 
@@ -69,7 +68,7 @@ test("D30: a parked member draws no gone, stalled or idle, all-done does not wai
   assert.equal(eventStep(parked, a, "swarm"), null);
   // D34: the parked seat's card says until when
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/b")!;
-  assert.deepEqual([card.doing, card.state, card.parkedUntil], ["dormant until p2", "parked", "p2"]);
+  assert.deepEqual([card.doing, card.state, card.parkedUntil], ["parked until p2", "parked", "p2"]);
   // b's link is lost long ago and its turn ended: no gone, no stalled for it
   const base = Date.now();
   board.recordActivity(run.id, "b", act({ grewAt: base - 600_000, inTurn: false }), at(base, 0));
@@ -93,7 +92,7 @@ test("D30: park and unpark are the orchestrator's, on a live seat; unpark lifts 
   assert.throws(() => board.park(a, "b"), /only the orchestrator/);
   assert.throws(() => board.park(orch, "zz"), /no live member in seat zz/);
   board.park(orch, "b");
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "dormant until its next task");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "parked until its next task");
   assert.throws(() => board.park(orch, "b"), /already parked/);
   board.unpark(orch, "b");
   assert.throws(() => board.unpark(orch, "b"), /not parked/);

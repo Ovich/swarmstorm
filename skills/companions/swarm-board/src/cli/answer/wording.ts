@@ -69,7 +69,7 @@ export const WORDING = {
   phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
     `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
   briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
-  dormant: (seat: string) => `${seat} is dormant: dispatch a member into it (join the same seat) or resume it with SendMessage`,
+  seatIdleEnded: (seat: string) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
   pausedAll: (run: number, person: string | null, cli: Command, as: string) =>
     `every member of run ${run} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
   resumed: (run: number, held: number, cli: Command, as: string) =>
@@ -126,6 +126,8 @@ export const WORDING = {
   stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
   stalledBackground: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,
   stalledCall: "SendMessage it to stop the call",
+  /** board-split D49: owing the phase out of a wait, no board call for the stall time */
+  stalledSilent: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
   stalledOwing: (cli: Command, post: string, as: string) => `${cli} post ${post} --as ${as}: its wait returns on it`,
   stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,

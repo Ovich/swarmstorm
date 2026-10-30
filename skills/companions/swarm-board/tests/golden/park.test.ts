@@ -1,9 +1,9 @@
 // board-split D30, D34 goldens: the orchestrator's park and unpark answers, the parked worker's wake line, its roster
-// row "dormant until <phase>", and all-done counting the others alone.
+// row "parked until <phase>", and all-done counting the others alone.
 import { test } from "node:test";
 import { pin, scene } from "./golden.ts";
 
-test("golden: park, the parked member's wake, dormant until, all-done without it, unpark", async () => {
+test("golden: park, the parked member's wake, parked until, all-done without it, unpark", async () => {
   const s = await scene("orchestrator", "owes-first");
   try {
     const orch = s.me;

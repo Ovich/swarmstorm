@@ -7,13 +7,20 @@ import { SCENARIOS, play } from "./fixtures/yardstick.ts";
 
 /** id, the bound in s from T0, the rule (or the event) that must tell it. */
 const CORE: [string, number, string][] = [
-  ["S4", 61, "ended"],
   ["S5a", 31, "lost"],
-  ["S10", 61, "background"],
   ["S11-1a", 61, "owing"],
-  ["S12", 61, "ended"],
-  ["A12a", 61, "ended"],
 ];
+
+/** board-split D49: trouble comes from board facts alone. A turn ended, a background task gone silent or a dev server
+ *  left running, owing no open phase, is no board fact: the board tells none of them, never from the transcript. */
+const TRANSCRIPT_ONLY = ["S4", "S10", "S12", "A12a"];
+for (const id of TRANSCRIPT_ONLY) {
+  test(`yardstick core: ${id}, a transcript state owing no phase, draws no stalled (board-split D49)`, async () => {
+    const sc = SCENARIOS.find((s) => s.id === id)!;
+    const r = await play(sc, sc.stuckAt! + 62);
+    assert.deepEqual(r.alerts.filter((a) => a.event === "stalled" || a.rule != null), [], `${id}: ${r.events}`);
+  });
+}
 
 for (const [id, bound, told] of CORE) {
   test(`yardstick core: ${id} is told within ${bound} s, ${told}`, async () => {

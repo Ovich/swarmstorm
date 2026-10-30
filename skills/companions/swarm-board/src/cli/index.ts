@@ -766,10 +766,10 @@ async function main(): Promise<void> {
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = WORDING.briefThePerson;
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
-      const dormant = ((await board.phaseProgress(m.run))?.dormant ?? []).map((s) => WORDING.dormant(s.slice(s.lastIndexOf("/") + 1)));
-      emit({ seq: m.seq, run: m.run, phase: name, brief, dormant, next }, () => {
+      const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next }, () => {
         console.log(seqLine(m));
-        for (const line of dormant) console.log(line);
+        for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
       });

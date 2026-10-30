@@ -82,7 +82,7 @@ test("a member is idle after its second empty wait --mentions in a row while it 
   assert.equal(board.idle(orchestrator), false);
 });
 
-test("an idle-ended seat is dormant: a later phase counts it, all-done waits for it, and it is named", async () => {
+test("an idle-ended seat still owes: a later phase counts it, all-done waits for it, and it is named", async () => {
   const { r, orchestrator, architect, skeptic } = run();
   board.phase(orchestrator, "p1", "first");
   board.done(architect, "p1");
@@ -95,10 +95,10 @@ test("an idle-ended seat is dormant: a later phase counts it, all-done waits for
   board.phase(orchestrator, "p2", "second");
   const d = board.done(architect, "p2");
   assert.deepEqual([d.progress.done, d.progress.of, d.all], [1, 2, false]);
-  assert.deepEqual(d.progress.dormant, ["idea/skeptic"]);
-  // dispatched again into the same seat: no longer dormant, its done completes the phase
+  assert.deepEqual(d.progress.idleEnded, ["idea/skeptic"]);
+  // dispatched again into the same seat: no longer idle-ended, its done completes the phase
   const back = board.join({ run: r.id, seat: "skeptic", doing: "x", files: [] }).member;
-  assert.deepEqual(board.phaseProgress(r.id)?.dormant, []);
+  assert.deepEqual(board.phaseProgress(r.id)?.idleEnded, []);
   assert.equal(board.done(back, "p2").all, true);
 });
 

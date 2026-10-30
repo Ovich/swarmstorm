@@ -81,6 +81,8 @@ test("pause and resume are the orchestrator's, once each; a closed run refuses b
 
 test("a paused run raises no stalled, quiet or stale alert; after resume the silence counts from the resume", () => {
   const { run, orchestrator } = setup();
+  // board-split D49: a stall is owing the open phase
+  board.phase(orchestrator, "p1", "go");
   const base = Date.now() - 120_000;
   const at = (s: number) => new Date(base + s * 1000);
   const alerts = () => board.snapshot(REPO).events.filter((e) => ["stalled", "lost"].includes(e.event ?? ""));

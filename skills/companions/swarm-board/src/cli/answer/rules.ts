@@ -161,6 +161,8 @@ function stalledMove(m: Message, cli: string, as: string): string {
       return W.stalledBackground(cli, shellWord(`@${id} …`), as);
     case "call":
       return W.stalledCall;
+    case "silent":
+      return W.stalledSilent(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
     case "owing":
       return W.stalledOwing(cli, shellWord(`@${id} your part of ${meta.phase ?? "<phase>"}`), as);
     case "lock":

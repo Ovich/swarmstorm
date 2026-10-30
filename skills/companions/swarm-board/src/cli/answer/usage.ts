@@ -19,7 +19,7 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
     "  block   <seat> <reason> [--as <member>]                         # badge blocked: the seat waits on the person, the reason on hover; told to stop and wait (orchestrator)",
     "  unblock <seat> [--as <member>]                                  # lifts the blocked badge; told to go on (orchestrator)",
-    "  park    <seat> [--until <phase>] [--as <member>]                # shown \"dormant until <phase>\"; a seat only you need now (a worker between tasks, a dormant verifier): told to end its turn without end; no idle, stalled or lost for it, no badge, all-done does not wait for it, until its next call or unpark (orchestrator)",
+    "  park    <seat> [--until <phase>] [--as <member>]                # shown \"parked until <phase>\"; a seat only you need now (a worker between tasks, a verifier between passes): told to end its turn without end; no idle, stalled or lost for it, no badge, all-done does not wait for it, until its next call or unpark (orchestrator)",
     "  unpark  <seat> [--as <member>]                                  # lifts a park (orchestrator)",
     "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
     `  close   --run <id>                                              # (orchestrator); ${CODE_IN_CORE_HELP.closeRemoves}`,

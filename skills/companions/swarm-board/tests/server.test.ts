@@ -311,13 +311,15 @@ test("an activity frame from a member's link updates its member_activity row and
   }
 });
 
-test("gone is posted within 5 s of an activity with finished and no end, to the orchestrator alone (US3, D12)", async () => {
+test("an activity with finished and no end, the link alive, draws no lost and no badge (board-split D49: never from the transcript)", async () => {
   const { c, link } = await linkedRun();
-  const sent = Date.now();
-  link.send({ type: "activity", at: sent, activity: activity({ finished: true }) });
-  const gone = await within(c, 5000, (snap) => goneEvents(snap)[0]);
-  assert.ok(Date.now() - sent < 5000);
-  assert.deepEqual([gone.body, gone.mentions], ["lost g/S1: its agent finished without end", ["g/orchestrator"]]);
+  link.send({ type: "activity", at: Date.now(), activity: activity({ finished: true, tokens: 5 }) });
+  // the frame has landed (its tokens read back), and two ticks have passed since
+  await within(c, 3000, (snap) => snap.roster.find((r: { member: string; liveness?: { tokens: number | null } }) => r.member === "g/S1" && r.liveness?.tokens === 5));
+  await new Promise((r) => setTimeout(r, 2500));
+  const snap = await value(c, "snapshot", REPO);
+  assert.equal(goneEvents(snap).length, 0);
+  assert.equal(snap.roster.find((r: { member: string }) => r.member === "g/S1").badge, null);
 });
 
 test("gone is posted within 35 s of a link lost and not back; never for an ended member (US3, D12)", async () => {
@@ -363,9 +365,12 @@ test("an upkeep or tick that throws is logged to stderr, and the server goes on"
   try {
     await new Promise((r) => setTimeout(r, 1500));
     assert.ok(logged.some((l) => l.startsWith(`swarm server: liveness of run ${broken.id} failed`)), logged.join("\n"));
-    // the other run still ticks, and the server still answers
-    link.send({ type: "activity", at: Date.now(), activity: activity({ finished: true }) });
-    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "lost g/S1: its agent finished without end");
+    // the other run still ticks (its member's link lost past 30 s is told lost), and the server still answers
+    link.socket.close();
+    await link.closed;
+    await untilLinkLost(run.id, "S1");
+    skew += 31_000;
+    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "lost g/S1: its link was lost");
     assert.ok((await value(c, "runs")).some((r: { id: number }) => r.id === run.id));
   } finally {
     console.error = was;

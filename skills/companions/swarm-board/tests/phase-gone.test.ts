@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, progressText, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { LINK_LOST_MS } from "../src/board/liveness.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -39,9 +40,10 @@ const setup = (seats = ["a", "b", "c", "d"]) => {
   for (const p of [...Object.values(members), orchestrator]) board.deliver(p);
   return { run, members, orchestrator };
 };
-/** `d`'s agent finished without end; the tick at `s` tells it gone. */
+/** `d`'s agent went without end: its link lost past LINK_LOST_MS, no wait held (board-split D49); the tick at `s` tells it lost. */
 const goneD = (run: number, base: number, s = 1) => {
   board.recordActivity(run, "d", act({ grewAt: base, finished: true }), at(base, 0));
+  links.set("d", { connected: false, lostAt: base + s * 1000 - LINK_LOST_MS });
   board.livenessTick(run, at(base, s), presence);
 };
 
@@ -55,7 +57,7 @@ test("four members, one gone, the three others done: all-done once, naming the g
   assert.equal(all.length, 1);
   assert.equal(all[0].body, "all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase");
   const progress = board.phaseProgress(run.id)!;
-  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], dormant: [] });
+  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [] });
   assert.equal(progressText(progress), "3/3 done, 1 lost");
 });
 
@@ -71,7 +73,8 @@ test("the last member not done going gone fires all-done at the tick, once (D41)
 
 test("every member not gone in a held wait: idle fires, naming the gone (D41, D34)", async () => {
   const { run, members } = setup();
-  const base = Date.now() + 60_000;
+  // the ticks follow the held waits closely: a held wait owing past the stall time is stalled, not idle (board-split D49)
+  const base = Date.now();
   goneD(run.id, base);
   const waits = ["a", "b", "c"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
   for (const s of [2, 3]) board.livenessTick(run.id, at(base, s), presence);
@@ -86,11 +89,11 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
   board.livenessTick(run.id, at(base, 30), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], dormant: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
   board.livenessTick(run.id, at(base, 31), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], dormant: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
   board.livenessTick(run.id, at(base, 32), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");
@@ -98,7 +101,8 @@ test("a gone member that comes back counts again from then on (D41)", () => {
 
 test("without any gone member, all-done, idle and the progress line read exactly as before", async () => {
   const { run, members } = setup(["a", "b"]);
-  const base = Date.now() + 60_000;
+  // the ticks follow the held waits closely: a held wait owing past the stall time is stalled, not idle (board-split D49)
+  const base = Date.now();
   const waits = ["a", "b"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
   board.livenessTick(run.id, at(base, 1), presence);
   assert.deepEqual(events("idle").map((e) => e.body), ["idle 0s: every member is waiting; phase diverge 0/2 done"]);

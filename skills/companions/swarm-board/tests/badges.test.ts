@@ -41,32 +41,41 @@ const setup = () => {
   return { run, a, b, orch };
 };
 
-test("golden stalled: a turn ended with no progress past the stall time is working with the stalled badge, its reason, and a stalled event", () => {
-  const { run } = setup();
+test("golden stalled (board-split D49): owing the open phase with no board call past the stall time is stalled; a self-post, a doing or the transcript never resets it", () => {
+  const { run, a, b, orch } = setup();
+  board.phase(orch, "p1", "go");
+  board.done(b, "p1");
   const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read x", inTurn: false }), at(base, 0));
-  board.recordActivity(run.id, "b", act({ grewAt: base + 60_000 }), at(base, 0));
+  // the transcript growing and a self-report are no board call
+  board.recordActivity(run.id, "a", act({ grewAt: base + 5000, lastTool: "Read x", inTurn: true }), at(base, 5));
+  board.post(a, "on it");
+  board.setDoing(a, "reading");
   const st = badgeIn(run.id, "a", at(base, 6));
   assert.equal(st.state, "working");
-  assert.deepEqual([st.badge?.name, st.badge?.reason], ["stalled", 'turn ended; last: "Read x"']);
+  assert.deepEqual([st.badge?.name, st.rule, st.owes], ["stalled", "silent", "p1"]);
+  assert.match(st.badge?.reason ?? "", /^not done p1, no board call for \d+ s$/);
   board.livenessTick(run.id, at(base, 6), linked);
   assert.equal(eventsOf("stalled").length, 1);
-  assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: turn ended/);
+  assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: not done p1/);
+  // done ends the owing: no badge
+  board.done(a, "p1");
+  assert.equal(badgeIn(run.id, "a", at(base, 7)).badge, null);
 });
 
-test("golden lost: an agent finished without end carries the lost badge; one lost event; recovered once it is back", () => {
+test("golden lost (board-split D49): a link lost past LINK_LOST_MS with no wait held is lost, its state untouched; a finished transcript is not lost; recovered once the link is back", () => {
   const { run, orch } = setup();
   const base = Date.now();
+  // the transcript says finished: no badge from it
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
   board.livenessTick(run.id, at(base, 1), linked);
-  const st = badgeIn(run.id, "a", at(base, 1));
-  assert.deepEqual([st.badge?.name, st.badge?.reason], ["lost", "its agent finished without end"]);
-  assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its agent finished without end"]);
-  assert.equal(eventsOf("gone").length, 0);
+  assert.equal(badgeIn(run.id, "a", at(base, 1)).badge, null);
+  assert.equal(eventsOf("lost").length, 0);
+  const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 31_000 } : { connected: true, lostAt: null });
+  board.livenessTick(run.id, at(base, 1), gone);
+  assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its link was lost"]);
   assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").liveness?.badge?.name], ["lost", "lost"]);
   const lost = eventsOf("lost")[0];
   assert.equal(eventStep(lost as never, orch, "swarm"), WORDING.lostMove);
-  board.recordActivity(run.id, "a", act({ grewAt: base + 2000 }), at(base, 2));
   board.livenessTick(run.id, at(base, 2), linked);
   assert.equal(eventsOf("recovered").length, 1);
   assert.equal(badgeIn(run.id, "a", at(base, 2)).badge, null);
@@ -101,7 +110,7 @@ test("D30: a parked member carries no badge, blocked or stalled", () => {
   assert.equal(cardOf("g/a").badge, null);
 });
 
-test("S40: a subagent that ended its turn on a background task of its own is busy on it, never lost, and no lost/recovered cycle", () => {
+test("S40, board-split D49: a subagent that ended its turn on a background task of its own is busy on it, never lost or stalled from it, even past BUSY_MAX_MS", () => {
   const { run } = setup();
   const base = Date.now();
   const bg = { target: "npm test", since: base, outputGrewAt: base };
@@ -114,9 +123,8 @@ test("S40: a subagent that ended its turn on a background task of its own is bus
   }
   assert.equal(eventsOf("lost").length, 0);
   assert.equal(eventsOf("recovered").length, 0);
-  // past BUSY_MAX_MS from the task's start, busy still, badged stalled (may be hung), never lost
   const long = badgeIn(run.id, "a", at(base, 16 * 60));
-  assert.deepEqual([long.state, long.badge?.name], ["busy", "stalled"]);
+  assert.deepEqual([long.state, long.badge], ["busy", null]);
 });
 
 test("subscription compatibility: gone, stale and quiet read as lost and stalled, said once; a stored old event reads as its new one", () => {
