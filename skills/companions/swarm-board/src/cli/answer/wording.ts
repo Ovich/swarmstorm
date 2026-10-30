@@ -115,7 +115,7 @@ export const WORDING = {
   unblockedSet: (member: string) => `${member} is unblocked: told to go on`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
-  flagRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
+  optionRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
   eventRenamed: (renamed: { old: string; now: string }[]) =>
     `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */

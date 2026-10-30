@@ -581,7 +581,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       seq INTEGER NOT NULL,
       PRIMARY KEY (participant, seq)
     );
-    -- a version per repository, moved by every write: what onChange compares (D39)
+    -- a version per project, moved by every write: what onChange compares (D39)
     CREATE TABLE IF NOT EXISTS changes (
       repo TEXT PRIMARY KEY,
       version INTEGER NOT NULL

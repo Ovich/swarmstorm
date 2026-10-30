@@ -620,7 +620,7 @@ test("a snapshot shows two plans on one repository", () => {
   assert.deepEqual([last.kind, last.from, last.body, last.about], ["msg", "review-tool/S3", "@swarm/S1 one thread", "src/a.ts"]);
   assert.ok(snap.events.every((e, i) => i === 0 || e.seq > snap.events[i - 1].seq), "oldest first");
   // another repository is not in it, and an unknown one is named
-  assert.throws(() => board.snapshot("/repos/none/.git"), /no repository \/repos\/none\/\.git/);
+  assert.throws(() => board.snapshot("/repos/none/.git"), /no project \/repos\/none\/\.git/);
 });
 
 test("a member's state: ended, waiting", async () => {

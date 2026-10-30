@@ -170,7 +170,7 @@ const projectFlag = (): string | undefined => {
   const project = args.flag("--project");
   if (project !== undefined) return project;
   const old = args.flag("--repo");
-  if (old !== undefined) console.error(WORDING.flagRenamed("--repo", "--project"));
+  if (old !== undefined) console.error(WORDING.optionRenamed("--repo", "--project"));
   return old;
 };
 const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);

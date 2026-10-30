@@ -1466,3 +1466,18 @@ test("open prints one shape for every kind: the bare run id, then its board URL,
     assert.match(lines[2], /^start your link now/);
   }
 });
+
+test("D47: roster and stats take --project; the old --repo is read as it, with one line naming the new word", () => {
+  openRun();
+  const other = os.tmpdir();
+  const now = runIn(other, "roster", "--project", repo);
+  assert.equal(now.status, 0, now.stderr);
+  assert.equal(now.stderr, "");
+  const old = runIn(other, "roster", "--repo", repo);
+  assert.equal(old.status, 0, old.stderr);
+  assert.equal(old.stdout, now.stdout);
+  assert.equal(old.stderr, "--repo is now --project: read as --project, write that next time\n");
+  const stats = runIn(other, "stats", "--project", repo, "--json");
+  assert.equal(stats.status, 0, stats.stderr);
+  for (const help of [run("--help").stdout, run("stats", "--help").stdout]) assert.doesNotMatch(help, /--repo\b/);
+});

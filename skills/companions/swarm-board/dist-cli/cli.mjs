@@ -3023,7 +3023,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       seq INTEGER NOT NULL,
       PRIMARY KEY (participant, seq)
     );
-    -- a version per repository, moved by every write: what onChange compares (D39)
+    -- a version per project, moved by every write: what onChange compares (D39)
     CREATE TABLE IF NOT EXISTS changes (
       repo TEXT PRIMARY KEY,
       version INTEGER NOT NULL
@@ -4641,7 +4641,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
     snapshot(repo) {
       const runRows = listedRuns().filter((r) => r.repo === repo);
-      if (!runRows.length) throw new Error(`no repository ${repo}`);
+      if (!runRows.length) throw new Error(`no project ${repo}`);
       const runIds = runRows.map((r) => Number(r.id));
       const marks = runIds.map(() => "?").join(", ");
       const sliceRows = db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds);
@@ -9121,6 +9121,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--with",
   "--timeout",
   "--repo",
+  // board-split D47: the old name of --project, read as it
+  "--project",
   "--port",
   "--onto",
   "--kind",
@@ -9477,7 +9479,7 @@ var WORDING = {
   thread: (cli, as) => `${cli} thread --as ${as}`,
   end: (cli, as) => `${cli} end --as ${as}`,
   // ── the run's page ──
-  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&repo=<key>`) with the run in it;
+  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
    *  an older aiview's `/board` takes it as its hash */
   runBoardUrl: (boardUrl, run3) => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run3}`,
   // ── the link and the listener ──
@@ -9554,6 +9556,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   blockedSet: (member, cli, seat, as) => `${member} is blocked: its badge says so, it stops and waits; once the person answers, ${cli} unblock ${seat} --as ${as}`,
   unblockedSet: (member) => `${member} is unblocked: told to go on`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
+  /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
+  optionRenamed: (old, now) => `${old} is now ${now}: read as ${now}, write that next time`,
   eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
@@ -9764,7 +9768,7 @@ var coreUsage = (cli, events) => [
   "  unpark  <seat> [--as <member>]                                  # lifts a park (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
   `  close   --run <id>                                              # (orchestrator); ${CODE_IN_CORE_HELP.closeRemoves}`,
-  `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
+  `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
   `          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. ${CODE_IN_CORE_HELP.onExample}; else the seat row's on, else the kind's defaults`,
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
@@ -9779,7 +9783,7 @@ var coreUsage = (cli, events) => [
   "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
   "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
   "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
-  "  roster  [--repo <path>] [--as <member>]",
+  "  roster  [--project <path>] [--as <member>]",
   "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
   "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
@@ -9792,8 +9796,8 @@ var coreUsage = (cli, events) => [
   `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`
 ].join("\n");
 var statsUsage = (cli) => [
-  `usage: ${cli} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]`,
-  "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
+  `usage: ${cli} stats [--project <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,\u2026]] [--json]`,
+  "  the figures of a project's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
   "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
   `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${cli} read <seq>`
 ].join("\n");
@@ -9966,6 +9970,13 @@ var printReconciled = (unclaimed, flags, renames = []) => {
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
 var toolRoot = () => process.env.SWARM_ROOT ?? path13.dirname(path13.resolve(process.argv[1]));
+var projectFlag = () => {
+  const project = args.flag("--project");
+  if (project !== void 0) return project;
+  const old = args.flag("--repo");
+  if (old !== void 0) console.error(WORDING.optionRenamed("--repo", "--project"));
+  return old;
+};
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${verbHelp()}`);
 var runArg = () => {
@@ -10630,7 +10641,7 @@ ${verbHelp()}`);
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf2(path13.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf2(path13.resolve(projectFlag() ?? process.cwd()));
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -10841,7 +10852,7 @@ ${verbHelp()}`);
         }
       });
       const stats = await board.stats({
-        repo: repoOf2(path13.resolve(args.flag("--repo") ?? process.cwd())),
+        repo: repoOf2(path13.resolve(projectFlag() ?? process.cwd())),
         ...run3 !== void 0 ? { run: run3 } : {},
         // a named run is read whatever its age: no default period (plan D40)
         ...all2 ? {} : since !== void 0 ? { since } : run3 !== void 0 ? {} : { since: "30d" },
