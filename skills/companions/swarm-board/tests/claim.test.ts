@@ -190,7 +190,8 @@ test("end lists what it reconciled, then the end", () => {
   assert.equal(lines.length, 1, out.join("\n"));
   assert.match(lines[0], /^reconciled 2 written without a claim: (src\/a\.ts, src\/new\.ts|src\/new\.ts, src\/a\.ts)$/);
   assert.ok(out.some((l) => /^#\d+ flagged: you wrote src\/a\.ts outside your claim; review-tool\/S3 holds it/.test(l)), out.join("\n"));
-  assert.ok(out.includes("review-tool/S5 ended"));
+  // break-flow V-29: end --seat names the state its member was in and what it now reads
+  assert.ok(out.some((l) => l.startsWith("review-tool/S5 ended; it was ")), out.join("\n"));
 });
 
 const commit = (cwd: string, msg: string): void => {
