@@ -5,4 +5,3 @@ phase build: build alpha
 when your part of build is posted: node <cli> done build --as ga/w1
 #<seq> ga/orchestrator  <ts>
 @w1 a-task-only: do it
-these lines are delivered; the task-end notice is the same event

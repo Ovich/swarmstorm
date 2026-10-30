@@ -8,4 +8,3 @@ when your part of ideas is posted: node <cli> done ideas --as gb/s1
 beta plain talk
 #<seq> gb/orchestrator  <ts>
 @s1 an idea for b, please
-these lines are delivered; the task-end notice is the same event

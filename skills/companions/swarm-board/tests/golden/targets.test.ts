@@ -8,7 +8,6 @@ const O = "g/orchestrator";
 const WAIT = (as: string) => `node <cli> wait --mentions --as ${as} --timeout 170000`;
 const FOREGROUND = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
 const REARM = (as: string) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND}): ${WAIT(as)}`;
-const DELIVERED = "these lines are delivered; the task-end notice is the same event";
 const SHOW = process.env.GOLDEN_SHOW === "1";
 
 const expect = (answer: Answer, target: string[]): void => {
@@ -26,7 +25,6 @@ test("G7 target: the phase-open wake of a worker names the phase and its done on
       `#<seq> ${O} (event)  <ts>`,
       "phase build: build the thing",
       `when your part of build is posted: node <cli> done build --as ${s.me}`,
-      DELIVERED,
     ]);
   } finally {
     s.stop();
@@ -42,7 +40,6 @@ test("G10 target: a wake in an unchanged phase carries no phase line", async () 
       REARM(s.me),
       `#<seq> ${O}  <ts>`,
       "@w1 ping",
-      DELIVERED,
     ]);
   } finally {
     s.stop();
@@ -85,7 +82,6 @@ test("G17 target: the phase-open wake names the worker's task posted before it",
       "phase build: build the thing; its tasks posted before it: #<seq> w1",
       // the worker's own task named on its done line: no line added (D2)
       `when your part of build (your task #<seq>) is posted: node <cli> done build --as ${s.me}`,
-      DELIVERED,
     ]);
   } finally {
     s.stop();
