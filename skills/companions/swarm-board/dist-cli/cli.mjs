@@ -9920,6 +9920,12 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   endedMember: (run3) => `you have ended in run ${run3}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
   /** break-flow V-29: `end --seat`, to the orchestrator: the state its member was in, and the line it reads now */
   seatEnded: (member, was, told) => `${member} ended; it was ${was}; its next call answers: ${told}`,
+  /** break-flow V-41: a lost member's state at its end, never its activity from before it was lost */
+  wasLost: (reason) => `lost (${reason})`,
+  /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
+  endOrchestratorRefused: (run3, cli, as) => `end --seat orchestrator: refused, run ${run3} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run3} --as ${as}`,
+  /** break-flow V-46: a second link of one member: the first runs on */
+  linkRunning: (member) => `${member}'s link already runs: nothing to start`,
   /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
   seatState: (state) => state === "done" ? "ended" : state,
   /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
@@ -10378,11 +10384,12 @@ function answer(r, s) {
       const next = owes && !paused && s.listens !== "foreground" ? `${rearm}
 ${owes}` : rearm;
       const phase = headers.first && !r.phaseEvent ? headers.printed : null;
+      const shown = paused ? r.shown.map((m) => m.event === "pause" ? { ...m, next: null } : m) : r.shown;
       const lines = [
         ...s.listens === "foreground" && phase ? [phase] : [],
         next,
         ...s.listens !== "foreground" && phase ? [phase] : [],
-        ...shownLines(r.shown),
+        ...shownLines(shown),
         ...r.lines,
         // V-12: only a background listener's end is announced again by its harness
         ...r.mentionsOnly && s.listens === "orchestrator" ? [WORDING.delivered] : []
@@ -10616,7 +10623,7 @@ var pausedMergingLine = async (p) => (await situation(p)).pauseStep ?? null;
 var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? { phase: a.phase ?? null } : {}, ...a.next ? { next: a.next } : {} }, () => {
   for (const l of a.lines) console.log(l);
 });
-var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null }));
+var shownOf = (d) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null, event: eventOf(m) }));
 var shellWord2 = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 var fwd = (p) => p.split("\\").join("/");
 var projectNameOf = () => projectNamer({ toolRoot: toolRoot(), cwd: process.cwd(), fallback: projectFolderName });
@@ -11446,6 +11453,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       }
       const endedSeat = args.flag("--seat");
       if (endedSeat !== void 0 && asker.seat !== "orchestrator") fail(`end --seat: only the orchestrator ends a seat; ${asker.name} is not ${asker.plan}/orchestrator`);
+      if (endedSeat === "orchestrator") fail(WORDING.endOrchestratorRefused(asker.run, self().join(" "), shellWord2(asker.name)));
       if (endedSeat === void 0 && asker.seat !== "orchestrator") fail(WORDING.endRefused(asker.run, WORDING.wait(self().join(" "), shellWord2(asker.name), FOREGROUND_WAIT_MS)));
       const p = endedSeat === void 0 ? asker : await board.participant(`${asker.plan}/${endedSeat}`) ?? fail(`end --seat: no member in seat ${endedSeat} of run ${asker.run}`);
       if (p.ended) break;
@@ -11475,7 +11483,8 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(before ? WORDING.seatEnded(p.name, stateLine(before), before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
+        const was = before?.badge?.name === "lost" ? WORDING.wasLost(before.badge.reason) : before ? stateLine(before) : "";
+        console.log(before ? WORDING.seatEnded(p.name, was, before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
         if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
@@ -11643,6 +11652,7 @@ if (args.verb === "link") {
     clearLinkTold(member);
     const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     if (stop.why === "new version") process.exit(await relaunchLink());
+    if (stop.why === "pipe taken") console.log(WORDING.linkRunning(member.name));
     if (stop.why === "closed") console.log(WORDING.closed(member.run, WORDING.end(self().join(" "), shellWord2(member.name))));
     process.exit(0);
   } catch (e) {

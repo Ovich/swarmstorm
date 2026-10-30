@@ -1,0 +1,4 @@
+exit 0
+run 1 is paused: hold on. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/s1 --timeout 170000
+#<seq> g/orchestrator (event)  <ts>
+pause: stop where you are and wait for the resume: hold on

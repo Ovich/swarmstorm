@@ -14,7 +14,7 @@ export { decisionsLines, type WriteDecisionsSeats } from "./decisions.ts";
 export { coreUsage, hiddenUsage, statsUsage } from "./usage.ts";
 
 /** A message already formatted by the verb, with the line its event registry row adds (D36). */
-export type Shown = { text: string; next?: string | null };
+export type Shown = { text: string; next?: string | null; event?: string | null };
 
 export type VerbResult =
   | { verb: "wait"; outcome: "superseded" }
@@ -78,11 +78,13 @@ export function answer(r: VerbResult, s: Situation): Answer {
       const next = owes && !paused && s.listens !== "foreground" ? `${rearm}\n${owes}` : rearm;
       // G7: the phase heads the wake once, when new since the member's last read, and never beside its own event
       const phase = headers.first && !r.phaseEvent ? headers.printed : null;
+      // break-flow V-46: the paused line heads the wake once; the pause event's own step would say it again
+      const shown = paused ? r.shown.map((m) => (m.event === "pause" ? { ...m, next: null } : m)) : r.shown;
       const lines = [
         ...(s.listens === "foreground" && phase ? [phase] : []),
         next,
         ...(s.listens !== "foreground" && phase ? [phase] : []),
-        ...shownLines(r.shown),
+        ...shownLines(shown),
         ...r.lines,
         // V-12: only a background listener's end is announced again by its harness
         ...(r.mentionsOnly && s.listens === "orchestrator" ? [W.delivered] : []),

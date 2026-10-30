@@ -312,7 +312,7 @@ const emitAnswer = (json: Record<string, unknown>, a: { lines: string[]; next: s
     for (const l of a.lines) console.log(l);
   });
 /** A delivery's messages as the answer shows them: each with the line its event registry row gives. */
-const shownOf = (d: { full: (Message & { endorse?: string })[] }) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null }));
+const shownOf = (d: { full: (Message & { endorse?: string })[] }) => d.full.map((m) => ({ text: fullText(m), next: m.endorse ?? null, event: eventOf(m) }));
 
 /** A word of a POSIX command line, double-quoted when it holds anything else than plain characters. */
 const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);
@@ -1379,6 +1379,8 @@ async function main(): Promise<void> {
       // (`end --seat <id>`), its context spent, and a fresh agent joins it
       const endedSeat = args.flag("--seat");
       if (endedSeat !== undefined && asker.seat !== "orchestrator") fail(`end --seat: only the orchestrator ends a seat; ${asker.name} is not ${asker.plan}/orchestrator`);
+      // break-flow V-38 (D73): the orchestrator's seat ends with its run, never alone while the run is open
+      if (endedSeat === "orchestrator") fail(WORDING.endOrchestratorRefused(asker.run, self().join(" "), shellWord(asker.name)));
       if (endedSeat === undefined && asker.seat !== "orchestrator") fail(WORDING.endRefused(asker.run, WORDING.wait(self().join(" "), shellWord(asker.name), FOREGROUND_WAIT_MS)));
       const p = endedSeat === undefined ? asker : ((await board.participant(`${asker.plan}/${endedSeat}`)) ?? fail(`end --seat: no member in seat ${endedSeat} of run ${asker.run}`));
       // a member already ended: nothing to do, nothing to say
@@ -1417,7 +1419,9 @@ async function main(): Promise<void> {
       const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(before ? WORDING.seatEnded(p.name, stateLine(before), before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
+        // V-41: a lost member's activity is from before its link died: its state is lost, with why
+        const was = before?.badge?.name === "lost" ? WORDING.wasLost(before.badge.reason) : before ? stateLine(before) : "";
+        console.log(before ? WORDING.seatEnded(p.name, was, before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
         if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
@@ -1605,6 +1609,8 @@ if (args.verb === "link") {
     // plan D56 (amended): a rebuild met: the same command again, through the launcher, loads the new bundle; this process
     // stays its parent so the harness's background task lives on, and ends with it
     if (stop.why === "new version") process.exit(await relaunchLink());
+    // break-flow V-46: a second link of a member whose link runs says so, exit 0
+    if (stop.why === "pipe taken") console.log(WORDING.linkRunning(member.name));
     // break-flow V-30: a link that met its run closed (or its member ended) says the closed line, then exits 0
     if (stop.why === "closed") console.log(WORDING.closed(member.run, WORDING.end(self().join(" "), shellWord(member.name))));
     process.exit(0);

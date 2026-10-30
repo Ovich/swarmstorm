@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+end --seat orchestrator: refused, run 1 is open: the orchestrator's seat ends with its run: node <cli> close --run 1 --as g/orchestrator

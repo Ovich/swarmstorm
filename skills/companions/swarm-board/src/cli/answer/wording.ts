@@ -43,6 +43,13 @@ export const WORDING = {
     `you have ended in run ${run}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
   /** break-flow V-29: `end --seat`, to the orchestrator: the state its member was in, and the line it reads now */
   seatEnded: (member: string, was: string, told: string) => `${member} ended; it was ${was}; its next call answers: ${told}`,
+  /** break-flow V-41: a lost member's state at its end, never its activity from before it was lost */
+  wasLost: (reason: string) => `lost (${reason})`,
+  /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
+  endOrchestratorRefused: (run: number, cli: Command, as: string) =>
+    `end --seat orchestrator: refused, run ${run} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run} --as ${as}`,
+  /** break-flow V-46: a second link of one member: the first runs on */
+  linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
   /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
   seatState: (state: string) => (state === "done" ? "ended" : state),
   /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */

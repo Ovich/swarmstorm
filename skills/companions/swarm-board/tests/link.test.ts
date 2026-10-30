@@ -333,7 +333,7 @@ test("pipe names differ by data home; a second link of the same member exits at 
   await exitLink(server, first);
 });
 
-test("a member's link started twice as the CLI: one runs, the second exits 0, saying pipe taken on stderr alone (D37, D42)", { timeout: 30000 }, async () => {
+test("a member's link started twice as the CLI: one runs, the second exits 0, pipe taken on stderr, its link already running on stdout (D37, D42, break-flow V-46)", { timeout: 30000 }, async () => {
   const server = await stubServer();
   servers.push(server);
   const home = dataHome(server.port);
@@ -346,7 +346,7 @@ test("a member's link started twice as the CLI: one runs, the second exits 0, sa
     timeout: 20000,
     env: { ...process.env, SWARMSTORM_HOME: home, SWARM_ROOT: home, CLAUDE_CODE_SESSION_ID: "" },
   });
-  assert.deepEqual([second.status, second.stdout, second.stderr.trim()], [0, "", `link ${MEMBER}: pipe taken`]);
+  assert.deepEqual([second.status, second.stdout.trim(), second.stderr.trim()], [0, `${MEMBER}'s link already runs: nothing to start`, `link ${MEMBER}: pipe taken`]);
   assert.equal(serverLogLines(home).length, 0, "pipe taken is never in the server's log");
   assert.equal(server.connections.length, 1, "the second link never reached the server");
   assert.equal(first.exited(), false, "the first link still runs");

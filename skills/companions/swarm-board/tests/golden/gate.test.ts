@@ -187,3 +187,49 @@ test("golden V-30: a link started for a closed run says the closed line and exit
     s.stop();
   }
 });
+
+// break-flow T66 (judged #1898): V-38, V-46
+test("golden V-38: end --seat orchestrator is refused while the run is open, naming close", async () => {
+  const s = await scene("orchestrator", "idle");
+  try {
+    const a = s.call("end", "--seat", "orchestrator", "--as", s.me);
+    pin("gate.end-seat-orchestrator", a);
+    assert.equal(a.status, 1);
+    assert.match(a.text, /end --seat orchestrator: refused, run 1 is open: .* close --run 1 --as g\/orchestrator/);
+    // the orchestrator still answers
+    assert.equal(s.call("post", "still here", "--as", s.me).status, 0);
+  } finally {
+    s.stop();
+  }
+});
+
+test("golden V-46: a paused member's wake says the paused line once", async () => {
+  for (const role of ["worker", "seat"] as const) {
+    const s = await scene(role, "owes-again");
+    try {
+      s.must("pause", "hold on", "--as", "g/orchestrator");
+      const a = s.call("wait", "--mentions", "--as", s.me, "--timeout", "2000");
+      pin(`gate.paused-wake.${role}`, a);
+      assert.equal(a.text.split("\n").filter((l) => /start nothing new and land nothing/.test(l)).length, 1, a.text);
+    } finally {
+      s.stop();
+    }
+  }
+});
+
+test("golden V-46: a second link of a member says its link already runs, exit 0", async () => {
+  const s = await scene("worker", "idle");
+  try {
+    const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "cli", "index.ts");
+    const env = { ...process.env, SWARM_ROOT: s.home, SWARMSTORM_HOME: s.home, SWARM_NO_POLLER: "1" };
+    const first = spawn(process.execPath, [cli, "link", "--run", "1", "--as", s.me], { cwd: path.join(s.home, "repo"), env, stdio: "ignore" });
+    const pidFile = path.join(s.home, "links", "1-g_w1.pid");
+    for (let i = 0; i < 100 && !fs.existsSync(pidFile); i++) await new Promise((ok) => setTimeout(ok, 100));
+    const second = s.call("link", "--run", "1", "--as", s.me);
+    assert.equal(second.status, 0, second.text);
+    assert.match(second.text, /^g\/w1's link already runs/m);
+    first.kill();
+  } finally {
+    s.stop();
+  }
+});
