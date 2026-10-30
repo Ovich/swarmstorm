@@ -10069,7 +10069,9 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   groupAlreadyOpen: (group, run3, cli) => `open: refused: group ${group} already has run ${run3} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run3}), or open under another --group`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
-  seatJoin: (cli, run3, group, doing) => `${cli} join --run ${run3} --seat <seat> --doing ${doing} --as ${group}/<seat>`
+  seatJoin: (cli, run3, group, doing, seat = "<seat>") => `${cli} join --run ${run3} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
+  joinAsOtherGroup: (given, run3, group, corrected) => `join: refused: --as ${given} is not this seat of run ${run3}, whose group is ${group}: ${corrected}`
 };
 function decisionHolders(runs) {
   const each = runs.map((r) => `run ${r.run} ${r.group} (${r.roles.join(", ")})`);
@@ -11100,6 +11102,10 @@ ${verbHelp()}`);
       break;
     }
     case "join": {
+      const joinAs = args.flag("--as");
+      const joinRun = await runOf(runArg());
+      if (joinAs !== void 0 && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
+        fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord2(joinRun.group), shellWord2(need("--doing")), shellWord2(joinedSeat()))));
       const own = await memberWorktree(runArg(), joinedSeat());
       const { member, roster, composition } = await board.join({
         run: runArg(),
