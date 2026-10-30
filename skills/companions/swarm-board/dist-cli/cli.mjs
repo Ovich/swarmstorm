@@ -4726,12 +4726,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const m = toMessage(r);
         const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
         const subject = alarm ? alarmSubjectOf(m) : null;
-        const aboutAnother = subject != null && subject !== m.from;
         return {
           seq: m.seq,
           at: m.at,
           kind: m.kind,
-          from: aboutAnother ? BOARD_AUTHOR : m.from,
+          from: alarm ? BOARD_AUTHOR : m.from,
           ...subject ? { subject } : {},
           body: m.body,
           about: m.about,

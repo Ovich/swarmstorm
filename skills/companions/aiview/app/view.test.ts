@@ -147,6 +147,13 @@ describe("conversation: what an item is (D8, D16)", () => {
     expect(conversation(board(RUNS, ROSTER, [alarm, said]), { run: 1, follow: "alpha/S9" }).map((i) => i.kind)).toEqual(["stalled"]);
   });
 
+  test("D51 (T33b): the run's own stall is the board's too, its header the run", () => {
+    const runStall = item(1, "swarm", "stalled run 1 (alpha): every member silent; close it or dispatch again", { kind: "event", event: "stalled" } as Partial<SnapshotEvent>);
+    const items = conversation(board(RUNS, ROSTER, [runStall]), { run: 1, follow: null });
+    expect(items.map((i) => [i.kind, i.from, wordOf(i)])).toEqual([["stalled", "swarm", "◷ run stalled · every member silent"]]);
+    expect(conversation(board(RUNS, ROSTER, [runStall]), { run: 1, follow: "alpha/orchestrator" })).toEqual([]);
+  });
+
   test("a post about a path by its holder, or naming no holder, is a plain message", () => {
     const own = item(1, "alpha/S1", "@BE·S2 I change a.ts", { about: "a.ts" });
     const nobody = item(2, "beta/S2", "about a.ts in general", { about: "a.ts" });

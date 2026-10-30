@@ -424,6 +424,9 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   if (e.kind === "event" && e.event === "stalled") {
     const rule = stallRuleOf(e);
     if (rule) return said("stalled", "act", `◷ ${who}stalled · ${STALL_WORDS[rule] ?? rule}`, TIPS.stalledMember, rule);
+    // D51: the board's alarm about the whole run (`stalled run <n> (<group>): every member silent; …`)
+    const runSilent = /^stalled run \d+ \([^)]*\): ([^;]+)/.exec(e.body)?.[1];
+    if (runSilent) return said("stalled", "act", `◷ run stalled · ${runSilent}`, TIPS.stalled);
     return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
   }
   if (e.kind === "event" && e.event === "liveness") {

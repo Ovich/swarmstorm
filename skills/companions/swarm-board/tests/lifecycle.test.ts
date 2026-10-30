@@ -193,7 +193,7 @@ test("the retention setting: 30 by default, set to 7, refuses what is not a posi
   assert.equal(board.setting("retention-days"), 7);
 });
 
-test("a run whose every member is silent is flagged once with the run, by its orchestrator, which hears it (board-split D36); a call clears the mark (D23)", () => {
+test("a run whose every member is silent is flagged once with the run, by the board (D51), to its orchestrator, which hears it; a call clears the mark (D23)", () => {
   const { run, s1 } = runWithMembers("quiet");
   const later = (minutes: number): Date => new Date(Date.now() + minutes * MINUTE);
   assert.deepEqual(board.markStaleRuns(later(5)), []);
@@ -202,7 +202,7 @@ test("a run whose every member is silent is flagged once with the run, by its or
   assert.equal(events.length, 1);
   assert.equal(events[0].run, run.id);
   assert.equal(events[0].body, `stalled run ${run.id} (quiet): every member silent; close it or dispatch again`);
-  assert.equal(events[0].from, "quiet/orchestrator");
+  assert.equal(events[0].from, "swarm"); // D51: the board's alarm, never the orchestrator's
   assert.deepEqual(board.read(events[0].seq).mentions, ["quiet/orchestrator"]);
   assert.deepEqual(board.markStaleRuns(later(12)), []);
   board.setDoing(s1, "back");
@@ -237,7 +237,7 @@ test("a silent orchestrator is posted stalled once, with its run; its next call 
   board.markStaleRuns(later(15));
   const quiet = quietEvents();
   assert.equal(quiet.length, 1, "once per silence");
-  assert.equal(quiet[0].from, orchestrator.name);
+  assert.equal(quiet[0].from, "swarm"); // D51: about the orchestrator, still the board's
   assert.equal(quiet[0].run, run.id);
   assert.match(quiet[0].body, /^stalled hush\/orchestrator: no call for 11 min$/);
   assert.equal(backEvents().length, 0);
@@ -248,7 +248,10 @@ test("a silent orchestrator is posted stalled once, with its run; its next call 
   board.deliver(orchestrator);
   assert.equal(backEvents().length, 1, "back once");
   // no member is ever posted stalled by this rule, silent as they were
-  assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "stalled" || e.event === "back").every((e) => e.from === orchestrator.name));
+  // D51: every stalled is the board's, none about a member (the orchestrator's own, or the run's); its back is its own
+  const stalls = board.snapshot(REPO).events.filter((e) => e.event === "stalled");
+  assert.ok(stalls.every((e) => e.from === "swarm" && !/^stalled hush\/(?!orchestrator:)/.test(e.body)));
+  assert.ok(backEvents().every((e) => e.from === orchestrator.name));
 });
 
 test("one live member keeps the run unflagged", () => {

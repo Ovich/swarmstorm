@@ -288,7 +288,7 @@ export type SnapshotEvent = {
   subject?: string;
 };
 /** board-split D51: the board's own alarms about a member. Stored under the orchestrator's row (its run, its wake), they
- *  are served as the board's (`from: swarm`) when they tell of another member, with that member as `subject`. */
+ *  are always served as the board's (`from: swarm`), never the orchestrator's (D51 over D36), with the member they tell of as `subject`. */
 export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
 export const BOARD_AUTHOR = "swarm";
 /** The member a board alarm tells of: the stall rule's member in its run's group, a lost link's member, else the body's head. */
@@ -2778,13 +2778,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const m = toMessage(r);
         const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
         const subject = alarm ? alarmSubjectOf(m) : null;
-        // about another member: the board's; a run's idle stall, or one about the orchestrator itself, stays its own (D36)
-        const aboutAnother = subject != null && subject !== m.from;
         return {
           seq: m.seq,
           at: m.at,
           kind: m.kind,
-          from: aboutAnother ? BOARD_AUTHOR : m.from,
+          from: alarm ? BOARD_AUTHOR : m.from,
           ...(subject ? { subject } : {}),
           body: m.body,
           about: m.about,
