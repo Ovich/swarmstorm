@@ -392,14 +392,14 @@ test("after a restart, a member that had a link and has none 30 s later is gone,
   await new Promise((r) => setTimeout(r, 1500));
   assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [], "not before 30 s");
   skew += 3_000;
-  const gone = await within(c, 4000, (snap) => goneEvents(snap)[0]);
+  const gone = await within(c, 4000, (snap) => goneEvents(snap).find((e) => e.body.includes(s1.name)));
   assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
-  // S2 never had a link: never gone; a second restart tells S1's gone no second time
+  // U-F3: S2 never had a link: lost once LINK_LOST_MS has passed since its join; a second restart tells neither again
   await restart();
   const again = await welcomed();
   skew += 60_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost`]);
+  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body).sort(), [`lost ${s1.name}: its link was lost`, "lost g/S2: no link since its join"]);
 });
 
 test("a link lost and back within 30 s, across a restart or not, is never gone (D37)", async () => {
@@ -410,14 +410,16 @@ test("a link lost and back within 30 s, across a restart or not, is never gone (
   await welcomed({ member: { name: s1.name, run: run.id } });
   skew += 40_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.equal(goneEvents(await value(c, "snapshot", REPO)).length, 0, "back in time, no restart");
+  // S2 never linked: lost by U-F3; S1, back in time, never
+  const s1Lost = (snap: unknown) => goneEvents(snap).filter((e) => e.body.includes(s1.name));
+  assert.equal(s1Lost(await value(c, "snapshot", REPO)).length, 0, "back in time, no restart");
   await restart();
   skew += 20_000;
   const reader = await welcomed();
   await welcomed({ member: { name: s1.name, run: run.id } });
   skew += 40_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.equal(goneEvents(await value(reader, "snapshot", REPO)).length, 0, "back in time after a restart");
+  assert.equal(s1Lost(await value(reader, "snapshot", REPO)).length, 0, "back in time after a restart");
 });
 
 // ── who started it (swarm-relay D42) ──────────────────────────────────────────

@@ -41,8 +41,10 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   board.join({ run: run.id, seat: "a", doing: "again", files: [] });
   // the server starts the re-joined seat's presence afresh (server.ts freshPresence): no link yet, never lost
   const fresh: Presence = (m) => (m === "a" ? { connected: false, lostAt: null } : { connected: false, lostAt: t - 120_000 });
-  board.livenessTick(run.id, new Date(t + 1000), fresh);
-  const st = board.memberStates(run.id, new Date(t + 1000)).find((s) => s.member === "a")!;
+  // a second after the re-join, on the store's own clock (U-F3: no link LINK_LOST_MS after a join is lost)
+  const soon = new Date(Date.now() + 1000);
+  board.livenessTick(run.id, soon, fresh);
+  const st = board.memberStates(run.id, soon).find((s) => s.member === "a")!;
   assert.notEqual(st.badge?.name, "lost");
   assert.equal(events("joined").length, joinedBefore + 1, "one joined event per re-join");
   assert.equal(events("recovered").length, 0, "no recovered beside the joined event");

@@ -3120,6 +3120,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
   if (columnsOf("participants").includes("dormant") && !columnsOf("participants").includes("idle_ended")) db.exec("ALTER TABLE participants RENAME COLUMN dormant TO idle_ended");
   upkeep("participants", "idle_ended", "idle_ended INTEGER NOT NULL DEFAULT 0");
+  db.exec("UPDATE participants SET doing = '' WHERE doing = 'unparked' OR doing LIKE 'parked until %' OR doing LIKE 'dormant until %'");
   upkeep("participants", "parked", "parked INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "seated_at", "seated_at TEXT");
   upkeep("participants", "parked_until", "parked_until TEXT");
@@ -3531,8 +3532,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (Number(row.parked) === 1 === parked) throw new Error(`${verb}: ${fresh.plan}/${seat} is ${parked ? "already parked" : "not parked"}`);
     return transaction(() => {
       const until_ = until?.trim() || null;
-      const shown = parked ? until_ ? `parked until ${until_}` : "parked until its next task" : "unparked";
-      db.prepare("UPDATE participants SET parked = ?, parked_until = ?, doing = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, shown, Number(row.id));
+      db.prepare("UPDATE participants SET parked = ?, parked_until = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, Number(row.id));
       return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
     });
   };
@@ -3585,6 +3585,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const link = presence(member);
     if (heldSince == null && !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS)
       return { badge: { name: "lost", reason: "its link was lost", since: link.lostAt } };
+    const seatedAt = Date.parse(seatedAtOf(p));
+    if (heldSince == null && !link.connected && link.lostAt == null && t - seatedAt >= LINK_LOST_MS)
+      return { badge: { name: "lost", reason: "no link since its join", since: seatedAt } };
     const owes = owedNameOf(p, run3);
     if (owes == null) return null;
     const stallMs = Number(run3.stall_ms ?? STALL_MS_DEFAULT);

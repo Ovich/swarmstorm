@@ -107,6 +107,8 @@ test("an activity updates the member's member_activity row and adds a token read
 test("states: growing → working; an open call → busy with its tool and start, for as long as it is open; past 15 min it stays busy with no badge and no stalled (board-split D49: an open call is activity only)", () => {
   const { run } = setup();
   const base = Date.now() + 60_000;
+  // the links are up from the start (U-F3: a member never linked is lost 30 s after its join)
+  board.livenessTick(run.id, at(base, 0), presence);
   board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
   assert.equal(stateOf(run.id, "a", at(base, 4)).state, "working");
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base }, lastTool: "Bash npm test" }), at(base, 1));
@@ -158,6 +160,8 @@ test("states: waiting is the open call the link read as the board's own wait, it
 test("states (board-split D49): a finished transcript or silence is no badge; a link lost 30 s with no wait held is lost, its state untouched", () => {
   const { run } = setup();
   const base = Date.now() + 60_000;
+  // the links are up from the start (U-F3: a member never linked is lost 30 s after its join)
+  board.livenessTick(run.id, at(base, 0), presence);
   board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Bash node swarm.mjs wait --mentions --as idea/a" }), at(base, 0));
   assert.equal(stateOf(run.id, "a", at(base, 6)).badge, null, "no phase owed: no stall");
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 7));
