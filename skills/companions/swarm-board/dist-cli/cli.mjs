@@ -48,6 +48,11 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 
 // src/proc.ts
+var proc_exports = {};
+__export(proc_exports, {
+  hiddenSpawn: () => hiddenSpawn,
+  hiddenSpawnSync: () => hiddenSpawnSync
+});
 import { spawn, spawnSync } from "node:child_process";
 function hiddenSpawnSync(command, args2, options = {}) {
   return spawnSync(command, args2, { ...options, windowsHide: true });
@@ -11113,8 +11118,8 @@ if (args.verb === "--help") {
 }
 var relaunchLink = async () => {
   await new Promise((r) => setTimeout(r, 300));
-  const { spawn: spawn2 } = await import("node:child_process");
-  const child = spawn2(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env, windowsHide: true });
+  const { hiddenSpawn: hiddenSpawn2 } = await Promise.resolve().then(() => (init_proc(), proc_exports));
+  const child = hiddenSpawn2(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };
 if (args.verb === "link") {

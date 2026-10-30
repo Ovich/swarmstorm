@@ -1454,8 +1454,8 @@ if (args.verb === "--help") {
 const relaunchLink = async (): Promise<number> => {
   // the old pipe is closing: give the named pipe a moment to be free before the new link listens on it
   await new Promise((r) => setTimeout(r, 300));
-  const { spawn } = await import("node:child_process");
-  const child = spawn(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env, windowsHide: true });
+  const { hiddenSpawn } = await import("../proc.ts");
+  const child = hiddenSpawn(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };
 if (args.verb === "link") {
