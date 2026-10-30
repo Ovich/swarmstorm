@@ -183,8 +183,8 @@ test("G39, board-split D31, D49: a member owing its phase that waits on a backgr
   tick2(board, run.id, at(base, 90), presence);
   const late = board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")!;
   assert.deepEqual([late.state, late.badge?.name, late.rule], ["busy", "stalled", "owing"]);
-  // U-F22: the reason names the state the card shows
-  assert.match(late.badge?.reason ?? "", /^busy, not done p1, in a wait \d+ (s|min)$/);
+  // U-F28: the reason names the state the card shows
+  assert.match(late.badge?.reason ?? "", /^waiting, not done p1, in a wait \d+ (s|min)$/);
   board.post(orch, "@a go");
   await held;
 });

@@ -13,11 +13,11 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
-import { nextWaitSpell, reasonOf, stalledOf, WAIT_SPELL_BREAK_MS, type WaitSpell } from "./stall.ts";
+import { nextWaitSpell, reasonOf, stalledOf, type WaitSpell } from "./stall.ts";
 
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
@@ -711,6 +711,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("deliveries", "at", "at TEXT");
   // a member's subscriptions, JSON (D59)
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
+  // board-split D55 (amended, U-F27): since when an open episode's predicate reads false, its close pending
+  upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
   // the seats file's `on`, JSON (D59)
   upkeep("seats", "on_events", "on_events TEXT");
   // idea 5: a seat's bound for a non-shell call, and whether the member's open call is a shell one
@@ -1455,22 +1457,19 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
     if (spell) waitSpells.set(Number(p.id), spell);
-    // a re-arm, out of its waits for a second (nothing open but the next wait), is still the spell: no recovered
-    const rearming = !inHeldWait && spell != null && t - spell.inAt < WAIT_SPELL_BREAK_MS && a?.bg_target == null && (!ownCallOpen || Number(a!.open_wait) === 1);
-    const inWaitSpell = inHeldWait || rearming;
     const stall = stalledOf(
       {
         shownState,
         owes,
         taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run),
         clockFloorAt: Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at))),
-        inHeldWait: inWaitSpell,
-        waitSpellSince: inWaitSpell ? spell!.since : null,
+        inHeldWait,
+        waitSpellSince: inHeldWait ? spell!.since : null,
         openCallSince: ownCallOpen ? Number(a!.open_since) : null,
         background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
         transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
         signAt: Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt),
-        stallMs: Number(run.stall_ms ?? STALL_MS_DEFAULT),
+        stallMs: Math.max(Number(run.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor()),
         silentMs: Number(run.silent_ms ?? SILENT_MS),
         busyMaxMs: seatBusyMaxOf(Number(run.id), member) ?? BUSY_MAX_MS,
         lockStall,
@@ -1482,28 +1481,45 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
     return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...(owes != null && stall.rule !== "lock" ? { owes } : {}) };
   };
-  /** board-split D55: a lost or stalled badge holds only once its episode opened (its predicate true at two
-   *  consecutive ticks); `predicate`: the tick's own read, before that confirm. */
+  /** board-split D55 (amended, U-F27): a lost or stalled badge holds only once its episode opened (its predicate true
+   *  for BADGE_CONFIRM_MS, by time, not by tick count); `predicate`: the tick's own read, before that confirm. */
   const episodeOpenOf = (run: RunId, member: string, badge: string): boolean =>
     db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run, member, badge) != null;
   /** board-split D55: one tick of a member's episode of `badge`: its predicate true opens a pending row, true again
    *  at a later tick opens it ("opened"); false drops a pending row, or closes an open one ("closed"). `silent`: close
    *  without a word (an outranking badge took over). */
   const episodeStep = (run: RunId, member: string, badge: string, on: boolean, t: number, silent = false): "opened" | "closed" | null => {
-    const row = db.prepare("SELECT rowid AS id, pending_at, opened_at FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND closed_at IS NULL").get(run, member, badge) as Row | undefined;
+    const row = db.prepare("SELECT rowid AS id, pending_at, opened_at, clearing_at FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND closed_at IS NULL").get(run, member, badge) as Row | undefined;
     if (on) {
       if (!row) {
         db.prepare("INSERT INTO badge_episodes (run, member, badge, pending_at) VALUES (?, ?, ?, ?)").run(run, member, badge, t);
         return null;
       }
-      if (row.opened_at != null || Number(row.pending_at) >= t) return null;
-      db.prepare("UPDATE badge_episodes SET opened_at = ? WHERE rowid = ?").run(t, Number(row.id));
+      if (row.opened_at != null) {
+        // true again before the close was confirmed: the episode goes on, nothing told
+        if (row.clearing_at != null) db.prepare("UPDATE badge_episodes SET clearing_at = NULL WHERE rowid = ?").run(Number(row.id));
+        return null;
+      }
+      if (row.clearing_at != null) db.prepare("UPDATE badge_episodes SET clearing_at = NULL WHERE rowid = ?").run(Number(row.id));
+      if (t - Number(row.pending_at) < badgeConfirmMs()) return null;
+      db.prepare("UPDATE badge_episodes SET opened_at = ?, clearing_at = NULL WHERE rowid = ?").run(t, Number(row.id));
       return "opened";
     }
     if (!row) return null;
     if (row.opened_at == null) {
-      db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(row.id));
+      // a pending episode false for less than BADGE_CONFIRM_MS (a re-arm's second) is kept; longer, it is dropped
+      if (row.clearing_at == null) db.prepare("UPDATE badge_episodes SET clearing_at = ? WHERE rowid = ?").run(t, Number(row.id));
+      else if (t - Number(row.clearing_at) >= badgeConfirmMs()) db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(row.id));
       return null;
+    }
+    // board-split D55 (amended, U-F27): an open episode closes once its predicate held false BADGE_CONFIRM_MS (a
+    // re-arm's second out of its wait never tells recovered); an outranking badge closes it at once
+    if (!silent) {
+      if (row.clearing_at == null) {
+        db.prepare("UPDATE badge_episodes SET clearing_at = ? WHERE rowid = ?").run(t, Number(row.id));
+        return null;
+      }
+      if (t - Number(row.clearing_at) < badgeConfirmMs()) return null;
     }
     db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE rowid = ?").run(t, Number(row.id));
     return silent ? null : "closed";
@@ -1529,7 +1545,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const shows = (name: string): boolean => opts.predicate === true || episodeOpenOf(Number(run.id), String(p.seat), name);
     const lost = lostOf(p, run, t);
     if (lost) return { ...activity, badge: shows("lost") ? lost : null };
-    const stalledRaw = stalledBadgeOf(p, run, t, activity.state);
+    // U-F28: the reason opens on the state word the card shows (D49's one state), never the activity's own word
+    const stalledRaw = stalledBadgeOf(p, run, t, memberStateOf(p, run.state === "open"));
     const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
     return { ...activity, badge: stalled?.badge ?? null, ...(stalled?.rule ? { rule: stalled.rule } : {}), ...(stalled?.owes ? { owes: stalled.owes } : {}) };
   };
@@ -1893,13 +1910,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return transaction(() => {
       let entry = "new" as "new" | "back" | "again";
       const id = transaction(() => {
-        const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
+        const existing = db.prepare("SELECT id, nick, ended_at, subs FROM participants WHERE run = ? AND seat = ?").get(run, seat) as Row | undefined;
         // --on, else the seat row's on, else the kind's defaults (D59)
         const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
         // D17: a seat is declared before anyone sits in it
         if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run}: declare it first with \`seat add ${seat}\``);
         const seatOn = seatRow?.on_events != null ? parseOn(JSON.parse(String(seatRow.on_events)) as string[]) : null;
-        const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
+        // U-F29: a rejoin keeps the subscriptions the seat's row holds (the member's own `subscribe`), unless --on replaces them
+        const kept = existing?.subs == null ? [] : (JSON.parse(String(existing.subs)) as Subscription[]);
+        const subs = on != null ? JSON.stringify(on) : kept.length > 0 ? String(existing!.subs) : JSON.stringify(seatOn ?? profile.defaults.member);
         const fresh = (): string => unusedNick(String(r.repo));
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";

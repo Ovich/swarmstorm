@@ -6,6 +6,7 @@ import path from "node:path";
 import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
+import { stallMsFloor } from "../board/liveness.ts";
 import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, renamedIn, type Subscription } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
@@ -680,6 +681,8 @@ async function main(): Promise<void> {
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === undefined ? undefined : Number(rawStall);
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
+      // board-split D55 (amended): never under the floor; the answer says so in one line
+      const stallClamped = stallMs !== undefined && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       if (protocol !== undefined && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
@@ -698,7 +701,7 @@ async function main(): Promise<void> {
         title: need("--title"),
         link: args.flag("--link") ?? null,
         seats: readSeats(seatsFile),
-        ...(stallMs !== undefined ? { stallMs } : {}),
+        ...(stallMs !== undefined ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {}),
         ...(protocol !== undefined ? { protocol } : {}),
         // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
         base: args.flag("--onto") ?? baseAt(process.cwd()),
@@ -709,7 +712,7 @@ async function main(): Promise<void> {
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
       // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
-      const lines = (url: string | null) => [String(run.id), url, link, next].filter((l): l is string => l !== null).join("\n");
+      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);

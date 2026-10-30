@@ -1494,3 +1494,15 @@ test("D47: roster and stats take --project; the old --repo is read as it, with o
   assert.equal(stats.status, 0, stats.stderr);
   for (const help of [run("--help").stdout, run("stats", "--help").stdout]) assert.doesNotMatch(help, /--repo\b/);
 });
+
+test("gate G5: open --stall-ms under the 5 min floor is raised to it, said in one answer line after the run id", () => {
+  const seats = path.join(toolRoot, "g5.seats.json");
+  fs.writeFileSync(seats, SEATS);
+  const { SWARM_STALL_FLOOR_MS: _floor, ...outer } = env();
+  const r = spawnSync(process.execPath, [CLI, "open", "--kind", "brainstorm", "--group", "g5", "--title", "t", "--seats", seats, "--stall-ms", "60000"], { cwd: repo, encoding: "utf8", env: outer });
+  assert.equal(r.status, 0, r.stderr);
+  const lines = r.stdout.split("\n");
+  assert.match(lines[0].trim(), /^\d+$/);
+  assert.equal(lines[1], "--stall-ms 60000 is under the 300000 ms floor of the stall window: the run uses 300000");
+  assert.equal(r.stdout.split("floor of the stall window").length, 2, "said once");
+});

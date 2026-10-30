@@ -6,6 +6,11 @@ import { syncBuiltinESMExports } from "node:module";
 delete process.env.CLAUDE_CODE_SESSION_ID;
 // Every test home is a temporary one: printed commands stay bare, as the suite's patterns expect (G3 has its own test).
 process.env.SWARMSTORM_PRINT_HOME = "0";
+// board-split D55 (amended, U-F27): the older scenes confirm a badge in two ticks; the 10 s confirm has its own tests,
+// which clear this for themselves (tests/stall.test.ts)
+process.env.SWARM_BADGE_CONFIRM_MS = "1";
+// and their runs open with stall windows of seconds, under the 5 min floor (gate G5), which its own test keeps
+process.env.SWARM_STALL_FLOOR_MS = "1";
 
 // board-split#D39: a child a test starts opens no console window on the person's desktop. Every child_process
 // starter defaults to `windowsHide: true`; a caller's own option still wins. The options each starter was given

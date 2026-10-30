@@ -14,6 +14,9 @@ export const WORDING = {
   thread: (cli: Command, as: string): Command => `${cli} thread --as ${as}`,
   end: (cli: Command, as: string): Command => `${cli} end --as ${as}`,
 
+  /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
+  stallClamped: (askedMs: number, floorMs: number): string => `--stall-ms ${askedMs} is under the ${floorMs} ms floor of the stall window: the run uses ${floorMs}`,
+
   // ── the run's page ──
   /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
    *  an older aiview's `/board` takes it as its hash */

@@ -129,6 +129,19 @@ export function mentions(m: Message, me: Participant): boolean {
   return m.mentions.includes(me.name) || m.mentions.includes(`${me.plan}/*`);
 }
 
+/** The alarms about one member's liveness, whose body names their subject (`stalled <member>: …`, or one line
+ *  naming several). */
+const MEMBER_ALARMS = new Set<string>(["stalled", "lost", "recovered", "liveness"]);
+
+/** u1 #1349: an alarm about `me` never reaches `me` through a subscription: its own stalled ending its wait would make
+ *  it recover, re-arm and stall again. Alarms go to the orchestrator and to subscribers other than their subject. */
+export function alarmAbout(m: Message, me: Participant): boolean {
+  const e = eventOf(m);
+  if (!e || !MEMBER_ALARMS.has(e)) return false;
+  const body = ` ${m.body}`;
+  return body.includes(` ${me.name}:`) || body.includes(` ${me.name} (`);
+}
+
 /** A message that ends `me`'s `wait --mentions`: a mention, an always event, or a subscribed event in its scope. */
 export function wakes(m: Message, me: Participant, subs: Subscription[]): boolean {
   if (m.from === me.name && !(m.event && isEvent(m.event) && eventDef(m.event).toAuthor)) return false;
@@ -136,6 +149,7 @@ export function wakes(m: Message, me: Participant, subs: Subscription[]): boolea
   const e = eventOf(m);
   if (!e) return false;
   if (eventDef(e).always) return true;
+  if (alarmAbout(m, me)) return false;
   // G5: a join is a composition change too: a member subscribed to composition wakes on it
   return subs.some((s) => !s.carry && (s.event === e || (e === "joined" && s.event === "composition")) && (s.scope === "any" || m.run === me.run));
 }
@@ -147,6 +161,7 @@ export function carries(m: Message, me: Participant, subs: Subscription[]): bool
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
+  if (alarmAbout(m, me)) return false;
   // G5: a join is the run's one composition line for a join, carried to every member of the run
   if ((eventDef(e).ambient || e === "joined") && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));

@@ -5,7 +5,7 @@
 // drop and reconnect within seconds, a phase opened and its task posted later, a long background test,
 // park then the agent ends, a rejoin by a fresh agent; and one control, an agent truly gone. After LOST_MS and two
 // ticks it checks that only the control is lost and that nobody is stalled. Then, on a second run with a 20 s stall
-// window (D55 amended, U-F22, scaled from 5 min): a member works 25 s after its task, then waits in re-armed waits:
+// window (D55 amended, U-F22, scaled from 5 min; SWARM_STALL_FLOOR_MS lowers the 5 min floor for it): a member works 25 s after its task, then waits in re-armed waits:
 // not stalled 15 s into the waiting, stalled once past the window counted from the wait, never from the work.
 //
 //   node scripts/liveness-scenario.mjs [--cli <path to swarm.mjs>] [--keep]
@@ -49,7 +49,7 @@ const agentFor = (member) => {
   const session = `5ce7a000-0000-4000-8000-${String(++sessions).padStart(12, "0")}`;
   const transcript = path.join(transcripts, `${session}.jsonl`);
   fs.writeFileSync(transcript, "");
-  const env = { ...process.env, SWARMSTORM_HOME: home, SWARM_ROOT: home, CLAUDE_CODE_SESSION_ID: session, SWARM_TRANSCRIPTS_ROOT: path.dirname(transcripts) };
+  const env = { ...process.env, SWARM_STALL_FLOOR_MS: "20000", SWARMSTORM_HOME: home, SWARM_ROOT: home, CLAUDE_CODE_SESSION_ID: session, SWARM_TRANSCRIPTS_ROOT: path.dirname(transcripts) };
   return { member, session, transcript, env, link: null, linkArgv: null };
 };
 const swarm = (agent, ...args) => {
@@ -238,10 +238,11 @@ try {
   const early = spellEntry();
   const told2a = swarm(orch2, "deliver", "--as", orch2.member);
   check(early?.badge == null && toldStalledSpell(told2a) === 0, `spell: ${Math.round((Date.now() - waitStarted) / 1000)} s into its waits after ${SPELL_STALL_S + 5} s of work, not stalled (${early?.state}${early?.badge ? `, ${early.badge.name}: ${early.badge.reason}` : ""})`);
-  while (Date.now() - waitStarted < (SPELL_STALL_S + 6) * 1000) await heldWait(5);
-  const late = spellEntry();
+  while (Date.now() - waitStarted < (SPELL_STALL_S + 10 + 6) * 1000) await heldWait(5);
   const told2b = swarm(orch2, "deliver", "--as", orch2.member);
-  check(late?.badge?.name === "stalled" && toldStalledSpell(told2b) === 1, `spell: re-armed waits past ${SPELL_STALL_S} s, stalled and told once (${late?.badge?.name ?? "no badge"}, told ${toldStalledSpell(told2b)})`);
+  const recoveredSpell = (told2b.match(/recovered spl\/spell/g) ?? []).length;
+  // the card may read between two waits (the re-arm's second): the alarm and its absence of recovered are the facts
+  check(toldStalledSpell(told2b) === 1 && recoveredSpell === 0, `spell: re-armed waits past ${SPELL_STALL_S} s, told stalled once and never recovered (stalled ${toldStalledSpell(told2b)}, recovered ${recoveredSpell})`);
 } catch (e) {
   failures++;
   log(`FAIL ${e.stack ?? e}`);

@@ -63,7 +63,7 @@ test("golden stalled (board-split D54 amended): out of a wait, owing its task, s
   assert.equal(badgeIn(run.id, "a", at(base, BUSY_MAX_MS / 1000 - 1)).badge, null, "a call open is work");
   const hung = badgeIn(run.id, "a", at(base, BUSY_MAX_MS / 1000 + 1));
   assert.deepEqual([hung.badge?.name, hung.rule], ["stalled", "call"]);
-  assert.match(hung.badge?.reason ?? "", /^busy, not done p1, a call open, no growth \d+ min$/);
+  assert.match(hung.badge?.reason ?? "", /^working, not done p1, a call open, no growth \d+ min$/);
   // nothing grows, nothing open: stalled past SILENT_MS; a self-report is no sign
   board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read x", inTurn: false }), at(base, 0));
   board.post(a, "on it");

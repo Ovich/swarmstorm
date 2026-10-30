@@ -6,10 +6,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { BUSY_MAX_MS, SILENT_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
+import { BUSY_MAX_MS, SILENT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS } from "../src/board/liveness.ts";
 import { nextWaitSpell, reasonOf, stalledOf, WAIT_SPELL_BREAK_MS, type StallFacts, type WaitSpell } from "../src/board/stall.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { carries, wakes } from "../src/board/events.ts";
+import type { Message } from "../src/board/board.ts";
 
+// this file's scenes run on the real confirm (U-F27); the suite's fixture shortens it for the older ones
+delete process.env.SWARM_BADGE_CONFIRM_MS;
+delete process.env.SWARM_STALL_FLOOR_MS;
 const T0 = 1_800_000_000_000;
 const MIN = 60_000;
 /** A member owing p1, its task delivered at T0, out of any wait, nothing open, its last sign at T0. */
@@ -134,8 +139,8 @@ test("a predicate true at one tick only (a blip) shows no badge and raises no al
   assert.equal(badgeAt(run, due), null, "one tick: pending, not shown");
   // the next tick finds it false (the transcript grew): the pending row is dropped, nothing told
   board.recordActivity(run, "a", act({ grewAt: due + 1000 }), new Date(due + 1000));
-  board.livenessTick(run, new Date(due + 5000), linked);
-  assert.equal(badgeAt(run, due + 5000), null);
+  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
+  assert.equal(badgeAt(run, due + BADGE_CONFIRM_MS), null);
   assert.equal(events("stalled").length, 0);
   assert.equal(events("recovered").length, 0);
 });
@@ -144,16 +149,16 @@ test("one alarm when an episode opens at its second tick, never re-fired by a ti
   const { run, a } = owing();
   const due = Date.now() + SILENT_MS + 1000;
   board.livenessTick(run, new Date(due), linked);
-  board.livenessTick(run, new Date(due + 5000), linked);
-  assert.equal(badgeAt(run, due + 5000)?.name, "stalled");
-  assert.match(badgeAt(run, due + 5000)!.reason, /^working, not done p1, no activity \d+ min$/);
+  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
+  assert.equal(badgeAt(run, due + BADGE_CONFIRM_MS)?.name, "stalled");
+  assert.match(badgeAt(run, due + BADGE_CONFIRM_MS)!.reason, /^working, not done p1, no activity \d+ min$/);
   for (const s of [10, 60, 900, 3600]) board.livenessTick(run, new Date(due + s * 1000), linked);
   assert.equal(events("stalled").length, 1, "one alarm per episode");
   // done ends the owing: the episode closes, one recovered
   board.done(a, "p1");
   board.livenessTick(run, new Date(due + 3700_000), linked);
-  board.livenessTick(run, new Date(due + 3705_000), linked);
-  assert.equal(badgeAt(run, due + 3705_000), null);
+  board.livenessTick(run, new Date(due + 3700_000 + BADGE_CONFIRM_MS), linked);
+  assert.equal(badgeAt(run, due + 3700_000 + BADGE_CONFIRM_MS), null);
   assert.equal(events("recovered").length, 1);
 });
 
@@ -163,17 +168,17 @@ test("a member working, its transcript grown seconds ago, is never stalled howev
   for (let s = 60; s <= 3 * 3600; s += 60) {
     board.recordActivity(run, "a", act({ grewAt: base + (s - 3) * 1000 }), new Date(base + (s - 3) * 1000));
     board.livenessTick(run, new Date(base + s * 1000), linked);
-    board.livenessTick(run, new Date(base + s * 1000 + 5000), linked);
+    board.livenessTick(run, new Date(base + s * 1000 + BADGE_CONFIRM_MS), linked);
   }
   assert.equal(events("stalled").length, 0);
-  assert.equal(badgeAt(run, base + 3 * 3600_000 + 5000), null);
+  assert.equal(badgeAt(run, base + 3 * 3600_000 + BADGE_CONFIRM_MS), null);
 });
 
 test("parking a stalled member closes its episode without a recovered; its unpark tells none either (U-F25)", () => {
   const { run } = owing();
   const due = Date.now() + SILENT_MS + 1000;
   board.livenessTick(run, new Date(due), linked);
-  board.livenessTick(run, new Date(due + 5000), linked);
+  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
   assert.equal(events("stalled").length, 1);
   board.park(board.participant("g/orchestrator")!, "a");
   board.livenessTick(run, new Date(due + 10_000), linked);
@@ -184,4 +189,89 @@ test("parking a stalled member closes its episode without a recovered; its unpar
   board.livenessTick(run, new Date(due + 17_000), linked);
   assert.equal(events("recovered").length, 0);
   assert.equal(badgeAt(run, due + 10_000), null, "unparked: a fresh episode needs two ticks again");
+});
+
+test("gate G5: a run that stored the old 60 s stall_ms still waits the 5 min floor before a held wait reads stalled", async () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }], stallMs: 60_000 });
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  const orch = board.participant("g/orchestrator")!;
+  board.phase(orch, "p1", "go");
+  board.post(orch, "@a your part", { task: true });
+  for (const p of [a, orch]) board.deliver(p);
+  const stop = new AbortController();
+  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 60_000, signal: stop.signal }).catch(() => null);
+  const base = Date.now();
+  board.recordActivity(run.id, "a", act({ openTool: { name: "Bash", target: "", since: base, boardWait: true } }), new Date(base));
+  board.livenessTick(run.id, new Date(base + 61_000), linked);
+  board.livenessTick(run.id, new Date(base + 62_000), linked);
+  assert.equal(badgeAt(run.id, base + 62_000), null, "61 s into the wait: not stalled");
+  board.livenessTick(run.id, new Date(base + STALL_MS_DEFAULT + 1000), linked);
+  board.livenessTick(run.id, new Date(base + STALL_MS_DEFAULT + 1000 + BADGE_CONFIRM_MS), linked);
+  assert.equal(badgeAt(run.id, base + STALL_MS_DEFAULT + 1000 + BADGE_CONFIRM_MS)?.name, "stalled", "past 5 min: stalled");
+  stop.abort();
+  await held;
+});
+
+test("U-F27: an episode opens once its predicate held BADGE_CONFIRM_MS by time, and a second out of it tells no recovered", () => {
+  const { run } = owing();
+  const due = Date.now() + SILENT_MS + 1000;
+  // 1 s ticks for 9 s: never confirmed
+  for (let s = 0; s < BADGE_CONFIRM_MS / 1000; s++) board.livenessTick(run, new Date(due + s * 1000), linked);
+  assert.equal(badgeAt(run, due + 9000), null);
+  assert.equal(events("stalled").length, 0);
+  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
+  assert.equal(events("stalled").length, 1, "held 10 s: opened");
+  // false for 2 s (growth), then true again: the episode goes on, no recovered, no second alarm
+  board.recordActivity(run, "a", act({ grewAt: due + 11_000 }), new Date(due + 11_000));
+  board.livenessTick(run, new Date(due + 12_000), linked);
+  board.recordActivity(run, "a", act({ grewAt: due + 11_000 - SILENT_MS }), new Date(due + 13_000));
+  board.livenessTick(run, new Date(due + 14_000), linked);
+  board.livenessTick(run, new Date(due + 30_000), linked);
+  assert.equal(events("recovered").length, 0);
+  assert.equal(events("stalled").length, 1);
+});
+
+test("U-F28: the reason opens on the state the card shows: a held wait over a background task reads waiting", async () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  const orch = board.participant("g/orchestrator")!;
+  board.phase(orch, "p1", "go");
+  board.post(orch, "@a your part", { task: true });
+  for (const p of [a, orch]) board.deliver(p);
+  const stop = new AbortController();
+  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 60_000, signal: stop.signal }).catch(() => null);
+  const base = Date.now();
+  board.recordActivity(run.id, "a", act({ openTool: { name: "Bash", target: "", since: base, boardWait: true }, background: { target: "npm test", since: base, outputGrewAt: null } }), new Date(base));
+  const at = base + STALL_MS_DEFAULT + 1000;
+  board.livenessTick(run.id, new Date(at), linked);
+  board.livenessTick(run.id, new Date(at + BADGE_CONFIRM_MS), linked);
+  const card = board.snapshot(REPO).roster.find((m) => m.member === "g/a")!;
+  assert.equal(card.state, "waiting");
+  assert.match(badgeAt(run.id, at + BADGE_CONFIRM_MS)!.reason, /^waiting, not done p1, in a wait /);
+  stop.abort();
+  await held;
+});
+
+test("U-F29: a rejoin keeps the subscriptions the seat's member made", () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  board.subscribe(a, [{ event: "stalled", scope: "run" }]);
+  board.end(a);
+  const again = board.join({ run: run.id, seat: "a", doing: "y", files: [] }).member;
+  assert.deepEqual(again.subscriptions.map((s) => s.event), ["stalled"]);
+});
+
+test("u1 #1349: an alarm about a member never wakes that member, though it subscribed; another subscriber wakes", () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
+  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
+  const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
+  for (const p of [a, b]) board.subscribe(p, [{ event: "stalled", scope: "run" }, { event: "recovered", scope: "run" }]);
+  const subject = { ...board.participant("g/a")! };
+  const other = { ...board.participant("g/b")! };
+  const alarm = { seq: 1, repo: REPO, from: "g/orchestrator", body: "stalled g/a: waiting, not done p1, in a wait 5 min; phase p1 0/2 done", about: null, kind: "event", mentions: ["g/orchestrator"], at: new Date().toISOString(), run: run.id, endorses: null, event: "stalled" } as unknown as Message;
+  assert.equal(wakes(alarm, subject, subject.subscriptions), false);
+  assert.equal(carries(alarm, subject, subject.subscriptions), false);
+  assert.equal(wakes(alarm, other, other.subscriptions), true);
+  const several = { ...alarm, body: "stalled g: 2 members: g/b (owing): working, …; g/a (silent): …; phase p1" } as Message;
+  assert.equal(wakes(several, subject, subject.subscriptions), false);
 });
