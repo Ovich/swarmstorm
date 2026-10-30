@@ -121,6 +121,8 @@ export const WORDING = {
   /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
   noProject: (name: string) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
   /** verify 3 F17: roster on a project with no open run says so, never nothing */
+  /** verify-decisions F20: a verb run outside any repository names the flag that picks a project */
+  notInRepository: (dir: string) => `${dir} is in no repository: name the project with --project <name> (an aiview project) or --project <path>`,
   noRunIn: (repo: string) => `no open run in ${repo}`,
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
@@ -168,12 +170,13 @@ export const WORDING = {
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 
   // ── board-split D28, D29: two runs holding decision authority, and the decisions run ──
-  decisionsOpen: (cli: Command, title: string): Command => `${cli} open --kind brainstorm --group decisions --title ${title} --seats <seats.json>`,
-  decisionsSeatAdd: (cli: Command, run: number): Command => `${cli} seat add <your seat> --run ${run} --role <your roles>`,
+  decisionsOpen: (cli: Command, title: string, seatsFile: string): Command => `${cli} open --kind brainstorm --group decisions --title ${title} --seats ${seatsFile}`,
+  decisionsSeatAdd: (cli: Command, run: number, seat: string, roles: string): Command => `${cli} seat add ${seat} --run ${run} --role ${roles}`,
   decisionsRunNeeded: (runs: { run: number; group: string; roles: string[] }[], open: Command) =>
-    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (a seat per run, its roles the seat's role): ${open}`,
-  decisionsRunOpen: (runs: { run: number; group: string; roles: string[] }[], decisionsRun: number, seatAdd: Command) =>
-    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}; a run without its seat there adds it: ${seatAdd}`,
+    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (the board wrote its seats file, a seat per run, its roles the seat's role): ${open}`,
+  decisionsRunOpen: (runs: { run: number; group: string; roles: string[] }[], decisionsRun: number, seatAdds: Command[]) =>
+    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}` +
+    (seatAdds.length ? `; add the missing seat${seatAdds.length > 1 ? "s" : ""}: ${seatAdds.join(" ; ")}` : ""),
 } as const;
 
 /** `run 7 board-split (architect, tech-lead) and run 8 shop (architect)`: each run holding decision authority, its roles. */

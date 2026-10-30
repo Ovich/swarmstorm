@@ -7250,7 +7250,7 @@ var require_websocket = __commonJS({
     var http2 = __require("http");
     var net3 = __require("net");
     var tls = __require("tls");
-    var { randomBytes, createHash } = __require("crypto");
+    var { randomBytes, createHash: createHash2 } = __require("crypto");
     var { Duplex, Readable } = __require("stream");
     var { URL } = __require("url");
     var PerMessageDeflate = require_permessage_deflate();
@@ -7907,7 +7907,7 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, "Invalid Upgrade header");
           return;
         }
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         if (res.headers["sec-websocket-accept"] !== digest) {
           abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
           return;
@@ -8274,7 +8274,7 @@ var require_websocket_server = __commonJS({
     var EventEmitter = __require("events");
     var http2 = __require("http");
     var { Duplex } = __require("stream");
-    var { createHash } = __require("crypto");
+    var { createHash: createHash2 } = __require("crypto");
     var extension = require_extension();
     var PerMessageDeflate = require_permessage_deflate();
     var subprotocol = require_subprotocol();
@@ -8571,7 +8571,7 @@ var require_websocket_server = __commonJS({
           );
         }
         if (this._state > RUNNING) return abortHandshake(socket, 503);
-        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const digest = createHash2("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
           "Upgrade: websocket",
@@ -9030,6 +9030,7 @@ init_kinds();
 init_liveness();
 init_events2();
 init_home();
+import { createHash } from "node:crypto";
 import fs13 from "node:fs";
 import path13 from "node:path";
 
@@ -9789,6 +9790,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
   noProject: (name) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
   /** verify 3 F17: roster on a project with no open run says so, never nothing */
+  /** verify-decisions F20: a verb run outside any repository names the flag that picks a project */
+  notInRepository: (dir) => `${dir} is in no repository: name the project with --project <name> (an aiview project) or --project <path>`,
   noRunIn: (repo) => `no open run in ${repo}`,
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles) => roles.length ? `  authority ${roles.join(",")}` : "",
@@ -9831,10 +9834,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   parkedUntil: (phase) => `parked until ${phase}`,
   forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`,
   // ── board-split D28, D29: two runs holding decision authority, and the decisions run ──
-  decisionsOpen: (cli, title) => `${cli} open --kind brainstorm --group decisions --title ${title} --seats <seats.json>`,
-  decisionsSeatAdd: (cli, run3) => `${cli} seat add <your seat> --run ${run3} --role <your roles>`,
-  decisionsRunNeeded: (runs, open) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (a seat per run, its roles the seat's role): ${open}`,
-  decisionsRunOpen: (runs, decisionsRun, seatAdd) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}; a run without its seat there adds it: ${seatAdd}`
+  decisionsOpen: (cli, title, seatsFile) => `${cli} open --kind brainstorm --group decisions --title ${title} --seats ${seatsFile}`,
+  decisionsSeatAdd: (cli, run3, seat, roles) => `${cli} seat add ${seat} --run ${run3} --role ${roles}`,
+  decisionsRunNeeded: (runs, open) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (the board wrote its seats file, a seat per run, its roles the seat's role): ${open}`,
+  decisionsRunOpen: (runs, decisionsRun, seatAdds) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}` + (seatAdds.length ? `; add the missing seat${seatAdds.length > 1 ? "s" : ""}: ${seatAdds.join(" ; ")}` : "")
 };
 function decisionHolders(runs) {
   const each = runs.map((r) => `run ${r.run} ${r.group} (${r.roles.join(", ")})`);
@@ -10013,7 +10016,7 @@ var DECISION_AUTHORITY_ROLES = /* @__PURE__ */ new Set([
 ]);
 var DECISIONS_GROUP = "decisions";
 var decisionRoles = (r) => (r.authority ?? []).filter((role) => DECISION_AUTHORITY_ROLES.has(role));
-function decisionsLines(runs, cli, only) {
+function decisionsLines(runs, cli, writeSeats, only) {
   const byRepo = /* @__PURE__ */ new Map();
   for (const r of runs) byRepo.set(r.repo, [...byRepo.get(r.repo) ?? [], r]);
   const lines = [];
@@ -10023,9 +10026,14 @@ function decisionsLines(runs, cli, only) {
     if (only !== void 0 && !holders.some((r) => r.id === only)) continue;
     const named = holders.map((r) => ({ run: r.id, group: r.group, roles: decisionRoles(r) }));
     const open = repoRuns.find((r) => r.group === DECISIONS_GROUP);
-    lines.push(
-      open ? WORDING.decisionsRunOpen(named, open.id, WORDING.decisionsSeatAdd(cli, open.id)) : WORDING.decisionsRunNeeded(named, WORDING.decisionsOpen(cli, shellWord("Decisions")))
-    );
+    if (open) {
+      const seated = new Set((open.seats ?? []).map((s) => s.id));
+      const missing = named.filter((h) => !seated.has(h.group) && (only === void 0 || h.run === only));
+      lines.push(WORDING.decisionsRunOpen(named, open.id, missing.map((h) => WORDING.decisionsSeatAdd(cli, open.id, shellWord(h.group), h.roles.join(",")))));
+    } else {
+      const seatsFile = writeSeats(repoRuns[0].repo, named.map((h) => ({ id: h.group, role: h.roles.join(","), blockers: [] })));
+      lines.push(WORDING.decisionsRunNeeded(named, WORDING.decisionsOpen(cli, shellWord("Decisions"), shellWord(seatsFile))));
+    }
   }
   return lines;
 }
@@ -10260,11 +10268,19 @@ var projectFlag = () => {
 };
 var projectRepo = () => {
   const asked = projectFlag();
-  if (asked === void 0) return repoOf2(process.cwd()) ?? fail(WORDING.noProject(process.cwd()));
+  if (asked === void 0) return repoOf2(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
   if (fs13.existsSync(asked)) return repoOf2(path13.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
   const repo = covered.filter((p) => fs13.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
+};
+var writeDecisionsSeats = (repo, seats) => {
+  const project = path13.basename(path13.dirname(repo)).replace(/[^\w.-]/g, "_");
+  const file = path13.join(DATA_ROOT, "decisions", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  fs13.mkdirSync(path13.dirname(file), { recursive: true });
+  fs13.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
+`);
+  return file.split(path13.sep).join("/");
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${verbHelp()}`);
@@ -10637,7 +10653,7 @@ ${verbHelp()}`);
       const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
       const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
-      const decisions = decisionsLines(await board.runs(), self().join(" "), run3.id);
+      const decisions = decisionsLines(await board.runs(), self().join(" "), writeDecisionsSeats, run3.id);
       const lines = (url) => [String(run3.id), stallClamped, url, link, ...decisions, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
@@ -11241,7 +11257,7 @@ ${verbHelp()}`);
       );
       const held = await board.locks();
       const merge = await mergeLocksHeld();
-      const decisions = decisionsLines(runs, cli);
+      const decisions = decisionsLines(runs, cli, writeDecisionsSeats);
       emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);

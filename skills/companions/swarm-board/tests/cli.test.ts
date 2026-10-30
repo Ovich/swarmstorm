@@ -1516,6 +1516,10 @@ test("verify 3 F15, F17: --project takes an aiview project's name or a path; an 
   const unknown = withAiview("roster", "--project", "Nowhere");
   assert.notEqual(unknown.status, 0);
   assert.match(unknown.stderr, /no project Nowhere/);
+  // verify-decisions F20: outside any repository, the refusal names the flag that picks the project
+  const outside = withAiview("stats", "--json");
+  assert.notEqual(outside.status, 0);
+  assert.match(outside.stderr, /is in no repository: name the project with --project <name>/);
   const stats = withAiview("stats", "--project", "Mine", "--json");
   assert.equal(stats.status, 0, stats.stderr);
   const none = withAiview("roster", "--project", "Empty");

@@ -1,6 +1,7 @@
 // CLI dispatch — the agent-facing surface of the board. Human output is short lines an
 // agent reads; --json prints the same data as one object; errors go to stderr, exit 1.
 import { hiddenSpawnSync } from "../proc.ts";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
@@ -20,7 +21,7 @@ import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -178,11 +179,22 @@ const projectFlag = (): string | undefined => {
  *  of its paths that is a repository; the cwd's without the flag. An unknown one fails `no project <name>`. */
 const projectRepo = (): string => {
   const asked = projectFlag();
-  if (asked === undefined) return repoOf(process.cwd()) ?? fail(WORDING.noProject(process.cwd()));
+  if (asked === undefined) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
   if (fs.existsSync(asked)) return repoOf(path.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
   const repo = covered.filter((p) => fs.existsSync(p)).map((p) => repoOf(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
+};
+/** board-split D28 (verify-decisions F18): the decisions run's seats file, written in the data home per project, so the
+ *  printed `open … --seats <path>` runs as printed (AGENTS rule 10). */
+const writeDecisionsSeats: WriteDecisionsSeats = (repo, seats) => {
+  // one file per project: its checkout's folder name, then a short hash of its git dir
+  const project = path.basename(path.dirname(repo)).replace(/[^\w.-]/g, "_");
+  const file = path.join(DATA_ROOT, "decisions", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(seats, null, 2)}\n`);
+  // forward slashes: the path is one shell word on every platform, printed unquoted
+  return file.split(path.sep).join("/");
 };
 const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
 
@@ -729,7 +741,7 @@ async function main(): Promise<void> {
       // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
       // board-split D28: this run and another open one on the project hold decision authority: the decisions run's line
-      const decisions = decisionsLines(await board.runs(), self().join(" "), run.id);
+      const decisions = decisionsLines(await board.runs(), self().join(" "), writeDecisionsSeats, run.id);
       const lines = (url: string | null) => [String(run.id), stallClamped, url, link, ...decisions, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
@@ -1432,7 +1444,7 @@ async function main(): Promise<void> {
       const held = await board.locks();
       const merge = await mergeLocksHeld();
       // board-split D28: each project where two open runs hold decision authority, with the decisions run's command
-      const decisions = decisionsLines(runs, cli);
+      const decisions = decisionsLines(runs, cli, writeDecisionsSeats);
       emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);

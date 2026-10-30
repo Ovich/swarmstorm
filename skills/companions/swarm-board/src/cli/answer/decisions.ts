@@ -20,14 +20,20 @@ export const DECISION_AUTHORITY_ROLES: ReadonlySet<string> = new Set([
 /** The decisions run's group. */
 export const DECISIONS_GROUP = "decisions";
 
-/** What the rule reads of an open run. */
-export type AuthorityRun = { id: number; repo: string; group: string; authority?: readonly string[] };
+/** What the rule reads of an open run: its seats, to tell which holders the decisions run already seats. */
+export type AuthorityRun = { id: number; repo: string; group: string; authority?: readonly string[]; seats?: readonly { id: string }[] };
+
+/** A seat of the decisions run: one per run holding decision authority, named for its group, its roles the seat's role. */
+export type DecisionsSeat = { id: string; role: string; blockers: string[] };
+
+/** Writes the decisions run's seats file for a project and returns its path (AGENTS rule 10: the printed command runs as printed). */
+export type WriteDecisionsSeats = (repo: string, seats: DecisionsSeat[]) => string;
 
 const decisionRoles = (r: AuthorityRun): string[] => (r.authority ?? []).filter((role) => DECISION_AUTHORITY_ROLES.has(role));
 
 /** The decisions-run line of each project where two or more open runs hold a decision-authority role; `only`: the line of
  *  that run's project alone, and only when the run itself holds one (the answer to its `open`). */
-export function decisionsLines(runs: readonly AuthorityRun[], cli: Command, only?: number): string[] {
+export function decisionsLines(runs: readonly AuthorityRun[], cli: Command, writeSeats: WriteDecisionsSeats, only?: number): string[] {
   const byRepo = new Map<string, AuthorityRun[]>();
   for (const r of runs) byRepo.set(r.repo, [...(byRepo.get(r.repo) ?? []), r]);
   const lines: string[] = [];
@@ -37,11 +43,15 @@ export function decisionsLines(runs: readonly AuthorityRun[], cli: Command, only
     if (only !== undefined && !holders.some((r) => r.id === only)) continue;
     const named = holders.map((r) => ({ run: r.id, group: r.group, roles: decisionRoles(r) }));
     const open = repoRuns.find((r) => r.group === DECISIONS_GROUP);
-    lines.push(
-      open
-        ? W.decisionsRunOpen(named, open.id, W.decisionsSeatAdd(cli, open.id))
-        : W.decisionsRunNeeded(named, W.decisionsOpen(cli, shellWord("Decisions"))),
-    );
+    if (open) {
+      // each holder not yet seated there, its own command filled in; an open names only its own run
+      const seated = new Set((open.seats ?? []).map((s) => s.id));
+      const missing = named.filter((h) => !seated.has(h.group) && (only === undefined || h.run === only));
+      lines.push(W.decisionsRunOpen(named, open.id, missing.map((h) => W.decisionsSeatAdd(cli, open.id, shellWord(h.group), h.roles.join(",")))));
+    } else {
+      const seatsFile = writeSeats(repoRuns[0].repo, named.map((h) => ({ id: h.group, role: h.roles.join(","), blockers: [] })));
+      lines.push(W.decisionsRunNeeded(named, W.decisionsOpen(cli, shellWord("Decisions"), shellWord(seatsFile))));
+    }
   }
   return lines;
 }
