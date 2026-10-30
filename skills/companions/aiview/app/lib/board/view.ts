@@ -250,10 +250,11 @@ export type RunTab = {
   progress: PhaseCount | null;
 };
 /** The open phase's done count as the board gives it: `gone` names the lost members, out of the count (D41). */
-export type PhaseCount = { phase: string; done: number; of: number; gone: string[] };
+export type PhaseCount = { phase: string; done: number; of: number; gone?: string[] };
 /** The count as the CLI prints it: `2/7 done`, `, 1 lost: w2` naming each lost member (D62). */
 export function phaseCountText(p: PhaseCount): string {
-  return `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost: ${p.gone.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ")}` : ""}`;
+  const gone = p.gone ?? [];
+  return `${p.done}/${p.of} done${gone.length ? `, ${gone.length} lost: ${gone.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ")}` : ""}`;
 }
 /** A closed run in the archive; `outcome` null while the snapshot holds none (D18). */
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };

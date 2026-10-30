@@ -150,7 +150,7 @@ export function RunViewSwitch({
 
 /** The open phase's done count beside its chip (board-split D62): `2/7 done`, the lost members named on hover. */
 function PhaseCountChip({ progress }: { progress: PhaseCount }) {
-  const lost = progress.gone.map((m) => m.slice(m.lastIndexOf("/") + 1));
+  const lost = (progress.gone ?? []).map((m) => m.slice(m.lastIndexOf("/") + 1));
   const tip = `phase ${progress.phase}: ${phaseCountText(progress)}${lost.length ? " (lost members are out of the count)" : ""}`;
   return (
     <span className="runcount" data-component="PhaseCount" title={tip}>
