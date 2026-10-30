@@ -21,6 +21,7 @@ vi.mock("./hooks/useBoard.ts", () => ({
 }));
 
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
+import { AgentLabel, AgentMark, MemberTag } from "./components/viewers/board/chips.tsx";
 import { CLAIMS_EXPANDED_KEY } from "./components/viewers/board/ClaimsRow.tsx";
 
 afterEach(() => {
@@ -616,4 +617,23 @@ test("a parked seat's unread reads quiet, kept for its return: no alarm, no atte
   show([APP], 1, [withMember({ state: "working", unread: 4 })]);
   const alarm = activeCard().querySelector('[data-component="UnreadCount"]')!;
   expect([alarm.textContent, alarm.classList.contains("kept")]).toEqual(["4 unread", false]);
+});
+
+// U-F13 (D49): a parked card shows no activity line, even when the snapshot still carries a background call from before
+test("a parked card draws no activity line from a stale background call", () => {
+  const stale = { open: null, background: { target: "for i in 1 2 3", since: minutesAgo(28), outputGrewAt: null, label: null, command: "for i in 1 2 3; do sleep 1; done" } };
+  show([APP], 1, [withMember({ state: "parked", parkedUntil: "P5", activity: stale })]);
+  expect(activityOfCard(activeCard())).toBeNull();
+  cleanup();
+  show([APP], 1, [withMember({ state: "working", activity: stale })]);
+  expect(activityOfCard(activeCard())).toMatch(/^◌ /);
+});
+
+// D51 (T35): a board alarm's author is the board, drawn as `swarm` with its own mark, never `undefined`
+test("the board as an author reads swarm, with the board's mark", () => {
+  render(<><AgentMark name="swarm" /><AgentLabel name="swarm" /><MemberTag name="swarm" /></>);
+  expect(document.querySelector(".mark.board")?.textContent).toBe("SW");
+  expect(document.querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("the board");
+  expect(document.querySelector('[data-component="MemberTag"]')?.textContent).toBe("swarm");
+  expect(document.body.textContent).not.toMatch(/undefined/);
 });

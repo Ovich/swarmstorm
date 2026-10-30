@@ -41,3 +41,15 @@ test("D51: a lost alarm about a member is served from the board with its subject
   assert.deepEqual([said.from, said.subject], ["g/orchestrator", undefined]);
   void a;
 });
+
+test("U-F13: a parked seat's card carries no activity, a background call from before the park included", () => {
+  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "g", title: "T", stallMs: 5000, seats: [{ id: "a", blockers: [] }] });
+  board.join({ run: run.id, seat: "a", doing: "x", files: [] });
+  const orch = board.participant("g/orchestrator")!;
+  const base = Date.now();
+  board.recordActivity(run.id, "a", act({ grewAt: base, background: { target: "for i in 1 2 3", since: base, outputGrewAt: base, label: null, command: "for i in 1 2 3" } }), new Date(base));
+  const card = () => board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
+  assert.equal(card().activity?.background?.target, "for i in 1 2 3");
+  board.park(orch, "a");
+  assert.equal(card().activity, undefined);
+});

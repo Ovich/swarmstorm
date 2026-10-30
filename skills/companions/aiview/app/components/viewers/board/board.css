@@ -604,6 +604,7 @@
 .board .item.decided .text { padding: 8px 12px; border-radius: var(--radius-sm); background: var(--ok-soft); box-shadow: inset 3px 0 0 var(--ok); }
 .board .mark { width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; font: 600 10px var(--font-sans); color: #fff; background: hsl(var(--h) 62% 52%); }
 .board .mark.orch { background: var(--card); color: hsl(var(--h) 55% 45%); box-shadow: inset 0 0 0 1.5px hsl(var(--h) 62% 52%); }
+.board .mark.board { background: var(--muted); color: var(--muted-foreground); box-shadow: inset 0 0 0 1.5px var(--border); }
 .board .event { grid-template-columns: 28px minmax(0, 1fr) auto; column-gap: 12px; padding: 4px 10px; color: var(--muted-foreground); }
 .board .event::before { content: ""; grid-column: 1; grid-row: 1; justify-self: center; align-self: center; width: 8px; height: 8px; border-radius: 50%; background: var(--faint-foreground); }
 .board .event .head { grid-column: 2; grid-row: 1; }

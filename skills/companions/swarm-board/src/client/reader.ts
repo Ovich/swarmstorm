@@ -10,7 +10,7 @@ import type { Frame, RpcMethod } from "../wire.ts";
 
 export type { BoardSnapshot, CoreMemberState, LockTurn, Liveness, Phase, PhaseProgress, RepoSummary, RunSummary, SeatState, SnapshotMember, SnapshotMemberState, SnapshotEvent } from "../board/board.ts";
 // The pure helpers the board page needs, so the page too reaches swarm through this door (D18).
-export { planCode, nameHandle, parseMentions } from "../board/mentions.ts";
+export { planCode, nameHandle, parseMentions, BOARD_AUTHOR } from "../board/mentions.ts";
 export type { Kind } from "../board/kinds.ts";
 export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "../board/board.ts";
 

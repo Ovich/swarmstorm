@@ -136,7 +136,7 @@ function unmatchedMentions(body, senderPlan, plans, names) {
   }
   return out;
 }
-var isCodeShaped, plansOfCode, MENTION, outsideCode, nameHandle, editDistance;
+var isCodeShaped, plansOfCode, MENTION, outsideCode, nameHandle, editDistance, BOARD_AUTHOR;
 var init_mentions = __esm({
   "src/board/mentions.ts"() {
     "use strict";
@@ -154,6 +154,7 @@ var init_mentions = __esm({
       }
       return prev[b.length];
     };
+    BOARD_AUTHOR = "swarm";
   }
 });
 
@@ -4692,7 +4693,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           badge: ended ? null : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null,
           unread: ended ? 0 : unreadOf(id),
           ...Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {},
-          ...ended ? {} : activityShown(Number(r.run), seat)
+          // U-F13: a parked or ended seat runs nothing the card should show; its last calls are stale
+          ...ended || Number(r.parked) === 1 ? {} : activityShown(Number(r.run), seat)
         };
       });
       const events = db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN).map((r) => {
@@ -4825,7 +4827,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, BOARD_ALARMS, BOARD_AUTHOR, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
+var progressText, goneSuffix, PROTOCOL_NAME, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4842,7 +4844,6 @@ var init_board = __esm({
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
     BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
-    BOARD_AUTHOR = "swarm";
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;

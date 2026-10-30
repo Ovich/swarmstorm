@@ -138,6 +138,9 @@ const minutesShort = (since: number, now: number): string => `${Math.max(0, Math
  *  the board's own wait is no line (the state word says waiting); nothing open, no line. `hover`: the whole command,
  *  foreground or background, since when, and the last call. */
 export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
+  // U-F13 (D49): a parked or ended seat has no activity line, whatever an older snapshot still carries
+  const state = boardStateOf(p);
+  if (state === "parked" || state === "ended") return null;
   const open = p.activity?.open && !p.activity.open.boardWait ? p.activity.open : null;
   const background = p.activity?.background ?? null;
   const last = activity?.doing ? `last call: ${activity.doing}` : null;

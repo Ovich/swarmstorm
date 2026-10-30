@@ -103,3 +103,6 @@ export function unmatchedMentions(body: string, senderPlan: string, plans: strin
   }
   return out;
 }
+
+/** board-split D51: the author the snapshot gives the board's own alarms; no member has this name. */
+export const BOARD_AUTHOR = "swarm";

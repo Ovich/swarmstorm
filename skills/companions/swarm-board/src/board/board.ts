@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
-import { nameHandle, parseMentions, planCode } from "./mentions.ts";
+import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
@@ -292,7 +292,7 @@ export type SnapshotEvent = {
 /** board-split D51: the board's own alarms about a member. Stored under the orchestrator's row (its run, its wake), they
  *  are always served as the board's (`from: swarm`), never the orchestrator's (D51 over D36), with the member they tell of as `subject`. */
 export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
-export const BOARD_AUTHOR = "swarm";
+export { BOARD_AUTHOR };
 /** The member a board alarm tells of: the stall rule's member in its run's group, a lost link's member, else the body's head. */
 function alarmSubjectOf(m: Message): string | null {
   const meta = m.meta as Record<string, unknown> | null | undefined;
@@ -2740,7 +2740,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           badge: ended ? null : (livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null),
           unread: ended ? 0 : unreadOf(id),
           ...(Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {}),
-          ...(ended ? {} : activityShown(Number(r.run), seat)),
+          // U-F13: a parked or ended seat runs nothing the card should show; its last calls are stale
+          ...(ended || Number(r.parked) === 1 ? {} : activityShown(Number(r.run), seat)),
         };
       });
 
