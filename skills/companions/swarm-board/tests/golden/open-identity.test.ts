@@ -68,7 +68,7 @@ test("V-20: a brainswarm opens with no detach line; its seats' join line still s
   }
 });
 
-test("V-16: a decisions seat standing for a run that closed reads done in status, ended in its composition", () => {
+test("V-16: a decisions seat standing for a run that closed reads ended in status and in its composition (V-29: one word)", () => {
   const s = scene([]);
   try {
     openTask(s, "alpha", "--authority", "architect");
@@ -79,7 +79,7 @@ test("V-16: a decisions seat standing for a run that closed reads done in status
     const status = s.must("status");
     const seat = status.split("\n").filter((l) => /^\s+alpha /.test(l));
     pin("open-identity.closed-seat", { status: 0, text: seat.join("\n") });
-    assert.match(seat.join("\n"), /alpha done/);
+    assert.match(seat.join("\n"), /alpha ended/);
     // its composition (roster, join) says the same
     const roster = JSON.parse(s.must("roster", "--json")) as { compositions: { entries: { seat: string; state: string }[] }[] };
     assert.equal(roster.compositions.flatMap((c) => c.entries).find((e) => e.seat === "alpha")?.state, "ended");
