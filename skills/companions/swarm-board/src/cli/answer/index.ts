@@ -10,6 +10,7 @@ export { readSituation, type Situation } from "./situation.ts";
 export { closedLine, eventStep, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
+export { decisionsLines } from "./decisions.ts";
 export { coreUsage, hiddenUsage, statsUsage } from "./usage.ts";
 
 /** A message already formatted by the verb, with the line its event registry row adds (D36). */

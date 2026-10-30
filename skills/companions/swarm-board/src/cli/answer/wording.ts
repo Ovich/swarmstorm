@@ -166,7 +166,21 @@ export const WORDING = {
   /** D34 (T36): a parked member's state on its roster line, as its card says it */
   parkedUntil: (phase: string) => `parked until ${phase}`,
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
+
+  // ── board-split D28, D29: two runs holding decision authority, and the decisions run ──
+  decisionsOpen: (cli: Command, title: string): Command => `${cli} open --kind brainstorm --group decisions --title ${title} --seats <seats.json>`,
+  decisionsSeatAdd: (cli: Command, run: number): Command => `${cli} seat add <your seat> --run ${run} --role <your roles>`,
+  decisionsRunNeeded: (runs: { run: number; group: string; roles: string[] }[], open: Command) =>
+    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run; open it (a seat per run, its roles the seat's role): ${open}`,
+  decisionsRunOpen: (runs: { run: number; group: string; roles: string[] }[], decisionsRun: number, seatAdd: Command) =>
+    `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}; a run without its seat there adds it: ${seatAdd}`,
 } as const;
+
+/** `run 7 board-split (architect, tech-lead) and run 8 shop (architect)`: each run holding decision authority, its roles. */
+function decisionHolders(runs: { run: number; group: string; roles: string[] }[]): string {
+  const each = runs.map((r) => `run ${r.run} ${r.group} (${r.roles.join(", ")})`);
+  return each.length > 1 ? `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}` : each.join("");
+}
 
 /** A POSIX shell word, double-quoted when it holds anything else than plain characters: a command runs as printed. */
 export const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);

@@ -20,7 +20,7 @@ import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { answer, CODE_WORDING, coreUsage, eventStep, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -728,15 +728,17 @@ async function main(): Promise<void> {
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
       // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
-      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, next].filter((l): l is string => l !== null).join("\n");
+      // board-split D28: this run and another open one on the project hold decision authority: the decisions run's line
+      const decisions = decisionsLines(await board.runs(), self().join(" "), run.id);
+      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, ...decisions, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, ...(next ? { next } : {}) }, lines(null));
+        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, decisions, ...(next ? { next } : {}) }, lines(null));
         break;
       }
       const runUrl = WORDING.runBoardUrl(doc.url, run.id);
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, ...(next ? { next } : {}) }, lines(runUrl));
+      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, decisions, ...(next ? { next } : {}) }, lines(runUrl));
       break;
     }
     case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
@@ -1429,7 +1431,9 @@ async function main(): Promise<void> {
       // the machine's held locks (idea 4): store-wide, so listed once above the runs
       const held = await board.locks();
       const merge = await mergeLocksHeld();
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge }, () => {
+      // board-split D28: each project where two open runs hold decision authority, with the decisions run's command
+      const decisions = decisionsLines(runs, cli);
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
@@ -1446,6 +1450,7 @@ async function main(): Promise<void> {
           if (idle >= FORGOTTEN_MS)
             console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id));
         }
+        for (const line of decisions) console.log(line);
       });
       break;
     }
