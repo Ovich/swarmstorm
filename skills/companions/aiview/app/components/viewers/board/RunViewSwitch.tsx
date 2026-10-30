@@ -23,6 +23,22 @@ export function phaseLabels(phases: { name: string }[]): string[] {
   });
 }
 
+/** A paused run's chip (board-split#D57): the phase chip's shape, amber, a pause icon, `On you` or `Paused`, the reason
+ *  on hover; `code`: the run's code before the label, where several runs show side by side (All runs, U-F33). */
+export function RunPause({ pause, code = null }: { pause: PauseChip; code?: string | null }) {
+  const reason = pause.reason ?? (pause.label === "On you" ? "The run waits on you" : "The orchestrator paused the run");
+  return (
+    <span className="runpause" data-component="RunPause" data-pause={pause.label === "On you" ? "person" : "orchestrator"} title={code ? `${code}: ${reason}` : reason}>
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <rect x="4" y="3" width="3" height="10" rx="1" />
+        <rect x="9" y="3" width="3" height="10" rx="1" />
+      </svg>
+      {code && <span className="code">{code}</span>}
+      <span className="name">{pause.label}</span>
+    </span>
+  );
+}
+
 /** The run's Analytics pill: pressed shows the run's analytics, pressed again its conversation. */
 export function RunAnalyticsButton({ view, onView }: { view: RunView; onView: (view: RunView) => void }) {
   return (
@@ -76,18 +92,7 @@ export function RunViewSwitch({
   return (
     <div className="runhead" data-component="RunViewSwitch" data-state={view === "analytics" && copied ? "analytics+copied" : view}>
       {pause && (
-        <span
-          className="runpause"
-          data-component="RunPause"
-          data-pause={pause.label === "On you" ? "person" : "orchestrator"}
-          title={pause.reason ?? (pause.label === "On you" ? "The run waits on you" : "The orchestrator paused the run")}
-        >
-          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-            <rect x="4" y="3" width="3" height="10" rx="1" />
-            <rect x="9" y="3" width="3" height="10" rx="1" />
-          </svg>
-          <span className="name">{pause.label}</span>
-        </span>
+        <RunPause pause={pause} />
       )}
       {phases.length > 1 ? (
         <span className="phases" data-component="PhaseStrip">

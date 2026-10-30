@@ -25,7 +25,7 @@ import { ClaimsRow } from "./ClaimsRow.tsx";
 import { MergedFilesRow } from "./MergedFilesRow.tsx";
 import { RunAnalytics } from "./RunAnalytics.tsx";
 import { RunTabs } from "./RunTabs.tsx";
-import { RunAnalyticsButton, RunViewSwitch } from "./RunViewSwitch.tsx";
+import { RunAnalyticsButton, RunPause, RunViewSwitch } from "./RunViewSwitch.tsx";
 import { Conversation } from "./Conversation.tsx";
 import { TipLayer } from "./Tip.tsx";
 import "./board.css";
@@ -179,6 +179,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
   if (board.error && missingRun === null) return notYet("error", board.error);
   if (!snapshot) return notYet("loading", "Loading the board…");
   const selectedRun = snapshot.runs.find((r) => r.run === picked) ?? null;
+  const pausedOpen = snapshot.runs.filter((r) => r.open && pauseChip(r) !== null);
   // the agent strip under a picked run, open or closed; the claims row hidden under a closed one (D7)
   const members = picked === null ? [] : agents(snapshot, picked);
   const runClosed = !!selectedRun && !selectedRun.open;
@@ -206,7 +207,17 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
           {menuOpen && <ArchivePanel runs={searchArchive} total={closedRuns.length} onPick={pickRun} onClose={closeMenu} />}
           {missingRun !== null && <p className="notice">run {missingRun} is not on this board</p>}
           {across !== null ? (
-            <AcrossRunsView repo={snapshot.repo} repoName={snapshot.name} scope={across} onScope={showAcross} onOpenRun={openRunAnalytics} />
+            <>
+              {/* U-F33: All runs shows each open paused run's chip, as a run tab's head does (D57) */}
+              {pausedOpen.length > 0 && (
+                <div className="runhead" data-component="AllRunsPauses">
+                  {pausedOpen.map((r) => (
+                    <RunPause key={r.run} pause={pauseChip(r)!} code={r.code} />
+                  ))}
+                </div>
+              )}
+              <AcrossRunsView repo={snapshot.repo} repoName={snapshot.name} scope={across} onScope={showAcross} onOpenRun={openRunAnalytics} />
+            </>
           ) : snapshot.runs.length === 0 ? (
             <p className="none" data-component="EmptyState">
               No run on {snapshot.name} yet.

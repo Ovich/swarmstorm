@@ -3,6 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { LIVE } from "./board-fixtures.ts";
+import type { BoardSnapshot } from "../../swarm-board/src/client/reader.ts";
 import { ACROSS, ACROSS_ALL_KNOWN, ACROSS_EMPTY, PLAN_RUN, bodyOf } from "./stats-fixtures.ts";
 import { source, standIn } from "./stats-stand-in.ts";
 import type { Stats } from "../../swarm-board/src/client/reader.ts";
@@ -242,4 +243,31 @@ test("brainstorm alone: no shared-files funnel, merge lock or hot files, and the
   fireEvent.click(within(across()).getByRole("button", { name: "plan" }));
   for (const name of ["SharingFunnel", "MergeLockPanel", "HotFiles"]) expect(panel(name), name).toBeNull();
   expect(headings()).toEqual(["Run", "Members", "Length", "Stale"]);
+});
+
+// U-F33 (D57): All runs shows each open paused run's chip, as a run tab's head does, its code before the label
+const FIRST_OPEN = LIVE.runs.find((r) => r.open)!;
+const withPause = (paused: { text: string; person: boolean } | null): BoardSnapshot =>
+  ({ ...LIVE, runs: LIVE.runs.map((r) => (r === FIRST_OPEN ? { ...r, paused } : r)) }) as BoardSnapshot;
+const openAcrossOn = (board: BoardSnapshot) => {
+  standIn([board], ACROSS, [PLAN_RUN]);
+  render(<BoardView repos={[board.repo]} run={null} />);
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Runs" })).getByRole("button", { name: "All runs" }));
+};
+
+test.each([
+  [{ text: "approve the mockup", person: true }, "On you", "person"],
+  [{ text: "hold for the review", person: false }, "Paused", "orchestrator"],
+])("All runs shows a paused run's chip: %o", (paused, label, by) => {
+  openAcrossOn(withPause(paused));
+  const pause = document.querySelector('[data-component="AllRunsPauses"] [data-component="RunPause"]')!;
+  expect(pause.querySelector(".name")!.textContent).toBe(label);
+  expect(pause.getAttribute("data-pause")).toBe(by);
+  expect(pause.getAttribute("title")).toContain(paused.text);
+  expect(pause.querySelector(".code")!.textContent).toBe(FIRST_OPEN.code);
+});
+
+test("All runs with no paused run shows no pause chip", () => {
+  openAcrossOn(withPause(null));
+  expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
 });
