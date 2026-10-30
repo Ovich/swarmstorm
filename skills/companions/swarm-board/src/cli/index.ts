@@ -21,7 +21,7 @@ import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { claimHeldLine } from "./answer/code-rules.ts";
+import { claimHeldLine, pausedMergingStep } from "./answer/code-rules.ts";
 import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
@@ -274,7 +274,12 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
-const situation = (p: Participant, show = false): Promise<Situation> => readSituation(board, p, { cli: self().join(" "), word: shellWord, show });
+const situation = async (p: Participant, show = false): Promise<Situation> => {
+  const s = await readSituation(board, p, { cli: self().join(" "), word: shellWord, show });
+  // board-split V-36 (D71): in a pause, the merge lock's holder finishes that merge, then stops
+  const merging = s.pause && p.pack != null && p.seat !== "orchestrator" && (await board.packCall(p, "held-merge-lock", {})) != null;
+  return merging ? { ...s, pauseStep: pausedMergingStep(s) } : s;
+};
 /** `phase <name>: <text>  <n>/<m> done[, <k> lost]` beside a run's title, or nothing before its first phase. */
 const phaseSuffix = (phase: { name: string; text: string } | null, progress: PhaseProgress | null): string =>
   phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
@@ -290,11 +295,8 @@ const withNext = (me: Participant, d: Delivery, pausedMerging: string | null = n
   }),
 });
 
-/** board-split V-36 (D71): the merge lock holder's paused line while its run is paused; null otherwise. */
-const pausedMergingLine = async (p: Participant): Promise<string | null> => {
-  const s = await situation(p);
-  return s.mergingInPause ? rules.pausedLine(s) : null;
-};
+/** board-split V-36 (D71): the member's own step in a pause, its pack's (the merge lock's holder); null otherwise. */
+const pausedMergingLine = async (p: Participant): Promise<string | null> => (await situation(p)).pauseStep ?? null;
 
 const printDelivery = (d: Delivery & { full: (Message & { endorse?: string })[] }): void => {
   for (const m of d.full) {

@@ -4,8 +4,6 @@ import type { Message, Participant } from "../../board/board.ts";
 import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
 import { profileOf } from "../../board/kinds.ts";
 import { codeEventStep } from "./code-rules.ts";
-import { CODE_WORDING as CW } from "./code-wording.ts";
-import { MERGE_LOCK } from "../../packs/code/events.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 
@@ -18,8 +16,8 @@ export const pausedLine = (s: Situation): string | null => {
   if (s.seat === "orchestrator" || s.ended) return null;
   if (s.parked) return W.parkedStop;
   if (!s.pause) return null;
-  // board-split V-36 (D71): the merge lock's holder lands the merge it holds the lock for, then stops
-  if (s.mergingInPause) return CW.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
+  // board-split V-36 (D71): a step the member's pack gives it in this pause comes first
+  if (s.pauseStep) return s.pauseStep;
   return W.paused(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 
@@ -126,11 +124,11 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
     case "stalled":
       return orchestrator ? stalledMove(m, cli, as) : null;
     case "unlocked": {
+      // board-split V-22: a lock of a pack's (freed from a lost holder) is the pack's answer rules' to word
+      const packStep = codeEventStep(m, me, cli, event);
+      if (packStep !== undefined) return packStep;
       const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      if (!name || !m.mentions.includes(me.name)) return null;
-      // board-split V-22: the merge lock freed from a lost holder: a waiter's step is the merge-lock command
-      if (name === MERGE_LOCK) return orchestrator ? null : CW.mergeLockFree(cli, as);
-      return W.lockFree(cli, shellWord(name), as);
+      return name && m.mentions.includes(me.name) ? W.lockFree(cli, shellWord(name), as) : null;
     }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
@@ -156,7 +154,7 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       return all.map((one) => W.restartLink(one, cli, m.run, shellWord(one))).join("; ");
     }
     default:
-      return codeEventStep(m, me, cli, event);
+      return codeEventStep(m, me, cli, event) ?? null;
   }
 }
 

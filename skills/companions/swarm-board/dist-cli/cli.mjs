@@ -10080,13 +10080,19 @@ var mentionFrom = (me, member) => {
   const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];
   return plan === me.plan ? `@${seat}` : `@${planCode(plan)}\xB7${seat}`;
 };
+var pausedMergingStep = (s) => s.pause ? CODE_WORDING.pausedMerging(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), WORDING.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
 function claimHeldLine(me, cli, held) {
   const who = held.holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
   const mentions2 = held.holders.map((h) => mentionFrom(me, h.member)).join(" ");
   return CODE_WORDING.claimHeld(held.path, who, held.holders.length > 1, CODE_WORDING.claimHeldPost(cli, mentions2, shellWord(held.path), shellWord(me.name)));
 }
+var MERGE_LOCK2 = "merge-lock";
 function codeEventStep(m, me, cli, event = eventOf(m)) {
-  if (event !== "flag") return null;
+  if (event === "unlocked") {
+    if (!m.meta || !("unlocked" in m.meta) || m.meta.unlocked !== MERGE_LOCK2) return void 0;
+    return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
+  }
+  if (event !== "flag") return void 0;
   const [holder, writer] = m.mentions;
   if (!m.about || !holder || !writer) return null;
   if (me.name === holder) return CODE_WORDING.flagHolder(cli, shellWord(`@${writer} <who changes what>`), shellWord(m.about));
@@ -10097,13 +10103,12 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
 // src/cli/answer/rules.ts
 init_events2();
 init_kinds();
-init_events();
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine = (s) => {
   if (s.seat === "orchestrator" || s.ended) return null;
   if (s.parked) return WORDING.parkedStop;
   if (!s.pause) return null;
-  if (s.mergingInPause) return CODE_WORDING.pausedMerging(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
+  if (s.pauseStep) return s.pauseStep;
   return WORDING.paused(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 var owedLine = (s, opts = {}) => {
@@ -10178,10 +10183,10 @@ function eventStep(m, me, cli, event = eventOf(m)) {
     case "stalled":
       return orchestrator ? stalledMove(m, cli, as) : null;
     case "unlocked": {
+      const packStep = codeEventStep(m, me, cli, event);
+      if (packStep !== void 0) return packStep;
       const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      if (!name || !m.mentions.includes(me.name)) return null;
-      if (name === MERGE_LOCK) return orchestrator ? null : CODE_WORDING.mergeLockFree(cli, as);
-      return WORDING.lockFree(cli, shellWord(name), as);
+      return name && m.mentions.includes(me.name) ? WORDING.lockFree(cli, shellWord(name), as) : null;
     }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
@@ -10203,7 +10208,7 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       return all2.map((one) => WORDING.restartLink(one, cli, m.run, shellWord(one))).join("; ");
     }
     default:
-      return codeEventStep(m, me, cli, event);
+      return codeEventStep(m, me, cli, event) ?? null;
   }
 }
 var tasksOf = (body, seat) => (/; (?:its )?tasks posted before it: (.+)$/.exec(body)?.[1] ?? "").split(", ").map((t) => t.split(" ").filter((word) => word !== "for")).filter(([, ...seats]) => seats.includes(seat)).map(([seq]) => seq);
@@ -10253,7 +10258,6 @@ async function readSituation(board2, me, opts) {
     wholeThread: !!profile.wholeThread,
     closed: !run3,
     pause: run3 && run3.paused != null ? { text: run3.paused, person: !!run3.pausedPerson } : null,
-    mergingInPause: !!run3 && run3.paused != null && me.pack != null && me.seat !== "orchestrator" && await board2.packCall(me, "held-merge-lock", {}) != null,
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null
@@ -10590,7 +10594,11 @@ var rosterLine = (r, roster, ages = false) => {
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
   return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}${bound}`;
 };
-var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
+var situation = async (p, show = false) => {
+  const s = await readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
+  const merging = s.pause && p.pack != null && p.seat !== "orchestrator" && await board.packCall(p, "held-merge-lock", {}) != null;
+  return merging ? { ...s, pauseStep: pausedMergingStep(s) } : s;
+};
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
 var withNext = (me, d, pausedMerging = null) => ({
   ...d,
@@ -10599,10 +10607,7 @@ var withNext = (me, d, pausedMerging = null) => ({
     return line ? { ...m, endorse: line } : m;
   })
 });
-var pausedMergingLine = async (p) => {
-  const s = await situation(p);
-  return s.mergingInPause ? pausedLine(s) : null;
-};
+var pausedMergingLine = async (p) => (await situation(p)).pauseStep ?? null;
 var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? { phase: a.phase ?? null } : {}, ...a.next ? { next: a.next } : {} }, () => {
   for (const l of a.lines) console.log(l);
 });
