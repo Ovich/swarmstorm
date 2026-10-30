@@ -41,6 +41,10 @@ export const WORDING = {
   /** break-flow V-4, V-17 (D61): every verb of a member that has ended, its run still open, answers this first */
   endedMember: (run: number) =>
     `you have ended in run ${run}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
+  /** break-flow V-29: `end --seat`, to the orchestrator: the state its member was in, and the line it reads now */
+  seatEnded: (member: string, was: string, told: string) => `${member} ended; it was ${was}; its next call answers: ${told}`,
+  /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
+  seatState: (state: string) => (state === "done" ? "ended" : state),
   /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
   verbRefused: (verb: string, why: string) => `${verb} refused: ${why}`,
   // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too

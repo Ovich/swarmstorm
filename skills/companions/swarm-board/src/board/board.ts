@@ -2023,6 +2023,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run, seat);
           db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run, seat);
           db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run, seat);
+          // break-flow V-25 (D50): a replacement reads the seat's current task at its join, delivered to the member
+          // before it or not, while no report to the orchestrator came after it
+          if (entry === "back") {
+            const task = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run, `${String(r.plan)}/${seat}`) as Row | undefined;
+            const reported =
+              task?.seq != null &&
+              db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1").get(run, Number(existing.id), Number(task.seq), `%${JSON.stringify(`${String(r.plan)}/${ORCHESTRATOR}`)}%`) != null;
+            if (task?.seq != null && !reported) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
+          }
           return Number(existing.id);
         }
         // a post that already names this seat (a task posted before the member joined) is still
@@ -2108,8 +2117,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const r of unseenRows(fresh)) {
           const m = toMessage(r);
-          const reachedBefore = mentionsMe(m, fresh) || wakes(m, fresh, before) || carries(m, fresh, before);
-          if (!reachedBefore && (wakes(m, fresh, next) || carries(m, fresh, next))) mark.run(fresh.id, m.seq, now());
+          // what only rode on a wake before (a composition line, V-27) is no wake of its own now either
+          const wokeBefore = mentionsMe(m, fresh) || wakes(m, fresh, before);
+          const carriedBefore = carries(m, fresh, before);
+          if (!wokeBefore && (wakes(m, fresh, next) || (!carriedBefore && carries(m, fresh, next)))) mark.run(fresh.id, m.seq, now());
         }
         return setSubs(fresh, next);
       });
@@ -2129,10 +2140,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const freed = packOf(fresh)?.onEnded?.(fresh, packCtxOf(fresh)) ?? null;
         const lastDoing = freed?.lastDoing ?? "ended";
         const ended = { event: EVENTS.ended.name };
-        postComposition(fresh, fresh.seat, "-", "ended");
-        if (freed?.note) insertMessage(fresh, `ended
-${freed.note}`, null, "event", freed.mentions, ended);
-        else insertMessage(fresh, "ended", null, "event", undefined, ended);
+        // break-flow V-27: one post per end, the composition line as the ended event's body
+        const said = `- ${seatWho(fresh.run, fresh.seat)} ended`;
+        insertMessage(fresh, freed?.note ? `${said}
+${freed.note}` : said, null, "event", freed?.mentions, ended);
         // idea 4: the named locks it held are released, their waiters woken
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
         // the card's last word: what the member's run came to, not its last doing (D66)

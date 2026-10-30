@@ -1,2 +1,2 @@
 exit 0
-  alpha done  architect
+  alpha ended  architect

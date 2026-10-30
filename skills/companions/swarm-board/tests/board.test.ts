@@ -1046,7 +1046,7 @@ test("the board's events store their name; an agreement maps by kind, with no na
   assert.match(names, /ended/);
   const events = board.snapshot(REPO).events.map((e) => board.read(e.seq));
   assert.ok(events.some((m) => m.event === "joined" && /^joined/.test(m.body)));
-  assert.ok(events.some((m) => m.event === "ended" && /^ended/.test(m.body)));
+  assert.ok(events.some((m) => m.event === "ended" && /^- S3 .* ended$/.test(m.body)));
 });
 
 test("a subscribed seat's wait --mentions ends on another seat's agreement, with no mention", async () => {

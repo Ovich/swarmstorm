@@ -2855,7 +2855,7 @@ function wakes(m, me, subs) {
   if (!e) return false;
   if (eventDef(e).always) return true;
   if (alarmAbout(m, me)) return false;
-  return subs.some((s) => !s.carry && (s.event === e || e === "joined" && s.event === "composition") && (s.scope === "any" || m.run === me.run));
+  return subs.some((s) => !s.carry && (s.event === e || isCompositionLine(e) && s.event === "composition") && (s.scope === "any" || m.run === me.run));
 }
 function carries(m, me, subs) {
   if (m.from === me.name && !(m.event && isEvent(m.event) && eventDef(m.event).toAuthor)) return false;
@@ -2863,10 +2863,10 @@ function carries(m, me, subs) {
   const e = eventOf(m);
   if (!e) return false;
   if (alarmAbout(m, me)) return false;
-  if ((eventDef(e).ambient || e === "joined") && m.run === me.run) return true;
+  if ((eventDef(e).ambient || isCompositionLine(e)) && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
-var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, all, allEvents, isEvent, RENAMED_EVENTS, currentEventName, eventNames, eventDef, MEMBER_ALARMS;
+var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, all, allEvents, isEvent, RENAMED_EVENTS, currentEventName, eventNames, eventDef, MEMBER_ALARMS, isCompositionLine;
 var init_events2 = __esm({
   "src/board/events.ts"() {
     "use strict";
@@ -2933,6 +2933,7 @@ var init_events2 = __esm({
     eventNames = () => Object.keys(allEvents());
     eventDef = (name) => allEvents()[name];
     MEMBER_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "recovered", "liveness"]);
+    isCompositionLine = (e) => e === "joined" || e === "ended";
   }
 });
 
@@ -4232,6 +4233,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
             db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run3, seat);
             db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run3, seat);
             db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run3, seat);
+            if (entry2 === "back") {
+              const task = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run3, `${String(r.plan)}/${seat}`);
+              const reported = task?.seq != null && db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1").get(run3, Number(existing.id), Number(task.seq), `%${JSON.stringify(`${String(r.plan)}/${ORCHESTRATOR2}`)}%`) != null;
+              if (task?.seq != null && !reported) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
+            }
             return Number(existing.id);
           }
           const earliest = db.prepare("SELECT MIN(seq) AS seq FROM messages WHERE run = ? AND mentions LIKE ?").get(run3, `%"${String(r.plan)}/${seat}"%`);
@@ -4294,8 +4300,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const r of unseenRows(fresh)) {
           const m = toMessage(r);
-          const reachedBefore = mentions(m, fresh) || wakes(m, fresh, before) || carries(m, fresh, before);
-          if (!reachedBefore && (wakes(m, fresh, next) || carries(m, fresh, next))) mark.run(fresh.id, m.seq, now());
+          const wokeBefore = mentions(m, fresh) || wakes(m, fresh, before);
+          const carriedBefore = carries(m, fresh, before);
+          if (!wokeBefore && (wakes(m, fresh, next) || !carriedBefore && carries(m, fresh, next))) mark.run(fresh.id, m.seq, now());
         }
         return setSubs(fresh, next);
       });
@@ -4311,10 +4318,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const freed = packOf(fresh)?.onEnded?.(fresh, packCtxOf(fresh)) ?? null;
         const lastDoing = freed?.lastDoing ?? "ended";
         const ended = { event: EVENTS.ended.name };
-        postComposition(fresh, fresh.seat, "-", "ended");
-        if (freed?.note) insertMessage(fresh, `ended
-${freed.note}`, null, "event", freed.mentions, ended);
-        else insertMessage(fresh, "ended", null, "event", void 0, ended);
+        const said = `- ${seatWho(fresh.run, fresh.seat)} ended`;
+        insertMessage(fresh, freed?.note ? `${said}
+${freed.note}` : said, null, "event", freed?.mentions, ended);
         releaseLocksOf(fresh.id, "end", " (its holder ended)");
         db.prepare("UPDATE participants SET ended_at = ?, idle_ended = ?, doing = ? WHERE id = ?").run(now(), idleEnded, lastDoing, fresh.id);
       });
@@ -9015,6 +9021,8 @@ async function runBoardServer(opts) {
           if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
+        const known = f.member ? board2.participant(f.member.name) : null;
+        if (known && (known.ended || !board2.runs().some((r) => r.id === known.run))) return refuse(s, "closed");
         if (f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
@@ -9904,6 +9912,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ended: (run3) => `you have ended in run ${run3}: this listener stops; nothing to re-arm; return your summary now`,
   /** break-flow V-4, V-17 (D61): every verb of a member that has ended, its run still open, answers this first */
   endedMember: (run3) => `you have ended in run ${run3}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
+  /** break-flow V-29: `end --seat`, to the orchestrator: the state its member was in, and the line it reads now */
+  seatEnded: (member, was, told) => `${member} ended; it was ${was}; its next call answers: ${told}`,
+  /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
+  seatState: (state) => state === "done" ? "ended" : state,
   /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
   verbRefused: (verb, why) => `${verb} refused: ${why}`,
   // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
@@ -11413,6 +11425,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? await packVerb(p, "reconcile", { changed: reconciled }) : [];
       const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
+      const before = endedSeat === void 0 ? null : (await board.roster(p.repo)).find((r) => r.name === p.name) ?? null;
       await board.end(p);
       linkToStart = null;
       const after = await board.packCall(p, "afterEnd", {}) ?? {};
@@ -11420,7 +11433,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...mine ? { worktree: mine, removed: removal === null } : {} }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(`${p.name} ended`);
+        console.log(before ? WORDING.seatEnded(p.name, stateLine(before), before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
         if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
@@ -11469,6 +11482,7 @@ ${verbHelp()}`);
     }
     case "lock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "lock")) break;
       const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>
 ${verbHelp()}`);
@@ -11498,6 +11512,7 @@ ${verbHelp()}`);
     }
     case "unlock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       const name = args.positional[0] ?? fail(`unlock: which resource?
 ${verbHelp()}`);
       const r = await board.unlock(p, name);
@@ -11539,7 +11554,7 @@ ${verbHelp()}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${projectName(r.repo)}`);
-          for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
+          for (const s of r.seats) console.log(`  ${s.id} ${WORDING.seatState(s.state)}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);
             console.log(`  ${m.name}  ${stateLine(m, true)}${files ? `  files: ${files}` : ""}`);
@@ -11586,6 +11601,7 @@ if (args.verb === "link") {
     clearLinkTold(member);
     const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     if (stop.why === "new version") process.exit(await relaunchLink());
+    if (stop.why === "closed") console.log(WORDING.closed(member.run, WORDING.end(self().join(" "), shellWord2(member.name))));
     process.exit(0);
   } catch (e) {
     console.error(`swarm link: ${e.message}`);

@@ -2,5 +2,4 @@ exit 0
 #<seq> g/w2  <ts>
 @orchestrator merged <sha>: w2 changed b.ts
 #<seq> g/w1 (event): - w1 <nick:w1> ended
-#<seq> g/w1 (event): ended
 #<seq> g/w2 (event): merged <sha> into main: rebase your branch onto it.

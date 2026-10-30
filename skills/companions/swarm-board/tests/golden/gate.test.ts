@@ -118,3 +118,72 @@ for (const how of ["close", "end --seat"] as const)
       s.stop();
     }
   });
+
+// break-flow T58 (judged #1782): V-25, V-4 (lock, unlock), V-29, V-30, V-27
+test("golden V-25: a replacement's join shows the seat's current task, already delivered to the member before it", async () => {
+  const s = await scene("orchestrator", "idle");
+  try {
+    const worker = s.other;
+    s.must("post", "@w1 do the thing", "--task", "--as", s.me);
+    s.must("deliver", "--as", worker);
+    s.must("end", "--seat", "w1", "--as", s.me);
+    const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "replacing", "--as", worker);
+    pin("gate.replacement.join", joined);
+    assert.ok(joined.text.includes("@w1 do the thing"), joined.text);
+  } finally {
+    s.stop();
+  }
+});
+
+test("golden V-4: lock and unlock after close answer the closed line first; after end, the ended line", async () => {
+  const s = await scene("worker", "closed");
+  try {
+    for (const verb of ["lock", "unlock"]) {
+      const a = s.call(verb, "port:4999", "--as", s.me);
+      pin(`gate.closed.${verb}`, a);
+      assert.match(a.text, /^run \d+ closed: run end and return your summary/, verb);
+    }
+  } finally {
+    s.stop();
+  }
+  const e = await scene("orchestrator", "idle");
+  try {
+    e.must("end", "--seat", "w1", "--as", e.me);
+    const a = e.call("lock", "port:4999", "--as", e.other);
+    pin("gate.ended.lock", a);
+    assert.match(a.text, /^you have ended in run \d+: .*return your summary/);
+  } finally {
+    e.stop();
+  }
+});
+
+test("golden V-29, V-27: end --seat says the state its member was in and what it is told; one ended post; status reads ended", async () => {
+  const s = await scene("orchestrator", "idle");
+  try {
+    const ended = s.call("end", "--seat", "w1", "--as", s.me);
+    pin("gate.end-seat", ended);
+    assert.match(ended.text, /^g\/w1 ended; it was \S+.*; its next call answers: you have ended in run 1/m);
+    const raw = openRawStore(path.join(s.home, "swarm.sqlite"), { readOnly: true });
+    try {
+      const posts = raw.prepare("SELECT body FROM messages WHERE body LIKE '%ended%' AND author = (SELECT id FROM participants WHERE seat = 'w1')").all() as { body: string }[];
+      assert.equal(posts.length, 1, JSON.stringify(posts));
+    } finally {
+      raw.close();
+    }
+    const status = s.call("status", "--as", s.me);
+    assert.match(status.text, /^ {2}w1 ended/m, status.text);
+  } finally {
+    s.stop();
+  }
+});
+
+test("golden V-30: a link started for a closed run says the closed line and exits 0", async () => {
+  const s = await scene("worker", "closed");
+  try {
+    const a = s.call("link", "--run", "1", "--as", s.me);
+    assert.equal(a.status, 0, a.text);
+    assert.match(a.text, /^run 1 closed: run end and return your summary/m);
+  } finally {
+    s.stop();
+  }
+});

@@ -150,19 +150,23 @@ export function wakes(m: Message, me: Participant, subs: Subscription[]): boolea
   if (!e) return false;
   if (eventDef(e).always) return true;
   if (alarmAbout(m, me)) return false;
-  // G5: a join is a composition change too: a member subscribed to composition wakes on it
-  return subs.some((s) => !s.carry && (s.event === e || (e === "joined" && s.event === "composition")) && (s.scope === "any" || m.run === me.run));
+  // G5: a join is a composition change too: a member subscribed to composition wakes on it; an end likewise (V-27)
+  return subs.some((s) => !s.carry && (s.event === e || (isCompositionLine(e) && s.event === "composition")) && (s.scope === "any" || m.run === me.run));
 }
 
 /** A message carried to `me` (idea 2): an event of a carry subscription in its scope, that does not wake it;
  *  the same own-message rule as `wakes`. It rides on the next wake, or wakes once due. */
+/** G5, break-flow V-27: the events that are their run's composition line themselves (a join, an end). */
+const isCompositionLine = (e: string): boolean => e === "joined" || e === "ended";
+
 export function carries(m: Message, me: Participant, subs: Subscription[]): boolean {
   if (m.from === me.name && !(m.event && isEvent(m.event) && eventDef(m.event).toAuthor)) return false;
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
   if (alarmAbout(m, me)) return false;
-  // G5: a join is the run's one composition line for a join, carried to every member of the run
-  if ((eventDef(e).ambient || e === "joined") && m.run === me.run) return true;
+  // G5: a join is the run's one composition line for a join, carried to every member of the run; an end its one
+  // line for an end (break-flow V-27)
+  if ((eventDef(e).ambient || isCompositionLine(e)) && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }

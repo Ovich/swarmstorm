@@ -294,6 +294,9 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
           if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
+        // break-flow V-30: a link started for a closed run, or for a member that has ended, is told so at once
+        const known = f.member ? board.participant(f.member.name) : null;
+        if (known && (known.ended || !board.runs().some((r) => r.id === known.run))) return refuse(s, "closed");
         if (f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {

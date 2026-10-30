@@ -1375,6 +1375,8 @@ async function main(): Promise<void> {
       const unclaimed = reconciled.filter((f) => !held.has(f));
       const flags = reconciled.length ? ((await packVerb(p, "reconcile", { changed: reconciled })) as Flag[]) : [];
       const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
+      // break-flow V-29: the orchestrator ending a seat is told the state its member was in, and what it is told now
+      const before = endedSeat === undefined ? null : ((await board.roster(p.repo)).find((r) => r.name === p.name) ?? null);
       await board.end(p);
       // ended: no link to start
       linkToStart = null;
@@ -1384,7 +1386,7 @@ async function main(): Promise<void> {
       const removal = after.why ?? null;
       emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         printReconciled(unclaimed, flags, renames);
-        console.log(`${p.name} ended`);
+        console.log(before ? WORDING.seatEnded(p.name, stateLine(before), before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
         if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
@@ -1435,6 +1437,7 @@ async function main(): Promise<void> {
     }
     case "lock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "lock")) break;
       const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${verbHelp()}`);
       const r = await board.lock(p, name, args.flag("--note"));
@@ -1469,6 +1472,7 @@ async function main(): Promise<void> {
     }
     case "unlock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       const name = args.positional[0] ?? fail(`unlock: which resource?\n${verbHelp()}`);
       const r = await board.unlock(p, name);
       emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
@@ -1513,7 +1517,7 @@ async function main(): Promise<void> {
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${projectName(r.repo)}`);
-          for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
+          for (const s of r.seats) console.log(`  ${s.id} ${WORDING.seatState(s.state)}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);
             console.log(`  ${m.name}  ${stateLine(m, true)}${files ? `  files: ${files}` : ""}`);
@@ -1570,6 +1574,8 @@ if (args.verb === "link") {
     // plan D56 (amended): a rebuild met: the same command again, through the launcher, loads the new bundle; this process
     // stays its parent so the harness's background task lives on, and ends with it
     if (stop.why === "new version") process.exit(await relaunchLink());
+    // break-flow V-30: a link that met its run closed (or its member ended) says the closed line, then exits 0
+    if (stop.why === "closed") console.log(WORDING.closed(member.run, WORDING.end(self().join(" "), shellWord(member.name))));
     process.exit(0);
   } catch (e) {
     console.error(`swarm link: ${(e as Error).message}`);
