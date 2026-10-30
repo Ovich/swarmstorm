@@ -114,7 +114,7 @@ test("golden lost (board-split D49): a link lost past LOST_MS with no wait held 
   assert.equal(eventsOf("lost").length, 0);
   const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });
   // D53: and no board call of its own since
-  quietMember(path.join(dir, "swarm.sqlite"), "a", 60_000);
+  quietMember(path.join(dir, "swarm.sqlite"), "a", 120_000);
   board.livenessTick(run.id, at(base, 1), gone);
   assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its link was lost"]);
   assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").liveness?.badge?.name], ["lost", "lost"]);

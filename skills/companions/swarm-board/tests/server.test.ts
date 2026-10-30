@@ -325,7 +325,7 @@ test("an activity with finished and no end, the link alive, draws no lost and no
   assert.equal(snap.roster.find((r: { member: string }) => r.member === "g/S1").badge, null);
 });
 
-test("gone is posted within 35 s of a link lost and not back; never for an ended member (US3, D12)", async () => {
+test("gone is posted within 65 s of a link lost and not back; never for an ended member (US3, D12, board-split D55)", async () => {
   const { c, run, s1, link } = await linkedRun();
   const s2 = await value(c, "participant", "g/S2");
   const link2 = await welcomed({ member: { name: s2.name, run: run.id } });
@@ -336,18 +336,18 @@ test("gone is posted within 35 s of a link lost and not back; never for an ended
   await value(c, "end", s2);
   link2.socket.close();
   await link2.closed;
-  skew += 29_000;
+  skew += 59_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.equal(goneEvents(await value(c, "snapshot", REPO)).length, 0, "not before 30 s");
+  assert.equal(goneEvents(await value(c, "snapshot", REPO)).length, 0, "not before LOST_MS");
   skew += 2_000;
-  // past 30 s on the server's clock: the gone is posted at its next tick. Waited for as the event, and timed by the
+  // past LOST_MS on the server's clock: the gone is posted at its next tick. Waited for as the event, and timed by the
   // event's own time on that clock, never by how fast this loaded process reads snapshots (S31, T14)
   const crossedAt = Date.now() + skew;
   const gone = await within(c, 60_000, (snap) => goneEvents(snap)[0]);
-  assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
-  assert.ok(Date.parse(gone.at) - crossedAt <= 4000, `gone posted ${Date.parse(gone.at) - crossedAt} ms after 31 s on the server's clock`);
+  assert.equal(gone.body, `lost ${s1.name}: its link was lost (socket)`);
+  assert.ok(Date.parse(gone.at) - crossedAt <= 4000, `gone posted ${Date.parse(gone.at) - crossedAt} ms after 61 s on the server's clock`);
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost`]);
+  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost (socket)`]);
 });
 
 test("an upkeep or tick that throws is logged to stderr, and the server goes on", async () => {
@@ -368,12 +368,12 @@ test("an upkeep or tick that throws is logged to stderr, and the server goes on"
   try {
     await new Promise((r) => setTimeout(r, 1500));
     assert.ok(logged.some((l) => l.startsWith(`swarm server: liveness of run ${broken.id} failed`)), logged.join("\n"));
-    // the other run still ticks (its member's link lost past 30 s is told lost), and the server still answers
+    // the other run still ticks (its member's link lost past LOST_MS is told lost), and the server still answers
     link.socket.close();
     await link.closed;
     await untilLinkLost(run.id, "S1");
-    skew += 31_000;
-    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "lost g/S1: its link was lost");
+    skew += 61_000;
+    assert.equal((await within(c, 5000, (snap) => goneEvents(snap).find((e) => e.mentions.includes("g/orchestrator")))).body, "lost g/S1: its link was lost (socket)");
     assert.ok((await value(c, "runs")).some((r: { id: number }) => r.id === run.id));
   } finally {
     console.error = was;
@@ -387,22 +387,22 @@ const restart = async (): Promise<void> => {
   server = await startBoardServer({ dataRoot: dir, now: () => new Date(Date.now() + skew) });
 };
 
-test("after a restart, a member that had a link and has none 30 s later is gone, posted once, again after a second restart (D37)", async () => {
+test("after a restart, a member that had a link and has none LOST_MS later is gone, posted once, never again after a second restart (D37, board-split D55)", async () => {
   const { s1 } = await linkedRun();
   await restart();
   const c = await welcomed();
-  skew += 28_000; // with the 1.5 s below, 29.5 s since the start
+  skew += 58_000; // with the 1.5 s below, 59.5 s since the start
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [], "not before 30 s");
+  assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [], "not before LOST_MS after the start");
   skew += 3_000;
   const gone = await within(c, 4000, (snap) => goneEvents(snap).find((e) => e.body.includes(s1.name)));
-  assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
+  assert.equal(gone.body, `lost ${s1.name}: its link was lost (server-restart)`);
   // U-F3: S2 never had a link: lost once LOST_MS has passed since its join; a second restart tells neither again
   await restart();
   const again = await welcomed();
   skew += 60_000;
   await new Promise((r) => setTimeout(r, 1500));
-  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body).sort(), [`lost ${s1.name}: its link was lost`, "lost g/S2: no link since its join"]);
+  assert.deepEqual(goneEvents(await value(again, "snapshot", REPO)).map((e) => e.body).sort(), [`lost ${s1.name}: its link was lost (server-restart)`, "lost g/S2: no link since its join"]);
 });
 
 test("a link lost and back within 30 s, across a restart or not, is never gone (D37)", async () => {

@@ -94,9 +94,11 @@ export const STALL_MS_DEFAULT = 5 * 60 * 1000;
 export const READINGS_KEPT_MS = 10 * 60 * 1000;
 /** A tool call open longer than this keeps its member `busy`, and the orchestrator is told it may be hung (stalled, D46). */
 export const BUSY_MAX_MS = 15 * 60 * 1000;
-/** board-split D55: lost needs its link unseen, its last sign, the server's start and its seating all this old. */
+/** board-split D55: lost needs its link unseen, its last sign, the server's start and its seating all this old: twelve
+ *  missed heartbeats, longer than a server restart plus every link's reconnect, and the time a harness takes to start a
+ *  member's link after `join` or a restart (D55 (6)). */
 export const LOST_MS = 60 * 1000;
-/** board-split D55: a link's heartbeat, a sign of life each time. */
+/** board-split D55: a link's heartbeat, a sign of life each time: the card's freshness, a fact on it within seconds (D55 (6)). */
 export const HEARTBEAT_MS = 5 * 1000;
 /** A member in turn (its last line not an ended turn) is quiet only after this with no line (idea 1, rule 1). */
 export const IN_TURN_MS = 120 * 1000;

@@ -7,7 +7,8 @@ import { SCENARIOS, STALL_S, play } from "./fixtures/yardstick.ts";
 
 /** id, the bound in s from T0, the rule (or the event) that must tell it. */
 const CORE: [string, number, string][] = [
-  ["S5a", 31, "lost"],
+  // board-split D55: lost LOST_MS after the link and the last sign went
+  ["S5a", 61, "lost"],
   // board-split D54: owing in a held wait, told once the stall window passed since its task was delivered
   ["S11-1a", STALL_S + 61, "owing"],
 ];
@@ -34,9 +35,8 @@ for (const [id, bound, told] of CORE) {
   });
 }
 
-test("yardstick core: S14, a member with no transcript, is named to the orchestrator within 31 s (its blindness, never silent)", async () => {
+test("yardstick core: S14, a member with no transcript, wakes no one: its blindness is a card note, never an alarm (board-split D55)", async () => {
   const sc = SCENARIOS.find((s) => s.id === "S14")!;
   const r = await play(sc, 40);
-  const named = r.wakeAt.find((w) => w.events.includes("liveness"));
-  assert.ok(named && named.s <= 35, `liveness at ${named?.s} s (${r.events})`);
+  assert.equal(r.wakeAt.find((w) => w.events.includes("liveness")), undefined, r.events);
 });

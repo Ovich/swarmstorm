@@ -342,7 +342,11 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       clearInterval(upkeep);
       clearInterval(ping);
       stopTellingReaders();
-      for (const s of speakers) refuse(s, "shutdown");
+      for (const s of speakers) {
+        // board-split D55: a link this server drops on its way down is a restart, never a socket loss
+        s.closedBy = "server-restart";
+        refuse(s, "shutdown");
+      }
       for (const id of [...calls.keys()]) dropWait(id);
       // wss.close waits for every client: one caught mid-close would hold it for its own timeout
       const wssClosed = new Promise<void>((r) => wss.close(() => r()));
