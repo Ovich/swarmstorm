@@ -3085,7 +3085,7 @@ var init_stall = __esm({
 });
 
 // src/board/owing.ts
-var phaseIsForSeat, inCount, owesPhase, phaseCount, everyOwingDone, lostSeats, progressText;
+var phaseIsForSeat, inCount, owesPhase, phaseCount, everyOwingDone, seatsOf, progressText;
 var init_owing = __esm({
   "src/board/owing.ts"() {
     "use strict";
@@ -3105,12 +3105,13 @@ var init_owing = __esm({
         done: owing.filter((m) => m.done).length,
         of: owing.length,
         gone: lost.map((m) => m.member),
-        idleEnded: owing.filter((m) => !m.done && m.ended).map((m) => m.member)
+        idleEnded: owing.filter((m) => !m.done && m.ended).map((m) => m.member),
+        parked: members.filter((m) => m.parked && !m.ended && phaseIsForSeat(scope, m.seat)).map((m) => m.member)
       };
     };
     everyOwingDone = (p) => p.of > 0 && p.done === p.of;
-    lostSeats = (p) => p.gone.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ");
-    progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost: ${lostSeats(p)}` : ""}`;
+    seatsOf = (members) => members.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ");
+    progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost: ${seatsOf(p.gone)}` : ""}${p.parked?.length ? `, ${p.parked.length} parked: ${seatsOf(p.parked)}` : ""}`;
   }
 });
 
@@ -4022,7 +4023,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const allDoneOnce = (author, progress) => {
     if (!everyOwingDone(progress)) return false;
     if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(author.run, ORCHESTRATOR2, `all-done ${progress.phase}`).changes) !== 1) return false;
-    insertMessage(author, `all done ${progress.phase}: every member is done (${progress.done}/${progress.of})${goneSuffix(progress.gone)}; open the next phase`, null, "event", [`${author.plan}/${ORCHESTRATOR2}`], {
+    const body = progress.gone.length ? `all done ${progress.phase} but the lost: ${progress.done}/${progress.of} done; lost, not done: ${progress.gone.join(", ")}: dispatch each again or end its seat, then open the next phase` : `all done ${progress.phase}: every member is done (${progress.done}/${progress.of}); open the next phase`;
+    insertMessage(author, body, null, "event", [`${author.plan}/${ORCHESTRATOR2}`], {
       event: EVENTS["all-done"].name,
       meta: { phase: progress.phase }
     });
@@ -10039,6 +10041,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
   doneCounted: (phase, progress, all2) => `done ${phase}: ${progress}${all2 ? "; the orchestrator is told every member is done" : ""}`,
+  /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
+  phaseParkedMember: (member, unpark) => `${member} is parked and not counted in this phase: unpark it when it should take its part: ${unpark}`,
+  /** V-35: a member owing the phase just opened whose agent is lost */
+  phaseLostMember: (member, move) => `${member} owes this phase and is lost: ${move}`,
   /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
   doneNotOwed: (phase, why) => `done ${phase} recorded; ${"parked" in why ? "you are parked: not counted until unparked" : `you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`}`,
   /** a done run again for the same phase: nothing new recorded; for a phase no longer open, what the member owes now */
@@ -10981,12 +10987,19 @@ ${verbHelp()}`);
       const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord2(p.name), m.run);
       const brief = WORDING.briefThePerson;
       const pausedNow = (await board.runs()).find((r) => r.id === m.run)?.paused != null;
-      const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
+      const opened = await board.phaseProgress(m.run);
+      const idleEnded = (opened?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
+      const seatOf = (member) => member.slice(member.lastIndexOf("/") + 1);
+      const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
+      const parkedFor = runRepo === void 0 ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.state === "parked" && (r.parkedUntil === name || only.includes(r.seat)));
+      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, `${cli} unpark ${shellWord2(r.seat)} --as ${shellWord2(p.name)}`));
+      const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord2(seatOf(member)), shellWord2(p.name))));
       const pausedLine3 = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, next, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, parked: parkedLines, lost: lostLines, next, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
         console.log(seqLine(m));
         if (pausedLine3) console.log(pausedLine3);
         if (stillOwed) console.log(stillOwed);
+        for (const line of [...parkedLines, ...lostLines]) console.log(line);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
