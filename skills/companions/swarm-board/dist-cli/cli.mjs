@@ -227,7 +227,7 @@ function coreStateOf(m) {
   if (m.orchestrator) return "waiting";
   return m.inHeldWait ? "waiting" : "working";
 }
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
     "use strict";
@@ -268,7 +268,8 @@ var init_liveness = __esm({
     STALL_MS_DEFAULT = 5 * 60 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
-    LINK_LOST_MS = 30 * 1e3;
+    LOST_MS = 60 * 1e3;
+    HEARTBEAT_MS = 5 * 1e3;
     IN_TURN_MS = 120 * 1e3;
     OWE_WAIT_MS = 10 * 60 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
@@ -1295,7 +1296,7 @@ var init_wire = __esm({
       "snapshot",
       "composition"
     ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
@@ -1847,6 +1848,7 @@ async function runLink(opts) {
     sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
     clearInterval(idleCheck);
     clearInterval(watch);
+    clearInterval(heartbeat);
     pipeServer?.close();
     for (const p of pipes) p.end();
     socket?.close();
@@ -1864,13 +1866,18 @@ async function runLink(opts) {
         socket?.close();
         return;
       }
+      if (f.reason === "shutdown" || f.reason === "secret") {
+        socket?.close();
+        return;
+      }
       exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
     } else if (f.type === "result") {
       const asked = unanswered.get(f.id);
       if (!asked) return;
       unanswered.delete(f.id);
       if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
-      if (asked.call.method === "end" && f.ok) exit({ why: "ended" }, "ended");
+      const endedName = asked.call.args[0]?.name;
+      if (asked.call.method === "end" && f.ok && (endedName === void 0 || endedName === opts.member)) exit({ why: "ended" }, "ended");
     }
   };
   const connectOnce = (s) => new Promise((resolve) => {
@@ -1971,6 +1978,7 @@ async function runLink(opts) {
     if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
   }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
   const watch = setInterval(watchTranscript, timing.watchEveryMs);
+  const heartbeat = setInterval(() => sendUp({ type: "beat" }), HEARTBEAT_MS);
   if (state.version !== bundleVersion()) exit({ why: "server of another version" });
   if (!exiting) {
     void connectionLoop();
@@ -2012,6 +2020,7 @@ var init_link = __esm({
     "use strict";
     init_proc();
     init_home();
+    init_liveness();
     init_wire();
     init_transcripts();
     DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
@@ -3083,6 +3092,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     CREATE TABLE IF NOT EXISTS member_links (
       run INTEGER NOT NULL, member TEXT NOT NULL, connected INTEGER NOT NULL, lost_at INTEGER,
       PRIMARY KEY (run, member));
+    -- board-split D55: the board server's own facts (server_up_at, ms epoch)
+    CREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
   `);
   if (recordsAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(RECORDS_SINCE2, (/* @__PURE__ */ new Date()).toISOString());
   const upkeep = (table, column, ddl) => {
@@ -3090,6 +3101,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
   upkeep("participants", "place", "place TEXT");
+  upkeep("member_links", "seen_at", "seen_at INTEGER");
+  upkeep("member_links", "cause", "cause TEXT");
   upkeep("participants", "last_call", "last_call TEXT");
   upkeep("participants", "calls", "calls INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "waiting", "waiting INTEGER NOT NULL DEFAULT 0");
@@ -3552,7 +3565,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (Number(row.parked) === 1 === parked) throw new Error(`${verb}: ${fresh.plan}/${seat} is ${parked ? "already parked" : "not parked"}`);
     return transaction(() => {
       const until_ = until?.trim() || null;
-      db.prepare("UPDATE participants SET parked = ?, parked_until = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, Number(row.id));
+      if (parked) db.prepare("UPDATE participants SET parked = 1, parked_until = ? WHERE id = ?").run(until_, Number(row.id));
+      else db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, seated_at = ? WHERE id = ?").run((/* @__PURE__ */ new Date()).toISOString(), Number(row.id));
       return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
     });
   };
@@ -3571,51 +3585,61 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return insertMessage(fresh, why == null ? `unblocked @${fresh.plan}/${seat}` : `blocked @${fresh.plan}/${seat}: ${why}`, null, "event", [`${fresh.plan}/${seat}`], { event: (why == null ? EVENTS.unblock : EVENTS.block).name });
     });
   };
-  const badgeOf = (p, run3, st) => {
-    if (Number(p.parked) === 1 || p.ended_at != null) return null;
+  const blockedOf = (p, run3) => {
     if (p.blocked != null) return { name: "blocked", reason: String(p.blocked), since: p.blocked_at == null ? null : Number(p.blocked_at) };
     if (run3.paused != null && Number(run3.paused_person ?? 0) === 1 && String(p.seat) !== ORCHESTRATOR2)
       return { name: "blocked", reason: String(run3.paused) || "the run is paused on the person", since: null };
-    return st?.badge ?? null;
+    return null;
   };
-  const activityShownOf = (p, run3, presence, withHolder, t) => {
+  const activityShownOf = (p, run3, withHolder, t) => {
     const member = String(p.seat);
     const a = activityOf(Number(run3.id), member);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const link = presence(member);
-    const linkLost = !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS;
-    const transcriptGrowing = link.transcriptGrewAt != null && t - link.transcriptGrewAt < LINK_LOST_MS;
-    const linkDown = linkLost && transcriptGrowing ? { linkDown: true } : {};
-    if (a && Number(a.finished) === 1 && a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
-    if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)), ...linkDown };
+    if (a && Number(a.finished) === 1 && a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+    if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)) };
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
-      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since), ...linkDown };
-      if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min \xB7 background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
-      return { member, state: "waiting", doing: open, since: Number(a.open_since), ...linkDown };
+      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min \xB7 background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+      return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
-    if (open) return { member, state: "busy", doing: open, since: Number(a.open_since), ...linkDown };
-    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
-    return { member, state: "working", doing: null, since: progressAtOf(p, run3, a), ...linkDown };
+    if (open) return { member, state: "busy", doing: open, since: Number(a.open_since) };
+    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+    return { member, state: "working", doing: null, since: progressAtOf(p, run3, a) };
   };
   const taskDeliveredAtOf = (p, run3) => {
     const r = db.prepare("SELECT d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)").get(Number(p.id), Number(run3.id), `${String(run3.plan)}/${String(p.seat)}`);
     return r?.at == null ? null : Date.parse(String(r.at));
   };
-  const troubleOf = (p, run3, presence, t, shownState = "waiting") => {
+  const signAtOf = (p, run3, link, t) => {
+    if (heldWaits.has(Number(p.id))) return t;
+    const a = activityOf(Number(run3.id), String(p.seat));
+    const ms2 = (iso2) => iso2 == null ? 0 : Date.parse(String(iso2));
+    const num = (v) => v == null ? 0 : Number(v);
+    return Math.max(ms2(p.last_call), ms2(p.board_call_at), num(link.seenAt), num(link.lostAt), num(a?.grew_at), a?.open_tool == null ? 0 : num(a.open_since));
+  };
+  const serverUpAt = () => {
+    const r = db.prepare("SELECT value FROM server_facts WHERE name = 'server_up_at'").get();
+    return r == null ? null : Number(r.value);
+  };
+  const lostOf = (p, run3, t) => {
+    if (Number(p.parked) === 1 || p.ended_at != null || heldWaits.has(Number(p.id))) return null;
+    const link = (presenceOf.get(Number(run3.id)) ?? noPresence)(String(p.seat));
+    if (link.connected) return null;
+    const old = (at) => at == null || t - at >= LOST_MS;
+    const up = serverUpAt();
+    const seatedAt = Date.parse(seatedAtOf(p));
+    const linkSeenAt = Math.max(link.seenAt ?? 0, link.lostAt ?? 0) || null;
+    const signAt = signAtOf(p, run3, link, t);
+    if (!old(linkSeenAt) || !old(signAt || null) || !old(up) || !old(seatedAt)) return null;
+    const since = Math.max(signAt, seatedAt, up ?? 0) + LOST_MS;
+    if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
+    return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
+  };
+  const stalledOf = (p, run3, t, shownState = "waiting") => {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const link = presence(member);
-    const seatedAt = Date.parse(seatedAtOf(p));
-    const calledAt = Math.max(p.last_call == null ? 0 : Date.parse(String(p.last_call)), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt);
-    const quietLong = (since) => t - since >= LINK_LOST_MS;
-    const transcriptStill = link.transcriptGrewAt == null || quietLong(link.transcriptGrewAt);
-    if (heldSince == null && !link.connected && quietLong(calledAt) && transcriptStill) {
-      const linkLostAt = link.lostAt != null && link.lostAt >= seatedAt ? link.lostAt : null;
-      if (linkLostAt != null && quietLong(linkLostAt)) return { badge: { name: "lost", reason: "its link was lost", since: Math.max(linkLostAt, calledAt) } };
-      if (linkLostAt == null) return { badge: { name: "lost", reason: "no link since its join", since: calledAt } };
-    }
     const packStall = String(p.seat) === ORCHESTRATOR2 ? null : (() => {
       const m = participantById(Number(p.id));
       return packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
@@ -3640,10 +3664,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (t - lastSign < Number(run3.silent_ms ?? SILENT_MS)) return null;
     return { badge: stalledBadge(`${shownState}, not done ${owes}, no activity for ${Math.round((t - lastSign) / 1e3)} s`, lastSign), rule: "silent", owes };
   };
-  const stateOf = (p, run3, t, presence, withHolder = true) => {
-    const activity = activityShownOf(p, run3, presence, withHolder, t);
-    const trouble = troubleOf(p, run3, presence, t, activity.state);
-    return { ...activity, badge: trouble?.badge ?? null, ...trouble?.rule ? { rule: trouble.rule } : {}, ...trouble?.owes ? { owes: trouble.owes } : {} };
+  const memberView = (p, run3, t, opts = {}) => {
+    const activity = activityShownOf(p, run3, opts.withHolder ?? true, t);
+    if (Number(p.parked) === 1 || p.ended_at != null) return { ...activity, badge: null };
+    const blocked = blockedOf(p, run3);
+    if (blocked) return { ...activity, badge: blocked };
+    const lost = lostOf(p, run3, t);
+    if (lost) return { ...activity, badge: lost };
+    const stalled = stalledOf(p, run3, t, activity.state);
+    return { ...activity, badge: stalled?.badge ?? null, ...stalled?.rule ? { rule: stalled.rule } : {}, ...stalled?.owes ? { owes: stalled.owes } : {} };
   };
   const stalledBadge = (reason, since) => ({ name: "stalled", reason, since });
   const minutes = (ms2) => Math.round(ms2 / 6e4);
@@ -3676,16 +3705,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const statesOf = (run3, t) => {
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
     if (!r) return /* @__PURE__ */ new Map();
-    const presence = presenceOf.get(run3) ?? noPresence;
     const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run3);
-    return new Map(live2.map((p) => [String(p.seat), stateOf(p, r, t, presence)]));
+    return new Map(live2.map((p) => [String(p.seat), memberView(p, r, t)]));
   };
   const LOCK_NAME = /^[a-z0-9:._/-]{1,80}$/;
   const memberRowOf = (id) => db.prepare("SELECT p.*, r.plan AS plan, r.repo AS repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
   const holderOf = (lock, t) => {
     const h = memberRowOf(Number(lock.participant));
     const run3 = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run));
-    const st = stateOf(h, run3, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
+    const st = memberView(h, run3, t, { withHolder: false });
     return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run3.state === "open"), badge: st.badge?.name ?? null, doing: st.doing };
   };
   const lockWaitOf = (id, t) => {
@@ -3732,12 +3760,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const { member: _, ...state } = st;
     return {
       ...state,
-      badge: badgeOf(p, r, st),
+      badge: st.badge,
       tokens: a ? Number(a.tokens) : null,
       movedAt: a?.grew_at == null ? null : new Date(Number(a.grew_at)).toISOString(),
       // D38: the two ages, since its last progress and since its last sign of life
       progressAt: progressAtOf(p, r, a),
-      aliveAt: link.connected ? t : link.lostAt
+      aliveAt: link.connected ? t : link.lostAt,
+      // board-split D55: no link activity NO_TRANSCRIPT_MS after its seating: a card note, never an alarm
+      ...!a && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS ? { note: "no transcript found: its state is presence only" } : {}
     };
   };
   const agesOf = (l) => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
@@ -4326,7 +4356,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         let progress = progressOf(run3, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
-        const livenessLines = [];
         const stalledNow = [];
         for (const st of others) {
           if (st.badge?.name !== "lost") {
@@ -4340,20 +4369,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (lostRow) releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
           }
-          if (st.linkDown) {
-            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run3, st.member).changes) === 1)
-              livenessLines.push({ body: `${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, linkDown: `${orch.plan}/${st.member}` });
-          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run3, st.member);
           const a = activityOf(run3, st.member);
           const stalledAt = a?.stalled_at == null ? stalledNoActivityAt.get(`${run3}:${st.member}`) ?? null : Number(a.stalled_at);
-          if (!a) {
-            const p = db.prepare("SELECT joined_at, seated_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
-            if (p && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS) {
-              const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run3, st.member);
-              if (Number(warned.changes) === 1)
-                livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
-            }
-          }
           if (st.badge?.name !== "stalled" || r.paused != null || !presence(st.member).connected) {
             const owingSpanOpen = a?.owe_since != null;
             if (stalledAt != null && !owingSpanOpen) {
@@ -4365,17 +4382,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           }
           const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
           stalledNow.push({ st, meta, due: stalledAt == null });
-        }
-        if (livenessLines.length === 1) {
-          const [l] = livenessLines;
-          raiseAlert(run3, { body: l.linkDown ? `liveness ${l.body}` : l.body, event: EVENTS.liveness.name, ...l.linkDown ? { meta: { linkDown: l.linkDown } } : {} });
-        } else if (livenessLines.length > 1) {
-          const downs = livenessLines.flatMap((l) => l.linkDown ? [l.linkDown] : []);
-          raiseAlert(run3, {
-            body: `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`,
-            event: EVENTS.liveness.name,
-            ...downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}
-          });
         }
         const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
         const lastTold = stalledToldOf.get(run3);
@@ -4493,7 +4499,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         files: JSON.parse(String(r.files)),
         held: registry.heldOf(db, Number(r.id)),
         everClaimed: registry.everClaimedOf(db, Number(r.id)),
-        badge: badgeOf(r, runRow(Number(r.run)), stateIn(Number(r.run), String(r.seat))),
+        badge: stateIn(Number(r.run), String(r.seat))?.badge ?? null,
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place),
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
@@ -4821,16 +4827,23 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       };
     },
     recordLink(run3, member, link) {
-      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt);
-      const linkRun = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run3);
+      const before = db.prepare("SELECT connected, cause FROM member_links WHERE run = ? AND member = ?").get(run3, member);
+      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at, seen_at, cause) VALUES (?, ?, ?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt, link.seenAt ?? null, link.cause ?? null);
+      const heartbeatOnly = before != null && link.connected && Number(before.connected) === 1;
+      const linkRun = heartbeatOnly ? void 0 : db.prepare("SELECT repo FROM runs WHERE id = ?").get(run3);
       if (linkRun) bump(String(linkRun.repo));
+    },
+    recordServerUp(at) {
+      db.prepare("INSERT OR REPLACE INTO server_facts (name, value) VALUES ('server_up_at', ?)").run(at);
     },
     savedLinks() {
       return db.prepare("SELECT * FROM member_links").all().map((r) => ({
         run: Number(r.run),
         member: String(r.member),
         connected: Number(r.connected) === 1,
-        lostAt: r.lost_at == null ? null : Number(r.lost_at)
+        lostAt: r.lost_at == null ? null : Number(r.lost_at),
+        seenAt: r.seen_at == null ? null : Number(r.seen_at),
+        cause: r.cause == null ? null : String(r.cause)
       }));
     },
     close() {
@@ -8636,24 +8649,18 @@ async function runBoardServer(opts) {
     logged("recordLink", () => board2.recordLink(run4, member, link));
   };
   const freshPresence = ({ member }) => {
-    transcripts.get(member.run)?.delete(member.seat);
-    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null });
+    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null, seenAt: null, cause: null });
   };
-  const linked = (m, connected) => keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
-  const transcripts = /* @__PURE__ */ new Map();
-  const grewAt = (file) => {
-    if (!file) return null;
-    try {
-      const st = fs12.statSync(file);
-      return st.isFile() ? st.mtimeMs : null;
-    } catch {
-      return null;
-    }
+  const linked = (m, connected, cause = null) => {
+    const at = now().getTime();
+    keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null, seenAt: at, cause: null } : { connected: false, lostAt: at, seenAt: at, cause });
   };
-  const presenceIn = (run4) => (member) => {
-    const link = links.get(run4)?.get(member) ?? { connected: false, lostAt: null };
-    return link.connected ? link : { ...link, transcriptGrewAt: grewAt(transcripts.get(run4)?.get(member)) };
+  const beat = (m) => {
+    const member = memberOf(m.name);
+    const link = links.get(m.run)?.get(member);
+    if (link?.connected) keepLink(m.run, member, { ...link, seenAt: now().getTime() });
   };
+  const presenceIn = (run4) => (member) => links.get(run4)?.get(member) ?? { connected: false, lostAt: null };
   const logged = (what, fn) => {
     try {
       fn();
@@ -8662,8 +8669,9 @@ async function runBoardServer(opts) {
     }
   };
   const startedAt = now().getTime();
-  for (const saved of board2.savedLinks())
-    keepLink(saved.run, saved.member, saved.connected ? { connected: false, lostAt: startedAt } : { connected: false, lostAt: saved.lostAt });
+  logged("recordServerUp", () => board2.recordServerUp(startedAt));
+  for (const { run: savedRun, member, ...saved } of board2.savedLinks())
+    keepLink(savedRun, member, saved.connected ? { connected: false, lostAt: startedAt, seenAt: saved.seenAt ?? startedAt, cause: "server-restart" } : saved);
   const send = (s, f) => {
     if (s.socket.readyState === s.socket.OPEN) s.socket.send(encode(f));
   };
@@ -8748,11 +8756,16 @@ async function runBoardServer(opts) {
 `);
           } catch {
           }
+          const refusedMember = f.member;
+          if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
         if (f.member) {
           for (const other of speakers)
-            if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) refuse(other, "superseded");
+            if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
+              other.superseded = true;
+              refuse(other, "superseded");
+            }
           s.member = f.member;
           linked(f.member, true);
         }
@@ -8762,22 +8775,19 @@ async function runBoardServer(opts) {
       }
       if (f.type === "call") run3(s, f);
       else if (f.type === "cancel") dropWait(f.id);
-      else if (f.type === "bye") socket.close();
+      else if (f.type === "bye") {
+        s.closedBy = "member-closed";
+        socket.close();
+      } else if (f.type === "beat" && s.member) beat(s.member);
       else if (f.type === "activity" && s.member) {
         const m = s.member;
-        const file = f.activity.transcript;
-        if (file) {
-          const members = transcripts.get(m.run) ?? /* @__PURE__ */ new Map();
-          transcripts.set(m.run, members);
-          members.set(memberOf(m.name), file);
-        }
         logged("activity", () => board2.recordActivity(m.run, memberOf(m.name), f.activity, now()));
       } else if (f.type === "subscribe") s.subscribed = true;
     });
     socket.on("close", () => {
       speakers.delete(s);
       const m = s.member;
-      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false);
+      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : s.closedBy ?? "socket");
       for (const [id, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(id);
     });
   });
@@ -8810,7 +8820,10 @@ async function runBoardServer(opts) {
     clearInterval(upkeep);
     clearInterval(ping);
     stopTellingReaders();
-    for (const s of speakers) refuse(s, "shutdown");
+    for (const s of speakers) {
+      s.closedBy = "server-restart";
+      refuse(s, "shutdown");
+    }
     for (const id of [...calls.keys()]) dropWait(id);
     const wssClosed = new Promise((r) => wss.close(() => r()));
     const cut = setTimeout(() => wss.clients.forEach((c) => c.terminate()), CLOSE_GRACE_MS);
