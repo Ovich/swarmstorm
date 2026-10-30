@@ -4230,15 +4230,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
               now(),
               Number(existing.id)
             );
+            const replacing = entry2 === "back" || episodeOpenOf(run3, seat, "lost");
             db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run3, seat);
             db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run3, seat);
             db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run3, seat);
             db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run3, seat);
             db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run3, seat);
-            if (entry2 === "back") {
+            if (replacing) {
               const task = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run3, `${String(r.plan)}/${seat}`);
-              const reported = task?.seq != null && db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1").get(run3, Number(existing.id), Number(task.seq), `%${JSON.stringify(`${String(r.plan)}/${ORCHESTRATOR2}`)}%`) != null;
-              if (task?.seq != null && !reported) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
+              if (task?.seq != null) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
             }
             return Number(existing.id);
           }

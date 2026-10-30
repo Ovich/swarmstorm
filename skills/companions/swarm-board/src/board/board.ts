@@ -2022,19 +2022,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           );
           // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link
           // with its transcript) and the alerts told of it never carry into the new one
+          // D72: a member lost (its episode open) is replaced as an ended one is; read before the episodes close below
+          const replacing = entry === "back" || episodeOpenOf(run, seat, "lost");
           db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run, seat);
           db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run, seat);
           db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run, seat);
           db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run, seat);
           db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run, seat);
-          // break-flow V-25 (D50): a replacement reads the seat's current task at its join, delivered to the member
-          // before it or not, while no report to the orchestrator came after it
-          if (entry === "back") {
+          // break-flow V-25 (D50, D72): a replacement (its seat's member ended, or lost) reads the seat's latest task at
+          // its join, whatever its predecessor posted after it
+          if (replacing) {
             const task = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run, `${String(r.plan)}/${seat}`) as Row | undefined;
-            const reported =
-              task?.seq != null &&
-              db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1").get(run, Number(existing.id), Number(task.seq), `%${JSON.stringify(`${String(r.plan)}/${ORCHESTRATOR}`)}%`) != null;
-            if (task?.seq != null && !reported) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
+            if (task?.seq != null) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
           }
           return Number(existing.id);
         }
