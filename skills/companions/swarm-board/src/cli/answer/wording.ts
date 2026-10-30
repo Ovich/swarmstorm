@@ -239,6 +239,8 @@ export const WORDING = {
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli: Command, run: number, group: string, doing: string, seat = "<seat>"): Command => `${cli} join --run ${run} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  /** V-48: a word that is no verb of this CLI, for every caller */
+  unknownVerb: (word: string, cli: Command) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
   joinAsOtherGroup: (given: string, run: number, group: string, corrected: Command) =>
     `join: refused: --as ${given} is not this seat of run ${run}, whose group is ${group}: ${corrected}`,

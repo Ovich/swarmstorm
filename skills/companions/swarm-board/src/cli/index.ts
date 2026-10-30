@@ -1579,7 +1579,8 @@ async function main(): Promise<void> {
       break;
     }
     default:
-      fail(USAGE);
+      // V-48: a word that is no verb names itself and where the verbs are, the same for every caller
+      fail(WORDING.unknownVerb(args.verb ?? "", CLI));
   }
 }
 

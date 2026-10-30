@@ -1,0 +1,2 @@
+exit 1
+flag: no such verb; the verbs are in node <cli> --help, the code verbs in node <cli> --help code
