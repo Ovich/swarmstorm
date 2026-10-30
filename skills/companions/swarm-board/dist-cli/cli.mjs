@@ -653,6 +653,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo);
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
   const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
+  const lockWaiters = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo).map((w) => Number(w.participant)).filter((id) => isLive(id) && id !== lockHolder).map(nameOf);
   const live = db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
   for (const c of live) {
@@ -682,7 +683,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   return {
     fields: {
       lockHistory,
-      lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow.at) } : null,
+      lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow.at), waiters: lockWaiters } : null,
       files: [...files.values()],
       flags
     },
@@ -2335,7 +2336,7 @@ var init_code = __esm({
         const lock = tablesOf(ctx).heldMergeLock(member);
         if (!lock) {
           const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
-          return holder ? { queuedBehind: holder } : null;
+          return holder ? { queuedBehind: holder, lock: "merge" } : null;
         }
         const since = Date.parse(lock.grantedAt);
         return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
@@ -3685,10 +3686,16 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const badgesShown = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
+  const packLockWaitOf = (p, t) => {
+    if (String(p.seat) === ORCHESTRATOR2 || p.ended_at != null) return null;
+    const m = participantById(Number(p.id));
+    const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+    return s && "queuedBehind" in s ? s : null;
+  };
   const inHeldWaitOf = (p) => {
     if (!heldWaits.has(Number(p.id))) return false;
     const a = activityOf(Number(p.run), String(p.seat));
-    return a == null || Number(a.open_wait) === 1;
+    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p, Date.now()) != null;
   };
   const memberStateOf = (p, runOpen) => coreStateOf({ orchestrator: String(p.seat) === ORCHESTRATOR2, runOpen, ended: p.ended_at != null, parked: Number(p.parked) === 1, inHeldWait: inHeldWaitOf(p) });
   const seatedAtOf = (p) => String(p.seated_at ?? p.joined_at);
@@ -3756,6 +3763,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      const packWait = withHolder ? packLockWaitOf(p, t) : null;
+      if (packWait) return { member, state: "waiting", doing: `lock ${packWait.lock}, held by ${packWait.queuedBehind}`, since: Number(a.open_since) };
       if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min \xB7 background ${String(a.bg_target)}`, since: Number(a.bg_since) };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
@@ -3814,7 +3823,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const seatedAt = Date.parse(seatedAtOf(p));
     const m = participantById(Number(p.id));
     const packStall = String(p.seat) === ORCHESTRATOR2 ? null : packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-    const lockWaited = !!lockWaitOf(Number(p.id), t) || packStall != null && "queuedBehind" in packStall;
+    const lockWaited = !!lockWaitOf(Number(p.id), t) || packLockWaitOf(p, t) != null;
     const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     const a = activityOf(Number(run3.id), member);
     const owedReport = run3.phase == null ? taskOwedReportOf(p, run3) : null;
@@ -9838,7 +9847,7 @@ var CODE_WORDING = {
   // V-21: printed after the state word, which already reads `merging`
   memberFact: { merging: "holds the merge lock" },
   /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
-  mergeLockLine: (project, holder, since) => `merge lock of ${project}  held by ${holder} since ${since}`,
+  mergeLockLine: (project, holder, since, waiters = []) => `merge lock of ${project}  held by ${holder} since ${since}${waiters.length ? `  waiters: ${waiters.join(", ")}` : ""}`,
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
@@ -9871,6 +9880,10 @@ var CODE_WORDING = {
   pauseLockHolder: (holder) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
   /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
   mergeLockFree: (cli, as) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
+  /** V-45: a close while a member of the run holds the merge lock: its merge did not land */
+  closedLockHolder: (holder) => `${holder} held the merge lock: its merge did not land; the lock is released, its branch keeps the work`,
+  /** V-40: the orchestrator ending a live seat whose branch holds work not merged */
+  endSeatUnmerged: (member, unmerged, close) => `end --seat: ${member} is not ended: ${unmerged}. Its member merges it first (tell it on the thread), or the run's close keeps the branch: ${close}`,
   /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
   unmergedFact: (branch, left) => left.startsWith("branch ") ? left : `branch ${branch} has ${left}`,
   /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
@@ -10710,7 +10723,7 @@ var mergeLocksHeld = async () => {
     }
   };
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
-  return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []);
+  return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []);
 };
 var lockLine = (l, listening) => `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
 var firstPhaseLine = (kind, group, protocol) => {
@@ -10988,11 +11001,14 @@ ${verbHelp()}`);
     }
     case "close": {
       const run3 = runArg();
+      const plan = (await board.runs()).find((r) => r.id === run3)?.plan ?? null;
+      const lockHolder = plan ? (await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null : null;
       await board.closeRun(run3);
       const swept = await board.packCall(null, "close", { run: run3 }) ?? [];
       const kept = swept.filter((w) => !w.removed);
-      emit({ run: run3, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
+      emit({ run: run3, state: "closed", ...lockHolder ? { lockHolder } : {}, removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run3} closed`);
+        if (lockHolder) console.log(CODE_WORDING.closedLockHolder(lockHolder));
         const n = swept.length - kept.length;
         if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
         for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
@@ -11295,11 +11311,11 @@ ${verbHelp()}`);
       const names = new Set(roster.map((r) => r.name));
       const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
-      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] }));
+      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: m.waiters }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
       emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         const projectName = projectNameOf();
-        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
+        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(projectName(repo)));
         let shown = null;
@@ -11463,6 +11479,10 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const refusal = await board.packCall(p, "beforeEnd", {});
       const lostSeat = refusal && endedSeat !== void 0 && (await board.composition(p.run)).entries.some((e) => e.seat === endedSeat && e.state === "lost");
       const unmergedKept = lostSeat ? await board.packCall(p, "unmerged", {}) : null;
+      if (refusal && !lostSeat && endedSeat !== void 0) {
+        const live = await board.packCall(p, "unmerged", {});
+        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), `${self().join(" ")} close --run ${p.run}`));
+      }
       if (refusal && !lostSeat) {
         const { worktree: mine2, left } = refusal;
         const who = `--as ${shellWord2(p.name)}`;
@@ -11577,7 +11597,7 @@ ${verbHelp()}`);
       emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
         if (!held.length && !merge.length) console.log("no lock held");
         const projectName = projectNameOf();
-        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since));
+        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters));
         for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
       });
       break;
@@ -11600,7 +11620,7 @@ ${verbHelp()}`);
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         const projectName = projectNameOf();
-        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
+        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {

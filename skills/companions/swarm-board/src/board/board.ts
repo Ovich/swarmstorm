@@ -1332,10 +1332,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run, member) as Row | undefined;
   /** board-split D49 (A1-5): in a board wait this server holds, set and cleared by the wait itself, and that wait is the
    *  member's open call (its link says so; with no link yet, the held wait alone): a background listener is not. */
+  /** V-26, V-46: the pack's lock `p` is queued on (the holder and the lock's name), as its pack says; null: none. */
+  const packLockWaitOf = (p: Row, t: number): { queuedBehind: string; lock: string } | null => {
+    if (String(p.seat) === ORCHESTRATOR || p.ended_at != null) return null;
+    const m = participantById(Number(p.id));
+    const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+    return s && "queuedBehind" in s ? s : null;
+  };
   const inHeldWaitOf = (p: Row): boolean => {
     if (!heldWaits.has(Number(p.id))) return false;
     const a = activityOf(Number(p.run), String(p.seat));
-    return a == null || Number(a.open_wait) === 1;
+    // V-46: a member queued on a pack's lock, its wait held, is waiting on that lock, whatever else it runs
+    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p, Date.now()) != null;
   };
   /** board-split D49: a participant row's one state, the same for snapshot, roster, status and reader. */
   const memberStateOf = (p: Row, runOpen: boolean): CoreMemberState =>
@@ -1430,6 +1438,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // idea 4 (D9): a member waiting on a lock names the lock and its holder
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
+      // V-46: queued on a pack's lock: `lock <name>, held by <holder>`, as a named lock's waiter reads
+      const packWait = withHolder ? packLockWaitOf(p, t) : null;
+      if (packWait) return { member, state: "waiting", doing: `lock ${packWait.lock}, held by ${packWait.queuedBehind}`, since: Number(a.open_since) };
       // board-split D31 (S37): a board wait over an un-notified background task of its own is busy on that task
       if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min · background ${String(a.bg_target)}`, since: Number(a.bg_since) };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
@@ -1513,7 +1524,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const m = participantById(Number(p.id));
     const packStall = String(p.seat) === ORCHESTRATOR ? null : (packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null);
     // board-split V-26: queued on the pack's lock (the merge lock): a lock wait, as a named lock's, never stalled here
-    const lockWaited = !!lockWaitOf(Number(p.id), t) || (packStall != null && "queuedBehind" in packStall);
+    const lockWaited = !!lockWaitOf(Number(p.id), t) || packLockWaitOf(p, t) != null;
     // the reason opens on the state the card shows: the pack's fact (merging) over the activity's word
     const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     const a = activityOf(Number(run.id), member);

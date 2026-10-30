@@ -425,7 +425,7 @@ const portListeners = (name: string): { port: number; pids: number[] } | null =>
 };
 /** One held lock as a line: name, holder, since, waiters, and for a port what listens on it. */
 /** board-split D52 (U-F18): the merge lock of each project with an open run, its holder and since; none held: empty. */
-const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string }[]> => {
+const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string; waiters: string[] }[]> => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
   // a project whose snapshot cannot be read (a broken store setting) names no merge lock; the verb still answers
   const lockOf = async (project: string) => {
@@ -436,7 +436,7 @@ const mergeLocksHeld = async (): Promise<{ project: string; holder: string; sinc
     }
   };
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
-  return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []));
+  return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []));
 };
 const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>
   `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
@@ -811,12 +811,16 @@ async function main(): Promise<void> {
     }
     case "close": {
       const run = runArg();
+      // V-45: a member of the run holding the merge lock is named: its merge did not land
+      const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
+      const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
       const swept = ((await board.packCall(null, "close", { run })) as { worktree: string; member: string; removed: boolean; why: string | null }[] | null) ?? [];
       const kept = swept.filter((w) => !w.removed);
-      emit({ run, state: "closed", removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
+      emit({ run, state: "closed", ...(lockHolder ? { lockHolder } : {}), removed: swept.filter((w) => w.removed).map((w) => w.worktree), kept: kept.map((w) => ({ worktree: w.worktree, member: w.member, why: w.why })) }, () => {
         console.log(`run ${run} closed`);
+        if (lockHolder) console.log(CODE_WORDING.closedLockHolder(lockHolder));
         const n = swept.length - kept.length;
         if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
         for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
@@ -1187,11 +1191,11 @@ async function main(): Promise<void> {
       const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
       // board-split D52 (U-F18): the merge lock is in the same listing, a lock named `merge` held by its member
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
-      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] as string[] }));
+      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: m.waiters }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
       emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         const projectName = projectNameOf();
-        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
+        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(projectName(repo)));
         let shown: number | null = null;
@@ -1394,6 +1398,11 @@ async function main(): Promise<void> {
       // board-split D59: the orchestrator ending a lost member's seat is never refused: the work stays on its branch
       const lostSeat = refusal && endedSeat !== undefined && (await board.composition(p.run)).entries.some((e) => e.seat === endedSeat && e.state === "lost");
       const unmergedKept = lostSeat ? ((await board.packCall(p, "unmerged", {})) as { branch: string; left: string } | null) : null;
+      // V-40: the orchestrator ending a live seat is answered as the orchestrator: the branch, who merges it, or the close
+      if (refusal && !lostSeat && endedSeat !== undefined) {
+        const live = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string } | null;
+        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), `${self().join(" ")} close --run ${p.run}`));
+      }
       if (refusal && !lostSeat) {
         const { worktree: mine, left } = refusal;
         const who = `--as ${shellWord(p.name)}`;
@@ -1520,7 +1529,7 @@ async function main(): Promise<void> {
       emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
         if (!held.length && !merge.length) console.log("no lock held");
         const projectName = projectNameOf();
-        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since));
+        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters));
         for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
       });
       break;
@@ -1547,7 +1556,7 @@ async function main(): Promise<void> {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         const projectName = projectNameOf();
-        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
+        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {

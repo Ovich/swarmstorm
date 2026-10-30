@@ -77,7 +77,7 @@ export const codePack: Pack = {
     const lock = tablesOf(ctx).heldMergeLock(member);
     if (!lock) {
       const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
-      return holder ? { queuedBehind: holder } : null;
+      return holder ? { queuedBehind: holder, lock: "merge" } : null;
     }
     const since = Date.parse(lock.grantedAt);
     // board-split D55: the fact alone; the board's reasonOf adds the state word and the age

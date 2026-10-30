@@ -12,7 +12,8 @@ export type LockTurn = { member: string; askedAt: string; grantedAt: string | nu
 export type SnapshotFile = { path: string; holders: string[]; interface: boolean };
 /** The code fields of `BoardSnapshot`, as the page reads them. */
 export type CodeSnapshotFields = {
-  lock: { holder: string; since: string } | null;
+  /** V-46: `waiters`, the live members refused it and waiting for it, in the order they asked */
+  lock: { holder: string; since: string; waiters: string[] } | null;
   /** The repository's merge-lock turns, newest first (at most 50): asked, granted, merged, refusals counted. */
   lockHistory: LockTurn[];
   files: SnapshotFile[];
@@ -38,6 +39,11 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo) as Row | undefined;
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
   const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
+  // V-46: who waits on the lock, in the order refused
+  const lockWaiters = (db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo) as Row[])
+    .map((w) => Number(w.participant))
+    .filter((id) => isLive(id) && id !== lockHolder)
+    .map(nameOf);
   // every live claim on the repository, in claim order: the FileMap's rows, and which paths are shared (D40)
   const live = (
     db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
@@ -79,7 +85,7 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   return {
     fields: {
       lockHistory,
-      lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow!.at) } : null,
+      lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow!.at), waiters: lockWaiters } : null,
       files: [...files.values()],
       flags,
     },

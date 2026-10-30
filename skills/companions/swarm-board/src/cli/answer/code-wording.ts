@@ -33,7 +33,8 @@ export const CODE_WORDING = {
   // V-21: printed after the state word, which already reads `merging`
   memberFact: { merging: "holds the merge lock" },
   /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
-  mergeLockLine: (project: string, holder: string, since: string) => `merge lock of ${project}  held by ${holder} since ${since}`,
+  mergeLockLine: (project: string, holder: string, since: string, waiters: string[] = []) =>
+    `merge lock of ${project}  held by ${holder} since ${since}${waiters.length ? `  waiters: ${waiters.join(", ")}` : ""}`,
 
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
@@ -74,6 +75,11 @@ export const CODE_WORDING = {
   pauseLockHolder: (holder: string) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
   /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
   mergeLockFree: (cli: Command, as: string) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
+  /** V-45: a close while a member of the run holds the merge lock: its merge did not land */
+  closedLockHolder: (holder: string) => `${holder} held the merge lock: its merge did not land; the lock is released, its branch keeps the work`,
+  /** V-40: the orchestrator ending a live seat whose branch holds work not merged */
+  endSeatUnmerged: (member: string, unmerged: string, close: Command) =>
+    `end --seat: ${member} is not ended: ${unmerged}. Its member merges it first (tell it on the thread), or the run's close keeps the branch: ${close}`,
   /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
   unmergedFact: (branch: string, left: string) => (left.startsWith("branch ") ? left : `branch ${branch} has ${left}`),
   /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's

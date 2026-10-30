@@ -105,10 +105,12 @@ test("end refuses while the worktree holds work not merged, naming it and the me
   fs.writeFileSync(path.join(dir, "c.txt"), "c\n");
   git(dir, "add", ".");
   git(dir, "commit", "-q", "-m", "c");
+  // V-40: the orchestrator ending a live seat reads its own answer: the branch, who merges it, or the close
   const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
-  assert.ok(refused.stderr.includes(`holds work not merged: branch swarm/${run}-g/w1 has 1 commit not merged into main. Merge it: `), refused.stderr);
-  assert.match(refused.stderr, /merge-lock --onto main/);
+  assert.ok(refused.stderr.includes(`end --seat: g/w1 is not ended: branch swarm/${run}-g/w1 has 1 commit not merged into main. Its member merges it first (tell it on the thread), or the run's close keeps the branch: `), refused.stderr);
+  assert.match(refused.stderr, new RegExp(`close --run ${run}$`, "m"));
+  assert.doesNotMatch(refused.stderr, /--as g\/w1/);
   git(repo, "merge", "-q", "--ff-only", `swarm/${run}-g/w1`);
   assert.match(ok("end", "--seat", "w1", "--as", "g/orchestrator"), /worktree .*w1 removed \(branch kept\)/);
   assert.equal(fs.existsSync(dir), false);
@@ -154,7 +156,7 @@ test("end with uncommitted work says to commit it, then merge it", () => {
   fs.writeFileSync(path.join(wt(run, "w1"), "c.txt"), "c\n");
   const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
-  assert.match(refused.stderr, /1 uncommitted change\. Commit it, then merge it: /);
+  assert.match(refused.stderr, /g\/w1 is not ended: branch swarm\/\d+-g\/w1 has 1 uncommitted change\. Its member merges it first/);
 });
 
 test("end stops only the link whose pid this data home recorded; a process with the same command line survives", async () => {
@@ -240,4 +242,14 @@ test("golden V-36 (D71): a pause while a member holds the merge lock names it; i
   assert.doesNotMatch(holder, /land nothing/);
   assert.match(ok("deliver", "--as", "g/w2"), /land nothing/);
   assert.match(ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1"), /lock released/);
+});
+
+test("golden V-45: close while a member holds the merge lock names it: its merge did not land", () => {
+  const run = open("task", "g", ["w1"]);
+  join(run, "g", "w1");
+  commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
+  git(repo, "branch", "-f", "trunk", "main");
+  ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
+  const closed = ok("close", "--run", run);
+  assert.ok(closed.includes("g/w1 held the merge lock: its merge did not land; the lock is released, its branch keeps the work"), closed);
 });

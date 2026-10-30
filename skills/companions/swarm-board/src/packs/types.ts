@@ -96,7 +96,7 @@ export interface Pack {
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
   /** board-split D52: a stall of the pack's own at `t` (ms epoch), as the stalled badge's reason and since; V-26: or the
    *  holder of a lock of the pack's the member waits on, which exempts its wait as a named lock's does; null: none. */
-  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | { queuedBehind: string } | null;
+  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | { queuedBehind: string; lock: string } | null;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;
