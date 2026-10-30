@@ -7,7 +7,7 @@ import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, wait
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedLine, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
+export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { decisionsLines, type WriteDecisionsSeats } from "./decisions.ts";

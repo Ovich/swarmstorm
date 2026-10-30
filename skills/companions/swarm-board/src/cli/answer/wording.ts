@@ -78,6 +78,8 @@ export const WORDING = {
   // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
   mentionEnded: (name: string) => `@${name} has ended: the post stays on the thread, read at the seat's next join`,
   mentionNotJoined: (name: string) => `@${name} has not joined yet: the post waits for it, read at its join`,
+  // break-flow V-47: a post reaches a lost member's seat, recorded; the agent is not there to read it
+  mentionLost: (member: string, move: string) => `${member} is lost: the post is recorded, but nothing reads it now; ${move}`,
   mentionNobody: (name: string, guesses: string[]) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
 
   // ── agree ──

@@ -78,6 +78,11 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
 };
 
 /** The one line a member of a closed run reads from every member verb. */
+/** break-flow V-47: the orchestrator's post that mentions a lost member is recorded, and says so with the move, as
+ *  `phase` does (V-35). `lost`: the mentioned members whose badge reads lost, `<group>/<seat>`. */
+export const lostMentionLines = (lost: string[], cli: string, as: string): string[] =>
+  lost.map((member) => W.mentionLost(member, W.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
+
 export const closedLine = (s: Situation): string => W.closed(s.run, W.end(s.cli, s.as));
 
 /** break-flow D61: the line every member verb answers before anything of its own, core and code pack alike: the run

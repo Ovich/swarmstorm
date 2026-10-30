@@ -9964,6 +9964,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
   mentionEnded: (name) => `@${name} has ended: the post stays on the thread, read at the seat's next join`,
   mentionNotJoined: (name) => `@${name} has not joined yet: the post waits for it, read at its join`,
+  // break-flow V-47: a post reaches a lost member's seat, recorded; the agent is not there to read it
+  mentionLost: (member, move) => `${member} is lost: the post is recorded, but nothing reads it now; ${move}`,
   mentionNobody: (name, guesses) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
   // ── agree ──
   /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
@@ -10170,6 +10172,7 @@ var phaseHeaders = (s, showPause = true) => {
   const why = WORDING.pauseWhy(s.pause.person, s.pause.text);
   return { printed: WORDING.phasePaused(short, why), full: WORDING.phasePaused(whole, why), first };
 };
+var lostMentionLines = (lost, cli, as) => lost.map((member) => WORDING.mentionLost(member, WORDING.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
 var closedLine = (s) => WORDING.closed(s.run, WORDING.end(s.cli, s.as));
 var gateLine = (s, listener = false) => {
   if (s.closed) return closedLine(s);
@@ -11194,12 +11197,15 @@ ${verbHelp()}`);
         ...args.verb === "post" && args.has("--task") ? { task: true } : {}
       });
       const unmatched = await unmatchedLines(p, body);
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
+      const lostNamed = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.badge?.name === "lost" && m.mentions.includes(r.name)).map((r) => r.name) : [];
+      const lostMentioned = lostMentionLines(lostNamed, self().join(" "), shellWord2(p.name));
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...lostMentioned.length ? { lost: lostMentioned } : {}, ...m.claimed ? { claimed: m.claimed } : {} };
       const human = [
         seqLine(m),
         // posting is claiming (D7)
         ...m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : [],
         ...unmatched,
+        ...lostMentioned,
         ...args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []
       ];
       await emitHeard(p, json, human);

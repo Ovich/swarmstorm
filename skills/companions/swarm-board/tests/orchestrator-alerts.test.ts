@@ -9,7 +9,7 @@ import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { BADGE_CONFIRM_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
 import { stalledOf } from "../src/board/stall.ts";
-import { answer, eventStep } from "../src/cli/answer/index.ts";
+import { answer, eventStep, lostMentionLines } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
 import type { MemberActivity } from "../src/wire.ts";
@@ -174,4 +174,11 @@ test("V-24: the no-phase stall's command points at the task, never at a phase", 
   const line = eventStep(m, { name: "g/orchestrator", seat: "orchestrator" } as never, "swarm") ?? "";
   assert.doesNotMatch(line, /your part of/);
   assert.match(line, /@w1 your task/);
+});
+
+test("golden V-47: the orchestrator's post naming a lost member says it is lost, with the move, the post recorded", () => {
+  assert.deepEqual(lostMentionLines(["g/w2"], "swarm", "g/orchestrator"), [
+    "g/w2 is lost: the post is recorded, but nothing reads it now; its agent is not running: dispatch it again, or end its seat: swarm end --seat w2 --as g/orchestrator",
+  ]);
+  assert.deepEqual(lostMentionLines([], "swarm", "g/orchestrator"), []);
 });

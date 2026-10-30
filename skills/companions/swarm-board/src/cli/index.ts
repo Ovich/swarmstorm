@@ -22,7 +22,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { claimHeldLine, pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, lostMentionLines, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -1055,12 +1055,16 @@ async function main(): Promise<void> {
         ...(args.verb === "post" && args.has("--task") ? { task: true } : {}),
       });
       const unmatched = await unmatchedLines(p, body);
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
+      // break-flow V-47: the orchestrator told which member it named is lost, as phase tells it (V-35)
+      const lostNamed = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.badge?.name === "lost" && m.mentions!.includes(r.name)).map((r) => r.name) : [];
+      const lostMentioned = lostMentionLines(lostNamed, self().join(" "), shellWord(p.name));
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(lostMentioned.length ? { lost: lostMentioned } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
       const human = [
         seqLine(m),
         // posting is claiming (D7)
         ...(m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : []),
         ...unmatched,
+        ...lostMentioned,
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
