@@ -39,7 +39,7 @@ export type TranscriptCursor = {
 };
 
 /** A background task the agent started: its output file, once the harness named it, and the turn it opened in. */
-type BackgroundTask = { target: string; since: number; turn: number; output: string | null } & CallWords;
+type BackgroundTask = { target: string; since: number; turn: number; output: string | null; taskId?: string | null } & CallWords;
 
 /** board-split D45: a call as the card names it, read off the transcript alone: the call's own `description` (null
  *  when it gave none) and its whole command or input, for the hover. */
@@ -372,7 +372,11 @@ export function classifyKill(command: string): { kind: "pattern" | "port"; ports
 
 // Claude Code's own wording, read here only (idea 1, Risks): if it drifts, a task reads quiet, never missed.
 // Anchored at the result's start: a result that only quotes these words (a grep, a cat) opens nothing.
-const MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
+const MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
+/** U-F30: the harness's id of a background task, as its result names it; a stop names the same id. */
+const BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
+/** U-F30: the calls that stop a background task by its id (no `<task-notification>` follows one). */
+const STOPS_TASK = new Set(["TaskStop", "KillShell", "KillBash"]);
 const OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
 const NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
 
@@ -495,6 +499,12 @@ export function observe(transcript: string, from: TranscriptCursor | null, bindi
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
           if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
           // a kill not by PID: the board checks a port kill against the member's locks (idea 4)
+          // U-F30: a background task stopped by its id gets no notification: it ends here
+          if (STOPS_TASK.has(name)) {
+            const stopped = (part.input as { task_id?: unknown; shell_id?: unknown } | undefined) ?? {};
+            const id = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
+            if (id) for (const [useId, task] of cursor.background) if (task.taskId === id) cursor.background.delete(useId);
+          }
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: (command as string).replace(/\s+/g, " ").trim(), ...kill, at };
         }
@@ -511,11 +521,12 @@ export function observe(transcript: string, from: TranscriptCursor | null, bindi
           const call = cursor.open.get(part.tool_use_id);
           if (MOVED_TO_BACKGROUND.test(result)) {
             const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const taskId = BACKGROUND_ID.exec(result)?.[1] ?? null;
             const task = cursor.background.get(part.tool_use_id);
-            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output, taskId });
             else if (call && !cursor.boardsOwn.has(part.tool_use_id))
               // a foreground call the harness moved to the background: it belongs to the turn it was called in
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, label: call.label ?? null, command: call.command ?? null });
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
           }
           cursor.open.delete(part.tool_use_id);
           cursor.boardsOwn.delete(part.tool_use_id);

@@ -184,3 +184,39 @@ test("D45: observe carries a call's own description and whole command, for the o
   assert.equal(observe(bare, null).activity.openTool!.label, null);
   assert.equal(observe(bare, null).activity.openTool!.command, "/r/src/a.ts");
 });
+
+test("U-F30: a background task stopped by its id (TaskStop, no notification) and a call the harness moved to the background are tracked to their end", () => {
+  const file = writeMain(root, PROJECT, SESSION, [
+    toolCall("Bash", { command: "npm test", run_in_background: true }, "toolu_bg", "2026-10-22T10:00:00.000Z"),
+    { type: "user", timestamp: "2026-10-22T10:00:01.000Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_bg", content: "Command running in background with ID: bt6khp5a9. Output is being written to: C:\t\bt6khp5a9.output" }] } },
+  ]);
+  const first = observe(file, null);
+  assert.equal(first.activity.background?.target, "npm test");
+  fs.appendFileSync(file, jsonl([
+    toolCall("TaskStop", { task_id: "bt6khp5a9" }, "toolu_stop", "2026-10-22T10:01:00.000Z"),
+    { type: "user", timestamp: "2026-10-22T10:01:01.000Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_stop", content: '{"message":"Successfully stopped task: bt6khp5a9"}' }] } },
+  ]));
+  const stopped = observe(file, first.cursor);
+  assert.equal(stopped.activity.background, null, "stopped: no background task left");
+  // the harness's own move: the call is a background task until its notification
+  fs.appendFileSync(file, jsonl([
+    toolCall("Bash", { command: "node scripts/liveness-scenario.mjs" }, "toolu_long", "2026-10-22T10:02:00.000Z"),
+    { type: "user", timestamp: "2026-10-22T10:05:00.000Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_long", content: "Command was moved to the background (ID: b78ut7py5) after running for 180s. Output is being written to: C:\t\b78ut7py5.output. You will be notified when it completes." }] } },
+  ]));
+  const moved = observe(file, stopped.cursor);
+  assert.equal(moved.activity.background?.target, "node scripts/liveness-scenario.mjs");
+  const notified = "<task-notification>\n<task-id>b78ut7py5</task-id>\n<tool-use-id>toolu_long</tool-use-id>\n<status>completed</status>\n</task-notification>";
+  fs.appendFileSync(file, jsonl([{ type: "user", timestamp: "2026-10-22T10:06:00.000Z", message: { role: "user", content: notified } }]));
+  assert.equal(observe(file, moved.cursor).activity.background, null);
+});
+
+test("U-F30: the member's own link and listener, run in the background with an env prefix or after a cd, are never its background activity", () => {
+  const cli = "SWARMSTORM_HOME=C:/h node C:/x/skills/companions/swarm-board/swarm.mjs";
+  const file = writeMain(root, PROJECT, SESSION, [
+    toolCall("Bash", { command: `${cli} link --run 7 --as g/w3`, run_in_background: true }, "toolu_link", "2026-10-22T10:00:00.000Z"),
+    toolResult("toolu_link"),
+    toolCall("Bash", { command: `cd C:/repo && ${cli} wait --mentions --as g/w3`, run_in_background: true }, "toolu_listen", "2026-10-22T10:00:01.000Z"),
+    toolResult("toolu_listen"),
+  ]);
+  assert.equal(observe(file, null).activity.background, null);
+});

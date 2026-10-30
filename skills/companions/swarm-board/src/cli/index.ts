@@ -1080,8 +1080,12 @@ async function main(): Promise<void> {
       // the locks this repository's members hold or wait on (idea 4)
       const names = new Set(roster.map((r) => r.name));
       const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
+      // board-split D52 (U-F18): the merge lock is in the same listing, a lock named `merge` held by its member
+      const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
+      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] as string[] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown: number | null = null;
         for (const r of roster) {

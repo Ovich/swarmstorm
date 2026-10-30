@@ -161,7 +161,7 @@ test("G2: the orchestrator's own breach is never told to SendMessage itself", ()
   assert.match(next, /stop only the PIDs you started/);
 });
 
-test("D8: a holder waiting past stall_ms with another run's member queued: stalled · lock to both orchestrators, once per hold; held 10 min by a holder at work: told too", async () => {
+test("D8: a holder waiting past LOCK_HELD_MS with another run's member queued: stalled · lock to both orchestrators, once per hold; held 10 min by a holder at work: told too", async () => {
   const { runA, runB, a1, b1, oA, oB } = setup();
   board.lock(a1, "port:4413");
   board.lock(b1, "port:4413");
@@ -171,9 +171,10 @@ test("D8: a holder waiting past stall_ms with another run's member queued: stall
   const held = board.wait(a1, { mentionsOnly: true, timeoutMs: 1500 });
   const base = Date.now();
   board.recordActivity(runA.id, "a1", act({ grewAt: base, openTool: { name: "Bash", target: "node swarm.mjs wait --mentions --as ga/a1", since: base - 1000, boardWait: true } }), new Date(base));
-  // past the run's stall window (board-split D54: 5 min by default)
-  const stallS = STALL_MS_DEFAULT / 1000;
-  for (const s of [30, stallS + 1, stallS + 2, stallS + 60]) tick2(board, runB.id, new Date(base + s * 1000), presence);
+  // past LOCK_HELD_MS (board-split D52: the lock rule's own bound, never the run's stall window)
+  const stallS = LOCK_HELD_MS / 1000;
+  // the holder waits since a second before the first waiter queued: stuck half a second before the hold reads long
+  for (const s of [30, stallS - 0.5, stallS + 60]) tick2(board, runB.id, new Date(base + s * 1000), presence);
   const toB = bodies(oB).filter((b) => /· lock port:4413/.test(b));
   const toA = bodies(oA).filter((b) => /· lock port:4413/.test(b));
   assert.equal(toB.length, 1, toB.join("\n"));

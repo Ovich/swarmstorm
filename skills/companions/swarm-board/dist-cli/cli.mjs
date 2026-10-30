@@ -1583,6 +1583,13 @@ function observe(transcript, from, binding) {
           if (boardsOwn) cursor.boardsOwn.add(part.id);
           else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
           if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
+          if (STOPS_TASK.has(name)) {
+            const stopped = part.input ?? {};
+            const id = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
+            if (id) {
+              for (const [useId, task] of cursor.background) if (task.taskId === id) cursor.background.delete(useId);
+            }
+          }
           const kill = typeof command === "string" ? classifyKill(command) : null;
           if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
         }
@@ -1598,10 +1605,11 @@ function observe(transcript, from, binding) {
           const call = cursor.open.get(part.tool_use_id);
           if (MOVED_TO_BACKGROUND.test(result)) {
             const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const taskId = BACKGROUND_ID.exec(result)?.[1] ?? null;
             const task = cursor.background.get(part.tool_use_id);
-            if (task) cursor.background.set(part.tool_use_id, { ...task, output });
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output, taskId });
             else if (call && !cursor.boardsOwn.has(part.tool_use_id))
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, label: call.label ?? null, command: call.command ?? null });
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
           }
           cursor.open.delete(part.tool_use_id);
           cursor.boardsOwn.delete(part.tool_use_id);
@@ -1640,7 +1648,7 @@ function observe(transcript, from, binding) {
     cursor
   };
 }
-var LABEL_CHARS, COMMAND_CHARS, TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
+var LABEL_CHARS, COMMAND_CHARS, TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, BACKGROUND_ID, STOPS_TASK, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
 var init_transcripts = __esm({
   "src/link/transcripts.ts"() {
     "use strict";
@@ -1731,7 +1739,9 @@ var init_transcripts = __esm({
     PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
     PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
     RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
-    MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:)/;
+    MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
+    BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
+    STOPS_TASK = /* @__PURE__ */ new Set(["TaskStop", "KillShell", "KillBash"]);
     OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
     NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
     commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
@@ -4500,7 +4510,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             const h = holderOf(lock, t);
             const holderSince = statesOf(h.run, t).get(h.member.slice(h.member.lastIndexOf("/") + 1))?.since ?? null;
             const heldLong = t - Date.parse(String(w.first)) >= LOCK_HELD_MS;
-            const holderStuck = (h.state === "waiting" || h.badge === "stalled") && holderSince != null && t - holderSince >= Number(r.stall_ms ?? STALL_MS_DEFAULT);
+            const holderStuck = (h.state === "waiting" || h.badge === "stalled") && holderSince != null && t - holderSince >= LOCK_HELD_MS;
             if (!heldLong && !holderStuck) continue;
             const holderSlice = h.member.slice(h.member.lastIndexOf("/") + 1);
             const handle = `${h.code}\xB7${holderSlice}`;
@@ -10838,8 +10848,11 @@ ${verbHelp()}`);
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
       const names = new Set(roster.map((r) => r.name));
       const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
+      const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
+      const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: held }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         let shown = null;
         for (const r of roster) {

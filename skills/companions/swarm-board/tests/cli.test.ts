@@ -349,6 +349,10 @@ test("D52 (U-F18): locks and status name the merge lock's holder and since, besi
   assert.deepEqual(listed.mergeLocks.map((m) => m.holder), ["review-tool/S3"]);
   assert.match(run("locks").stdout, /^merge lock of .+  held by review-tool\/S3 since \S+$/m);
   assert.match(run("status").stdout, /^lock    merge lock of .+  held by review-tool\/S3 since /m);
+  // U-F18: the roster's one listing of locks carries it too
+  const roster = JSON.parse(run("roster", "--json").stdout) as { locks: { name: string; member: string }[] };
+  assert.deepEqual(roster.locks.map((l) => [l.name, l.member]), [["merge", "review-tool/S3"]]);
+  assert.match(run("roster").stdout, /^lock merge lock of .+  held by review-tool\/S3 since /m);
 });
 
 test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
@@ -1498,7 +1502,8 @@ test("D47: roster and stats take --project; the old --repo is read as it, with o
 test("gate G5: open --stall-ms under the 5 min floor is raised to it, said in one answer line after the run id", () => {
   const seats = path.join(toolRoot, "g5.seats.json");
   fs.writeFileSync(seats, SEATS);
-  const { SWARM_STALL_FLOOR_MS: _floor, ...outer } = env();
+  const outer: NodeJS.ProcessEnv = { ...env() };
+  delete outer.SWARM_STALL_FLOOR_MS;
   const r = spawnSync(process.execPath, [CLI, "open", "--kind", "brainstorm", "--group", "g5", "--title", "t", "--seats", seats, "--stall-ms", "60000"], { cwd: repo, encoding: "utf8", env: outer });
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.split("\n");

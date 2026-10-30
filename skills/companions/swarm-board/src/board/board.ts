@@ -2404,7 +2404,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         }
         flushAlerts(run, t, orch);
         // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
-        // waiting or quiet for stall_ms: `stalled · lock` to this run's orchestrator and to the holder's, once per hold
+        // waiting or quiet for LOCK_HELD_MS (D52): `stalled · lock` to this run's orchestrator and to the holder's, once per hold
         if (r.paused == null) {
           const waited = db
             .prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name")
@@ -2416,7 +2416,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             const h = holderOf(lock, t);
             const holderSince = statesOf(h.run, t).get(h.member.slice(h.member.lastIndexOf("/") + 1))?.since ?? null;
             const heldLong = t - Date.parse(String(w.first)) >= LOCK_HELD_MS;
-            const holderStuck = (h.state === "waiting" || h.badge === "stalled") && holderSince != null && t - holderSince >= Number(r.stall_ms ?? STALL_MS_DEFAULT);
+            // board-split D52: the holder stuck LOCK_HELD_MS (D55's reason), never the run's stall window
+            const holderStuck = (h.state === "waiting" || h.badge === "stalled") && holderSince != null && t - holderSince >= LOCK_HELD_MS;
             if (!heldLong && !holderStuck) continue;
             const holderSlice = h.member.slice(h.member.lastIndexOf("/") + 1);
             const handle = `${h.code}·${holderSlice}`;
