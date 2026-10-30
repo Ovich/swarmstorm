@@ -2420,9 +2420,10 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         }
         // U-F20: a badge that came or went with time alone (lost, stalled) is a change too, so a reader's card follows it
         const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
+        // a server's first tick only learns them: what a reader drew at its connect is this already
         if (badgesShown.get(run) !== badgesNow) {
+          if (badgesShown.has(run)) moved = true;
           badgesShown.set(run, badgesNow);
-          moved = true;
         }
         if (moved) bump(String(r.repo));
       });
@@ -2851,9 +2852,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
     recordLink(run, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run, member, link.connected ? 1 : 0, link.lostAt);
-      // U-F20: a link coming or going is a change a reader redraws on, never a snapshot left stale until the next post
-      const r = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined;
-      if (r) bump(String(r.repo));
     },
 
     savedLinks() {

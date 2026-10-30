@@ -223,3 +223,25 @@ test("roster: a parked member carries the phase it is parked until", () => {
   board.park(orch, "a", "verify");
   assert.equal(board.roster(REPO).find((r) => r.name === "g/a")!.parkedUntil, "verify");
 });
+
+test("U-F20: a badge that comes with time alone is a change the readers redraw on, so the card and the roster read the same", () => {
+  const { run } = setup();
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
+  const version = (): number => {
+    const raw = openRawStore(path.join(dir, "swarm.sqlite"), { readOnly: true });
+    try {
+      return Number((raw.prepare("SELECT version FROM changes WHERE repo = ?").get(REPO) as { version: number }).version);
+    } finally {
+      raw.close();
+    }
+  };
+  const base = Date.now();
+  board.livenessTick(run.id, new Date(base), linked);
+  const before = version();
+  board.livenessTick(run.id, new Date(base), linked);
+  assert.equal(version(), before, "nothing changed, nothing told");
+  // the badge comes with time alone: the version moves
+  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
+  assert.ok(version() > before);
+  pins("g/a", "working", "lost");
+});

@@ -4439,8 +4439,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         }
         const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
         if (badgesShown.get(run3) !== badgesNow) {
+          if (badgesShown.has(run3)) moved = true;
           badgesShown.set(run3, badgesNow);
-          moved = true;
         }
         if (moved) bump(String(r.repo));
       });
@@ -4801,8 +4801,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
     recordLink(run3, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt);
-      const r = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run3);
-      if (r) bump(String(r.repo));
     },
     savedLinks() {
       return db.prepare("SELECT * FROM member_links").all().map((r) => ({
@@ -10159,7 +10157,14 @@ var portListeners = (name) => {
 };
 var mergeLocksHeld = async () => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
-  const held = await Promise.all(projects.map(async (project) => ({ project, lock: (await board.snapshot(project)).lock ?? null })));
+  const lockOf = async (project) => {
+    try {
+      return (await board.snapshot(project)).lock ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []);
 };
 var lockLine = (l, listening) => `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;

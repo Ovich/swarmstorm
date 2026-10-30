@@ -1,5 +1,6 @@
 // swarm-relay D41: a gone member no longer holds the phase: all-done and idle go on without it, naming it.
 
+import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -42,6 +43,8 @@ const setup = (seats = ["a", "b", "c", "d"]) => {
 };
 /** `d`'s agent went without end: its link lost past LINK_LOST_MS, no wait held (board-split D49); the tick at `s` tells it lost. */
 const goneD = (run: number, base: number, s = 1) => {
+  // D53: d's agent finished: no board call since, either
+  quietMember(path.join(dir, "swarm.sqlite"), "d");
   board.recordActivity(run, "d", act({ grewAt: base, finished: true }), at(base, 0));
   links.set("d", { connected: false, lostAt: base + s * 1000 - LINK_LOST_MS });
   board.livenessTick(run, at(base, s), presence);

@@ -389,7 +389,15 @@ const portListeners = (name: string): { port: number; pids: number[] } | null =>
 /** board-split D52 (U-F18): the merge lock of each project with an open run, its holder and since; none held: empty. */
 const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string }[]> => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
-  const held = await Promise.all(projects.map(async (project) => ({ project, lock: (await board.snapshot(project)).lock ?? null })));
+  // a project whose snapshot cannot be read (a broken store setting) names no merge lock; the verb still answers
+  const lockOf = async (project: string) => {
+    try {
+      return (await board.snapshot(project)).lock ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []));
 };
 const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>

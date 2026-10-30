@@ -1,5 +1,6 @@
 // D7: membership is one write. A join or re-join posts one event (G5), a re-join starts its liveness afresh (G18),
 // all-joined is told only before the first phase (G13). G36: a seat's worktree is made on its own branch, never the base.
+import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -31,6 +32,8 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const run = twoSeats();
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   board.join({ run: run.id, seat: "b", doing: "x", files: [] });
+  // D53: both silent on the board since long before, as members whose agents finished
+  for (const seat of ["a", "b"]) quietMember(path.join(dir, "swarm.sqlite"), seat);
   const t = Date.now() + 60_000;
   const lost: Presence = () => ({ connected: false, lostAt: t - 120_000 });
   board.recordActivity(run.id, "a", act({ grewAt: t, finished: true }), new Date(t));
