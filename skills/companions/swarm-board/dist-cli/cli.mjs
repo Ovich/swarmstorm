@@ -10046,7 +10046,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
   doneCounted: (phase, progress, all2) => `done ${phase}: ${progress}${all2 ? "; the orchestrator is told every member is done" : ""}`,
   /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
-  phaseParkedMember: (member, unpark) => `${member} is parked and not counted in this phase: unpark it when it should take its part: ${unpark}`,
+  phaseParkedMember: (member, cli, seat, as) => `${member} is parked and not counted in this phase: unpark it when it should take its part: ${cli} unpark ${seat} --as ${as}`,
   /** V-35: a member owing the phase just opened whose agent is lost */
   phaseLostMember: (member, move) => `${member} owes this phase and is lost: ${move}`,
   /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
@@ -11002,7 +11002,7 @@ ${verbHelp()}`);
       const seatOf = (member) => member.slice(member.lastIndexOf("/") + 1);
       const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
       const parkedFor = runRepo === void 0 ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.state === "parked" && (r.parkedUntil === name || only.includes(r.seat)));
-      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, `${cli} unpark ${shellWord2(r.seat)} --as ${shellWord2(p.name)}`));
+      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, cli, shellWord2(r.seat), shellWord2(p.name)));
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord2(seatOf(member)), shellWord2(p.name))));
       const pausedLine3 = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
       emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, parked: parkedLines, lost: lostLines, next, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {

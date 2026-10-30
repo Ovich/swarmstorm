@@ -848,7 +848,7 @@ async function main(): Promise<void> {
       const seatOf = (member: string): string => member.slice(member.lastIndexOf("/") + 1);
       const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
       const parkedFor = runRepo === undefined ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.state === "parked" && (r.parkedUntil === name || only.includes(r.seat)));
-      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, `${cli} unpark ${shellWord(r.seat)} --as ${shellWord(p.name)}`));
+      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, cli, shellWord(r.seat), shellWord(p.name)));
       // V-35: a member owing it whose agent is lost is named with the move it needs
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord(seatOf(member)), shellWord(p.name))));
       const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
