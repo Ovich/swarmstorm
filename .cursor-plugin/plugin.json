@@ -2,7 +2,7 @@
   "name": "swarmstorm",
   "displayName": "Swarmstorm",
   "description": "Multi-agent orchestration for Claude Code, Codex and Cursor: parallel coding agents that settle shared files before the merge, QA agents that test the running app, clickable prototypes, workbenches and live plans in aiview. On your own subscription.",
-  "version": "2.4.31",
+  "version": "2.4.32",
   "author": {
     "name": "Stefan Teofanovic"
   },
