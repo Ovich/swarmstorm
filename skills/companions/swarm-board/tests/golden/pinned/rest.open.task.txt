@@ -1,8 +1,8 @@
 exit 0
 2
+start your link now, in the background (your harness's background task): node <cli> link --run 2 --as h/orchestrator
 each seat joins with this, run first by its member, <seat> one of w9: node <cli> join --run 2 --seat <seat> --doing "waiting for a task" --as h/<seat>
 main is checked out at <home>/repo: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: git -C <home>/repo switch --detach
-start your link now, in the background (your harness's background task): node <cli> link --run 2 --as h/orchestrator
 next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task (its protocol.md's phase table names them): node <cli> phase <name> "<its message>" --as h/orchestrator
 --- stderr
 swarm: aiview not found: the run is open; its board is read in aiview once aiview is installed and knows this project

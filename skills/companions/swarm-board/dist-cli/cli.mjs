@@ -2439,6 +2439,11 @@ var init_registry = __esm({
         const own = role === null ? void 0 : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
         return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null));
       },
+      /** The part of `swarm stats` a run of `kind` carries: its members' pack's alone, none for a run with no pack (V-19, D66). */
+      statsFiguresFor(kind) {
+        const stats = registry.forMember(kind, null).pack?.stats;
+        return stats ? [stats] : [];
+      },
       /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
       statsFigures() {
         return Object.values(PACKS).flatMap((p) => p.stats ? [p.stats] : []);
@@ -2534,6 +2539,8 @@ function computeRun(db, r, now, silentAfterMs) {
   const messages = db.prepare(`SELECT * FROM messages WHERE run = ? OR (run IS NULL AND author IN (${marks})) ORDER BY seq`).all(id, ...ids);
   const orchestrators = new Set(people.filter((p) => String(p.seat) === ORCHESTRATOR).map((p) => Number(p.id)));
   const packRuns = statsPacks().map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
+  const kindPacks = new Set(registry.statsFiguresFor(kind));
+  const kindPackRuns = packRuns.filter((_, i) => kindPacks.has(statsPacks()[i]));
   const members = people.map((p) => {
     const pid = Number(p.id);
     const joined = ms(p.joined_at);
@@ -2584,7 +2591,7 @@ function computeRun(db, r, now, silentAfterMs) {
     closedAt,
     lengthMs: Number.isNaN(length) ? null : length,
     recorded,
-    ...Object.assign({}, ...packRuns.map((f) => f.runFields())),
+    ...Object.assign({}, ...kindPackRuns.map((f) => f.runFields())),
     members
   };
   if (kind === "brainstorm") {
@@ -2596,7 +2603,7 @@ function computeRun(db, r, now, silentAfterMs) {
     });
     return { ...base, brainstorm };
   }
-  return { ...base, ...Object.assign({}, ...packRuns.map((f) => f.kindFields() ?? {})) };
+  return { ...base, ...Object.assign({}, ...kindPackRuns.map((f) => f.kindFields() ?? {})) };
 }
 function skepticOf(db, run3, seats) {
   const seated = (seat) => new Set(seats.filter((p) => String(p.seat) === seat).map((p) => Number(p.id)));
@@ -3374,13 +3381,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     title: String(r.title),
     link: r.link == null ? null : String(r.link),
     state: r.state === "closed" ? "closed" : "open",
-    seats: db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)).map((s) => ({
+    seats: db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived, ${SEAT_STOOD_FOR_CLOSED_SQL} AS stood_for FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)).map((s) => ({
       id: String(s.id),
       ...s.role == null ? {} : { role: String(s.role) },
       ...s.area == null ? {} : { area: String(s.area) },
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)),
-      state: String(s.derived),
+      state: s.stood_for != null ? "done" : String(s.derived),
       ...s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }
     }))
   });
@@ -3607,13 +3614,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
     );
   };
   const compositionOf = (run3) => {
-    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run3);
+    const seats = db.prepare(`SELECT s.*, ${SEAT_STOOD_FOR_CLOSED_SQL} AS stood_for FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(run3);
     const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run3);
     const goneSet = new Set(db.prepare("SELECT member FROM badge_episodes WHERE run = ? AND badge = 'lost' AND opened_at IS NOT NULL AND closed_at IS NULL").all(run3).map((x) => String(x.member)));
     const plan = String(runRow(run3).plan);
     const showRole = new Set(seats.map((s) => s.role == null ? "" : String(s.role))).size > 1;
     const entry2 = (seat, s) => {
       const p = people.find((x) => String(x.seat) === seat);
+      const standsForClosed = s?.stood_for != null;
       return {
         seat,
         member: p ? `${plan}/${seat}` : null,
@@ -3621,7 +3629,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         ...s?.role == null ? {} : { role: String(s.role) },
         ...s?.area == null ? {} : { area: String(s.area) },
         // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined"
+        state: standsForClosed || p?.ended_at != null ? "ended" : !p ? "not joined" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined"
       };
     };
     const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
@@ -4024,6 +4032,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const roles = [...new Set(authority)];
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
+        const sameGroup = db.prepare("SELECT id FROM runs WHERE repo = ? AND plan = ? AND state = 'open'").get(repo, group);
+        if (sameGroup) throw new Error(`group ${group} already has run ${sameGroup.id} open on this project`);
         const r = db.prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, authority, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, roles.length ? JSON.stringify(roles) : null, base ?? null);
         const run3 = Number(r.lastInsertRowid);
         seats.forEach((s, i) => insertSeat(run3, s, i));
@@ -4239,12 +4249,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
       runRow(run3);
       return compositionOf(run3);
     },
-    participant(name) {
+    participant(name, repo = null) {
       const i = name.lastIndexOf("/");
       if (i <= 0) return null;
       const plan = name.slice(0, i);
       const seat = name.slice(i + 1);
-      const r = db.prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.state = 'open') DESC, r.id DESC LIMIT 1`).get(plan, seat);
+      const r = db.prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.repo = ?) DESC, (r.state = 'open') DESC, r.id DESC LIMIT 1`).get(plan, seat, repo ?? "");
       return r ? toParticipant(r) : null;
     },
     identify({ place }) {
@@ -5088,7 +5098,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   };
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -5123,6 +5133,8 @@ var init_board = __esm({
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
+    SEAT_STOOD_FOR_CLOSED_SQL = `(SELECT CASE WHEN o.state = 'closed' THEN o.id END FROM runs o
+  WHERE o.repo = (SELECT repo FROM runs WHERE id = s.run) AND o.plan = s.id AND o.id != s.run ORDER BY (o.state = 'open') DESC, o.id DESC LIMIT 1)`;
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR2 = "orchestrator";
     WAIT_POLL_MS = 1e3;
@@ -9764,7 +9776,7 @@ var CODE_IN_CORE_HELP = {
   ontoLine: "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
   pauseRefuses: "claim and merge-lock refused",
   closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
-  joinMakes: "on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it",
+  joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at your first claim or merge-lock, or reuses it",
   onExample: "agreement,any:merged",
   pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   withoutAs: "the member joined from this worktree"
@@ -9795,6 +9807,10 @@ var CODE_WORDING = {
   ),
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
+  /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
+  detach: (worktree) => `git -C ${worktree} switch --detach`,
+  ontoCheckedOutAtOpen: (onto, worktree, detach) => `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
+  ontoCheckedOutAtMerge: (onto, worktree, holder, detach) => `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
   mergeHeld: (holder, wait) => `held by ${holder}: ${wait} for its merged event`,
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
@@ -9976,7 +9992,13 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** V-6: a phase opened while members still owed the one it replaces */
   phaseStillOwed: (previous, members) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
   /** V-18: aiview's project add, with the same env prefix as every other command line */
-  aiviewProjectAdd: (envPrefix, launcher, cwd) => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`
+  aiviewProjectAdd: (envPrefix, launcher, cwd) => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
+  // ── T51 (board-split#D58): open and the run's identity ──
+  /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
+  groupAlreadyOpen: (group, run3, cli) => `open: refused: group ${group} already has run ${run3} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run3}), or open under another --group`,
+  /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
+  seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
+  seatJoin: (cli, run3, group, doing) => `${cli} join --run ${run3} --seat <seat> --doing ${doing} --as ${group}/<seat>`
 };
 function decisionHolders(runs) {
   const each = runs.map((r) => `run ${r.run} ${r.group} (${r.roles.join(", ")})`);
@@ -10202,11 +10224,12 @@ function decisionsLines(runs, cli, writeSeats, only) {
 }
 
 // src/cli/answer/usage.ts
+init_liveness();
 var coreUsage = (cli, events) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   CODE_IN_CORE_HELP.ontoLine,
-  "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
+  `          # --stall-ms: no counter moved this long posts stalled, default and floor ${STALL_MS_DEFAULT}; ends on the command that starts your link`,
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
   "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
@@ -10459,7 +10482,7 @@ var linkToStart = null;
 async function caller() {
   const as = args.flag("--as");
   const wt = as ? null : worktreeOf(process.cwd());
-  const p = as ? await board.participant(as) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
+  const p = as ? await board.participant(as, repoOf(process.cwd())) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
   if (p.place && fs13.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
@@ -10802,8 +10825,11 @@ ${verbHelp()}`);
           `open: no aiview project covers ${process.cwd()}, so the run's board would show nowhere. Declare it, then open again:
   ${WORDING.aiviewProjectAdd(HOME_OVERRIDE ? `SWARMSTORM_HOME=${shellWord2(fwd(HOME_OVERRIDE))} ` : "", shellWord2(fwd(home.launcher)), shellWord2(fwd(process.cwd())))}`
         );
+      const openRepo = repoOf2(process.cwd());
+      const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
+      if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
       const run3 = await board.openRun({
-        repo: repoOf2(process.cwd()),
+        repo: openRepo,
         kind,
         group,
         title: need("--title"),
@@ -10819,7 +10845,11 @@ ${verbHelp()}`);
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
       const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
       const decisions = decisionsLines(await board.runs(), self().join(" "), writeDecisionsSeats, run3.id);
-      const lines = (url) => [String(run3.id), stallClamped, url, link, ...decisions, next].filter((l) => l !== null).join("\n");
+      const seatIds = run3.seats.map((s) => s.id);
+      const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run3.id, shellWord2(run3.group), shellWord2("waiting for a task"))) : null;
+      const holding = profileOf(run3.kind).member === "worker" && run3.base ? worktreeHolding(process.cwd(), run3.base) : null;
+      const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run3.base, holding, CODE_WORDING.detach(shellWord2(holding))) : null;
+      const lines = (url) => [String(run3.id), stallClamped, url, link, seatsJoin, detachLine, ...decisions, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
         emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, decisions, ...next ? { next } : {} }, lines(null));
@@ -11224,7 +11254,7 @@ ${verbHelp()}`);
       if (holding) {
         process.exitCode = 5;
         const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path13.resolve(r2.worktree).toLowerCase() === path13.resolve(holding).toLowerCase());
-        const line = `${onto} is checked out at ${holding}${holder ? ` (${holder.name}'s worktree)` : ""}: ask the orchestrator to detach it, then run merge-lock again`;
+        const line = CODE_WORDING.ontoCheckedOutAtMerge(onto, holding, holder?.name ?? null, CODE_WORDING.detach(shellWord2(holding)));
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
