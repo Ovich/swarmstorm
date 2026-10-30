@@ -9865,6 +9865,10 @@ var CODE_WORDING = {
   /** V-13: a claim held by another member (D41): the post to make, runnable as printed, its mentions the caller's own */
   claimHeld: (path14, who, many, post) => `${path14} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
   claimHeldPost: (cli, mentions2, about, as) => `${cli} post "${mentions2} <what you change>" --about ${about} --as ${as}`,
+  /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
+  pausedMerging: (run3, why, wait) => `run ${run3} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
+  /** V-36 (D71): the pause's answer names the merge lock's holder, who lands its merge first */
+  pauseLockHolder: (holder) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
   /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
   mergeLockFree: (cli, as) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
   /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
@@ -10099,6 +10103,7 @@ var pausedLine = (s) => {
   if (s.seat === "orchestrator" || s.ended) return null;
   if (s.parked) return WORDING.parkedStop;
   if (!s.pause) return null;
+  if (s.mergingInPause) return CODE_WORDING.pausedMerging(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
   return WORDING.paused(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 var owedLine = (s, opts = {}) => {
@@ -10248,6 +10253,7 @@ async function readSituation(board2, me, opts) {
     wholeThread: !!profile.wholeThread,
     closed: !run3,
     pause: run3 && run3.paused != null ? { text: run3.paused, person: !!run3.pausedPerson } : null,
+    mergingInPause: !!run3 && run3.paused != null && me.pack != null && me.seat !== "orchestrator" && await board2.packCall(me, "held-merge-lock", {}) != null,
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null
@@ -10586,13 +10592,17 @@ var rosterLine = (r, roster, ages = false) => {
 };
 var situation = (p, show = false) => readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
 var phaseSuffix = (phase, progress) => phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
-var withNext = (me, d) => ({
+var withNext = (me, d, pausedMerging = null) => ({
   ...d,
   full: d.full.map((m) => {
-    const line = eventStep(m, me, self().join(" "));
+    const line = pausedMerging && eventOf(m) === "pause" ? pausedMerging : eventStep(m, me, self().join(" "));
     return line ? { ...m, endorse: line } : m;
   })
 });
+var pausedMergingLine = async (p) => {
+  const s = await situation(p);
+  return s.mergingInPause ? pausedLine(s) : null;
+};
 var emitAnswer = (json, a, withPhase = true) => emit({ ...json, ...withPhase ? { phase: a.phase ?? null } : {}, ...a.next ? { next: a.next } : {} }, () => {
   for (const l of a.lines) console.log(l);
 });
@@ -11042,8 +11052,11 @@ ${verbHelp()}`);
       if (args.verb === "pause") {
         const m2 = await board.pause(p, text, person !== void 0 ? { person: true } : void 0);
         const next2 = WORDING.pausedAll(m2.run, person !== void 0 ? text : null, cli, shellWord2(p.name));
-        emit({ seq: m2.seq, run: m2.run, paused: true, person: person !== void 0, next: next2 }, () => {
+        const holder = (await mergeLocksHeld()).find((l) => l.holder.startsWith(`${p.plan}/`))?.holder ?? null;
+        const merging = holder ? CODE_WORDING.pauseLockHolder(holder) : null;
+        emit({ seq: m2.seq, run: m2.run, paused: true, person: person !== void 0, ...holder ? { merging: holder } : {}, next: next2 }, () => {
           console.log(seqLine(m2));
+          if (merging) console.log(merging);
           console.log(next2);
         });
         break;
@@ -11208,7 +11221,7 @@ ${verbHelp()}`);
       const me = await caller();
       if (await answeredGate(me)) break;
       const mentionsOnly = args.has("--mentions");
-      const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
+      const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)), await pausedMergingLine(me));
       const a = answer({ verb: "deliver", mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(me, d.full.length > 0 || d.lines.length > 0));
       emitAnswer({ ...d }, a);
       break;
@@ -11220,7 +11233,8 @@ ${verbHelp()}`);
       const timeout = raw === void 0 ? void 0 : Number(raw);
       if (timeout !== void 0 && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
-      const d = withNext(p, await board.wait(p, { timeoutMs: timeout, mentionsOnly }));
+      const delivered = await board.wait(p, { timeoutMs: timeout, mentionsOnly });
+      const d = withNext(p, delivered, await pausedMergingLine(p));
       if (await answeredGate(p, true)) break;
       if (d.superseded) {
         emit(d, answer({ verb: "wait", outcome: "superseded" }, await situation(p)).lines[0]);

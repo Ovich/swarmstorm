@@ -67,6 +67,11 @@ export const CODE_WORDING = {
     `${path} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ` +
     `${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
   claimHeldPost: (cli: Command, mentions: string, about: string, as: string) => `${cli} post "${mentions} <what you change>" --about ${about} --as ${as}`,
+  /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
+  pausedMerging: (run: number, why: string, wait: Command) =>
+    `run ${run} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
+  /** V-36 (D71): the pause's answer names the merge lock's holder, who lands its merge first */
+  pauseLockHolder: (holder: string) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
   /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
   mergeLockFree: (cli: Command, as: string) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
   /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */

@@ -224,3 +224,20 @@ test("golden V-2 (D59): a member re-joining a seat whose branch holds work not m
   assert.ok(out.includes(`you do not hold the merge lock; branch swarm/${run}-g/w1 has 1 commit not merged into main: take the lock again to merge it: `), out);
   assert.match(out, /merge-lock --onto main --as g\/w1/);
 });
+
+test("golden V-36 (D71): a pause while a member holds the merge lock names it; its paused line says to finish that merge, then stop; its merged lands in the pause", () => {
+  const run = open("task", "g", ["w1", "w2"]);
+  join(run, "g", "w1");
+  join(run, "g", "w2");
+  const sha = commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
+  git(repo, "branch", "-f", "trunk", "main");
+  ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
+  const paused = ok("pause", "rebasing", "--as", "g/orchestrator");
+  assert.ok(paused.includes("g/w1 holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause"), paused);
+  const holder = ok("deliver", "--as", "g/w1");
+  assert.ok(holder.includes(`run ${run} is paused: rebasing. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: `), holder);
+  // the pause event stays the board's fact; the holder's step under it is never the stop
+  assert.doesNotMatch(holder, /land nothing/);
+  assert.match(ok("deliver", "--as", "g/w2"), /land nothing/);
+  assert.match(ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1"), /lock released/);
+});

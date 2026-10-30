@@ -280,14 +280,21 @@ const phaseSuffix = (phase: { name: string; text: string } | null, progress: Pha
   phase ? `  phase ${phase.name}: ${phase.text}${progress ? `  ${progressText(progress)}` : ""}` : "";
 
 /** A delivery as the member reads it: each event followed by the line its registry row gives (D36, D59). */
-const withNext = (me: Participant, d: Delivery): Delivery & { full: (Message & { endorse?: string })[] } => ({
+const withNext = (me: Participant, d: Delivery, pausedMerging: string | null = null): Delivery & { full: (Message & { endorse?: string })[] } => ({
   ...d,
   full: d.full.map((m) => {
-    const line = eventStep(m, me, self().join(" "));
+    // board-split V-36 (D71): the merge lock's holder reads its own paused line under the pause, never the stop
+    const line = pausedMerging && eventOf(m) === "pause" ? pausedMerging : eventStep(m, me, self().join(" "));
     // `endorse`: the JSON field the back-it line has always had
     return line ? { ...m, endorse: line } : m;
   }),
 });
+
+/** board-split V-36 (D71): the merge lock holder's paused line while its run is paused; null otherwise. */
+const pausedMergingLine = async (p: Participant): Promise<string | null> => {
+  const s = await situation(p);
+  return s.mergingInPause ? rules.pausedLine(s) : null;
+};
 
 const printDelivery = (d: Delivery & { full: (Message & { endorse?: string })[] }): void => {
   for (const m of d.full) {
@@ -897,8 +904,12 @@ async function main(): Promise<void> {
       if (args.verb === "pause") {
         const m = await board.pause(p, text, person !== undefined ? { person: true } : undefined);
         const next = WORDING.pausedAll(m.run, person !== undefined ? text : null, cli, shellWord(p.name));
-        emit({ seq: m.seq, run: m.run, paused: true, person: person !== undefined, next }, () => {
+        // board-split V-36 (D71): a member of this run holding the merge lock lands that merge first
+        const holder = (await mergeLocksHeld()).find((l) => l.holder.startsWith(`${p.plan}/`))?.holder ?? null;
+        const merging = holder ? CODE_WORDING.pauseLockHolder(holder) : null;
+        emit({ seq: m.seq, run: m.run, paused: true, person: person !== undefined, ...(holder ? { merging: holder } : {}), next }, () => {
           console.log(seqLine(m));
+          if (merging) console.log(merging);
           console.log(next);
         });
         break;
@@ -1101,7 +1112,7 @@ async function main(): Promise<void> {
       if (await answeredGate(me)) break;
       // --mentions: only what is for the member (a mention, an urgent post, a subscribed event), never blocking
       const mentionsOnly = args.has("--mentions");
-      const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
+      const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)), await pausedMergingLine(me));
       // the run's phase heads every delivery that carries something; a member owing the open phase is told to do it, last
       const a = answer({ verb: "deliver", mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(me, d.full.length > 0 || d.lines.length > 0));
       emitAnswer({ ...d }, a);
@@ -1114,7 +1125,8 @@ async function main(): Promise<void> {
       const timeout = raw === undefined ? undefined : Number(raw);
       if (timeout !== undefined && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
-      const d = withNext(p, await board.wait(p, { timeoutMs: timeout, mentionsOnly }));
+      const delivered = await board.wait(p, { timeoutMs: timeout, mentionsOnly });
+      const d = withNext(p, delivered, await pausedMergingLine(p));
       // the run closed while this wait was pending: the close ended the member
       if (await answeredGate(p, true)) break;
       if (d.superseded) {

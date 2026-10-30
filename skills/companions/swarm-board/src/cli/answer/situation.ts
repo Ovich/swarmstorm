@@ -25,6 +25,8 @@ export type Situation = {
   /** the run is gone from the open runs */
   closed: boolean;
   pause: { text: string; person: boolean } | null;
+  /** board-split V-36 (D71): in a pause, the member holds the merge lock: it finishes that merge, then stops */
+  mergingInPause?: boolean;
   /** the run's current phase */
   phase: { name: string; text: string } | null;
   /** the phase the member owes its done, null when none */
@@ -54,6 +56,7 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     wholeThread: !!profile.wholeThread,
     closed: !run,
     pause: run && run.paused != null ? { text: run.paused, person: !!run.pausedPerson } : null,
+    mergingInPause: !!run && run.paused != null && me.pack != null && me.seat !== "orchestrator" && (await board.packCall(me, "held-merge-lock", {})) != null,
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,

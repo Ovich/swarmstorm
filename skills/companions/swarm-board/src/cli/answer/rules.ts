@@ -18,6 +18,8 @@ export const pausedLine = (s: Situation): string | null => {
   if (s.seat === "orchestrator" || s.ended) return null;
   if (s.parked) return W.parkedStop;
   if (!s.pause) return null;
+  // board-split V-36 (D71): the merge lock's holder lands the merge it holds the lock for, then stops
+  if (s.mergingInPause) return CW.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
   return W.paused(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 
