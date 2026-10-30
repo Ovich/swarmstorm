@@ -13,7 +13,7 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LINK_LOST_MS, LOCK_HELD_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LINK_LOST_MS, LOCK_HELD_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_STALL_WINDOWS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
@@ -322,7 +322,7 @@ export type BoardSnapshot = PackSnapshotFields & {
 
 export interface Board {
   /** `kind` defaults to plan; throws on an unknown kind. The group is stored as the plan (D44). */
-  /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall threshold, default 60000. */
+  /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall window, default 5 min (board-split D54). */
   openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null; base?: string | null }): Run;
   /** `done` also releases the seat member's claims and lock: the orchestrator's way to free a stale member. */
   /** A seat added mid-run (D60): after the last, `ready`; refused on an id already in the run, an
@@ -691,6 +691,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // board-split D50: a post the orchestrator made a member's task (`post --task`), and the phase it was posted in
   upkeep("messages", "task_for", "task_for TEXT");
   upkeep("messages", "task_phase", "task_phase TEXT");
+  // board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery
+  upkeep("deliveries", "at", "at TEXT");
   // a member's subscriptions, JSON (D59)
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   // the seats file's `on`, JSON (D59)
@@ -1083,8 +1085,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         : !heard.some(woken)
           ? []
           : heard.filter((r) => woken(r) || carried(r) || (whole && ownPost(toMessage(r))));
-      const mark = db.prepare("INSERT INTO deliveries (participant, seq) VALUES (?, ?)");
-      for (const r of rows) mark.run(me.id, Number(r.seq));
+      const mark = db.prepare("INSERT INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+      for (const r of rows) mark.run(me.id, Number(r.seq), now());
       // a delivery is a call to the board: the member's last call (D31)
       const at = now();
       db.prepare("UPDATE participants SET last_call = ? WHERE id = ?").run(at, me.id);
@@ -1121,8 +1123,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const opened = (db.prepare("SELECT seq, meta FROM messages WHERE run = ? AND event = ?").all(p.run, EVENTS.phase.name) as Row[]).filter(
       (r) => r.meta != null && (JSON.parse(String(r.meta)) as { phase?: string }).phase === phase,
     );
-    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
-    for (const r of opened) mark.run(p.id, Number(r.seq));
+    const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+    for (const r of opened) mark.run(p.id, Number(r.seq), now());
   };
 
   const retentionDays = (): number => {
@@ -1382,11 +1384,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // U-F6 (D45, D49): the last call ended; it is not what the member is on, so working names none
     return { member, state: "working", doing: null, since: progressAtOf(p, run, a), ...linkDown };
   };
+  /** board-split D54: when the member's latest task (`post --task`, D50) was delivered to it, ms; null with none delivered. */
+  const taskDeliveredAtOf = (p: Row, run: Row): number | null => {
+    const r = db
+      .prepare("SELECT d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)")
+      .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
+    return r?.at == null ? null : Date.parse(String(r.at));
+  };
   /** board-split D49: a member's trouble from board facts alone, never its transcript, its `doing`, its own posts or a
    *  background task. lost: its link lost past LINK_LOST_MS, or none since its join that long, and no wait held. stalled: it owes the open phase and its
    *  last board call is older than the stall time, or it waits in a held wait owing past it (a lock wait apart: the
    *  lock rule tells it). blocked is `badgeOf`'s, over this. */
-  const troubleOf = (p: Row, run: Row, presence: Presence, t: number): { badge: Badge; rule?: StallRule; owes?: string } | null => {
+  const troubleOf = (p: Row, run: Row, presence: Presence, t: number, shownState: string = "waiting"): { badge: Badge; rule?: StallRule; owes?: string } | null => {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const link = presence(member);
@@ -1410,24 +1419,29 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (packStall) return { badge: stalledBadge(packStall.reason, packStall.since), rule: "lock" };
     const owes = owedNameOf(p, run);
     if (owes == null) return null;
+    // board-split D54: a member owes nothing until its own task (D50) was delivered to it; the clocks start there at the earliest
+    const taskDeliveredAt = taskDeliveredAtOf(p, run);
+    if (taskDeliveredAt == null) return null;
     const stallMs = Number(run.stall_ms ?? STALL_MS_DEFAULT);
-    // never through a pause, nor before the phase opened: the stall counts from the later of the two
-    const resumedAt = Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at)));
+    // never through a pause, nor before the phase opened: the stall counts from the latest of the three
+    const resumedAt = Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at)), taskDeliveredAt);
     if (heldSince != null) {
       if (lockWaitOf(Number(p.id), t)) return null;
       const a = activityOf(Number(run.id), member);
       // the owing span carries across a wait re-entered within the stall time (keepOwingSpan)
       const since = Math.max(a?.owe_since == null ? heldSince : Number(a.owe_since), resumedAt);
       if (t - since < stallMs) return null;
-      return { badge: stalledBadge(`waiting, not done ${owes}, ${Math.round((t - since) / 1000)} s`, since), rule: "owing", owes };
+      // U-F22: the reason's state word is the member's shown state (busy on a background task in its wait reads busy)
+      return { badge: stalledBadge(`${shownState}, not done ${owes}, ${Math.round((t - since) / 1000)} s`, since), rule: "owing", owes };
     }
     const lastCall = Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
-    if (t - lastCall < stallMs) return null;
+    if (t - lastCall < SILENT_STALL_WINDOWS * stallMs) return null;
     return { badge: stalledBadge(`not done ${owes}, no board call for ${Math.round((t - lastCall) / 1000)} s`, lastCall), rule: "silent", owes };
   };
   const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
-    const trouble = troubleOf(p, run, presence, t);
-    return { ...activityShownOf(p, run, presence, withHolder, t), badge: trouble?.badge ?? null, ...(trouble?.rule ? { rule: trouble.rule } : {}), ...(trouble?.owes ? { owes: trouble.owes } : {}) };
+    const activity = activityShownOf(p, run, presence, withHolder, t);
+    const trouble = troubleOf(p, run, presence, t, activity.state);
+    return { ...activity, badge: trouble?.badge ?? null, ...(trouble?.rule ? { rule: trouble.rule } : {}), ...(trouble?.owes ? { owes: trouble.owes } : {}) };
   };
   const stalledBadge = (reason: string, since: number | null): Badge => ({ name: "stalled", reason, since });
   const minutes = (ms: number): number => Math.round(ms / 60000);
@@ -1916,7 +1930,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const fresh = live(p);
       // idea 2: an explicit subscription wakes, and replaces a carried one of the same event and scope
       const kept = fresh.subscriptions.filter((o) => !subs.some((s) => sameSub(o, s) && o.carry && !s.carry));
-      return setSubs(fresh, [...kept, ...subs.filter((s) => !kept.some((o) => sameSub(o, s)))]);
+      const next = [...kept, ...subs.filter((s) => !kept.some((o) => sameSub(o, s)))];
+      return transaction(() => {
+        // U-F23: a subscription starts from now: what it would newly reach, already on the board, is marked had, never replayed
+        const before = fresh.subscriptions;
+        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+        for (const r of unseenRows(fresh)) {
+          const m = toMessage(r);
+          const reachedBefore = mentionsMe(m, fresh) || wakes(m, fresh, before) || carries(m, fresh, before);
+          if (!reachedBefore && (wakes(m, fresh, next) || carries(m, fresh, next))) mark.run(fresh.id, m.seq, now());
+        }
+        return setSubs(fresh, next);
+      });
     },
 
     unsubscribe(p, subs) {
@@ -1962,15 +1987,16 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         // G17: the tasks the orchestrator posted since the previous phase belong to this one; the text names those it does not cite
         const since = Number((db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row).s ?? 0);
+        // board-split D50 (O-F1): only each member's current task (`post --task`), one per member, never a post that merely mentions it
         const tasks = (
           db
-            .prepare("SELECT m.seq, m.mentions FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.seq > ? AND m.kind != 'event' AND a.seat = ? ORDER BY m.seq")
-            .all(fresh.run, since, ORCHESTRATOR) as Row[]
+            .prepare("SELECT MAX(seq) AS seq, task_for FROM messages WHERE run = ? AND seq > ? AND task_for IS NOT NULL GROUP BY task_for ORDER BY seq")
+            .all(fresh.run, since) as Row[]
         )
-          .map((m) => ({ seq: Number(m.seq), seats: (JSON.parse(String(m.mentions ?? "[]")) as string[]).filter((t) => t.startsWith(`${fresh.plan}/`) && !t.endsWith("/*") && !t.endsWith(`/${ORCHESTRATOR}`))
-            // G43: a phase for some seats (--for) takes only the posts to those seats
-            .filter((t) => !only.length || only.includes(seatOf(t))) }))
-          .filter((m) => m.seats.length && !new RegExp(`#${m.seq}(?![0-9])`).test(said));
+          .map((m) => ({ seq: Number(m.seq), seats: [String(m.task_for)] }))
+          // G43: a phase for some seats (--for) takes only the tasks of those seats
+          .filter((m) => !only.length || only.includes(seatOf(m.seats[0]!)))
+          .filter((m) => !new RegExp(`#${m.seq}(?![0-9])`).test(said));
         const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         // a phase opened again starts with no member done
@@ -2090,8 +2116,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const held = unseenRows(me)
           .map(toMessage)
           .filter((m) => m.run === me.run && (mentionsMe(m, me) || wakes(m, me, me.subscriptions) || carries(m, me, me.subscriptions)));
-        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)");
-        for (const m of held) mark.run(me.id, m.seq);
+        const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
+        for (const m of held) mark.run(me.id, m.seq, now());
         db.prepare("UPDATE runs SET paused = NULL, paused_person = 0, resumed_at = ?, stall_posts = 0 WHERE id = ?").run(now(), fresh.run);
         const message = insertMessage(fresh, `resume: continue${said ? `: ${said}` : ""}`, null, "event", [`${fresh.plan}/*`], { event: EVENTS.resume.name });
         return { ...message, held: held.map(messageLine) };
@@ -2531,7 +2557,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const r = db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row | undefined;
       if (!r) throw new Error(`unknown message #${seq}`);
       // G23, V6: a member that read a message in full has had it; its next wait never brings it again
-      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq) VALUES (?, ?)").run(by.id, seq);
+      if (by) db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)").run(by.id, seq, now());
       return toMessage(r);
     },
 

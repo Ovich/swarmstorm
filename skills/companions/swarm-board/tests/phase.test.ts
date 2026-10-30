@@ -143,11 +143,14 @@ test("the run keeps its current phase, plan runs too: runs(), currentPhase and t
   assert.deepEqual(board.currentPhase(plan.id), { name: "end", text: "merged and verified" });
 });
 
-test("a phase names the tasks the orchestrator posted before it that its text does not cite (G17)", () => {
+test("a phase names the tasks the orchestrator posted before it that its text does not cite (G17); only each member's current --task post (board-split D50, O-F1)", () => {
   const { orchestrator } = twoRuns();
-  const cited = board.post(orchestrator, "@architect the map");
-  const uncited = board.post(orchestrator, "@skeptic the holes");
+  const cited = board.post(orchestrator, "@architect the map", { task: true });
+  board.post(orchestrator, "@skeptic an older task", { task: true });
+  const uncited = board.post(orchestrator, "@skeptic the holes", { task: true });
   board.post(orchestrator, "@swarm a note to all");
+  // a post that only mentions a member is no task
+  board.post(orchestrator, "@architect a judgement");
   const m = board.phase(orchestrator, "build", `the first wave: #${cited.seq} architect`);
   assert.equal(m.body, `phase build: the first wave: #${cited.seq} architect; its tasks posted before it: #${uncited.seq} skeptic`);
   // the next phase counts only what came after this one
@@ -156,8 +159,8 @@ test("a phase names the tasks the orchestrator posted before it that its text do
 
 test("G43: a phase for some seats (--for) names only the tasks posted to those seats", () => {
   const { orchestrator } = twoRuns();
-  board.post(orchestrator, "@architect a nudge during the build");
-  const toSkeptic = board.post(orchestrator, "@skeptic check the holes");
+  board.post(orchestrator, "@architect a task during the build", { task: true });
+  const toSkeptic = board.post(orchestrator, "@skeptic check the holes", { task: true });
   const m = board.phase(orchestrator, "verify", "check it", { for: ["skeptic"] });
   assert.equal(m.body, `phase verify: check it; its tasks posted before it: #${toSkeptic.seq} skeptic`);
 });

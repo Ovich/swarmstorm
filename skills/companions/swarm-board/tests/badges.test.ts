@@ -46,21 +46,51 @@ test("golden stalled (board-split D49): owing the open phase with no board call 
   const { run, a, b, orch } = setup();
   board.phase(orch, "p1", "go");
   board.done(b, "p1");
+  // board-split D54: the owing clock starts at the member's own task, delivered
+  board.post(orch, "@a your part", { task: true });
+  board.deliver(a);
   const base = Date.now();
   // the transcript growing and a self-report are no board call
   board.recordActivity(run.id, "a", act({ grewAt: base + 5000, lastTool: "Read x", inTurn: true }), at(base, 5));
   board.post(a, "on it");
   board.setDoing(a, "reading");
-  const st = badgeIn(run.id, "a", at(base, 6));
+  // out of a wait, stalled only after three stall windows without a board call (D54)
+  assert.equal(badgeIn(run.id, "a", at(base, 14)).badge, null);
+  const st = badgeIn(run.id, "a", at(base, 16));
   assert.equal(st.state, "working");
   assert.deepEqual([st.badge?.name, st.rule, st.owes], ["stalled", "silent", "p1"]);
   assert.match(st.badge?.reason ?? "", /^not done p1, no board call for \d+ s$/);
-  board.livenessTick(run.id, at(base, 6), linked);
+  board.livenessTick(run.id, at(base, 16), linked);
   assert.equal(eventsOf("stalled").length, 1);
   assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: not done p1/);
   // done ends the owing: no badge
   board.done(a, "p1");
-  assert.equal(badgeIn(run.id, "a", at(base, 7)).badge, null);
+  assert.equal(badgeIn(run.id, "a", at(base, 17)).badge, null);
+});
+
+test("golden owing (board-split D54): phase open, task posted later: no stall until the task is delivered and the stall window passed; with no task delivered the member owes nothing", async () => {
+  const { run, a, orch } = setup();
+  board.phase(orch, "p1", "go", { for: ["a"] });
+  board.deliver(a);
+  const base = Date.now();
+  // in a held wait, owing p1, no task yet: nothing past both windows (25 s, the link not yet lost)
+  const first = board.wait(a, { mentionsOnly: true, timeoutMs: 200 });
+  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null, "no task delivered: owes nothing");
+  await first;
+  // out of a wait, no task: nothing past the silent time either
+  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null);
+  // the task posted, not yet delivered: still nothing
+  board.post(orch, "@a your part", { task: true });
+  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null, "posted, not delivered");
+  // delivered by its wait: the clock starts there
+  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 200 });
+  assert.equal((await held).full.length, 1);
+  const deliveredAt = Date.now();
+  const again = board.wait(a, { mentionsOnly: true, timeoutMs: 300 });
+  assert.equal(badgeIn(run.id, "a", new Date(deliveredAt + 4000)).badge, null, "inside the window");
+  const late = badgeIn(run.id, "a", new Date(deliveredAt + 6000));
+  assert.deepEqual([late.badge?.name, late.rule, late.owes], ["stalled", "owing", "p1"]);
+  await again;
 });
 
 test("golden lost (board-split D49): a link lost past LINK_LOST_MS with no wait held is lost, its state untouched; a finished transcript is not lost; recovered once the link is back", () => {

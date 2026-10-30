@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Delivery, type Participant, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { SCENARIOS, play, steps } from "./fixtures/yardstick.ts";
+import { SCENARIOS, STALL_S, play, steps } from "./fixtures/yardstick.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
@@ -41,11 +41,18 @@ const setup = (ids: string[], group = "g") => {
   return { run, m, orch };
 };
 
-/** board-split D49: the open phase `p1`, owed by every member but `done`; a stall counts from its opening. */
+/** board-split D54: `member`'s own task (`post --task`), delivered: its owing clock starts there. */
+const taskTo = (orch: Participant, member: Participant) => {
+  board.post(orch, `@${member.name.slice(member.name.indexOf("/") + 1)} your part`, { task: true });
+  board.deliver(member);
+};
+/** board-split D49, D54: the open phase `p1`, owed by every member but `done`, each given its task; a stall counts from it.
+ *  Out of a wait, a member reads stalled after three stall windows (15 s here) without a board call. */
 const oweP1 = (run: number, orch: Participant, done: Participant[] = []) => {
   board.phase(orch, "p1", "your part");
   for (const p of done) board.done(p, "p1");
-  void run;
+  for (const p of board.roster(REPO).filter((x) => x.run === run && !x.name.endsWith("/orchestrator") && !done.some((d) => d.name === x.name)))
+    taskTo(orch, board.participant(p.name)!);
 };
 
 test("a: a seat that only re-arms its wait, owing nothing, never draws stalled", async () => {
@@ -64,9 +71,10 @@ test("b: a stalled is never carried: it wakes the orchestrator at once, the carr
   assert.equal((await waitOf(orch)).full.length, 0, "the joined alone is carried");
   // board-split D49: w1 alone owes the open phase (`--for`), with no board call
   board.phase(orch, "p1", "your part", { for: ["w1"] });
+  taskTo(orch, board.participant("g/w1")!);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, 6), presence);
+  board.livenessTick(run.id, at(base, 16), presence);
   const d = await held;
   assert.match(all(d), /stalled g\/w1/);
   assert.match(all(d), /late1/, "the carried joined rides on the stalled's wake");
@@ -77,7 +85,7 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   oweP1(run.id, orch, [m.d]);
   const base = Date.now();
   const held = waitOf(orch, 2000);
-  board.livenessTick(run.id, at(base, 6), presence);
+  board.livenessTick(run.id, at(base, 16), presence);
   const d = await held;
   assert.equal(d.full.filter((x) => x.body.startsWith("stalled")).length, 1);
   const s = stalled();
@@ -88,10 +96,10 @@ test("c: three members stalled at one tick: one wake naming each, its rule and i
   const move = stepOf("stalled")({ ...board.read(s[0].seq), meta: { ...members[0], members } }, orch, "swarm")!;
   assert.match(move, /^a: swarm post .*your part of p1.*; b: ask it: swarm post .*your part of p1.*; c: ask OT·w9 to unlock port:1/);
   // the same set: no repeat within 15 min
-  for (const t of [10, 60, 600]) board.livenessTick(run.id, at(base, t), presence);
+  for (const t of [20, 60, 600]) board.livenessTick(run.id, at(base, t), presence);
   assert.equal(stalled().length, 1);
   // the same three, 15 min on: one grouped repeat
-  board.livenessTick(run.id, at(base, 6 + 15 * 60), presence);
+  board.livenessTick(run.id, at(base, 16 + 15 * 60), presence);
   assert.equal(stalled().length, 2);
   assert.match(stalled()[1].body, /3 members/);
 });
@@ -100,14 +108,14 @@ test("d: a stalled member that is then mentioned and acts (done) draws no repeat
   const { run, m, orch } = setup(["a"]);
   oweP1(run.id, orch);
   const base = Date.now();
-  board.livenessTick(run.id, at(base, 6), presence);
+  board.livenessTick(run.id, at(base, 16), presence);
   assert.equal(stalled().length, 1);
   board.post(orch, "@a your report?");
   board.deliver(m.a);
   board.post(m.a, "here it is");
-  assert.equal(board.memberStates(run.id, at(base, 7)).find((x) => x.member === "a")?.badge?.name, "stalled", "a self-post is no board call");
+  assert.equal(board.memberStates(run.id, at(base, 17)).find((x) => x.member === "a")?.badge?.name, "stalled", "a self-post is no board call");
   board.done(m.a, "p1");
-  for (let s = 10; s <= 20 * 60; s += 3) {
+  for (let s = 20; s <= 20 * 60; s += 3) {
     board.recordActivity(run.id, "a", act({ grewAt: base + s * 1000 }), at(base, s));
     board.livenessTick(run.id, at(base, s), presence);
   }
@@ -121,8 +129,8 @@ test("e: another run's stalled member never wakes this run's orchestrator", asyn
   oweP1(two.run.id, two.orch);
   const base = Date.now();
   const held = waitOf(one.orch, 400);
-  board.livenessTick(one.run.id, at(base, 6), presence);
-  board.livenessTick(two.run.id, at(base, 6), presence);
+  board.livenessTick(one.run.id, at(base, 16), presence);
+  board.livenessTick(two.run.id, at(base, 16), presence);
   assert.equal(stalled(two.run.id).length, 1);
   assert.equal(all(await held), "", "one's orchestrator is not woken by two's stall");
   assert.deepEqual(stalled(two.run.id)[0].mentions, ["two/orchestrator"]);
@@ -133,22 +141,26 @@ test("f: a background listener returning is not progress that hides a stall of a
   const a = id();
   const r = await play({
     id: "F-listener",
-    what: "owes p1; its background wait --mentions returns at 200 s, then silence",
-    length: 600,
+    what: "owes p1 from its task; its background wait --mentions returns at 200 s, then silence",
+    // board-split D54: out of a wait, stalled only after three stall windows without a board call
+    length: 3 * STALL_S + 120,
     stuckAt: 7,
-    owe: (bd, o) => bd.phase(o, "p1", "@x your part"),
+    owe: (bd, o) => {
+      bd.phase(o, "p1", "go");
+      bd.post(o, "@x your part", { task: true });
+    },
     steps: [work(0), open(5, a, WAIT, { run_in_background: true }), startedInBackground(6, a, "w.out"), work(7, "listening"), notifiedAsPrompt(200, a), work(201, "nothing for me")],
   });
   assert.equal(r.missed, 0, r.events);
   // told within the bound, and no recovered: the stall is not cleared by the listener's return
-  assert.ok(r.alerts.length > 0 && r.alerts[0].s <= 7 + 61, r.events);
+  assert.ok(r.alerts.length > 0 && r.alerts[0].s <= 7 + 3 * STALL_S + 61, r.events);
   assert.ok(!/recovered/.test(r.events), r.events);
 });
 
 test("G39, board-split D31, D49: a member owing its phase that waits on a background task of its own is busy on it, and stalled owing past the stall time from the held wait, never from the task", async () => {
   const { run, m, orch } = setup(["a"]);
-  board.phase(orch, "p1", "@a your part");
-  board.deliver(m.a);
+  board.phase(orch, "p1", "go");
+  taskTo(orch, m.a);
   board.deliver(orch);
   const base = Date.now();
   const held = waitOf(m.a, 3000);
@@ -157,6 +169,8 @@ test("G39, board-split D31, D49: a member owing its phase that waits on a backgr
   assert.deepEqual([early.state, early.badge], ["busy", null]);
   const late = board.memberStates(run.id, at(base, 90)).find((x) => x.member === "a")!;
   assert.deepEqual([late.state, late.badge?.name, late.rule], ["busy", "stalled", "owing"]);
+  // U-F22: the reason names the state the card shows
+  assert.match(late.badge?.reason ?? "", /^busy, not done p1, \d+ s$/);
   board.post(orch, "@a go");
   await held;
 });
@@ -166,11 +180,11 @@ test("G40: the same stalled set, no member progressed since, is not told again w
   oweP1(run.id, orch);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: false, lastTool: "Bash x" }), at(base, 0));
-  board.livenessTick(run.id, at(base, 10), presence);
+  board.livenessTick(run.id, at(base, 16), presence);
   assert.equal(stalled(run.id).length, 1);
   // a link blip clears its stalled mark; nothing progressed, the same silence again
-  board.livenessTick(run.id, at(base, 11), () => ({ connected: false, lostAt: base + 11_000 }));
-  board.livenessTick(run.id, at(base, 15), presence);
+  board.livenessTick(run.id, at(base, 17), () => ({ connected: false, lostAt: base + 17_000 }));
+  board.livenessTick(run.id, at(base, 20), presence);
   board.livenessTick(run.id, at(base, 40), presence);
   assert.equal(stalled(run.id).length, 1, "not repeated");
 });

@@ -102,9 +102,11 @@ waits: in the foreground; a seat runs on the plugin's
     stalled at one tick come in one line, `stalled <group>: N members: …`, each with its rule,
     and the `next` line gives each member's move after its name. Told again when the set of
     stalled members changes, or every 15 min for the same set, still one line. A stall is a board fact alone, never its
-    transcript, its `doing` or its own posts: it owes the open phase and, past the stall time, either `waiting, not done
-    <phase>` (a wait the board holds, owing its part) or `not done <phase>, no board call for N s` (out of a wait; a post,
-    `doing` or endorsement is no board call). On the line after it, the move: **read that `next` line and make that
+    transcript, its `doing` or its own posts: it owes the open phase, from the moment its own task (`post --task`)
+    was delivered to it (no task delivered: it owes nothing), and either `<state>, not done <phase>` past the run's stall
+    window (default 5 min; a wait the board holds, owing its part, `<state>` the one its card shows) or `not done <phase>,
+    no board call for N s` past three stall windows (15 min by default; out of a wait, a builder codes for minutes; a
+    post, `doing` or endorsement is no board call). On the line after it, the move: **read that `next` line and make that
     move**: a mention reaches a member in a wait, a direct message one whose turn ended. A background task or a long
     call is activity on its card (`busy <N> min · background <cmd>`), never a stall.
   - **`lost <member>`**: it carries the `lost` badge: its link has been lost 30 s and the board holds no wait of

@@ -87,8 +87,9 @@ export const IDLE_MS = 15 * 60 * 1000;
 /** A member whose link has sent no activity this long after its join has no transcript: named once, its state presence only (D33). */
 // SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
 export const NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1000;
-/** The default stall threshold of a run, in ms: a member silent this long is `quiet` (swarm-relay D9, D11). */
-export const STALL_MS_DEFAULT = 60000;
+/** The default stall window of a run, in ms (board-split D54: 5 min): a member owing the open phase in a held wait this
+ *  long after its task was delivered reads stalled. */
+export const STALL_MS_DEFAULT = 5 * 60 * 1000;
 /** Readings older than this are pruned. */
 export const READINGS_KEPT_MS = 10 * 60 * 1000;
 /** A tool call open longer than this keeps its member `busy`, and the orchestrator is told it may be hung (stalled, D46). */
@@ -128,3 +129,6 @@ export function coreStateOf(m: CoreStateFacts): CoreMemberState {
 /** board-split D36: a seat's state, derived from its member, never set: `ready` none has sat in it, `running` its
  *  member is on the board, `done` its member left; a parked seat is `ready` again, waiting for its dispatch. */
 export type SeatState = "ready" | "running" | "done";
+/** board-split D54: out of any wait, a member owing the open phase reads stalled only after this many stall windows
+ *  without a board call (SILENT_MS, 15 min at the default window): a builder codes for minutes without calling the board. */
+export const SILENT_STALL_WINDOWS = 3;

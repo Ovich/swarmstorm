@@ -231,7 +231,7 @@ test("S4 target: merge-lock prints the --guides form merged takes; either name f
   commit(wtA, "page");
   const lock = cli(wtA, "merge-lock", "--onto", "main").split("\n");
   assert.ok(lock.includes("guides of this merge: all (guide-all), ui (guide-ui); check your change against each, then settle each in merged's --guides below"), lock.join("\n"));
-  assert.ok(lock.some((l) => l.startsWith("granted: merge, then ") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
+  assert.ok(lock.some((l) => l.startsWith("granted: under the lock only rebase, ") && l.includes("your full suite ran before merge-lock") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
   const sha = git(wtA, "rev-parse", "HEAD").trim();
   const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
   const usage = 'usage: --guides "<name>:ok|n/a <why>, ..."';

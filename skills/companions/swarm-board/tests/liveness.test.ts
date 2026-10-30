@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
-import { openBoard, type Board, type Presence } from "../src/board/board.ts";
+import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
@@ -69,13 +69,20 @@ const setup = () => {
   return { run, a, b, orchestrator };
 };
 /** board-split D49: a stall counts from the phase opening (on the store's own clock, now); with the ticks a minute on,
- *  the stall time set so it comes due `dueAt` seconds after `base`. */
+ *  the stall window set so the silent stall (three windows, D54) comes due `dueAt` seconds after `base`. */
 const stallDueAt = (run: number, dueAt: number) => {
   const db = openRawStore(path.join(dir, "swarm.sqlite"));
   try {
-    db.prepare("UPDATE runs SET stall_ms = ? WHERE id = ?").run(60_000 + dueAt * 1000, run);
+    db.prepare("UPDATE runs SET stall_ms = ? WHERE id = ?").run(Math.ceil((60_000 + dueAt * 1000) / 3), run);
   } finally {
     db.close();
+  }
+};
+/** board-split D54: each member's own task (`post --task`), delivered: the owing clock starts there. */
+const taskTo = (orchestrator: Participant, ...members: Participant[]) => {
+  for (const m of members) {
+    board.post(orchestrator, `@${m.name.slice(m.name.indexOf("/") + 1)} your part`, { task: true });
+    board.deliver(m);
   }
 };
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
@@ -179,24 +186,26 @@ test("one member owing the phase with no board call past the stall time: stalled
   const { run, a, b, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go");
   board.done(b, "p1");
+  taskTo(orchestrator, a);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
   const bWait = board.wait(b, { mentionsOnly: true, timeoutMs: 600 });
-  board.livenessTick(run.id, at(base, 4), presence);
+  // out of a wait: three stall windows without a board call (D54)
+  board.livenessTick(run.id, at(base, 14), presence);
   assert.equal(events("stalled").length, 0);
-  board.livenessTick(run.id, at(base, 6), presence);
+  board.livenessTick(run.id, at(base, 16), presence);
   assert.equal(events("stalled").length, 1);
   const s = events("stalled")[0];
   assert.match(s.body, /^stalled idea\/a: not done p1, no board call for \d+ s; phase p1 1\/2 done$/);
   assert.deepEqual(s.mentions, ["idea/orchestrator"]);
   assert.equal((await bWait).full.length, 0, "b is not woken");
   // the transcript growing or an open call is no board call: still stalled, told once
-  for (const t of [7, 60, 14 * 60]) {
+  for (const t of [17, 60, 14 * 60]) {
     board.recordActivity(run.id, "a", act({ grewAt: base + t * 1000, openTool: { name: "Bash", target: "npm test", since: base + t * 1000 } }), at(base, t));
     board.livenessTick(run.id, at(base, t), presence);
   }
   assert.equal(events("stalled").length, 1, "once");
-  board.livenessTick(run.id, at(base, 6 + 15 * 60), presence);
+  board.livenessTick(run.id, at(base, 16 + 15 * 60), presence);
   assert.equal(events("stalled").length, 2, "again after 15 min");
   assert.match(stepOf("stalled")(board.read(s.seq), board.participant("idea/orchestrator")!, "swarm")!, /^ask it: .* post "@a your part of p1"/);
   assert.equal(stepOf("stalled")(board.read(s.seq), b, "swarm"), null);
@@ -294,14 +303,15 @@ test("no transcript: a member with no link activity 30 s after its join is named
 });
 
 test("stalled needs owing AND the link alive; a lost link draws lost, never stalled; a self-post never resets it (board-split D49)", () => {
-  const { run, a, orchestrator } = setup();
+  const { run, a, b, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go");
+  taskTo(orchestrator, a, b);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read src/x.ts" }), at(base, 0));
   board.recordActivity(run.id, "b", act({ grewAt: base, lastTool: "Bash npm test" }), at(base, 0));
   // b stopped: its link died at once
   links.set("b", { connected: false, lostAt: base + 1000 });
-  for (const s of [4, 6, 10, 20, 30]) board.livenessTick(run.id, at(base, s), presence);
+  for (const s of [4, 6, 10, 16, 20, 30]) board.livenessTick(run.id, at(base, s), presence);
   assert.equal(events("stalled").length, 1);
   assert.match(events("stalled")[0].body, /^stalled idea\/a: not done p1, no board call for \d+ s; /, "a stalled; b never");
   assert.equal(events("lost").length, 0);
@@ -348,6 +358,7 @@ test("G31: alerts due within the window after one told are held and told togethe
   const { run, orchestrator } = setup();
   // board-split D49: a stall is owing the open phase with no board call
   board.phase(orchestrator, "p1", "go");
+  taskTo(orchestrator, board.participant("idea/a")!, board.participant("idea/b")!);
   const base = Date.now() + 60_000;
   stallDueAt(run.id, 5);
   // both seats have no transcript: one liveness line at the first tick, the window opened by it
@@ -365,6 +376,7 @@ test("G31: alerts due within the window after one told are held and told togethe
 test("D43: a gone due inside the window is told at once, and what is held rides along with it (S31: liveness then gone)", () => {
   const { run, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go");
+  taskTo(orchestrator, board.participant("idea/a")!, board.participant("idea/b")!);
   const base = Date.now() + 60_000;
   stallDueAt(run.id, 5);
   // b's link was lost 25 s before the first tick: its gone comes due 5 s after the liveness alert opened the window

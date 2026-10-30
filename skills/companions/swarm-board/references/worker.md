@@ -53,17 +53,21 @@ the foreground: an agent that ends its turn on a background task of its own is n
    `superseded by a newer wait`: a foreground wait of yours took over, ignore it.
 6. **Merge, at the task's end**, and early when a file you marked *interface* changed in a way
    other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
+   **The lock is held only to rebase, check and fast-forward**: every other worker waits on it.
+   0. **Before the lock**: commit, then run the task's full done-when (the full suite included) on
+      your branch. A suite that fails is fixed here, never under the lock.
    1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in
       the foreground for its merged event, then run `merge-lock` again. `… is checked out at …`
       (exit 5): git would refuse the push; do what the answer says.
-   2. Commit, then `git rebase <target>`.
+   2. `git rebase <target>`.
    3. A conflict in a file another worker changed: resolve it. You merge second; the resolution
       is yours, but the other worker hears of it: `merged` ends, for each such file, on `if you
       resolved a conflict in <file>, tell them: swarm post "@<them> I resolved <file>: <how>"
       --about <file>`. For each file you resolved, run that post with `<how>` filled in.
    4. **Guides**: a grant that names `guides of this merge` lists the guides your changes fall
       under; check the change against each, then settle each in step 6.
-   5. Run the task's done-when on the rebased branch, then fast-forward `<target>` from your own
+   5. Run the task's **quick check** on the rebased branch (the tests covering the files you
+      touched, never the full suite again), then fast-forward `<target>` from your own
       worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
    6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with

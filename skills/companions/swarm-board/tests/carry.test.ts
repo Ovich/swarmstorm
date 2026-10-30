@@ -250,3 +250,12 @@ test("B12: pause --person names the person in the pause; a plain pause reads as 
   board.resume(orch, "ok");
   assert.equal(board.pause(orch, "hold on").body, "pause: stop where you are and wait for the resume: hold on");
 });
+
+test("U-F23: a subscription starts from now: an event already on the board is never replayed by the first wait; a later one wakes", async () => {
+  const { m } = setup();
+  board.end(m.w3);
+  board.subscribe(m.w1, [{ event: "ended", scope: "run" }]);
+  assert.ok(!all(await waitOf(m.w1)).includes("w3"), "the ended before the subscription is not replayed");
+  board.end(m.w2);
+  assert.match(all(await waitOf(m.w1, 1000)), /w2/, "the ended after it wakes");
+});

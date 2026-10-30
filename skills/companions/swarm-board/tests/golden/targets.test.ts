@@ -76,7 +76,7 @@ test("G16 target: a post while the listener runs prints no listener line", async
 test("G17 target: the phase-open wake names the worker's task posted before it", async () => {
   const s = await scene("worker", "idle");
   try {
-    s.must("post", "@w1 the task", "--as", O);
+    s.must("post", "@w1 the task", "--task", "--as", O);
     s.must("deliver", "--as", s.me);
     s.must("phase", "build", "build the thing", "--as", O);
     expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "5000"), [
