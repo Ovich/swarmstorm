@@ -926,6 +926,8 @@ async function main(): Promise<void> {
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         // every --with counts, each a seat or a comma list of seats (S5)
         ...(args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}),
+        // board-split D50: the orchestrator's task to the one member it mentions
+        ...(args.verb === "post" && args.has("--task") ? { task: true } : {}),
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };

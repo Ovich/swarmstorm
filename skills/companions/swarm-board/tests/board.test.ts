@@ -216,6 +216,7 @@ test("a newer wait of a member, from another process, supersedes the older: it r
 test("a superseded wait leaves the newer one's state: listening while a mentions wait is pending, waiting for a plain one", async () => {
   const { s5 } = twoRunners();
   const watcher = await another();
+  // board-split D49: the state is read where the wait is held (the server, in production)
   const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
   const listener = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   const foreground = watcher.wait(watcher.participant(s5.name)!, { timeoutMs: 400 });
@@ -226,7 +227,8 @@ test("a superseded wait leaves the newer one's state: listening while a mentions
   const first = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   const second = watcher.wait(watcher.participant(s5.name)!, { timeoutMs: 400, mentionsOnly: true });
   assert.equal((await first).superseded, true);
-  assert.deepEqual([s5Of().state, s5Of().listening], ["working", true]);
+  // D49: a held wait with no link to say it is a background listener reads waiting
+  assert.deepEqual([s5Of().state, s5Of().listening], ["waiting", true]);
   await second;
   assert.equal(s5Of().listening, false);
 });
@@ -630,8 +632,8 @@ test("a snapshot shows two plans on one repository", () => {
 test("a member's state: ended, waiting", async () => {
   const { run, s3, s5 } = claimed();
   const waiting = board.wait(s5, { timeoutMs: 400 });
-  const watcher = await another();
-  assert.equal(watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "waiting");
+  // board-split D49: waiting is the held wait, read where it is held
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "waiting");
   await waiting;
   board.end(s5);
   const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r.state]));
@@ -640,15 +642,17 @@ test("a member's state: ended, waiting", async () => {
   assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "S5")!.state, "done");
 });
 
-test("a pending mentions-only wait is listening, the state still working; a plain wait is waiting", async () => {
+test("a pending mentions-only wait is listening; working while its open call is another (D49), a plain wait is waiting", async () => {
   const { s5 } = twoRunners();
-  const watcher = await another();
-  const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
+  const s5Of = () => board.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
   assert.equal(s5Of().listening, false);
   const listening = board.wait(s5, { timeoutMs: 300, mentionsOnly: true });
+  const t = Date.now();
+  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "npm test", since: t, boardWait: false, shell: true }, lastTool: null, finished: false }, new Date(t));
   assert.deepEqual([s5Of().state, s5Of().listening], ["working", true]);
   await listening;
   assert.equal(s5Of().listening, false);
+  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: t, boardWait: true, shell: true }, lastTool: null, finished: false }, new Date(t));
   const waiting = board.wait(s5, { timeoutMs: 300 });
   assert.deepEqual([s5Of().state, s5Of().listening], ["waiting", false]);
   await waiting;

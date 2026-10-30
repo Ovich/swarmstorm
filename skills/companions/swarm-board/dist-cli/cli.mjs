@@ -1246,12 +1246,10 @@ var init_wire = __esm({
 
 // src/board/liveness.ts
 function coreStateOf(m) {
-  if (!m.runOpen) return "ended";
-  if (m.parked || m.ended && m.dormant) return "parked";
-  if (m.ended) return "ended";
+  if (!m.runOpen || m.ended) return "ended";
+  if (m.parked) return "parked";
   if (m.orchestrator) return "waiting";
-  if (m.phaseOpen) return m.owes ? "working" : "waiting";
-  return m.inBoardWait ? "waiting" : "working";
+  return m.inHeldWait ? "waiting" : "working";
 }
 var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
 var init_liveness = __esm({
@@ -3091,6 +3089,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "quiet_flagged", "quiet_flagged INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "pruned_at", "pruned_at TEXT");
   upkeep("messages", "event", "event TEXT");
+  upkeep("messages", "task_for", "task_for TEXT");
+  upkeep("messages", "task_phase", "task_phase TEXT");
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   upkeep("seats", "on_events", "on_events TEXT");
   upkeep("seats", "busy_max", "busy_max INTEGER");
@@ -3441,7 +3441,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
         nick: p ? nickOf(p) : null,
         ...s?.role == null ? {} : { role: String(s.role) },
         ...s?.area == null ? {} : { area: String(s.area) },
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) ? "lost" : "joined"
+        // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) && Number(p.parked) !== 1 ? "lost" : "joined"
       };
     };
     const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
@@ -3484,6 +3485,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const heldWaits = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
+  const inHeldWaitOf = (p) => {
+    if (!heldWaits.has(Number(p.id))) return false;
+    const a = activityOf(Number(p.run), String(p.seat));
+    return a == null || Number(a.open_wait) === 1;
+  };
+  const memberStateOf = (p, runOpen) => coreStateOf({ orchestrator: String(p.seat) === ORCHESTRATOR2, runOpen, ended: p.ended_at != null, parked: Number(p.parked) === 1, inHeldWait: inHeldWaitOf(p) });
   const seatedAtOf = (p) => String(p.seated_at ?? p.joined_at);
   const progressAtOf = (p, run3, a) => Math.max(
     a?.grew_at == null ? 0 : Number(a.grew_at),
@@ -3666,7 +3673,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const h = memberRowOf(Number(lock.participant));
     const run3 = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run));
     const st = stateOf(h, run3, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
-    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: st.state, badge: st.badge?.name ?? null, doing: st.doing };
+    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run3.state === "open"), badge: st.badge?.name ?? null, doing: st.doing };
   };
   const lockWaitOf = (id, t) => {
     const w = db.prepare("SELECT l.* FROM named_lock_waiters w JOIN locks l ON l.name = w.name WHERE w.participant = ? ORDER BY w.since LIMIT 1").get(id);
@@ -3754,7 +3761,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const runR = runRow(run3);
     const named = (seat) => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
     const live2 = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.dormant) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
-    const gone = live2.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.gone) === 1);
+    const gone = live2.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.parked) !== 1 && Number(r.gone) === 1);
     const counted2 = live2.filter((r) => !gone.includes(r) && !(Number(r.parked) === 1 && Number(r.done) !== 1));
     const dormant = counted2.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
     return { phase, done: counted2.filter((r) => Number(r.done) === 1).length, of: counted2.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), dormant };
@@ -4460,8 +4467,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place),
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
-        // board-split D36: parked is a core state, never read from an activity the parked agent left behind
-        state: Number(r.parked) === 1 ? "parked" : stateIn(Number(r.run), String(r.seat))?.state ?? "working",
+        // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
+        state: memberStateOf(r, true),
         activity: Number(r.parked) === 1 ? null : stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
@@ -4481,6 +4488,13 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
+      if (opts.task) {
+        if (fresh.seat !== ORCHESTRATOR2) throw new Error(`post --task: only the orchestrator posts a task; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR2}`);
+        const to = (m.mentions ?? []).filter((n) => n.startsWith(`${fresh.plan}/`) && n !== fresh.name);
+        if (to.length !== 1 || (m.mentions ?? []).length !== 1) throw new Error("post --task: mention exactly one member of your run, the one the task is for");
+        const phase = runRow(fresh.run).phase;
+        db.prepare("UPDATE messages SET task_for = ?, task_phase = ? WHERE seq = ?").run(to[0], phase == null ? null : String(phase), m.seq);
+      }
       const facts = packOf(fresh)?.onPost?.(fresh, m, packCtxOf(fresh)) ?? null;
       return facts ? { ...m, ...facts } : m;
     },
@@ -4659,7 +4673,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id) => runsById.get(id);
       const latestTaskTo = (run3, member) => {
-        const m = db.prepare("SELECT MAX(m.seq) AS seq FROM messages m JOIN participants a ON a.id = m.author WHERE m.run = ? AND m.kind != 'event' AND a.seat = ? AND m.mentions LIKE ?").get(run3, ORCHESTRATOR2, `%"${member}"%`);
+        const phase = runById(run3)?.phase;
+        const m = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ? AND task_phase IS ?").get(run3, member, phase == null ? null : String(phase));
         return m?.seq == null ? null : Number(m.seq);
       };
       const roster = people.map((r) => {
@@ -4670,16 +4685,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const ended = r.ended_at != null;
         const runR = runById(Number(r.run));
         const owedPhase = runR ? owedNameOf(r, runR) : null;
-        const core = coreStateOf({
-          orchestrator,
-          runOpen: runOpen.get(Number(r.run)) === true,
-          ended,
-          dormant: Number(r.dormant) === 1,
-          parked: Number(r.parked) === 1,
-          phaseOpen: runR?.phase != null && phaseIsFor(runR, seat),
-          owes: owedPhase != null,
-          inBoardWait: Number(r.waiting) === 1
-        });
+        const core = memberStateOf(r, runOpen.get(Number(r.run)) === true);
         const fact = core === "working" || core === "waiting" ? packPart.factOf(id) : null;
         const state = fact ?? core;
         return {
@@ -4692,7 +4698,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...orchestrator || s?.area == null ? {} : { area: String(s.area) },
           doing: String(r.doing),
           state,
-          ...core === "working" ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
+          ...core === "working" && owedPhase != null ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
@@ -4796,7 +4802,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   const PROGRESS_VERBS = /* @__PURE__ */ new Set(["post", "done", "setDoing", "endorse"]);
   const countCall = (p, verb, progress = false) => {
     const at = now();
-    db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, doing = 'unparked' WHERE id = ? AND parked = 1").run(p.id);
     db.prepare("UPDATE participants SET calls = calls + 1, last_call = ? WHERE id = ?").run(at, p.id);
     if (progress || PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
     db.prepare("INSERT INTO call_log (participant, at, verb) VALUES (?, ?, ?)").run(p.id, at, verb);
@@ -9773,7 +9778,7 @@ var coreUsage = (cli, events) => [
   "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
   "  unsubscribe [--as <member>] <events>",
   "  doing   [--as <member>] <text>",
-  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
+  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent] [--task]   # prints the seq; --task (orchestrator only) records it as the task of the one member it mentions, for the open phase; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
   "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
   "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
   "  read    <seq>",
@@ -10529,7 +10534,9 @@ ${verbHelp()}`);
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         // every --with counts, each a seat or a comma list of seats (S5)
-        ...args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}
+        ...args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {},
+        // board-split D50: the orchestrator's task to the one member it mentions
+        ...args.verb === "post" && args.has("--task") ? { task: true } : {}
       });
       const unmatched = await unmatchedLines(p, body);
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...unmatched.length ? { unmatched } : {}, ...m.claimed ? { claimed: m.claimed } : {} };

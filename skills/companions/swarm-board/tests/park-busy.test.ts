@@ -58,7 +58,7 @@ test("D31 (S37): a board wait over its own un-notified background suite reads bu
   await held;
 });
 
-test("D30: a parked member draws no gone, stalled or idle, all-done does not wait for it; its own call resumes it", async () => {
+test("D30: a parked member draws no gone, stalled or idle, all-done does not wait for it; its own call leaves it parked", async () => {
   const { run, a, b, orch } = setup();
   board.phase(orch, "p1", "go");
   board.deliver(a);
@@ -80,9 +80,11 @@ test("D30: a parked member draws no gone, stalled or idle, all-done does not wai
   assert.deepEqual([done.progress.done, done.progress.of, done.all], [1, 1, true]);
   // D33 (S35): the done is a's latest fact, shown over its older doing
   assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.doing, "done p1");
-  // b's own call resumes it: counted again
+  // D49 (A1-1): b's own call leaves it parked, out of the count; the orchestrator's unpark counts it again
   board.setDoing(b, "back");
   board.phase(orch, "p2", "next");
+  assert.equal(board.phaseProgress(run.id)!.of, 1);
+  board.unpark(orch, "b");
   assert.equal(board.phaseProgress(run.id)!.of, 2);
 });
 

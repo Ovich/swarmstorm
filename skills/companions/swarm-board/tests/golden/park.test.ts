@@ -13,7 +13,7 @@ test("golden: park, the parked member's wake, dormant until, all-done without it
     pin("park.orchestrator.roster", s.call("roster", "--as", orch));
     pin("park.orchestrator.unpark", s.call("unpark", seat, "--as", orch));
     s.call("park", seat, "--as", orch);
-    // the parked member's own call (its wait on the park) lifts the park, as D30 says
+    // board-split D49 (A1-1): the parked member's own call (its wait on the park) leaves it parked; only unpark lifts it
     pin("park.worker.wait", s.call("wait", "--mentions", "--as", worker, "--timeout", "1000"));
     pin("park.orchestrator.roster-after", s.call("roster", "--as", orch));
     pin("park.orchestrator.park-refused", s.call("park", "nobody", "--as", orch));

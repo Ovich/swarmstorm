@@ -187,16 +187,12 @@ test("a wait returns within 200 ms of a post on another connection; a cancelled 
 
   b.send({ type: "call", id: "w8", method: "wait", args: [s2, {}] });
   await new Promise((r) => setTimeout(r, 100));
-  const local = await openBoard(path.join(dir, "swarm.sqlite"));
-  try {
-    const waiting = (): boolean => local.snapshot(REPO).roster.find((r) => r.member === s2.name)!.state === "waiting";
-    assert.equal(waiting(), true);
-    b.send({ type: "cancel", id: "w8" });
-    await new Promise((r) => setTimeout(r, 50));
-    assert.equal(waiting(), false);
-  } finally {
-    local.close();
-  }
+  // board-split D49: waiting is the wait the server holds, read from the server
+  const waiting = async (): Promise<boolean> => ((await value(a, "snapshot", REPO)) as { roster: { member: string; state: string }[] }).roster.find((r) => r.member === s2.name)!.state === "waiting";
+  assert.equal(await waiting(), true);
+  b.send({ type: "cancel", id: "w8" });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(await waiting(), false);
 });
 
 test("closeRun over the wire refuses every member connection of that run", async () => {
