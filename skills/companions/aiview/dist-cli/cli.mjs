@@ -9728,6 +9728,7 @@ function mountBoard(sse, opts = {}) {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify(obj));
   };
+  const projectAsked = (q) => q.get("project") ?? q.get("repo");
   const sameRepo = (a, b) => {
     const norm2 = (r) => {
       const g = fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r;
@@ -9737,7 +9738,7 @@ function mountBoard(sse, opts = {}) {
   };
   const repoNamed = async (board, url) => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
-    const key = url.searchParams.get("repo");
+    const key = projectAsked(url.searchParams);
     const repos = await board.repos();
     if (run !== null) {
       const repo = repos.find((r) => r.runs.some((x) => x.run === Number(run)))?.repo;
@@ -9745,9 +9746,9 @@ function mountBoard(sse, opts = {}) {
     }
     if (key !== null) {
       const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
-      return repo ? { repo } : { missing: `no repository ${key}` };
+      return repo ? { repo } : { missing: `no project ${key}` };
     }
-    return { missing: "no repository named: ask ?repo=<repository> or ?run=<id>" };
+    return { missing: "no project named: ask ?project=<project> or ?run=<id>" };
   };
   const answerBoard = async (board, url, res) => {
     const named = await repoNamed(board, url);
@@ -9757,9 +9758,9 @@ function mountBoard(sse, opts = {}) {
   };
   const answerStats = async (board, url, res) => {
     const q = url.searchParams;
-    const key = q.get("repo");
+    const key = projectAsked(q);
     const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : void 0;
-    const named = key !== null ? known ? { repo: known } : { missing: `no repository ${key}` } : await repoNamed(board, url);
+    const named = key !== null ? known ? { repo: known } : { missing: `no project ${key}` } : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");
     const since = q.get("since");
@@ -9965,9 +9966,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       return;
     }
     if (p === "/api/project-board") {
-      const key = url.searchParams.get("repo");
-      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || null;
-      if (slug === null) return json(res, { error: key ? `no project for ${key}` : "name a project: ?project=<slug> or ?repo=<key>" }, key ? 404 : 400);
+      const key = url.searchParams.get("project") || url.searchParams.get("repo") || null;
+      const slug = key ? projectOfBoardKey(key) : null;
+      if (slug === null) return json(res, { error: key ? `no project ${key}` : "name a project: ?project=<name>" }, key ? 404 : 400);
       return json(res, { project: slug, repos: index.boardRepos(slug) });
     }
     if (p === "/api/pin" && req.method === "POST") {
@@ -10223,8 +10224,8 @@ import path15 from "node:path";
 import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/core/boardhash.ts
-function boardHash(repo, run) {
-  return `#board&repo=${encodeURIComponent(repo)}${run ? `&run=${run}` : ""}`;
+function boardHash(project, run) {
+  return `#board&project=${encodeURIComponent(project)}${run ? `&run=${run}` : ""}`;
 }
 
 // src/cli/index.ts
