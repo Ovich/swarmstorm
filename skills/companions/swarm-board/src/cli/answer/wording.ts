@@ -154,6 +154,8 @@ export const WORDING = {
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli: Command, seat: string, as: string) =>
     `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
+  /** D34 (T36): a parked member's state on its roster line, as its card says it */
+  parkedUntil: (phase: string) => `parked until ${phase}`,
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 } as const;
 

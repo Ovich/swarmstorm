@@ -127,6 +127,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const board: Board = await openBoard(path.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto.randomBytes(24).toString("hex");
   const version = bundleVersion();
+  const serverSince = new Date().toISOString();
   const speakers = new Set<Speaker>();
   const calls = new Map<string, CallRecord>();
   /** Per run, per member (its seat id): its link connected, else since when it is lost (D12). */
@@ -265,7 +266,13 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (!welcomed) {
         if (f.type !== "hello") return socket.close();
         if (f.secret !== secret) return refuse(s, "secret");
-        if (f.version !== version) return refuse(s, "version");
+        if (f.version !== version) {
+          // U-F14: every refusal for a version is evidence, appended to the server's log: which server, which hello
+          try {
+            fs.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}\n`);
+          } catch {}
+          return refuse(s, "version");
+        }
         if (f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) refuse(other, "superseded");

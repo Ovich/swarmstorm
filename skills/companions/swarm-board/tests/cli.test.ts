@@ -340,6 +340,17 @@ const lock = (as: string[]) => {
   assert.equal(r.status, 0, r.stderr + r.stdout);
 };
 
+test("D52 (U-F18): locks and status name the merge lock's holder and since, beside the named locks", () => {
+  const id = String(openRun());
+  run("join", "--run", id, "--seat", "S3", "--doing", "x");
+  assert.match(run("locks").stdout, /^no lock held$/m);
+  lock(["--as", "review-tool/S3"]);
+  const listed = JSON.parse(run("locks", "--json").stdout) as { mergeLocks: { holder: string; since: string }[] };
+  assert.deepEqual(listed.mergeLocks.map((m) => m.holder), ["review-tool/S3"]);
+  assert.match(run("locks").stdout, /^merge lock of .+  held by review-tool\/S3 since \S+$/m);
+  assert.match(run("status").stdout, /^lock    merge lock of .+  held by review-tool\/S3 since /m);
+});
+
 test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S3", "--doing", "x");
@@ -579,10 +590,10 @@ test("--help lists no serve: the board server is a hidden verb", () => {
 test("status has no server: the data home, the store and the open runs", () => {
   const empty = run("status", "--json");
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
   const id = openRun();
   const s = JSON.parse(run("status", "--json").stdout);
-  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
   assert.equal(s.home, toolRoot);
   assert.equal(s.runs, 1);
   const text = run("status").stdout;

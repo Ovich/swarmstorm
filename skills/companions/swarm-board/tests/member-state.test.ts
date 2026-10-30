@@ -7,6 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
+import { quietMember } from "./fixtures/quiet-member.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import type { MemberActivity } from "../src/wire.ts";
 
@@ -63,7 +65,7 @@ test("rows 3, 4, 16: parked holds over a lost link, an ended agent and a block; 
   board.park(orch, "a", "p2");
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000, finished: true }), new Date(base));
-  board.livenessTick(run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 600_000 } : linked(m)));
+  board.livenessTick(run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "parked", null);
   board.block(orch, "a", "the person picks");
   pins("g/a", "parked", null);
@@ -120,8 +122,9 @@ test("rows 9, 10, 11 (A1-3, A1-5): a background listener alone, out of any wait,
 test("rows 12, 13: link lost or agent gone, not parked: its state, badge lost", () => {
   const { run } = setup();
   const base = Date.now();
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 600_000 } : linked(m)));
+  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", "lost");
 });
 
@@ -143,8 +146,9 @@ test("A1-2: parked after a lost was told: no lost in composition or progress", (
   const { run, orch } = setup();
   board.phase(orch, "p1", "go");
   const base = Date.now();
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 600_000 } : linked(m)));
+  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "lost");
   board.park(orch, "a");
   // U-F4: the join answer's head lines (the composition) say parked, as the roster does
@@ -171,4 +175,51 @@ test("D50: a task is the orchestrator's post --task to one member, for the open 
   assert.deepEqual(owesOf(), { phase: null, task: task.seq });
   const next = board.post(orch, "@a do T2", { task: true });
   assert.deepEqual(owesOf(), { phase: null, task: next.seq });
+});
+
+test("D53: a member still calling the board, or a fresh seating, is never lost on its link alone", async () => {
+  const { run, a, orch } = setup();
+  const base = Date.now();
+  const linkGone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m));
+  // its link long lost, yet it calls the board: not lost
+  board.setDoing(a, "still here");
+  board.livenessTick(run.id, new Date(base), linkGone);
+  pins("g/a", "working", null);
+  // silent long after: lost
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
+  board.livenessTick(run.id, new Date(base), linkGone);
+  pins("g/a", "working", "lost");
+  // a new agent seated in it (a rejoin): the old link's loss is not its own, and it is calling
+  board.join({ run: run.id, seat: "a", doing: "fresh", files: [] });
+  board.livenessTick(run.id, new Date(base), linkGone);
+  pins("g/a", "working", null);
+  void orch;
+});
+
+test("D53: a link-less member whose transcript still grows is not lost", () => {
+  const { run } = setup();
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
+  const base = Date.now();
+  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000, transcriptGrewAt: base - 1000 } : linked(m)));
+  pins("g/a", "working", null);
+});
+
+test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'holds the merge lock N min'", () => {
+  const { a } = setup();
+  codeVerbs(board).lockMerge(a);
+  pins("g/a", "merging", null);
+  const raw = openRawStore(path.join(dir, "swarm.sqlite"));
+  try {
+    raw.prepare("UPDATE merge_locks SET at = ?").run(new Date(Date.now() - 11 * 60_000).toISOString());
+  } finally {
+    raw.close();
+  }
+  pins("g/a", "merging", "stalled");
+  assert.match(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge!.reason, /^holds the merge lock 11 min$/);
+});
+
+test("roster: a parked member carries the phase it is parked until", () => {
+  const { orch } = setup();
+  board.park(orch, "a", "verify");
+  assert.equal(board.roster(REPO).find((r) => r.name === "g/a")!.parkedUntil, "verify");
 });

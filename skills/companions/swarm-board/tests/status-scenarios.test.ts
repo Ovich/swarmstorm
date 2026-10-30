@@ -1,6 +1,7 @@
 // board-split D48, D49: a member's life through the cases the person named, scripted, its state and badge pinned at
 // each step in the snapshot (the card), the roster (`roster`, `status`) and the tick's own states alike. The board's
 // own store and API; a link is the presence the server would hand the tick, the agent's end its link going.
+import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -29,6 +30,8 @@ let links: Map<string, { connected: boolean; lostAt: number | null }>;
 const presence: Presence = (m) => links.get(m) ?? { connected: true, lostAt: null };
 /** The agent behind `seat` ended: its link went `ago` ms back, its transcript says finished. */
 const agentEnds = (run: number, seat: string, ago = LINK_LOST_MS + 1000) => {
+  // D53: an ended agent makes no board call either, since then
+  quietMember(path.join(dir, "swarm.sqlite"), seat, ago);
   board.recordActivity(run, seat, act({ grewAt: Date.now() - ago, finished: true }), new Date());
   links.set(seat, { connected: false, lostAt: Date.now() - ago });
 };

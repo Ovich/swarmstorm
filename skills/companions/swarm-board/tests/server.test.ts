@@ -93,6 +93,9 @@ test("a hello with the secret and this version is welcomed; a wrong secret or ve
   c.socket.close();
   assert.deepEqual((await hello({ secret: "nope" })).reply, { type: "refused", reason: "secret" });
   assert.deepEqual((await hello({ version: "other" })).reply, { type: "refused", reason: "version" });
+  // U-F14: the refusal is evidence in the server's log: which server, its version, the hello's
+  const logged = fs.readFileSync(serverLogFile(dir), "utf8").split(/\r?\n/).find((l) => l.startsWith(`swarm server ${process.pid} (version ${state().version}, since `));
+  assert.ok(logged?.endsWith("): refused version other from a reader"), logged ?? "no refusal logged");
 });
 
 test("a second hello for the same member with supersede refuses the older connection", async () => {

@@ -91,6 +91,8 @@ export interface Pack {
   busy?(member: Participant, ctx: PackCtx): boolean;
   /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
+  /** board-split D52: a stall of the pack's own at `t` (ms epoch), as the stalled badge's reason and since; null: none. */
+  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | null;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;

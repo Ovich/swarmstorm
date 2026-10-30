@@ -215,8 +215,8 @@ const ago = (at: number | null): string => {
 };
 /** A member's state (swarm-relay D9) and the tool it is in or last ran: `busy (Bash npm test)`; with `ages`, its two
  *  ages after it (D38): `busy (Bash npm test)  progress 12s ago, link 0s ago`. */
-const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt">, ages = false): string =>
-  `${r.state}${r.activity ? ` (${r.activity})` : ""}` +
+const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt" | "parkedUntil">, ages = false): string =>
+  `${r.state === "parked" && r.parkedUntil ? WORDING.parkedUntil(r.parkedUntil) : r.state}${r.activity ? ` (${r.activity})` : ""}` +
   (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 
 /** F27: a member's held files, the first few and how many more. */
@@ -386,6 +386,12 @@ const portListeners = (name: string): { port: number; pids: number[] } | null =>
   return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
 };
 /** One held lock as a line: name, holder, since, waiters, and for a port what listens on it. */
+/** board-split D52 (U-F18): the merge lock of each project with an open run, its holder and since; none held: empty. */
+const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string }[]> => {
+  const projects = [...new Set((await board.runs()).map((r) => r.repo))];
+  const held = await Promise.all(projects.map(async (project) => ({ project, lock: (await board.snapshot(project)).lock ?? null })));
+  return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []));
+};
 const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>
   `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
 
@@ -1366,9 +1372,11 @@ async function main(): Promise<void> {
     }
     case "locks": {
       const held = await board.locks();
+      const merge = await mergeLocksHeld();
       const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
-      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })) }, () => {
-        if (!held.length) console.log("no lock held");
+      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
+        if (!held.length && !merge.length) console.log("no lock held");
+        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(m.project, m.holder, m.since));
         for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
       });
       break;
@@ -1388,9 +1396,11 @@ async function main(): Promise<void> {
       );
       // the machine's held locks (idea 4): store-wide, so listed once above the runs
       const held = await board.locks();
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held }, () => {
+      const merge = await mergeLocksHeld();
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
+        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {

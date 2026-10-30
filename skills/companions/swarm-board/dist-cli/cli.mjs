@@ -220,6 +220,63 @@ var init_git = __esm({
   }
 });
 
+// src/board/liveness.ts
+function coreStateOf(m) {
+  if (!m.runOpen || m.ended) return "ended";
+  if (m.parked) return "parked";
+  if (m.orchestrator) return "waiting";
+  return m.inHeldWait ? "waiting" : "working";
+}
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var init_liveness = __esm({
+  "src/board/liveness.ts"() {
+    "use strict";
+    claudeCodeJsonl = {
+      name: "claude-code-jsonl",
+      read(chunk, from) {
+        const end = chunk.lastIndexOf(10);
+        if (end < 0) return from;
+        let tokens = from.tokens;
+        let parsed = 0;
+        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+          const text = line.trim();
+          if (!text) continue;
+          let obj;
+          try {
+            obj = JSON.parse(text);
+          } catch {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          parsed++;
+          const usage = obj.message?.usage;
+          if (!usage) continue;
+          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+            const n = usage[k];
+            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
+          }
+        }
+        return { offset: from.offset + end + 1, tokens };
+      }
+    };
+    IDLE_MS = 15 * 60 * 1e3;
+    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
+    STALL_MS_DEFAULT = 6e4;
+    READINGS_KEPT_MS = 10 * 60 * 1e3;
+    BUSY_MAX_MS = 15 * 60 * 1e3;
+    STALLED_AGAIN_MS = 15 * 60 * 1e3;
+    LINK_LOST_MS = 30 * 1e3;
+    IN_TURN_MS = 120 * 1e3;
+    OWE_WAIT_MS = 10 * 60 * 1e3;
+    CARRY_MAX_MS = 5 * 60 * 1e3;
+    LOCK_HELD_MS = 10 * 60 * 1e3;
+  }
+});
+
 // src/packs/code/events.ts
 var CODE_EVENTS;
 var init_events = __esm({
@@ -1245,63 +1302,6 @@ var init_wire = __esm({
   }
 });
 
-// src/board/liveness.ts
-function coreStateOf(m) {
-  if (!m.runOpen || m.ended) return "ended";
-  if (m.parked) return "parked";
-  if (m.orchestrator) return "waiting";
-  return m.inHeldWait ? "waiting" : "working";
-}
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
-var init_liveness = __esm({
-  "src/board/liveness.ts"() {
-    "use strict";
-    claudeCodeJsonl = {
-      name: "claude-code-jsonl",
-      read(chunk, from) {
-        const end = chunk.lastIndexOf(10);
-        if (end < 0) return from;
-        let tokens = from.tokens;
-        let parsed = 0;
-        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
-          const text = line.trim();
-          if (!text) continue;
-          let obj;
-          try {
-            obj = JSON.parse(text);
-          } catch {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          parsed++;
-          const usage = obj.message?.usage;
-          if (!usage) continue;
-          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-            const n = usage[k];
-            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
-          }
-        }
-        return { offset: from.offset + end + 1, tokens };
-      }
-    };
-    IDLE_MS = 15 * 60 * 1e3;
-    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 6e4;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    BUSY_MAX_MS = 15 * 60 * 1e3;
-    STALLED_AGAIN_MS = 15 * 60 * 1e3;
-    LINK_LOST_MS = 30 * 1e3;
-    IN_TURN_MS = 120 * 1e3;
-    OWE_WAIT_MS = 10 * 60 * 1e3;
-    CARRY_MAX_MS = 5 * 60 * 1e3;
-    LOCK_HELD_MS = 10 * 60 * 1e3;
-  }
-});
-
 // src/link/transcripts.ts
 import fs3 from "node:fs";
 import os2 from "node:os";
@@ -1858,6 +1858,12 @@ async function runLink(opts) {
       for (const { call } of unanswered.values()) sendUp(call);
       flushActivity();
     } else if (f.type === "refused") {
+      if (f.reason === "version" && !versionRetried) {
+        versionRetried = true;
+        console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
+        socket?.close();
+        return;
+      }
       exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
     } else if (f.type === "result") {
       const asked = unanswered.get(f.id);
@@ -1892,6 +1898,7 @@ async function runLink(opts) {
     ws.onerror = () => {
     };
   });
+  let versionRetried = false;
   const connectionLoop = async () => {
     let lastAnsweredAt = Date.now();
     let s = state;
@@ -1904,6 +1911,7 @@ async function runLink(opts) {
       if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
       await pause(timing.reconnectEveryMs);
       s = readServerState(opts.dataRoot);
+      if (s && s.version !== bundleVersion()) return exit({ why: "server of another version" });
     }
   };
   const onPipe = (pipe) => {
@@ -2228,6 +2236,7 @@ var init_code = __esm({
   "src/packs/code/index.ts"() {
     "use strict";
     init_git();
+    init_liveness();
     init_claims();
     init_snapshot();
     init_schema();
@@ -2267,6 +2276,13 @@ var init_code = __esm({
       busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
       // holding the merge lock, the member is merging (D36), whatever its core state says
       memberFact: (member, ctx) => tablesOf(ctx).heldMergeLock(member) ? "merging" : null,
+      // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
+      memberStall: (member, ctx, t) => {
+        const lock = tablesOf(ctx).heldMergeLock(member);
+        if (!lock) return null;
+        const since = Date.parse(lock.grantedAt);
+        return t - since >= LOCK_HELD_MS ? { reason: `holds the merge lock ${Math.round((t - since) / 6e4)} min`, since } : null;
+      },
       // the code tables' DDL and an older store's upkeep, then the store over them (D20)
       openTables: (deps) => {
         migrateCodeTables(deps.db);
@@ -3496,6 +3512,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
   const heldWaits = /* @__PURE__ */ new Map();
+  const badgesShown = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
   const inHeldWaitOf = (p) => {
@@ -3584,11 +3601,20 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const link = presence(member);
-    if (heldSince == null && !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS)
-      return { badge: { name: "lost", reason: "its link was lost", since: link.lostAt } };
     const seatedAt = Date.parse(seatedAtOf(p));
-    if (heldSince == null && !link.connected && link.lostAt == null && t - seatedAt >= LINK_LOST_MS)
-      return { badge: { name: "lost", reason: "no link since its join", since: seatedAt } };
+    const calledAt = Math.max(p.last_call == null ? 0 : Date.parse(String(p.last_call)), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt);
+    const quietLong = (since) => t - since >= LINK_LOST_MS;
+    const transcriptStill = link.transcriptGrewAt == null || quietLong(link.transcriptGrewAt);
+    if (heldSince == null && !link.connected && quietLong(calledAt) && transcriptStill) {
+      const linkLostAt = link.lostAt != null && link.lostAt >= seatedAt ? link.lostAt : null;
+      if (linkLostAt != null && quietLong(linkLostAt)) return { badge: { name: "lost", reason: "its link was lost", since: Math.max(linkLostAt, calledAt) } };
+      if (linkLostAt == null) return { badge: { name: "lost", reason: "no link since its join", since: calledAt } };
+    }
+    const packStall = String(p.seat) === ORCHESTRATOR2 ? null : (() => {
+      const m = participantById(Number(p.id));
+      return packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+    })();
+    if (packStall) return { badge: stalledBadge(packStall.reason, packStall.since), rule: "lock" };
     const owes = owedNameOf(p, run3);
     if (owes == null) return null;
     const stallMs = Number(run3.stall_ms ?? STALL_MS_DEFAULT);
@@ -4411,6 +4437,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             }
           }
         }
+        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
+        if (badgesShown.get(run3) !== badgesNow) {
+          badgesShown.set(run3, badgesNow);
+          moved = true;
+        }
         if (moved) bump(String(r.repo));
       });
       return true;
@@ -4448,6 +4479,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
         state: factEntry(toParticipant(r)).fact ?? memberStateOf(r, true),
+        ...Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {},
         activity: Number(r.parked) === 1 ? null : stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
@@ -4769,6 +4801,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
     recordLink(run3, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt);
+      const r = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run3);
+      if (r) bump(String(r.repo));
     },
     savedLinks() {
       return db.prepare("SELECT * FROM member_links").all().map((r) => ({
@@ -8569,6 +8603,7 @@ async function runBoardServer(opts) {
   const board2 = await openBoard(path12.join(opts.dataRoot, "swarm.sqlite"));
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
+  const serverSince = (/* @__PURE__ */ new Date()).toISOString();
   const speakers = /* @__PURE__ */ new Set();
   const calls = /* @__PURE__ */ new Map();
   const links = /* @__PURE__ */ new Map();
@@ -8686,7 +8721,14 @@ async function runBoardServer(opts) {
       if (!welcomed) {
         if (f.type !== "hello") return socket.close();
         if (f.secret !== secret) return refuse(s, "secret");
-        if (f.version !== version) return refuse(s, "version");
+        if (f.version !== version) {
+          try {
+            fs12.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
+`);
+          } catch {
+          }
+          return refuse(s, "version");
+        }
         if (f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) refuse(other, "superseded");
@@ -8888,8 +8930,9 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
     let log = "ignore";
     try {
       fs9.mkdirSync(dataRoot, { recursive: true });
-      fs9.writeFileSync(serverLogFile(dataRoot), "");
       log = fs9.openSync(serverLogFile(dataRoot), "a");
+      fs9.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
+`);
     } catch {
     }
     const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
@@ -8906,7 +8949,8 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const lines = fs9.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all2 = fs9.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = all2.slice(all2.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
   }
@@ -9447,6 +9491,8 @@ var CODE_WORDING = {
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
   declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
   memberFact: { merging: "merging (holds the merge lock)" },
+  /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
+  mergeLockLine: (project, holder, since) => `merge lock of ${project}  held by ${holder} since ${since}`,
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
@@ -9586,6 +9632,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   unlockWhenDone: (cli, name, as) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
+  /** D34 (T36): a parked member's state on its roster line, as its card says it */
+  parkedUntil: (phase) => `parked until ${phase}`,
   forgottenRun: (days, cli, run3) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run3}`
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
@@ -10003,7 +10051,7 @@ var ago = (at) => {
   const s = Math.max(0, Math.floor((Date.now() - at) / 1e3));
   return s < 120 ? `${s}s` : s < 7200 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`;
 };
-var stateLine = (r, ages = false) => `${r.state}${r.activity ? ` (${r.activity})` : ""}` + (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
+var stateLine = (r, ages = false) => `${r.state === "parked" && r.parkedUntil ? WORDING.parkedUntil(r.parkedUntil) : r.state}${r.activity ? ` (${r.activity})` : ""}` + (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 var HELD_SHOWN = 3;
 var heldLine = (files) => {
   const shown = files.slice(0, HELD_SHOWN).map((f) => f.interface ? `${f.path} (interface)` : f.path).join(", ");
@@ -10108,6 +10156,11 @@ var stopLine = (pids) => process.platform === "win32" ? pids.map((pid) => `taskk
 var portListeners = (name) => {
   const m = LOCK_PORT.exec(name);
   return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
+};
+var mergeLocksHeld = async () => {
+  const projects = [...new Set((await board.runs()).map((r) => r.repo))];
+  const held = await Promise.all(projects.map(async (project) => ({ project, lock: (await board.snapshot(project)).lock ?? null })));
+  return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since }] : []);
 };
 var lockLine = (l, listening) => `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
 var firstPhaseLine = (kind, group, protocol) => {
@@ -10905,9 +10958,11 @@ ${verbHelp()}`);
     }
     case "locks": {
       const held = await board.locks();
+      const merge = await mergeLocksHeld();
       const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
-      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })) }, () => {
-        if (!held.length) console.log("no lock held");
+      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
+        if (!held.length && !merge.length) console.log("no lock held");
+        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(m.project, m.holder, m.since));
         for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
       });
       break;
@@ -10924,9 +10979,11 @@ ${verbHelp()}`);
         })
       );
       const held = await board.locks();
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held }, () => {
+      const merge = await mergeLocksHeld();
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
+        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {

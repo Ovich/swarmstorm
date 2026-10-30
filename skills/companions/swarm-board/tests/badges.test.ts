@@ -1,6 +1,7 @@
 // board-split D36, D44, S40: trouble is a badge beside the state, never a state: stalled, lost, blocked, each with
 // its reason; a parked member carries none (D30); busy is activity, never a badge (D31); the old event names read as
 // the new ones.
+import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -71,6 +72,8 @@ test("golden lost (board-split D49): a link lost past LINK_LOST_MS with no wait 
   assert.equal(badgeIn(run.id, "a", at(base, 1)).badge, null);
   assert.equal(eventsOf("lost").length, 0);
   const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 31_000 } : { connected: true, lostAt: null });
+  // D53: and no board call of its own since
+  quietMember(path.join(dir, "swarm.sqlite"), "a", 60_000);
   board.livenessTick(run.id, at(base, 1), gone);
   assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its link was lost"]);
   assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").liveness?.badge?.name], ["lost", "lost"]);

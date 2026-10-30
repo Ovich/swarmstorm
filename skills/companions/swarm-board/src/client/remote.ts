@@ -73,8 +73,9 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
     let log: number | "ignore" = "ignore";
     try {
       fs.mkdirSync(dataRoot, { recursive: true });
-      fs.writeFileSync(serverLogFile(dataRoot), "");
+      // U-F14: appended, never truncated, so a replaced server's refusals stay readable after its successor starts
       log = fs.openSync(serverLogFile(dataRoot), "a");
+      fs.writeSync(log, `--- ${new Date().toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})\n`);
     } catch {}
     const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
     child.on("exit", (code, signal) => (exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`));
@@ -92,7 +93,9 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
   let said = "";
   try {
     // the error a crash prints, else the server's last word
-    const lines = fs.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all = fs.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    // the log is appended (U-F14): only what followed the last start is this start's
+    const lines = all.slice(all.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {}
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1000} s`;

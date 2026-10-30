@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Conflicts, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
+import { LOCK_HELD_MS } from "../../board/liveness.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
@@ -70,6 +71,13 @@ export const codePack: Pack = {
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
   // holding the merge lock, the member is merging (D36), whatever its core state says
   memberFact: (member, ctx) => (tablesOf(ctx).heldMergeLock(member) ? "merging" : null),
+  // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
+  memberStall: (member, ctx, t) => {
+    const lock = tablesOf(ctx).heldMergeLock(member);
+    if (!lock) return null;
+    const since = Date.parse(lock.grantedAt);
+    return t - since >= LOCK_HELD_MS ? { reason: `holds the merge lock ${Math.round((t - since) / 60000)} min`, since } : null;
+  },
 
   // the code tables' DDL and an older store's upkeep, then the store over them (D20)
   openTables: (deps) => {

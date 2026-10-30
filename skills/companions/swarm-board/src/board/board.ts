@@ -145,6 +145,8 @@ export interface RosterEntry {
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
   /** board-split D49: its one state (ended, parked, waiting in a held board wait, else working); what it does is `activity`. */
   state: SnapshotMemberState;
+  /** D34 (T36): the phase a parked member sleeps until, when its park named one. */
+  parkedUntil?: string;
   /** What its pack says of it now (D36); absent when nothing. */
   fact?: MemberFact;
   activity: string | null;
@@ -1260,6 +1262,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
   /** The waits this process holds, by participant id, and since when (ms epoch): the waiting of D35. */
   const heldWaits = new Map<number, number>();
+  /** U-F20: per run, the badges its last tick read, so a badge changing with time alone tells the readers. */
+  const badgesShown = new Map<RunId, string>();
   const orchestratorIn = (run: RunId): Participant =>
     participantById(Number((db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) as Row).id));
   const activityOf = (run: RunId, member: string): Row | undefined =>
@@ -1386,12 +1390,24 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     const link = presence(member);
-    if (heldSince == null && !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS)
-      return { badge: { name: "lost", reason: "its link was lost", since: link.lostAt } };
-    // U-F3: a member whose link never came reads lost once LINK_LOST_MS has passed since its join
+    // board-split D53: lost needs all three past LINK_LOST_MS, on the seat's current member (its seating starts them
+    // afresh): no link, no board call, no transcript growth. A member still calling, or still writing, is never lost
     const seatedAt = Date.parse(seatedAtOf(p));
-    if (heldSince == null && !link.connected && link.lostAt == null && t - seatedAt >= LINK_LOST_MS)
-      return { badge: { name: "lost", reason: "no link since its join", since: seatedAt } };
+    const calledAt = Math.max(p.last_call == null ? 0 : Date.parse(String(p.last_call)), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt);
+    const quietLong = (since: number): boolean => t - since >= LINK_LOST_MS;
+    const transcriptStill = link.transcriptGrewAt == null || quietLong(link.transcriptGrewAt);
+    if (heldSince == null && !link.connected && quietLong(calledAt) && transcriptStill) {
+      const linkLostAt = link.lostAt != null && link.lostAt >= seatedAt ? link.lostAt : null;
+      if (linkLostAt != null && quietLong(linkLostAt)) return { badge: { name: "lost", reason: "its link was lost", since: Math.max(linkLostAt, calledAt) } };
+      // U-F3: a member whose link never came (for this seating) reads lost once LINK_LOST_MS has passed
+      if (linkLostAt == null) return { badge: { name: "lost", reason: "no link since its join", since: calledAt } };
+    }
+    // board-split D52: the pack's own stall (the code pack's merge lock held too long), owing or not
+    const packStall = String(p.seat) === ORCHESTRATOR ? null : (() => {
+      const m = participantById(Number(p.id));
+      return packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+    })();
+    if (packStall) return { badge: stalledBadge(packStall.reason, packStall.since), rule: "lock" };
     const owes = owedNameOf(p, run);
     if (owes == null) return null;
     const stallMs = Number(run.stall_ms ?? STALL_MS_DEFAULT);
@@ -2402,6 +2418,12 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             }
           }
         }
+        // U-F20: a badge that came or went with time alone (lost, stalled) is a change too, so a reader's card follows it
+        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
+        if (badgesShown.get(run) !== badgesNow) {
+          badgesShown.set(run, badgesNow);
+          moved = true;
+        }
         if (moved) bump(String(r.repo));
       });
       return true;
@@ -2443,6 +2465,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
         state: factEntry(toParticipant(r)).fact ?? memberStateOf(r, true),
+        ...(Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {}),
         activity: Number(r.parked) === 1 ? null : (stateIn(Number(r.run), String(r.seat))?.doing ?? null),
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
@@ -2828,6 +2851,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
     recordLink(run, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run, member, link.connected ? 1 : 0, link.lostAt);
+      // U-F20: a link coming or going is a change a reader redraws on, never a snapshot left stale until the next post
+      const r = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined;
+      if (r) bump(String(r.repo));
     },
 
     savedLinks() {

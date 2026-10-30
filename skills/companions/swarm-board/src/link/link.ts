@@ -218,6 +218,14 @@ export async function runLink(opts: {
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache
       flushActivity();
     } else if (f.type === "refused") {
+      // U-F14: refused for its version, the link re-reads the state file and tries once more: a server replaced between
+      // its read and its hello is met again; a second refusal, or a state of another version, ends it
+      if (f.reason === "version" && !versionRetried) {
+        versionRetried = true;
+        console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
+        socket?.close();
+        return;
+      }
       exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
     } else if (f.type === "result") {
       const asked = unanswered.get(f.id);
@@ -259,6 +267,8 @@ export async function runLink(opts: {
 
   /** Connects, and after each drop reconnects (re-reading the state file: a restarted server has a
    *  new port and secret); D27: no server answers for a minute after a drop, the link exits. */
+  /** U-F14: one retry after a `refused version`, per link. */
+  let versionRetried = false;
   const connectionLoop = async () => {
     let lastAnsweredAt = Date.now();
     let s: ServerState | null = state;
@@ -271,6 +281,8 @@ export async function runLink(opts: {
       if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
       await pause(timing.reconnectEveryMs);
       s = readServerState(opts.dataRoot);
+      // D28: a server of another version would refuse it; said as such, never as a bare refusal
+      if (s && s.version !== bundleVersion()) return exit({ why: "server of another version" });
     }
   };
 
