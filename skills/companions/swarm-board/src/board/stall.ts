@@ -7,8 +7,11 @@ export type StallRule = "owing" | "silent" | "call" | "lock";
 export type StallFacts = {
   /** The member's shown state word (working, waiting, busy, merging…): the reason opens on it. */
   shownState: string;
-  /** The open phase it owes, null when it owes none (done, not for it, the orchestrator, no phase). */
+  /** The open phase it owes, null when it owes none (done, not for it, the orchestrator, no phase); with no phase open,
+   *  the task it owes a report on (`task #<seq>`, `owesReport`). */
   owes: string | null;
+  /** board-split D64: `owes` names a task delivered with no phase open, owed a report to the orchestrator (or a merge). */
+  owesReport?: boolean;
   /** When its latest task was delivered to it (D54's gate); null: none delivered, it owes nothing yet. */
   taskDeliveredAt: number | null;
   /** The newest of the phase's opening and the run's resume: no clock runs before either. */
@@ -41,22 +44,24 @@ export function stalledOf(f: StallFacts, t: number): Stall | null {
   if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
+  // board-split D64: a no-phase task owes its report, a phase its done
+  const owed = f.owesReport ? `${f.owes} delivered, no report` : `not done ${f.owes}`;
   // board-split D55 amended (O-F3, D31): a background task of its own still open makes it busy, never held-wait
   // stalled; that task's hang is the busy bound's below
   if (f.inHeldWait && f.background == null) {
     // board-split D55 amended (U-F22): from the later of the floor and the waiting spell's start; the work before
     // the spell never counts as waiting, and a re-armed wait keeps its spell
     const from = Math.max(floor, f.waitSpellSince ?? floor);
-    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `not done ${f.owes}, in a wait` } : null;
+    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `${owed}, in a wait` } : null;
   }
   const opened = f.openCallSince ?? f.background?.since ?? null;
   if (opened != null) {
     const grewAt = Math.max(floor, opened, f.transcriptGrewAt ?? 0, f.background?.grewAt ?? 0);
     const what = f.openCallSince != null ? "a call open" : "a background task";
-    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `not done ${f.owes}, ${what}, no growth` } : null;
+    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `${owed}, ${what}, no growth` } : null;
   }
   const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
-  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `not done ${f.owes}, no activity` } : null;
+  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `${owed}, no activity` } : null;
 }
 
 /** board-split D55 (amended): out of any wait this long breaks a waiting spell; a re-arm, out for a second, keeps it. */

@@ -812,10 +812,14 @@ async function main(): Promise<void> {
       const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
       const brief = WORDING.briefThePerson;
+      // board-split D65: opened during a pause, the phase reaches its members at the resume
+      const pausedNow = (await board.runs()).find((r) => r.id === m.run)?.paused != null;
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
       const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next }, () => {
+      const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
         console.log(seqLine(m));
+        if (pausedLine) console.log(pausedLine);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
@@ -1094,7 +1098,7 @@ async function main(): Promise<void> {
       const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
       const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(p, true));
       // F28: a background listener's end is also announced by the harness; the same event, already delivered here
-      emit({ phase: a.phase, next: a.next, ...d, ...(mentionsOnly ? { delivered: WORDING.delivered } : {}) }, () => {
+      emit({ phase: a.phase, next: a.next, ...d, ...(a.lines.includes(WORDING.delivered) ? { delivered: WORDING.delivered } : {}) }, () => {
         for (const l of a.lines) console.log(l);
       });
       break;
@@ -1114,14 +1118,14 @@ async function main(): Promise<void> {
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] as string[] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, paused: r.paused ?? null, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(repo));
         let shown: number | null = null;
         for (const r of roster) {
           const run = runs.get(r.run);
-          if (run && r.run !== shown) console.log(`run ${run.id}  ${run.title}${WORDING.authorityShown(run.authority)}${phaseSuffix(run.phase, progress.get(run.id) ?? null)}`);
+          if (run && r.run !== shown) console.log(`run ${run.id}  ${run.title}${WORDING.authorityShown(run.authority)}${phaseSuffix(run.phase, progress.get(run.id) ?? null)}${WORDING.runPausedShown(run.paused, run.pausedPerson)}`);
           shown = r.run;
           console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
@@ -1437,7 +1441,7 @@ async function main(): Promise<void> {
           const lastActivity = await board.lastActivity(r.id);
           // a run with no activity for a day is likely forgotten: its orchestrator ended without close
           const idleMs = Date.now() - Date.parse(lastActivity);
-          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
+          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, paused: r.paused ?? null, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
       // the machine's held locks (idea 4): store-wide, so listed once above the runs
@@ -1452,7 +1456,7 @@ async function main(): Promise<void> {
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
-          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
+          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${r.repo}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);

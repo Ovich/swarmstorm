@@ -1428,6 +1428,33 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
     return r?.at == null ? null : Date.parse(String(r.at));
   };
+  /** board-split D64: with no phase open, the member's latest task (D50) delivered to it, when it has neither posted to
+   *  the orchestrator nor merged since; null otherwise. */
+  const taskOwedReportOf = (p: Row, run: Row): { seq: number; deliveredAt: number } | null => {
+    if (String(p.seat) === ORCHESTRATOR || run.state !== "open") return null;
+    const task = db
+      .prepare("SELECT m.seq, d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)")
+      .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
+    if (task?.at == null) return null;
+    const reported = db
+      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND (mentions LIKE ? OR event = 'merged') LIMIT 1")
+      .get(Number(run.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run.plan)}/${ORCHESTRATOR}`)}%`);
+    return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
+  };
+  /** board-split D64: the oldest post of a run's member mentioning its orchestrator that the orchestrator has not posted
+   *  after; null when none waits on it. */
+  const unansweredOf = (run: RunId, orch: Participant): { seq: number; from: string } | null => {
+    const lastAnswer = Number((db.prepare("SELECT MAX(seq) AS s FROM messages WHERE author = ? AND kind = 'msg' AND event IS NULL").get(orch.id) as Row).s ?? 0);
+    const q = db
+      .prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.event IS NULL AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1")
+      .get(run, lastAnswer, orch.id, `%${JSON.stringify(orch.name)}%`) as Row | undefined;
+    return q ? { seq: Number(q.seq), from: String(q.seat) } : null;
+  };
+  /** board-split D64: the suffix an idle or stalled line carries while a question to the orchestrator waits. */
+  const unansweredSuffix = (run: RunId, orch: Participant): string => {
+    const q = unansweredOf(run, orch);
+    return q ? `; unanswered @orchestrator #${q.seq} from ${orch.plan}/${q.from}` : "";
+  };
   /** board-split D55: the newest sign of life of a member: a board call, a held wait (now, for its whole hold), its link's
    *  heartbeat or drop, transcript growth its link sent, an open call's start; ms epoch, 0 with none. */
   const signAtOf = (p: Row, run: Row, link: LinkFact, t: number): number => {
@@ -1472,7 +1499,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return s ? { fact: s.reason, since: s.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     })();
     const a = activityOf(Number(run.id), member);
-    const owes = owedNameOf(p, run);
+    // board-split D64: with no phase open, a delivered task owes its report instead
+    const owedReport = run.phase == null ? taskOwedReportOf(p, run) : null;
+    const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
     const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
@@ -1481,7 +1510,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       {
         shownState,
         owes,
-        taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run),
+        owesReport: owedReport != null,
+        taskDeliveredAt: owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run),
         clockFloorAt: Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at))),
         inHeldWait,
         waitSpellSince: inHeldWait ? spell!.since : null,
@@ -1499,7 +1529,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // a lock wait (another's lock) is told by the lock rule, never stalled here
     if (!stall || (heldSince != null && lockWaitOf(Number(p.id), t) && stall.rule !== "lock")) return null;
     const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
-    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...(owes != null && stall.rule !== "lock" ? { owes } : {}) };
+    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...(owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {}) };
   };
   /** board-split D55 (amended, U-F27): a lost or stalled badge holds only once its episode opened (its predicate true
    *  for BADGE_CONFIRM_MS, by time, not by tick count); `predicate`: the tick's own read, before that confirm. */
@@ -2418,11 +2448,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         // D11: the members whose stalled episode opened at this tick, told in one line
         if (stalledNow.length === 1) {
           const [{ st, meta }] = stalledNow;
-          raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
+          raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run, orch)}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
         } else if (stalledNow.length > 1) {
           const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
           const ruled = stalledNow.find((x) => x.meta)?.meta;
-          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}`;
+          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run, orch)}`;
           raiseAlert(run, { body, event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
         }
         flushAlerts(run, t, orch);
@@ -2488,7 +2518,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             idle.spellPosted = true;
             idle.postedSeq = lastSeq;
             idle.stirred = false;
-            insertMessage(orch, `idle ${Math.floor(held / 1000)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
+            insertMessage(orch, `idle ${Math.floor(held / 1000)}s: every member is waiting${goneSuffix(gone)}; ${where}${unansweredSuffix(run, orch)}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
           }
         }
         // idea 2: a carried message pending CARRY_MAX_MS (from its post, or the resume) is due: it wakes its member's

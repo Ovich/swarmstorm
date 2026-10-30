@@ -38,12 +38,18 @@ export const WORDING = {
   // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
   idle: (wait: Command) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm`,
+  // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
   delivered: "these lines are delivered; the task-end notice is the same event",
 
   // ── the phase ──
   phaseWhole: (name: string, text: string) => `phase ${name}: ${text}`,
   phaseShort: (name: string, thread: Command) => `phase ${name} (unchanged; its text: ${thread})`,
   phasePaused: (head: string | null, why: string) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
+  // board-split D65: a paused run's header in status and roster; on the person, it says whose move it is
+  runPausedShown: (paused: string | null, onPerson: boolean) =>
+    paused == null ? "" : onPerson ? `  paused · on you: ${paused || "your decision"}` : `  paused${paused ? `: ${paused}` : ""}`,
+  // board-split D65: a phase opened during a pause is open, but nothing wakes the members before the resume
+  phaseOpenedPaused: (name: string, run: number) => `run ${run} is paused: phase ${name} is open, and its members hear it at resume`,
   pauseWhy: (person: boolean, text: string) => (person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : ""),
   owedOpen: (name: string, text: string, read: string, done: Command) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then mark it done: ${done}`,
   owedBrief: (name: string, read: string, done: Command) => `you owe phase ${name}: ${read}${read ? "Do" : "do"} your part, then mark it done: ${done}`,

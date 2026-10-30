@@ -3006,18 +3006,19 @@ function stalledOf(f, t) {
   if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
+  const owed = f.owesReport ? `${f.owes} delivered, no report` : `not done ${f.owes}`;
   if (f.inHeldWait && f.background == null) {
     const from = Math.max(floor, f.waitSpellSince ?? floor);
-    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `not done ${f.owes}, in a wait` } : null;
+    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `${owed}, in a wait` } : null;
   }
   const opened = f.openCallSince ?? f.background?.since ?? null;
   if (opened != null) {
     const grewAt = Math.max(floor, opened, f.transcriptGrewAt ?? 0, f.background?.grewAt ?? 0);
     const what = f.openCallSince != null ? "a call open" : "a background task";
-    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `not done ${f.owes}, ${what}, no growth` } : null;
+    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `${owed}, ${what}, no growth` } : null;
   }
   const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
-  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `not done ${f.owes}, no activity` } : null;
+  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `${owed}, no activity` } : null;
 }
 function nextWaitSpell(prev, waitOpenedAt, t) {
   if (waitOpenedAt == null) return prev;
@@ -3692,6 +3693,22 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const r = db.prepare("SELECT d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)").get(Number(p.id), Number(run3.id), `${String(run3.plan)}/${String(p.seat)}`);
     return r?.at == null ? null : Date.parse(String(r.at));
   };
+  const taskOwedReportOf = (p, run3) => {
+    if (String(p.seat) === ORCHESTRATOR2 || run3.state !== "open") return null;
+    const task = db.prepare("SELECT m.seq, d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)").get(Number(p.id), Number(run3.id), `${String(run3.plan)}/${String(p.seat)}`);
+    if (task?.at == null) return null;
+    const reported = db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND (mentions LIKE ? OR event = 'merged') LIMIT 1").get(Number(run3.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run3.plan)}/${ORCHESTRATOR2}`)}%`);
+    return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
+  };
+  const unansweredOf = (run3, orch) => {
+    const lastAnswer = Number(db.prepare("SELECT MAX(seq) AS s FROM messages WHERE author = ? AND kind = 'msg' AND event IS NULL").get(orch.id).s ?? 0);
+    const q = db.prepare("SELECT m.seq, p.seat FROM messages m JOIN participants p ON p.id = m.author WHERE m.run = ? AND m.seq > ? AND m.author != ? AND m.event IS NULL AND m.mentions LIKE ? ORDER BY m.seq LIMIT 1").get(run3, lastAnswer, orch.id, `%${JSON.stringify(orch.name)}%`);
+    return q ? { seq: Number(q.seq), from: String(q.seat) } : null;
+  };
+  const unansweredSuffix = (run3, orch) => {
+    const q = unansweredOf(run3, orch);
+    return q ? `; unanswered @orchestrator #${q.seq} from ${orch.plan}/${q.from}` : "";
+  };
   const signAtOf = (p, run3, link, t) => {
     if (heldWaits.has(Number(p.id))) return t;
     const a = activityOf(Number(run3.id), String(p.seat));
@@ -3727,7 +3744,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return s ? { fact: s.reason, since: s.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     })();
     const a = activityOf(Number(run3.id), member);
-    const owes = owedNameOf(p, run3);
+    const owedReport = run3.phase == null ? taskOwedReportOf(p, run3) : null;
+    const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run3);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
     const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
@@ -3736,7 +3754,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
       {
         shownState,
         owes,
-        taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run3),
+        owesReport: owedReport != null,
+        taskDeliveredAt: owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run3),
         clockFloorAt: Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at))),
         inHeldWait,
         waitSpellSince: inHeldWait ? spell.since : null,
@@ -3753,7 +3772,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     );
     if (!stall || heldSince != null && lockWaitOf(Number(p.id), t) && stall.rule !== "lock") return null;
     const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
-    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...owes != null && stall.rule !== "lock" ? { owes } : {} };
+    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {} };
   };
   const episodeOpenOf = (run3, member, badge) => db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run3, member, badge) != null;
   const episodeStep = (run3, member, badge, on, t, silent = false) => {
@@ -4499,11 +4518,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         closeEpisodesOutside(run3, others.map((st) => st.member), t);
         if (stalledNow.length === 1) {
           const [{ st, meta }] = stalledNow;
-          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
+          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run3, orch)}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
         } else if (stalledNow.length > 1) {
           const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
           const ruled = stalledNow.find((x) => x.meta)?.meta;
-          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}`;
+          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run3, orch)}`;
           raiseAlert(run3, { body, event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
         }
         flushAlerts(run3, t, orch);
@@ -4554,7 +4573,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             idle.spellPosted = true;
             idle.postedSeq = lastSeq2;
             idle.stirred = false;
-            insertMessage(orch, `idle ${Math.floor(held / 1e3)}s: every member is waiting${goneSuffix(gone)}; ${where}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
+            insertMessage(orch, `idle ${Math.floor(held / 1e3)}s: every member is waiting${goneSuffix(gone)}; ${where}${unansweredSuffix(run3, orch)}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
           }
         }
         if (r.paused == null) {
@@ -9728,11 +9747,16 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
   idle: (wait) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ended: (run3) => `you have ended in run ${run3}: this listener stops; nothing to re-arm`,
+  // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
   delivered: "these lines are delivered; the task-end notice is the same event",
   // ── the phase ──
   phaseWhole: (name, text) => `phase ${name}: ${text}`,
   phaseShort: (name, thread) => `phase ${name} (unchanged; its text: ${thread})`,
   phasePaused: (head, why) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
+  // board-split D65: a paused run's header in status and roster; on the person, it says whose move it is
+  runPausedShown: (paused, onPerson) => paused == null ? "" : onPerson ? `  paused \xB7 on you: ${paused || "your decision"}` : `  paused${paused ? `: ${paused}` : ""}`,
+  // board-split D65: a phase opened during a pause is open, but nothing wakes the members before the resume
+  phaseOpenedPaused: (name, run3) => `run ${run3} is paused: phase ${name} is open, and its members hear it at resume`,
   pauseWhy: (person, text) => person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : "",
   owedOpen: (name, text, read, done) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then mark it done: ${done}`,
   owedBrief: (name, read, done) => `you owe phase ${name}: ${read}${read ? "Do" : "do"} your part, then mark it done: ${done}`,
@@ -10116,7 +10140,8 @@ ${owes}` : rearm;
         ...s.listens !== "foreground" && phase ? [phase] : [],
         ...shownLines(r.shown),
         ...r.lines,
-        ...r.mentionsOnly ? [WORDING.delivered] : []
+        // V-12: only a background listener's end is announced again by its harness
+        ...r.mentionsOnly && s.listens === "orchestrator" ? [WORDING.delivered] : []
       ];
       return { lines, next, phase: headers.full };
     }
@@ -10720,9 +10745,12 @@ ${verbHelp()}`);
       const cli = self().join(" ");
       const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord2(p.name), m.run);
       const brief = WORDING.briefThePerson;
+      const pausedNow = (await board.runs()).find((r) => r.id === m.run)?.paused != null;
       const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next }, () => {
+      const pausedLine3 = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
         console.log(seqLine(m));
+        if (pausedLine3) console.log(pausedLine3);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
@@ -10960,7 +10988,7 @@ ${verbHelp()}`);
       }
       const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
       const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(p, true));
-      emit({ phase: a.phase, next: a.next, ...d, ...mentionsOnly ? { delivered: WORDING.delivered } : {} }, () => {
+      emit({ phase: a.phase, next: a.next, ...d, ...a.lines.includes(WORDING.delivered) ? { delivered: WORDING.delivered } : {} }, () => {
         for (const l of a.lines) console.log(l);
       });
       break;
@@ -10976,14 +11004,14 @@ ${verbHelp()}`);
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, paused: r.paused ?? null, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(repo));
         let shown = null;
         for (const r of roster) {
           const run3 = runs.get(r.run);
-          if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${WORDING.authorityShown(run3.authority)}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}`);
+          if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${WORDING.authorityShown(run3.authority)}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}${WORDING.runPausedShown(run3.paused, run3.pausedPerson)}`);
           shown = r.run;
           console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
@@ -11252,7 +11280,7 @@ ${verbHelp()}`);
         runs.map(async (r) => {
           const lastActivity = await board.lastActivity(r.id);
           const idleMs = Date.now() - Date.parse(lastActivity);
-          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
+          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, paused: r.paused ?? null, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         })
       );
       const held = await board.locks();
@@ -11265,7 +11293,7 @@ ${verbHelp()}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
-          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
+          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${r.repo}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);

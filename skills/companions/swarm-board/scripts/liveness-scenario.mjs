@@ -7,7 +7,8 @@
 // ticks it checks that only the control is lost and that nobody is stalled. Then, on a second run with a 20 s stall
 // window (D55 amended, U-F22, scaled from 5 min; SWARM_STALL_FLOOR_MS lowers the 5 min floor for it): a member works 25 s after its task, then waits in re-armed waits:
 // not stalled 15 s into the waiting, stalled once past the window counted from the wait, never from the work; beside it
-// (O-F3, D55 amended) a member with its own background test open waits past the window too: busy, never stalled.
+// (O-F3, D55 amended) a member with its own background test open waits past the window too: busy, never stalled. Last
+// (D64), a task swarm with no phase open: a delivered task never reported on, in waits past the window, is stalled once.
 //
 //   node scripts/liveness-scenario.mjs [--cli <path to swarm.mjs>] [--keep]
 //
@@ -275,11 +276,39 @@ try {
   const toldStalledBg = (told2a + told2b).match(/stalled spl\/bgwait|spl\/bgwait \(owing\)/g)?.length ?? 0;
   check(bgCard?.badge == null && toldStalledBg === 0, `bgwait (O-F3): waits past ${SPELL_STALL_S} s over its own background test, never stalled (${bgCard?.state}${bgCard?.badge ? `, ${bgCard.badge.name}: ${bgCard.badge.reason}` : ""}; told ${toldStalledBg})`);
   check(toldStalledSpell(told2b) === 1 && recoveredSpell === 0, `spell: re-armed waits past ${SPELL_STALL_S} s, told stalled once and never recovered (stalled ${toldStalledSpell(told2b)}, recovered ${recoveredSpell})`);
+
+  // board-split D64 (V-9): an on-call task swarm, no phase open: a delivered task with no report, in re-armed waits past
+  // the window, is told stalled once, naming the task
+  const orch3 = agentFor("nop/orchestrator");
+  const nophaseSeats = path.join(home, "nophase-seats.json");
+  fs.writeFileSync(nophaseSeats, JSON.stringify([{ id: "nophase", blockers: [] }]));
+  const opened3 = swarm(orch3, "open", "--kind", "task", "--group", "nop", "--title", "no phase", "--seats", nophaseSeats, "--stall-ms", String(SPELL_STALL_S * 1000));
+  const run3 = opened3.split(/\r?\n/)[0].trim();
+  const m3 = opened3.match(LINK_LINE);
+  if (m3) {
+    orch3.linkArgv = [m3[1], ...m3[2].trim().split(" ")];
+    startLink(orch3);
+  }
+  orch2.extra = orch3;
+  const nophase = agentFor("nop/nophase");
+  const joined3 = swarm(nophase, "join", "--run", run3, "--seat", "nophase", "--doing", "on call", "--as", nophase.member);
+  const mn = joined3.match(LINK_LINE);
+  nophase.linkArgv = [mn[1], ...mn[2].trim().split(" ")];
+  startLink(nophase);
+  agents.nophase = nophase;
+  const taskSeq = swarm(orch3, "post", "@nophase your task", "--task", "--as", orch3.member).match(/#(\d+)/)?.[1];
+  swarm(nophase, "deliver", "--as", nophase.member);
+  log(`run ${run3}: nophase holds task #${taskSeq}, no phase open, waits past ${SPELL_STALL_S} s with no report`);
+  const nophaseStarted = Date.now();
+  while (Date.now() - nophaseStarted < (SPELL_STALL_S + 10 + 6) * 1000) await heldWaitOf(nophase, 5);
+  const told3 = swarm(orch3, "deliver", "--as", orch3.member);
+  const toldNophase = (told3.match(new RegExp(`stalled nop/nophase: [^\n]*task #${taskSeq} delivered, no report`, "g")) ?? []).length;
+  check(toldNophase === 1, `nophase (V-9): a delivered task, no phase, no report, told stalled once (${toldNophase})`);
 } catch (e) {
   failures++;
   log(`FAIL ${e.stack ?? e}`);
 } finally {
-  for (const a of [orch, orch.extra, ...Object.values(agents)].filter(Boolean)) if (a.link && a.link.exitCode === null) a.link.kill();
+  for (const a of [orch, orch.extra, orch.extra?.extra, ...Object.values(agents)].filter(Boolean)) if (a.link && a.link.exitCode === null) a.link.kill();
   spawnSync(process.execPath, [CLI, "serve", "stop"], { cwd: repo, env: orch.env });
   if (!KEEP) fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   else log(`kept ${home}`);

@@ -81,7 +81,8 @@ export function answer(r: VerbResult, s: Situation): Answer {
         ...(s.listens !== "foreground" && phase ? [phase] : []),
         ...shownLines(r.shown),
         ...r.lines,
-        ...(r.mentionsOnly ? [W.delivered] : []),
+        // V-12: only a background listener's end is announced again by its harness
+        ...(r.mentionsOnly && s.listens === "orchestrator" ? [W.delivered] : []),
       ];
       return { lines, next, phase: headers.full };
     }
