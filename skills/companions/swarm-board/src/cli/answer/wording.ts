@@ -118,6 +118,12 @@ export const WORDING = {
   unblockedSet: (member: string) => `${member} is unblocked: told to go on`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
+  /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
+  noProject: (name: string) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
+  /** verify 3 F17: roster on a project with no open run says so, never nothing */
+  noRunIn: (repo: string) => `no open run in ${repo}`,
+  /** board-split#D28: a run's authority after its title, nothing when it names none */
+  authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
   optionRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
   eventRenamed: (renamed: { old: string; now: string }[]) =>
     `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,

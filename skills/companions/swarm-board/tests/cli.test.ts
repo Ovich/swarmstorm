@@ -222,7 +222,7 @@ test("status --json lists each open run with its kind; the text names the kind (
   assert.equal(s.runs, 1);
   const nick = s.open[0]?.members[0]?.nick as string;
   assert.match(nick, /^[A-Z][a-z]+ [A-Z][a-z]+$/, "the orchestrator's funny name, given at open (D17)");
-  assert.deepEqual(s.open, [{ run: id, kind: "plan", protocol: null, group: "review-tool", title: "A plan", phase: null, progress: null, members: [{ name: "review-tool/orchestrator", nick, worktree: null, state: "waiting", activity: null, progressAt: s.open[0].members[0].progressAt, aliveAt: null, files: [] }], lastActivity: s.open[0].lastActivity, forgotten: false }]);
+  assert.deepEqual(s.open, [{ run: id, kind: "plan", protocol: null, authority: [], group: "review-tool", title: "A plan", phase: null, progress: null, members: [{ name: "review-tool/orchestrator", nick, worktree: null, state: "waiting", activity: null, progressAt: s.open[0].members[0].progressAt, aliveAt: null, files: [] }], lastActivity: s.open[0].lastActivity, forgotten: false }]);
   assert.match(run("status").stdout, new RegExp(`run ${id}  plan  review-tool  A plan`));
 });
 
@@ -1497,6 +1497,43 @@ test("D47: roster and stats take --project; the old --repo is read as it, with o
   const stats = runIn(other, "stats", "--project", repo, "--json");
   assert.equal(stats.status, 0, stats.stderr);
   for (const help of [run("--help").stdout, run("stats", "--help").stdout]) assert.doesNotMatch(help, /--repo\b/);
+});
+
+test("verify 3 F15, F17: --project takes an aiview project's name or a path; an unknown one answers no project; a project with no run says so", () => {
+  const launcher = path.join(toolRoot, "projects-aiview.mjs");
+  const empty = path.join(toolRoot, "empty");
+  fs.mkdirSync(empty);
+  git(empty, "init", "-q");
+  fs.writeFileSync(launcher, `console.log(JSON.stringify([{ slug: "Mine", paths: [${JSON.stringify(repo)}] }, { slug: "Empty", paths: [${JSON.stringify(empty)}] }]));
+`);
+  const withAiview = (...argv: string[]) => spawnSync(process.execPath, [CLI, ...argv], { cwd: os.tmpdir(), encoding: "utf8", env: { ...env(), SWARM_AIVIEW: launcher } });
+  const id = openRun("authority-run");
+  const byName = withAiview("roster", "--project", "Mine", "--json");
+  assert.equal(byName.status, 0, byName.stderr);
+  assert.deepEqual(JSON.parse(byName.stdout).runs.map((r: { run: number }) => r.run), [id]);
+  const byPath = withAiview("roster", "--project", repo, "--json");
+  assert.equal(JSON.parse(byPath.stdout).repo, JSON.parse(byName.stdout).repo);
+  const unknown = withAiview("roster", "--project", "Nowhere");
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /no project Nowhere/);
+  const stats = withAiview("stats", "--project", "Mine", "--json");
+  assert.equal(stats.status, 0, stats.stderr);
+  const none = withAiview("roster", "--project", "Empty");
+  assert.equal(none.status, 0, none.stderr);
+  assert.match(none.stdout, /^no open run in /);
+});
+
+test("board-split#D28: open --authority stores the orchestrator's roles, read back by status and roster", () => {
+  const seats = path.join(toolRoot, "auth.seats.json");
+  fs.writeFileSync(seats, SLICES);
+  const opened = run("open", "--plan", "decide", "--title", "Decide", "--seats", seats, "--authority", "architect,tech-lead");
+  assert.equal(opened.status, 0, opened.stderr);
+  const id = Number(opened.stdout.split("\n")[0]);
+  const status = JSON.parse(run("status", "--json").stdout) as { open: { run: number; authority: string[] }[] };
+  assert.deepEqual(status.open.find((r) => r.run === id)?.authority, ["architect", "tech-lead"]);
+  const roster = JSON.parse(run("roster", "--json").stdout) as { runs: { run: number; authority: string[] }[] };
+  assert.deepEqual(roster.runs.find((r) => r.run === id)?.authority, ["architect", "tech-lead"]);
+  assert.notEqual(run("open", "--plan", "bad", "--title", "B", "--seats", seats, "--authority", "Tech Lead").status, 0);
 });
 
 test("gate G5: open --stall-ms under the 5 min floor is raised to it, said in one answer line after the run id", () => {

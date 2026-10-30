@@ -74,6 +74,18 @@ export type Liveness = Omit<MemberState, "member"> & { tokens: number | null; mo
 
 /** A protocol's name: lower case, digits and dashes. */
 export const PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+/** A role of a run's authority (board-split#D28): plain strings, the core knows no list of them (D18, D24). */
+export const AUTHORITY_ROLE = /^[a-z0-9][a-z0-9-]*$/;
+/** The stored authority column read back: the roles in order, [] for none or a store from before it. */
+const authorityOf = (stored: unknown): string[] => {
+  if (stored == null) return [];
+  try {
+    const roles = JSON.parse(String(stored));
+    return Array.isArray(roles) ? roles.map(String) : [];
+  } catch {
+    return [];
+  }
+};
 
 export interface Run {
   id: RunId;
@@ -94,6 +106,8 @@ export interface Run {
   pausedPerson: boolean;
   /** The protocol the run follows, null when it names none. */
   protocol: string | null;
+  /** The roles its orchestrator holds (`open --authority`, board-split#D28), [] when it names none. */
+  authority: string[];
   /** The branch (else the commit) the repository's checkout stood on at open: a code run's worktrees branch from it; null before it was recorded. */
   base: string | null;
   /** The pack its kind gives a member by default (board-split#D22); null: core only. What a run's close and an
@@ -203,6 +217,8 @@ export type RunSummary = {
   stallMs?: number;
   /** The protocol the run follows (build-verify, debate…), null when it names none; absent from a reader before it. */
   protocol?: string | null;
+  /** The roles its orchestrator holds (board-split#D28), [] when none; absent from a reader before it. */
+  authority?: string[];
   /** The run's pause: its text and whether it waits on the person (`pause --person`); null when not paused; absent from a reader before it. */
   paused?: { text: string; person: boolean } | null;
 };
@@ -328,7 +344,7 @@ export type BoardSnapshot = PackSnapshotFields & {
 export interface Board {
   /** `kind` defaults to plan; throws on an unknown kind. The group is stored as the plan (D44). */
   /** `transcript`: the orchestrator's, registered at once; none posts a liveness warning. `stallMs`: the run's stall window, default 5 min (board-split D54). */
-  openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null; base?: string | null }): Run;
+  openRun(input: { repo: string; kind?: Kind; group: string; title: string; link?: string | null; seats: SeatSpec[]; transcript?: string | null; stallMs?: number; protocol?: string | null; authority?: string[]; base?: string | null }): Run;
   /** `done` also releases the seat member's claims and lock: the orchestrator's way to free a stale member. */
   /** A seat added mid-run (D60): after the last, `ready`; refused on an id already in the run, an
    *  unknown blocker or a closed run. Posts an event with the run. */
@@ -730,6 +746,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // board-split D54: the run's silent time, out of a wait, with no sign of work (default SILENT_MS)
   upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
+  // board-split#D28: the roles the run's orchestrator holds, a JSON array; null on an old row reads as []
+  upkeep("runs", "authority", "authority TEXT");
   // the branch a code run's worktrees branch from, recorded at open
   upkeep("runs", "base", "base TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
@@ -859,6 +877,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     paused: r.paused == null ? null : String(r.paused),
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
+    authority: authorityOf(r.authority),
     base: r.base == null ? null : String(r.base),
     kindPack: kindPackOf(String(r.kind ?? "plan")),
     id: Number(r.id),
@@ -1180,6 +1199,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
       stallMs: Number(r.stall_ms ?? STALL_MS_DEFAULT),
       protocol: r.protocol == null ? null : String(r.protocol),
+      authority: authorityOf(r.authority),
       paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 },
     };
   };
@@ -1709,15 +1729,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
 
   const board: Board = {
-    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, base }) {
+    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, authority = [], base }) {
       const profile = profileOf(kind);
       if (protocol != null && !PROTOCOL_NAME.test(protocol)) throw new Error(`a protocol is named in lower case, digits and dashes (build-verify), got ${protocol}`);
+      const badRole = authority.find((role) => !AUTHORITY_ROLE.test(role));
+      if (badRole !== undefined) throw new Error(`a role of the authority is named in lower case, digits and dashes (tech-lead), got ${badRole}`);
+      const roles = [...new Set(authority)];
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
         // the group is stored as the plan (D44)
         const r = db
-          .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, base ?? null);
+          .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, authority, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, roles.length ? JSON.stringify(roles) : null, base ?? null);
         const run = Number(r.lastInsertRowid);
         seats.forEach((s, i) => insertSeat(run, s, i));
         // a funny name as a member gets at join (plan D17)

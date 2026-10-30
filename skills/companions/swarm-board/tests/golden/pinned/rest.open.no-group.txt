@@ -1,5 +1,5 @@
 exit 1
 --- stderr
 open: --group <slug> is required (or --plan <slug> for a plan run)
-usage: node <cli> open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]
+usage: node <cli> open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]
 e.g. node <cli> open --kind task --group my-team --title "the work" --seats seats.json

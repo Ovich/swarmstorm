@@ -7,7 +7,7 @@ import type { Command } from "./wording.ts";
 export const coreUsage = (cli: Command, events: string[]): string =>
   [
     `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
-    "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+    "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
     CODE_IN_CORE_HELP.ontoLine,
     "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
     "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",

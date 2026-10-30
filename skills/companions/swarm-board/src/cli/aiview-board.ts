@@ -53,3 +53,15 @@ export function registerBoard(input: { home: BoardHome; cwd: string; repo: strin
   const out = board.out as { url: string; repos: string[] };
   return { registered: true, url: out.url, repos: out.repos };
 }
+
+/** The paths aiview's project `name` covers, its slug matched as aiview matches it (case aside on Windows); null:
+ *  aiview knows no such project, or is not there (board-split D47, verify 3 F15). */
+export function projectPaths(input: { toolRoot: string; cwd: string; name: string }): string[] | null {
+  const launcher = aiviewLauncher(input.toolRoot);
+  if (!launcher) return null;
+  const listed = callAiview(launcher, input.cwd, ["project"]);
+  if (!listed.ok || !Array.isArray(listed.out)) return null;
+  const projects = listed.out as { slug: string; paths: string[] }[];
+  const same = (slug: string) => (process.platform === "win32" ? slug.toLowerCase() === input.name.toLowerCase() : slug === input.name);
+  return projects.find((p) => same(p.slug))?.paths ?? null;
+}

@@ -13,7 +13,7 @@ import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type Connected
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
-import { boardHome, registerBoard } from "./aiview-board.ts";
+import { boardHome, projectPaths, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
 import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
@@ -173,6 +173,16 @@ const projectFlag = (): string | undefined => {
   const old = args.flag("--repo");
   if (old !== undefined) console.error(WORDING.optionRenamed("--repo", "--project"));
   return old;
+};
+/** The repository `--project` names (D47, verify 3 F15): a path inside one, else an aiview project's name, the first
+ *  of its paths that is a repository; the cwd's without the flag. An unknown one fails `no project <name>`. */
+const projectRepo = (): string => {
+  const asked = projectFlag();
+  if (asked === undefined) return repoOf(process.cwd()) ?? fail(WORDING.noProject(process.cwd()));
+  if (fs.existsSync(asked)) return repoOf(path.resolve(asked)) ?? fail(WORDING.noProject(asked));
+  const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
+  const repo = covered.filter((p) => fs.existsSync(p)).map((p) => repoOf(p)).find((r) => r !== null);
+  return repo ?? fail(WORDING.noProject(asked));
 };
 const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
 
@@ -685,6 +695,11 @@ async function main(): Promise<void> {
       const stallClamped = stallMs !== undefined && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
+      // board-split#D28: the roles the orchestrator holds, comma-separated; the core checks their shape only
+      const rawAuthority = args.flag("--authority");
+      const authority = rawAuthority === undefined ? [] : rawAuthority.split(",").map((role) => role.trim()).filter(Boolean);
+      const badRole = authority.find((role) => !/^[a-z0-9][a-z0-9-]*$/.test(role));
+      if (badRole !== undefined) fail(`--authority takes roles in lower case, digits and dashes, comma-separated (architect,tech-lead), got ${badRole}`);
       if (protocol !== undefined && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
       // aiview installed but no project here: the run's board would show nowhere, so refuse before opening
       const home = boardHome({ toolRoot: toolRoot(), cwd: process.cwd() });
@@ -703,6 +718,7 @@ async function main(): Promise<void> {
         seats: readSeats(seatsFile),
         ...(stallMs !== undefined ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {}),
         ...(protocol !== undefined ? { protocol } : {}),
+        authority,
         // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
         base: args.flag("--onto") ?? baseAt(process.cwd()),
       });
@@ -1072,7 +1088,7 @@ async function main(): Promise<void> {
     case "roster": {
       // a member asking (--as) learns its run closed
       if (args.flag("--as") && (await answeredClosed(await caller()))) break;
-      const repo = repoOf(path.resolve(projectFlag() ?? process.cwd()));
+      const repo = projectRepo();
       const roster = await board.roster(repo);
       // each run's title and phase above its members
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
@@ -1084,13 +1100,14 @@ async function main(): Promise<void> {
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] as string[] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
+        if (!runs.size) console.log(WORDING.noRunIn(repo));
         let shown: number | null = null;
         for (const r of roster) {
           const run = runs.get(r.run);
-          if (run && r.run !== shown) console.log(`run ${run.id}  ${run.title}${phaseSuffix(run.phase, progress.get(run.id) ?? null)}`);
+          if (run && r.run !== shown) console.log(`run ${run.id}  ${run.title}${WORDING.authorityShown(run.authority)}${phaseSuffix(run.phase, progress.get(run.id) ?? null)}`);
           shown = r.run;
           console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
@@ -1330,7 +1347,7 @@ async function main(): Promise<void> {
         }
       });
       const stats = await board.stats({
-        repo: repoOf(path.resolve(projectFlag() ?? process.cwd())),
+        repo: projectRepo(),
         ...(run !== undefined ? { run } : {}),
         // a named run is read whatever its age: no default period (plan D40)
         ...(all ? {} : since !== undefined ? { since } : run !== undefined ? {} : { since: "30d" }),
@@ -1406,7 +1423,7 @@ async function main(): Promise<void> {
           const lastActivity = await board.lastActivity(r.id);
           // a run with no activity for a day is likely forgotten: its orchestrator ended without close
           const idleMs = Date.now() - Date.parse(lastActivity);
-          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
+          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
       // the machine's held locks (idea 4): store-wide, so listed once above the runs
@@ -1419,7 +1436,7 @@ async function main(): Promise<void> {
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
-          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
+          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);

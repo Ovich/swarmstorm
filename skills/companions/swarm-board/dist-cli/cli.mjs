@@ -3217,6 +3217,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
   upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
+  upkeep("runs", "authority", "authority TEXT");
   upkeep("runs", "base", "base TEXT");
   upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
@@ -3305,6 +3306,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     paused: r.paused == null ? null : String(r.paused),
     pausedPerson: r.paused != null && Number(r.paused_person ?? 0) === 1,
     protocol: r.protocol == null ? null : String(r.protocol),
+    authority: authorityOf(r.authority),
     base: r.base == null ? null : String(r.base),
     kindPack: kindPackOf(String(r.kind ?? "plan")),
     id: Number(r.id),
@@ -3522,6 +3524,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       progress: progressOf(id, r.phase == null ? null : String(r.phase)),
       stallMs: Number(r.stall_ms ?? STALL_MS_DEFAULT),
       protocol: r.protocol == null ? null : String(r.protocol),
+      authority: authorityOf(r.authority),
       paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 }
     };
   };
@@ -3935,12 +3938,15 @@ async function openBoard(dbPath = SQLITE_PATH) {
     db.prepare("INSERT OR REPLACE INTO run_stats (run, repo, kind, closed_at, body) VALUES (?, ?, ?, ?, ?)").run(run3, String(r.repo), body.kind, String(r.closed_at), JSON.stringify(body));
   };
   const board2 = {
-    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, base }) {
+    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, authority = [], base }) {
       const profile = profileOf(kind);
       if (protocol != null && !PROTOCOL_NAME.test(protocol)) throw new Error(`a protocol is named in lower case, digits and dashes (build-verify), got ${protocol}`);
+      const badRole = authority.find((role) => !AUTHORITY_ROLE.test(role));
+      if (badRole !== void 0) throw new Error(`a role of the authority is named in lower case, digits and dashes (tech-lead), got ${badRole}`);
+      const roles = [...new Set(authority)];
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
-        const r = db.prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, base ?? null);
+        const r = db.prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, authority, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(repo, profile.kind, group, title, link ?? null, now(), stallMs ?? STALL_MS_DEFAULT, protocol ?? null, roles.length ? JSON.stringify(roles) : null, base ?? null);
         const run3 = Number(r.lastInsertRowid);
         seats.forEach((s, i) => insertSeat(run3, s, i));
         const orchestrator = db.prepare("INSERT INTO participants (run, seat, since_seq, joined_at, subs, nick) VALUES (?, ?, ?, ?, ?, ?)").run(
@@ -4994,7 +5000,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
+var progressText, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -5011,6 +5017,16 @@ var init_board = __esm({
     progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+    AUTHORITY_ROLE = /^[a-z0-9][a-z0-9-]*$/;
+    authorityOf = (stored) => {
+      if (stored == null) return [];
+      try {
+        const roles = JSON.parse(String(stored));
+        return Array.isArray(roles) ? roles.map(String) : [];
+      } catch {
+        return [];
+      }
+    };
     BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
@@ -9418,6 +9434,15 @@ function registerBoard(input) {
   const out = board2.out;
   return { registered: true, url: out.url, repos: out.repos };
 }
+function projectPaths(input) {
+  const launcher = aiviewLauncher(input.toolRoot);
+  if (!launcher) return null;
+  const listed = callAiview(launcher, input.cwd, ["project"]);
+  if (!listed.ok || !Array.isArray(listed.out)) return null;
+  const projects = listed.out;
+  const same2 = (slug) => process.platform === "win32" ? slug.toLowerCase() === input.name.toLowerCase() : slug === input.name;
+  return projects.find((p) => same2(p.slug))?.paths ?? null;
+}
 
 // src/cli/unclaimed.ts
 var SHOWN = 3;
@@ -9761,6 +9786,12 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   unblockedSet: (member) => `${member} is unblocked: told to go on`,
   /** board-split D36: a subscription naming an event under its old name, read as the new one */
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
+  /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
+  noProject: (name) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
+  /** verify 3 F17: roster on a project with no open run says so, never nothing */
+  noRunIn: (repo) => `no open run in ${repo}`,
+  /** board-split#D28: a run's authority after its title, nothing when it names none */
+  authorityShown: (roles) => roles.length ? `  authority ${roles.join(",")}` : "",
   optionRenamed: (old, now) => `${old} is now ${now}: read as ${now}, write that next time`,
   eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
@@ -9962,7 +9993,7 @@ async function readSituation(board2, me, opts) {
 // src/cli/answer/usage.ts
 var coreUsage = (cli, events) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   CODE_IN_CORE_HELP.ontoLine,
   "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
@@ -10186,6 +10217,14 @@ var projectFlag = () => {
   const old = args.flag("--repo");
   if (old !== void 0) console.error(WORDING.optionRenamed("--repo", "--project"));
   return old;
+};
+var projectRepo = () => {
+  const asked = projectFlag();
+  if (asked === void 0) return repoOf2(process.cwd()) ?? fail(WORDING.noProject(process.cwd()));
+  if (fs13.existsSync(asked)) return repoOf2(path13.resolve(asked)) ?? fail(WORDING.noProject(asked));
+  const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
+  const repo = covered.filter((p) => fs13.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
+  return repo ?? fail(WORDING.noProject(asked));
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${verbHelp()}`);
@@ -10531,6 +10570,10 @@ ${verbHelp()}`);
       const stallClamped = stallMs !== void 0 && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
+      const rawAuthority = args.flag("--authority");
+      const authority = rawAuthority === void 0 ? [] : rawAuthority.split(",").map((role) => role.trim()).filter(Boolean);
+      const badRole = authority.find((role) => !/^[a-z0-9][a-z0-9-]*$/.test(role));
+      if (badRole !== void 0) fail(`--authority takes roles in lower case, digits and dashes, comma-separated (architect,tech-lead), got ${badRole}`);
       if (protocol !== void 0 && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
       const home = boardHome({ toolRoot: toolRoot(), cwd: process.cwd() });
       if (!home.found && home.launcher)
@@ -10547,6 +10590,7 @@ ${verbHelp()}`);
         seats: readSeats(seatsFile),
         ...stallMs !== void 0 ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {},
         ...protocol !== void 0 ? { protocol } : {},
+        authority,
         // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
         base: args.flag("--onto") ?? baseAt(process.cwd())
       });
@@ -10866,7 +10910,7 @@ ${verbHelp()}`);
     }
     case "roster": {
       if (args.flag("--as") && await answeredClosed(await caller())) break;
-      const repo = repoOf2(path13.resolve(projectFlag() ?? process.cwd()));
+      const repo = projectRepo();
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
@@ -10875,13 +10919,14 @@ ${verbHelp()}`);
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
+        if (!runs.size) console.log(WORDING.noRunIn(repo));
         let shown = null;
         for (const r of roster) {
           const run3 = runs.get(r.run);
-          if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}`);
+          if (run3 && r.run !== shown) console.log(`run ${run3.id}  ${run3.title}${WORDING.authorityShown(run3.authority)}${phaseSuffix(run3.phase, progress.get(run3.id) ?? null)}`);
           shown = r.run;
           console.log(rosterLine(r, roster, true));
           if (roster.filter((x) => x.run === r.run).at(-1) === r) for (const l of compositions.get(r.run)?.lines ?? []) console.log(`  seat ${l}`);
@@ -11080,7 +11125,7 @@ ${verbHelp()}`);
         }
       });
       const stats = await board.stats({
-        repo: repoOf2(path13.resolve(projectFlag() ?? process.cwd())),
+        repo: projectRepo(),
         ...run3 !== void 0 ? { run: run3 } : {},
         // a named run is read whatever its age: no default period (plan D40)
         ...all2 ? {} : since !== void 0 ? { since } : run3 !== void 0 ? {} : { since: "30d" },
@@ -11150,7 +11195,7 @@ ${verbHelp()}`);
         runs.map(async (r) => {
           const lastActivity = await board.lastActivity(r.id);
           const idleMs = Date.now() - Date.parse(lastActivity);
-          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
+          return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         })
       );
       const held = await board.locks();
@@ -11162,7 +11207,7 @@ ${verbHelp()}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
-          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
+          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}  ${r.repo}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);
