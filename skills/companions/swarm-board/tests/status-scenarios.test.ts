@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { LINK_LOST_MS } from "../src/board/liveness.ts";
+import { LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 
@@ -29,7 +29,7 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 let links: Map<string, { connected: boolean; lostAt: number | null }>;
 const presence: Presence = (m) => links.get(m) ?? { connected: true, lostAt: null };
 /** The agent behind `seat` ended: its link went `ago` ms back, its transcript says finished. */
-const agentEnds = (run: number, seat: string, ago = LINK_LOST_MS + 1000) => {
+const agentEnds = (run: number, seat: string, ago = LOST_MS + 1000) => {
   // D53: an ended agent makes no board call either, since then
   quietMember(path.join(dir, "swarm.sqlite"), seat, ago);
   board.recordActivity(run, seat, act({ grewAt: Date.now() - ago, finished: true }), new Date());
@@ -78,7 +78,7 @@ test("1: park, then the member's agent ends: still parked, no badge, its unread 
   assert.deepEqual([...events("lost"), ...events("stalled")].filter((e) => e.body.includes("g/b")), []);
 });
 
-test("2: the agent ends mid-wait, not parked: lost once its link is lost past LINK_LOST_MS, its state not forced by it", async () => {
+test("2: the agent ends mid-wait, not parked: lost once its link is lost past LOST_MS, its state not forced by it", async () => {
   const { run, b } = setup();
   const held = waitOf(b, 200);
   await held;
@@ -87,7 +87,7 @@ test("2: the agent ends mid-wait, not parked: lost once its link is lost past LI
   agentEnds(run.id, "b", 1000);
   tick(run.id);
   assert.deepEqual(shown(run.id, "g/b"), { state: before, badge: null });
-  // past LINK_LOST_MS
+  // past LOST_MS
   agentEnds(run.id, "b");
   tick(run.id);
   assert.deepEqual(shown(run.id, "g/b"), { state: before, badge: "lost" });

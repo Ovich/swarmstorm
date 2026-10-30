@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, BOARD_AUTHOR, type Board, type Presence } from "../src/board/board.ts";
-import { LINK_LOST_MS } from "../src/board/liveness.ts";
+import { LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 
 const REPO = "/repos/one/.git";
@@ -32,7 +32,7 @@ test("D51: a lost alarm about a member is served from the board with its subject
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base }), new Date(base));
   const lostLink: Presence = (m) => (m === "a" ? { connected: false, lostAt: base } : { connected: true, lostAt: null });
-  board.livenessTick(run.id, new Date(base + LINK_LOST_MS + 5_000), lostLink);
+  board.livenessTick(run.id, new Date(base + LOST_MS + 5_000), lostLink);
   const events = board.snapshot(REPO).events;
   const alarms = events.filter((e) => e.kind === "event" && e.event === "lost");
   assert.ok(alarms.length >= 1, "the lost link raises its alarm");

@@ -13,7 +13,7 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LINK_LOST_MS, LOCK_HELD_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
@@ -58,14 +58,18 @@ export type BadgeName = "stalled" | "lost" | "blocked";
 export type Badge = { name: BadgeName; reason: string; since: number | null };
 /** `doing`: the open tool, else the last; `since`: ms epoch the state counts from; `badge`: its trouble, null when none.
  *  A lost member keeps the last activity read of it. */
-export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; badge: Badge | null; rule?: StallRule; owes?: string; linkDown?: true };
-/** Whether a member's link is connected, and since when it is lost (null: connected, or never linked). Kept by the server.
- *  `transcriptGrewAt`: for a member whose link is lost, its transcript's mtime (ms epoch), null when it cannot be read. */
-export type Presence = (member: string) => { connected: boolean; lostAt: number | null; transcriptGrewAt?: number | null };
+export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; badge: Badge | null; rule?: StallRule; owes?: string };
+/** board-split D55: why a link dropped, as its server saw it. */
+export type LinkDropCause = "member-closed" | "server-restart" | "superseded" | "version" | "socket";
+/** board-split D55: a member's link as the server keeps it (a row of `member_links`): connected, else since when it
+ *  dropped (`lostAt`, null: never linked) and why; `seenAt` its last heartbeat (ms epoch). */
+export type LinkFact = { connected: boolean; lostAt: number | null; seenAt?: number | null; cause?: LinkDropCause | null };
+/** A member's link facts, kept by the server. */
+export type Presence = (member: string) => LinkFact;
 /** A member's liveness as the page draws it (D20): its state, its counter from its link's last activity, and its two
  *  ages (swarm-relay D38): `progressAt` its last progress, `aliveAt` its last sign of life by its link, the time
  *  read while the link is up (ms epoch; null: never linked). */
-export type Liveness = Omit<MemberState, "member"> & { tokens: number | null; movedAt: string | null; progressAt: number | null; aliveAt: number | null };
+export type Liveness = Omit<MemberState, "member"> & { tokens: number | null; movedAt: string | null; progressAt: number | null; aliveAt: number | null; note?: string };
 
 /** A protocol's name: lower case, digits and dashes. */
 export const PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -480,9 +484,11 @@ export interface Board {
 
   /** A member's link connected, or lost at `lostAt` (ms epoch): kept in the store, so presence outlives a
    *  server restart (swarm-relay D37). */
-  recordLink(run: RunId, member: string, link: { connected: boolean; lostAt: number | null }): void;
+  recordLink(run: RunId, member: string, link: LinkFact): void;
   /** Every link the store keeps, as the last server left them: read by a server at its start (D37). */
-  savedLinks(): { run: RunId; member: string; connected: boolean; lostAt: number | null }[];
+  savedLinks(): ({ run: RunId; member: string } & LinkFact)[];
+  /** board-split D55: the board server started at `at` (ms epoch): no member is lost within LOST_MS of it. */
+  recordServerUp(at: number): void;
 }
 
 /** A phase's name: one word. */
@@ -640,6 +646,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     CREATE TABLE IF NOT EXISTS member_links (
       run INTEGER NOT NULL, member TEXT NOT NULL, connected INTEGER NOT NULL, lost_at INTEGER,
       PRIMARY KEY (run, member));
+    -- board-split D55: the board server's own facts (server_up_at, ms epoch)
+    CREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
   `);
   if (recordsAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(RECORDS_SINCE, new Date().toISOString());
   // Schema upkeep for stores created by earlier versions: add a column when it is missing.
@@ -648,6 +656,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
   upkeep("participants", "place", "place TEXT");
+  // board-split D55: a link's last heartbeat and its drop cause
+  upkeep("member_links", "seen_at", "seen_at INTEGER");
+  upkeep("member_links", "cause", "cause TEXT");
   upkeep("participants", "last_call", "last_call TEXT");
   upkeep("participants", "calls", "calls INTEGER NOT NULL DEFAULT 0");
   upkeep("participants", "waiting", "waiting INTEGER NOT NULL DEFAULT 0");
@@ -1327,7 +1338,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // D34 (S38): a parked seat says until which phase it sleeps, in its state (`parkedUntil`); board-split D48 (U-F2):
       // the member's `doing` is its own, never written by the board
       const until_ = until?.trim() || null;
-      db.prepare("UPDATE participants SET parked = ?, parked_until = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, Number(row.id));
+      // board-split D55: an unpark seats the member afresh (seated_at), so no lost for LOST_MS after it
+      if (parked) db.prepare("UPDATE participants SET parked = 1, parked_until = ? WHERE id = ?").run(until_, Number(row.id));
+      else db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, seated_at = ? WHERE id = ?").run(new Date().toISOString(), Number(row.id));
       return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
     });
   };
@@ -1347,44 +1360,37 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return insertMessage(fresh, why == null ? `unblocked @${fresh.plan}/${seat}` : `blocked @${fresh.plan}/${seat}: ${why}`, null, "event", [`${fresh.plan}/${seat}`], { event: (why == null ? EVENTS.unblock : EVENTS.block).name });
     });
   };
-  /** board-split D36, D44: the badge a member shows: blocked (its seat blocked, or its run paused on the person) over
-   *  its liveness's own; none for a parked member (D30). */
-  const badgeOf = (p: Row, run: Row, st: MemberState | undefined): Badge | null => {
-    if (Number(p.parked) === 1 || p.ended_at != null) return null;
+  /** board-split D44: blocked: its seat blocked, or its run paused on the person; null otherwise. */
+  const blockedOf = (p: Row, run: Row): Badge | null => {
     if (p.blocked != null) return { name: "blocked", reason: String(p.blocked), since: p.blocked_at == null ? null : Number(p.blocked_at) };
     if (run.paused != null && Number(run.paused_person ?? 0) === 1 && String(p.seat) !== ORCHESTRATOR)
       return { name: "blocked", reason: String(run.paused) || "the run is paused on the person", since: null };
-    return st?.badge ?? null;
+    return null;
   };
   /** The member's activity as shown (D31, D45): busy on an open call or a background task, waiting in a board wait, else
-   *  working, with what it is on. Never a badge: trouble is `troubleOf`'s, from board facts alone (board-split D49).
+   *  working, with what it is on. Never a badge: that is `memberView`'s, from board facts alone (board-split D49).
    *  `withHolder`: a lock wait names its holder's state, read with this false so a holder's own wait does not recurse. */
-  const activityShownOf = (p: Row, run: Row, presence: Presence, withHolder: boolean, t: number): Omit<MemberState, "badge"> => {
+  const activityShownOf = (p: Row, run: Row, withHolder: boolean, t: number): Omit<MemberState, "badge"> => {
     const member = String(p.seat);
     const a = activityOf(Number(run.id), member);
     // D35: waiting is the board's own fact, a wait this server holds for the member, whatever command ran it
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const link = presence(member);
-    // idea 1, rule 4: a lost link with the transcript still growing is told to the orchestrator as a liveness line
-    const linkLost = !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS;
-    const transcriptGrowing = link.transcriptGrewAt != null && t - link.transcriptGrewAt < LINK_LOST_MS;
-    const linkDown = linkLost && transcriptGrowing ? { linkDown: true as const } : {};
     // S40: a subagent that ends its turn on a background task of its own is busy on that task (D31)
-    if (a && Number(a.finished) === 1 && a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
-    if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)), ...linkDown };
+    if (a && Number(a.finished) === 1 && a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+    if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)) };
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       // idea 4 (D9): a member waiting on a lock names the lock and its holder
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
-      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since), ...linkDown };
+      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
       // board-split D31 (S37): a board wait over an un-notified background task of its own is busy on that task
-      if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min · background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
-      return { member, state: "waiting", doing: open, since: Number(a.open_since), ...linkDown };
+      if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min · background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+      return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
-    if (open) return { member, state: "busy", doing: open, since: Number(a.open_since), ...linkDown };
-    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since), ...linkDown };
+    if (open) return { member, state: "busy", doing: open, since: Number(a.open_since) };
+    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
     // U-F6 (D45, D49): the last call ended; it is not what the member is on, so working names none
-    return { member, state: "working", doing: null, since: progressAtOf(p, run, a), ...linkDown };
+    return { member, state: "working", doing: null, since: progressAtOf(p, run, a) };
   };
   /** board-split D54: when the member's latest task (`post --task`, D50) was delivered to it, ms; null with none delivered. */
   const taskDeliveredAtOf = (p: Row, run: Row): number | null => {
@@ -1393,26 +1399,41 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
     return r?.at == null ? null : Date.parse(String(r.at));
   };
-  /** board-split D49: a member's trouble from board facts alone, never its transcript, its `doing`, its own posts or a
-   *  background task. lost: its link lost past LINK_LOST_MS, or none since its join that long, and no wait held. stalled: it owes the open phase and its
-   *  last board call is older than the stall time, or it waits in a held wait owing past it (a lock wait apart: the
-   *  lock rule tells it). blocked is `badgeOf`'s, over this. */
-  const troubleOf = (p: Row, run: Row, presence: Presence, t: number, shownState: string = "waiting"): { badge: Badge; rule?: StallRule; owes?: string } | null => {
+  /** board-split D55: the newest sign of life of a member: a board call, a held wait (now, for its whole hold), its link's
+   *  heartbeat or drop, transcript growth its link sent, an open call's start; ms epoch, 0 with none. */
+  const signAtOf = (p: Row, run: Row, link: LinkFact, t: number): number => {
+    if (heldWaits.has(Number(p.id))) return t;
+    const a = activityOf(Number(run.id), String(p.seat));
+    const ms = (iso: unknown): number => (iso == null ? 0 : Date.parse(String(iso)));
+    const num = (v: unknown): number => (v == null ? 0 : Number(v));
+    return Math.max(ms(p.last_call), ms(p.board_call_at), num(link.seenAt), num(link.lostAt), num(a?.grew_at), a?.open_tool == null ? 0 : num(a.open_since));
+  };
+  /** board-split D55: when the board server came up, ms epoch; null when none recorded it (a board opened alone). */
+  const serverUpAt = (): number | null => {
+    const r = db.prepare("SELECT value FROM server_facts WHERE name = 'server_up_at'").get() as Row | undefined;
+    return r == null ? null : Number(r.value);
+  };
+  /** board-split D55: lost iff not parked/ended, link unseen >= LOST_MS, sign older than LOST_MS, no held wait, server
+   *  up >= LOST_MS, seated >= LOST_MS. A restart, a reconnect, a join or an unpark never raises it. */
+  const lostOf = (p: Row, run: Row, t: number): Badge | null => {
+    if (Number(p.parked) === 1 || p.ended_at != null || heldWaits.has(Number(p.id))) return null;
+    const link = (presenceOf.get(Number(run.id)) ?? noPresence)(String(p.seat));
+    if (link.connected) return null;
+    const old = (at: number | null): boolean => at == null || t - at >= LOST_MS;
+    const up = serverUpAt();
+    const seatedAt = Date.parse(seatedAtOf(p));
+    const linkSeenAt = Math.max(link.seenAt ?? 0, link.lostAt ?? 0) || null;
+    const signAt = signAtOf(p, run, link, t);
+    if (!old(linkSeenAt) || !old(signAt || null) || !old(up) || !old(seatedAt)) return null;
+    const since = Math.max(signAt, seatedAt, up ?? 0) + LOST_MS;
+    if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
+    return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
+  };
+  /** board-split D49, D54: stalled from board facts (w3's T39 replaces this body, D55): the pack's lock stall, else the
+   *  owing rules. blocked and lost are `memberView`'s, over this. */
+  const stalledOf = (p: Row, run: Row, t: number, shownState: string = "waiting"): { badge: Badge; rule?: StallRule; owes?: string } | null => {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const link = presence(member);
-    // board-split D53: lost needs all three past LINK_LOST_MS, on the seat's current member (its seating starts them
-    // afresh): no link, no board call, no transcript growth. A member still calling, or still writing, is never lost
-    const seatedAt = Date.parse(seatedAtOf(p));
-    const calledAt = Math.max(p.last_call == null ? 0 : Date.parse(String(p.last_call)), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt);
-    const quietLong = (since: number): boolean => t - since >= LINK_LOST_MS;
-    const transcriptStill = link.transcriptGrewAt == null || quietLong(link.transcriptGrewAt);
-    if (heldSince == null && !link.connected && quietLong(calledAt) && transcriptStill) {
-      const linkLostAt = link.lostAt != null && link.lostAt >= seatedAt ? link.lostAt : null;
-      if (linkLostAt != null && quietLong(linkLostAt)) return { badge: { name: "lost", reason: "its link was lost", since: Math.max(linkLostAt, calledAt) } };
-      // U-F3: a member whose link never came (for this seating) reads lost once LINK_LOST_MS has passed
-      if (linkLostAt == null) return { badge: { name: "lost", reason: "no link since its join", since: calledAt } };
-    }
     // board-split D52: the pack's own stall (the code pack's merge lock held too long), owing or not
     const packStall = String(p.seat) === ORCHESTRATOR ? null : (() => {
       const m = participantById(Number(p.id));
@@ -1444,10 +1465,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (t - lastSign < Number(run.silent_ms ?? SILENT_MS)) return null;
     return { badge: stalledBadge(`${shownState}, not done ${owes}, no activity for ${Math.round((t - lastSign) / 1000)} s`, lastSign), rule: "silent", owes };
   };
-  const stateOf = (p: Row, run: Row, t: number, presence: Presence, withHolder = true): MemberState => {
-    const activity = activityShownOf(p, run, presence, withHolder, t);
-    const trouble = troubleOf(p, run, presence, t, activity.state);
-    return { ...activity, badge: trouble?.badge ?? null, ...(trouble?.rule ? { rule: trouble.rule } : {}), ...(trouble?.owes ? { owes: trouble.owes } : {}) };
+  /** board-split D55: the one view of a member, from its facts at `t`: its state (D49's order), its badge (blocked > lost >
+   *  stalled; none parked or ended) and the badge's reason. The snapshot, roster, status and the tick all read it.
+   *  `withHolder`: a lock wait names its holder's state, read with this false so a holder's own wait does not recurse. */
+  const memberView = (p: Row, run: Row, t: number, opts: { withHolder?: boolean } = {}): MemberState => {
+    const activity = activityShownOf(p, run, opts.withHolder ?? true, t);
+    if (Number(p.parked) === 1 || p.ended_at != null) return { ...activity, badge: null };
+    const blocked = blockedOf(p, run);
+    if (blocked) return { ...activity, badge: blocked };
+    const lost = lostOf(p, run, t);
+    if (lost) return { ...activity, badge: lost };
+    const stalled = stalledOf(p, run, t, activity.state);
+    return { ...activity, badge: stalled?.badge ?? null, ...(stalled?.rule ? { rule: stalled.rule } : {}), ...(stalled?.owes ? { owes: stalled.owes } : {}) };
   };
   const stalledBadge = (reason: string, since: number | null): Badge => ({ name: "stalled", reason, since });
   const minutes = (ms: number): number => Math.round(ms / 60000);
@@ -1488,9 +1517,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const statesOf = (run: RunId, t: number): Map<string, MemberState> => {
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
     if (!r) return new Map();
-    const presence = presenceOf.get(run) ?? noPresence;
     const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run) as Row[];
-    return new Map(live.map((p) => [String(p.seat), stateOf(p, r, t, presence)]));
+    return new Map(live.map((p) => [String(p.seat), memberView(p, r, t)]));
   };
 
   // ── named locks (idea 4): store-wide, a port being the machine's ─────────────
@@ -1500,7 +1528,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const holderOf = (lock: Row, t: number): LockHolder => {
     const h = memberRowOf(Number(lock.participant));
     const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run)) as Row;
-    const st = stateOf(h, run, t, presenceOf.get(Number(h.run)) ?? noPresence, false);
+    const st = memberView(h, run, t, { withHolder: false });
     return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run.state === "open"), badge: st.badge?.name ?? null, doing: st.doing };
   };
   /** The lock participant `id` waits on, as its state's `doing`: `lock <name>, held by <Name> (<state>)`; null when it waits on none. */
@@ -1554,12 +1582,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const { member: _, ...state } = st;
     return {
       ...state,
-      badge: badgeOf(p, r, st),
+      badge: st.badge,
       tokens: a ? Number(a.tokens) : null,
       movedAt: a?.grew_at == null ? null : new Date(Number(a.grew_at)).toISOString(),
       // D38: the two ages, since its last progress and since its last sign of life
       progressAt: progressAtOf(p, r, a),
       aliveAt: link.connected ? t : link.lostAt,
+      // board-split D55: no link activity NO_TRANSCRIPT_MS after its seating: a card note, never an alarm
+      ...(!a && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS ? { note: "no transcript found: its state is presence only" } : {}),
     };
   };
   const agesOf = (l: Liveness | undefined): { progressAt: number | null; aliveAt: number | null } => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
@@ -2284,8 +2314,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         let progress = progressOf(run, r.phase == null ? null : String(r.phase));
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
-        // one tick's liveness and stalled lines go out as one wake each (several members at once: one line naming each)
-        const livenessLines: { body: string; linkDown?: string }[] = [];
+        // one tick's stalled lines go out as one wake (several members at once: one line naming each)
         const stalledNow: { st: MemberState; meta?: StalledMeta; due: boolean }[] = [];
         for (const st of others) {
           // D12, board-split D36: lost, once while it lasts, told in the store so a restarted server never tells it again
@@ -2304,26 +2333,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
             if (lostRow) releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
           }
-          // idea 1, rule 4: a lost link with the transcript still growing, once while it lasts
-          if (st.linkDown) {
-            if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'link-down')").run(run, st.member).changes) === 1)
-              livenessLines.push({ body: `${orch.plan}/${st.member}: link lost, transcript still growing: restart its link`, linkDown: `${orch.plan}/${st.member}` });
-          } else db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'link-down'").run(run, st.member);
           // D11: stalled per member, to the orchestrator alone; never while paused
           const a = activityOf(run, st.member);
           // board-split D49: the stalled check reads board facts, so a member whose link sent nothing is checked too
           const stalledAt = a?.stalled_at == null ? (stalledNoActivityAt.get(`${run}:${st.member}`) ?? null) : Number(a.stalled_at);
-          if (!a) {
-            // D33: no link activity 30 s after the join: named once to the orchestrator
-            const p = db.prepare("SELECT joined_at, seated_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
-            // S22: from the current member's join; a re-joined seat's first join made this fire at once
-            if (p && t - Date.parse(seatedAtOf(p)) >= NO_TRANSCRIPT_MS) {
-              const warned = db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'none')").run(run, st.member);
-              if (Number(warned.changes) === 1)
-                livenessLines.push({ body: `no transcript found for ${orch.plan}/${st.member}: its state is presence only` });
-            }
-          }
-          // board-split D49: stalled is troubleOf's badge alone (a background task or a long call is activity, never
+          // board-split D49: stalled is memberView's badge alone (a background task or a long call is activity, never
           // stalled); never while paused; a member whose link is down is lost, or about to be
           if (st.badge?.name !== "stalled" || r.paused != null || !presence(st.member).connected) {
             // F2: the working blink between two waits of one owing span keeps the stalled told; told once per episode (D54)
@@ -2338,17 +2352,6 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
           // board-split D54: one alarm per member per episode, never re-fired on a timer; the fact that ends it clears it
           stalledNow.push({ st, meta, due: stalledAt == null });
-        }
-        if (livenessLines.length === 1) {
-          const [l] = livenessLines;
-          raiseAlert(run, { body: l.linkDown ? `liveness ${l.body}` : l.body, event: EVENTS.liveness.name, ...(l.linkDown ? { meta: { linkDown: l.linkDown } } : {}) });
-        } else if (livenessLines.length > 1) {
-          const downs = livenessLines.flatMap((l) => (l.linkDown ? [l.linkDown] : []));
-          raiseAlert(run, {
-            body: `liveness ${orch.plan}: ${livenessLines.map((l) => l.body).join("; ")}`,
-            event: EVENTS.liveness.name,
-            ...(downs.length ? { meta: { linkDown: downs[0], linkDowns: downs } } : {}),
-          });
         }
         // D11: the stalled set is told when a member joins it: one line naming each
         // stalled member, its rule and its move (the members told within the 15 min ride along, their time renewed)
@@ -2495,7 +2498,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         files: JSON.parse(String(r.files)) as Declared[],
         held: registry.heldOf(db, Number(r.id)),
         everClaimed: registry.everClaimedOf(db, Number(r.id)),
-        badge: badgeOf(r, runRow(Number(r.run)), stateIn(Number(r.run), String(r.seat))),
+        badge: stateIn(Number(r.run), String(r.seat))?.badge ?? null,
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
@@ -2886,10 +2889,17 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
 
     recordLink(run, member, link) {
-      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run, member, link.connected ? 1 : 0, link.lostAt);
+      // board-split D55: a heartbeat alone (connected before and after) changes no view, so it moves no version
+      const before = db.prepare("SELECT connected, cause FROM member_links WHERE run = ? AND member = ?").get(run, member) as Row | undefined;
+      db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at, seen_at, cause) VALUES (?, ?, ?, ?, ?, ?)").run(run, member, link.connected ? 1 : 0, link.lostAt, link.seenAt ?? null, link.cause ?? null);
+      const heartbeatOnly = before != null && link.connected && Number(before.connected) === 1;
       // plan D55 (4): a link up or down is a fact; its write moves the version, so a reader redraws at once
-      const linkRun = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const linkRun = heartbeatOnly ? undefined : (db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined);
       if (linkRun) bump(String(linkRun.repo));
+    },
+
+    recordServerUp(at) {
+      db.prepare("INSERT OR REPLACE INTO server_facts (name, value) VALUES ('server_up_at', ?)").run(at);
     },
 
     savedLinks() {
@@ -2898,6 +2908,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         member: String(r.member),
         connected: Number(r.connected) === 1,
         lostAt: r.lost_at == null ? null : Number(r.lost_at),
+        seenAt: r.seen_at == null ? null : Number(r.seen_at),
+        cause: r.cause == null ? null : (String(r.cause) as LinkDropCause),
       }));
     },
 

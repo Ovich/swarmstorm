@@ -84,7 +84,7 @@ export const readTranscript: TranscriptReader = (file, from) => {
 
 /** Every member but the orchestrator `waiting`: an `idle` to the orchestrator at once, then again after each IDLE_MS while it holds (swarm-relay D34). */
 export const IDLE_MS = 15 * 60 * 1000;
-/** A member whose link has sent no activity this long after its join has no transcript: named once, its state presence only (D33). */
+/** A member whose link has sent no activity this long after its join has no transcript: a card note, never an alarm (board-split D55). */
 // SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
 export const NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1000;
 /** The default stall window of a run, in ms (board-split D54: 5 min): a member owing the open phase in a held wait this
@@ -94,8 +94,10 @@ export const STALL_MS_DEFAULT = 5 * 60 * 1000;
 export const READINGS_KEPT_MS = 10 * 60 * 1000;
 /** A tool call open longer than this keeps its member `busy`, and the orchestrator is told it may be hung (stalled, D46). */
 export const BUSY_MAX_MS = 15 * 60 * 1000;
-/** A member's link closed and not back this long: the member is `gone` (D12). */
-export const LINK_LOST_MS = 30 * 1000;
+/** board-split D55: lost needs its link unseen, its last sign, the server's start and its seating all this old. */
+export const LOST_MS = 60 * 1000;
+/** board-split D55: a link's heartbeat, a sign of life each time. */
+export const HEARTBEAT_MS = 5 * 1000;
 /** A member in turn (its last line not an ended turn) is quiet only after this with no line (idea 1, rule 1). */
 export const IN_TURN_MS = 120 * 1000;
 /** A member waiting on the board while it owes the open phase is `quiet · waiting, not done` once its owing span is this long (idea 1, rule 5). */

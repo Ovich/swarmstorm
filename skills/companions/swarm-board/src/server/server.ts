@@ -5,7 +5,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { openBoard, type Board, type Presence } from "../board/board.ts";
+import { openBoard, type Board, type LinkDropCause, type LinkFact, type Presence } from "../board/board.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLockHolder, serverLogFile, serverStartLock, serverStateFile, SERVER_STARTER_ENV, type Call, type Frame, type Hello, type RpcMethod, type ServerState } from "../wire.ts";
 
 /** A resent call is answered from this cache for this long (D4). */
@@ -24,7 +24,8 @@ const CLOSE_GRACE_MS = 500;
 const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 
 /** `subscribed`: a reader that sent `subscribe`, told `changed` after each commit (D23). */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; lastPong: number; subscribed: boolean };
+/** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause };
 /** A call running or answered, keyed by its id, whatever connection sent it. */
 type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
 
@@ -130,40 +131,33 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const serverSince = new Date().toISOString();
   const speakers = new Set<Speaker>();
   const calls = new Map<string, CallRecord>();
-  /** Per run, per member (its seat id): its link connected, else since when it is lost (D12). */
-  const links = new Map<number, Map<string, { connected: boolean; lostAt: number | null }>>();
+  /** Per run, per member (its seat id): its link's facts (board-split D55), mirrored in the store. */
+  const links = new Map<number, Map<string, LinkFact>>();
   const memberOf = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
   /** Sets a member's link here and in the store (D37). */
-  const keepLink = (run: number, member: string, link: { connected: boolean; lostAt: number | null }): void => {
-    const members = links.get(run) ?? new Map<string, { connected: boolean; lostAt: number | null }>();
+  const keepLink = (run: number, member: string, link: LinkFact): void => {
+    const members = links.get(run) ?? new Map<string, LinkFact>();
     links.set(run, members);
     members.set(member, link);
     logged("recordLink", () => board.recordLink(run, member, link));
   };
-  /** D7, G18: a join starts the seat's presence afresh: an earlier member's lost link and transcript never carry into
-   *  it (no 'link lost' the moment it re-joins); a link of it already connected stays. */
+  /** D7, G18: a join starts the seat's presence afresh: an earlier member's lost link never carries into it (no
+   *  'link lost' the moment it re-joins); a link of it already connected stays. */
   const freshPresence = ({ member }: { member: { run: number; seat: string } }): void => {
-    transcripts.get(member.run)?.delete(member.seat);
-    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null });
+    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null, seenAt: null, cause: null });
   };
-  const linked = (m: NonNullable<Speaker["member"]>, connected: boolean): void =>
-    keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null } : { connected: false, lostAt: now().getTime() });
-  /** Per run, per member: the transcript path its link last sent (idea 1, rule 4). */
-  const transcripts = new Map<number, Map<string, string>>();
-  /** A transcript's mtime, a stat and never a read; null when it is not a file. */
-  const grewAt = (file: string | undefined): number | null => {
-    if (!file) return null;
-    try {
-      const st = fs.statSync(file);
-      return st.isFile() ? st.mtimeMs : null;
-    } catch {
-      return null;
-    }
+  /** board-split D55: a link connected, or dropped for `cause`; a drop is its last sight. */
+  const linked = (m: NonNullable<Speaker["member"]>, connected: boolean, cause: LinkDropCause | null = null): void => {
+    const at = now().getTime();
+    keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null, seenAt: at, cause: null } : { connected: false, lostAt: at, seenAt: at, cause });
   };
-  const presenceIn = (run: number): Presence => (member) => {
-    const link = links.get(run)?.get(member) ?? { connected: false, lostAt: null };
-    return link.connected ? link : { ...link, transcriptGrewAt: grewAt(transcripts.get(run)?.get(member)) };
+  /** board-split D55: a heartbeat (every HEARTBEAT_MS) is the link's last sight, here and in the store. */
+  const beat = (m: NonNullable<Speaker["member"]>): void => {
+    const member = memberOf(m.name);
+    const link = links.get(m.run)?.get(member);
+    if (link?.connected) keepLink(m.run, member, { ...link, seenAt: now().getTime() });
   };
+  const presenceIn = (run: number): Presence => (member) => links.get(run)?.get(member) ?? { connected: false, lostAt: null };
   /** An upkeep or tick that throws is logged, and the server goes on (S21). */
   const logged = (what: string, fn: () => void): void => {
     try {
@@ -173,11 +167,12 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     }
   };
 
-  // D37: presence outlives a restart. A link the last server saw connected is lost from this start: back
-  // within LINK_LOST_MS it never counts, else its member is gone; a link already lost keeps its loss time.
+  // D37, board-split D55: presence outlives a restart. A link the last server saw connected dropped at this start
+  // (server-restart); a link already dropped keeps its facts. No member is lost within LOST_MS of the start.
   const startedAt = now().getTime();
-  for (const saved of board.savedLinks())
-    keepLink(saved.run, saved.member, saved.connected ? { connected: false, lostAt: startedAt } : { connected: false, lostAt: saved.lostAt });
+  logged("recordServerUp", () => board.recordServerUp(startedAt));
+  for (const { run: savedRun, member, ...saved } of board.savedLinks())
+    keepLink(savedRun, member, saved.connected ? { connected: false, lostAt: startedAt, seenAt: saved.seenAt ?? startedAt, cause: "server-restart" } : saved);
 
   const send = (s: Speaker, f: Frame): void => {
     if (s.socket.readyState === s.socket.OPEN) s.socket.send(encode(f));
@@ -271,11 +266,18 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
           try {
             fs.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}\n`);
           } catch {}
+          // board-split D55: a member's link refused for its version is a drop of that cause, unless another link of it lives
+          const refusedMember = f.member;
+          if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
         if (f.member) {
           for (const other of speakers)
-            if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) refuse(other, "superseded");
+            if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
+              // board-split D55: the old link's drop is the new one's take-over, never a loss
+              other.superseded = true;
+              refuse(other, "superseded");
+            }
           s.member = f.member;
           linked(f.member, true);
         }
@@ -285,15 +287,12 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       }
       if (f.type === "call") run(s, f);
       else if (f.type === "cancel") dropWait(f.id);
-      else if (f.type === "bye") socket.close();
+      else if (f.type === "bye") {
+        s.closedBy = "member-closed";
+        socket.close();
+      } else if (f.type === "beat" && s.member) beat(s.member);
       else if (f.type === "activity" && s.member) {
         const m = s.member;
-        const file = f.activity.transcript;
-        if (file) {
-          const members = transcripts.get(m.run) ?? new Map<string, string>();
-          transcripts.set(m.run, members);
-          members.set(memberOf(m.name), file);
-        }
         logged("activity", () => board.recordActivity(m.run, memberOf(m.name), f.activity, now()));
       } else if (f.type === "subscribe") s.subscribed = true;
     });
@@ -301,7 +300,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       speakers.delete(s);
       // its link lost, unless another link of the same member took over (superseded)
       const m = s.member;
-      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false);
+      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : (s.closedBy ?? "socket"));
       // D16: a wait whose link went is cancelled at once; resent after a reconnect, it runs again
       for (const [id, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(id);
     });

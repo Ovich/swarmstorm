@@ -36,7 +36,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   for (const seat of ["a", "b"]) quietMember(path.join(dir, "swarm.sqlite"), seat);
   const t = Date.now() + 60_000;
   const lost: Presence = () => ({ connected: false, lostAt: t - 120_000 });
-  board.recordActivity(run.id, "a", act({ grewAt: t, finished: true }), new Date(t));
+  board.recordActivity(run.id, "a", act({ grewAt: t - 120_000, finished: true }), new Date(t));
   board.livenessTick(run.id, new Date(t), lost);
   assert.equal(events("lost").length, 2, "both told lost");
   board.end(a);
@@ -44,7 +44,7 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   board.join({ run: run.id, seat: "a", doing: "again", files: [] });
   // the server starts the re-joined seat's presence afresh (server.ts freshPresence): no link yet, never lost
   const fresh: Presence = (m) => (m === "a" ? { connected: false, lostAt: null } : { connected: false, lostAt: t - 120_000 });
-  // a second after the re-join, on the store's own clock (U-F3: no link LINK_LOST_MS after a join is lost)
+  // a second after the re-join, on the store's own clock (U-F3: no link LOST_MS after a join is lost)
   const soon = new Date(Date.now() + 1000);
   board.livenessTick(run.id, soon, fresh);
   const st = board.memberStates(run.id, soon).find((s) => s.member === "a")!;

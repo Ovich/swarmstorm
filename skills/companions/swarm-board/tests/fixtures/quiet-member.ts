@@ -1,4 +1,4 @@
-// board-split D53: lost needs no board call and no seating within LINK_LOST_MS; a test that wants a member lost dates
+// board-split D53: lost needs no board call and no seating within LOST_MS; a test that wants a member lost dates
 // its seating and its last calls back, through the raw store, as a member that went silent long ago.
 import { openRawStore } from "./raw-store.ts";
 

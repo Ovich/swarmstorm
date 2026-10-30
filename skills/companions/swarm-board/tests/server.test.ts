@@ -397,7 +397,7 @@ test("after a restart, a member that had a link and has none 30 s later is gone,
   skew += 3_000;
   const gone = await within(c, 4000, (snap) => goneEvents(snap).find((e) => e.body.includes(s1.name)));
   assert.equal(gone.body, `lost ${s1.name}: its link was lost`);
-  // U-F3: S2 never had a link: lost once LINK_LOST_MS has passed since its join; a second restart tells neither again
+  // U-F3: S2 never had a link: lost once LOST_MS has passed since its join; a second restart tells neither again
   await restart();
   const again = await welcomed();
   skew += 60_000;

@@ -63,7 +63,7 @@ export const RPC_METHODS = [
 export type RpcMethod = (typeof RPC_METHODS)[number];
 
 /** The Board methods kept off the wire; with RPC_METHODS, every method of Board (checked below). */
-type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "markStaleRuns" | "recordLink" | "savedLinks";
+type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "markStaleRuns" | "recordLink" | "savedLinks" | "recordServerUp";
 // a Board method added later must be put on one side or the other: this fails to compile until it is
 type Unlisted = Exclude<keyof Board, RpcMethod | ServerOnly>;
 const everyMethodPlaced: [Unlisted] extends [never] ? true : Unlisted = true;
@@ -108,6 +108,8 @@ export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
+/** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
+export type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
 /** a reader (aiview) asks to hear every commit as `changed` (swarm-relay D23) */
 export type Subscribe = { type: "subscribe" };
@@ -118,9 +120,9 @@ export type Refused = { type: "refused"; reason: "secret" | "version" | "superse
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
 
-export type Frame = Hello | Call | Cancel | Activity | Bye | Subscribe | Welcome | Result | Refused | Changed;
+export type Frame = Hello | Call | Cancel | Activity | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
 
-const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
 
 /** One JSON text. */
 export function encode(f: Frame): string {

@@ -8,6 +8,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
+import { HEARTBEAT_MS } from "../board/liveness.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -206,6 +207,7 @@ export async function runLink(opts: {
     sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
     clearInterval(idleCheck);
     clearInterval(watch);
+    clearInterval(heartbeat);
     pipeServer?.close();
     for (const p of pipes) p.end(); // a result just written still reaches its CLI
     socket?.close();
@@ -345,6 +347,8 @@ export async function runLink(opts: {
   }, Math.min(60_000, Math.max(10, Math.floor(timing.idleMs / 4))));
 
   const watch = setInterval(watchTranscript, timing.watchEveryMs);
+  // board-split D55: a sign of life every HEARTBEAT_MS, whatever the agent does
+  const heartbeat = setInterval(() => sendUp({ type: "beat" }), HEARTBEAT_MS);
   if (state.version !== bundleVersion()) exit({ why: "server of another version" }); // D28: a server of another version would refuse it
   if (!exiting) {
     void connectionLoop();

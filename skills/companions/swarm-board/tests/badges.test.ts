@@ -104,15 +104,15 @@ test("golden owing (board-split D54): phase open, task posted later: no stall un
   await again;
 });
 
-test("golden lost (board-split D49): a link lost past LINK_LOST_MS with no wait held is lost, its state untouched; a finished transcript is not lost; recovered once the link is back", () => {
+test("golden lost (board-split D49): a link lost past LOST_MS with no wait held is lost, its state untouched; a finished transcript is not lost; recovered once the link is back", () => {
   const { run, orch } = setup();
   const base = Date.now();
   // the transcript says finished: no badge from it
-  board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
+  board.recordActivity(run.id, "a", act({ grewAt: base - 61_000, finished: true }), at(base, 0));
   board.livenessTick(run.id, at(base, 1), linked);
   assert.equal(badgeIn(run.id, "a", at(base, 1)).badge, null);
   assert.equal(eventsOf("lost").length, 0);
-  const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 31_000 } : { connected: true, lostAt: null });
+  const gone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });
   // D53: and no board call of its own since
   quietMember(path.join(dir, "swarm.sqlite"), "a", 60_000);
   board.livenessTick(run.id, at(base, 1), gone);

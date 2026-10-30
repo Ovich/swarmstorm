@@ -86,7 +86,7 @@ test("D3: a lock is released by end, by gone and by close, each telling its wait
       const base = Date.now();
       board.recordActivity(runA.id, "a2", act({ grewAt: base }), new Date(base));
       links.set("a2", { connected: false, lostAt: base });
-      board.livenessTick(runA.id, new Date(base + 31_000), presence);
+      board.livenessTick(runA.id, new Date(base + 61_000), presence);
     }],
   ] as const) {
     const holder = name === "app:one" ? a1 : a2;

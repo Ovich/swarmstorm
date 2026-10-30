@@ -196,11 +196,12 @@ test("D53: a member still calling the board, or a fresh seating, is never lost o
   void orch;
 });
 
-test("D53: a link-less member whose transcript still grows is not lost", () => {
+test("D53, D55: a link-less member whose transcript still grows, as its link last sent it, is not lost", () => {
   const { run } = setup();
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   const base = Date.now();
-  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000, transcriptGrewAt: base - 1000 } : linked(m)));
+  board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
+  board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", null);
 });
 

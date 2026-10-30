@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, progressText, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { LINK_LOST_MS } from "../src/board/liveness.ts";
+import { LOST_MS } from "../src/board/liveness.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -41,12 +41,12 @@ const setup = (seats = ["a", "b", "c", "d"]) => {
   for (const p of [...Object.values(members), orchestrator]) board.deliver(p);
   return { run, members, orchestrator };
 };
-/** `d`'s agent went without end: its link lost past LINK_LOST_MS, no wait held (board-split D49); the tick at `s` tells it lost. */
+/** `d`'s agent went without end: its link lost past LOST_MS, no wait held (board-split D49); the tick at `s` tells it lost. */
 const goneD = (run: number, base: number, s = 1) => {
   // D53: d's agent finished: no board call since, either
   quietMember(path.join(dir, "swarm.sqlite"), "d");
-  board.recordActivity(run, "d", act({ grewAt: base, finished: true }), at(base, 0));
-  links.set("d", { connected: false, lostAt: base + s * 1000 - LINK_LOST_MS });
+  board.recordActivity(run, "d", act({ grewAt: base + s * 1000 - LOST_MS, finished: true }), at(base, 0));
+  links.set("d", { connected: false, lostAt: base + s * 1000 - LOST_MS });
   board.livenessTick(run, at(base, s), presence);
 };
 
@@ -91,14 +91,14 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const { run, members } = setup();
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
-  board.livenessTick(run.id, at(base, 30), presence);
+  board.livenessTick(run.id, at(base, 60), presence);
   assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
-  board.livenessTick(run.id, at(base, 31), presence);
+  board.livenessTick(run.id, at(base, 61), presence);
   assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
-  board.livenessTick(run.id, at(base, 32), presence);
+  board.livenessTick(run.id, at(base, 62), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");
 });
 
