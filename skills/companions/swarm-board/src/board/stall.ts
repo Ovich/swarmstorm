@@ -35,13 +35,15 @@ export type StallFacts = {
 export type Stall = { rule: StallRule; since: number; fact: string };
 
 /** board-split D55: stalled ⇔ the lock held too long, owing or not; else owing the open phase with its task delivered
- *  and one of: a held wait past the stall window, a call or background task with no growth past the busy bound, or
+ *  and one of: a held wait past the stall window with no background task of its own open, a call or background task with no growth past the busy bound, or
  *  out of any wait with nothing open and no sign for the silent time. Lost, parked and ended are the caller's. */
 export function stalledOf(f: StallFacts, t: number): Stall | null {
   if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
-  if (f.inHeldWait) {
+  // board-split D55 amended (O-F3, D31): a background task of its own still open makes it busy, never held-wait
+  // stalled; that task's hang is the busy bound's below
+  if (f.inHeldWait && f.background == null) {
     // board-split D55 amended (U-F22): from the later of the floor and the waiting spell's start; the work before
     // the spell never counts as waiting, and a re-armed wait keeps its spell
     const from = Math.max(floor, f.waitSpellSince ?? floor);

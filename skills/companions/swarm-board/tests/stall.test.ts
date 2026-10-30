@@ -231,7 +231,17 @@ test("U-F27: an episode opens once its predicate held BADGE_CONFIRM_MS by time, 
   assert.equal(events("stalled").length, 1);
 });
 
-test("U-F28: the reason opens on the state the card shows: a held wait over a background task reads waiting", async () => {
+test("O-F3 (D55 amended): a held wait over its own open background task is busy, never held-wait stalled; the task's hang is BUSY_MAX's", () => {
+  const bg = { since: T0, grewAt: null };
+  const f = facts({ inHeldWait: true, shownState: "waiting", waitSpellSince: T0, background: bg });
+  assert.equal(stalledOf(f, T0 + STALL_MS_DEFAULT + 60_000), null);
+  assert.equal(stalledOf(f, T0 + BUSY_MAX_MS - 1), null);
+  assert.deepEqual(stalledOf(f, T0 + BUSY_MAX_MS), { rule: "call", since: T0, fact: "not done p1, a background task, no growth" });
+  // its output moving keeps it clear
+  assert.equal(stalledOf({ ...f, background: { since: T0, grewAt: T0 + 10 * MIN } }, T0 + BUSY_MAX_MS), null);
+});
+
+test("U-F28 + O-F3: a held wait over a background task reads waiting, and stalls only on the busy bound", async () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
@@ -242,12 +252,16 @@ test("U-F28: the reason opens on the state the card shows: a held wait over a ba
   const held = board.wait(a, { mentionsOnly: true, timeoutMs: 60_000, signal: stop.signal }).catch(() => null);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ openTool: { name: "Bash", target: "", since: base, boardWait: true }, background: { target: "npm test", since: base, outputGrewAt: null } }), new Date(base));
-  const at = base + STALL_MS_DEFAULT + 1000;
-  board.livenessTick(run.id, new Date(at), linked);
-  board.livenessTick(run.id, new Date(at + BADGE_CONFIRM_MS), linked);
+  const past = base + STALL_MS_DEFAULT + 1000;
+  board.livenessTick(run.id, new Date(past), linked);
+  board.livenessTick(run.id, new Date(past + BADGE_CONFIRM_MS), linked);
+  assert.ok(!badgeAt(run.id, past + BADGE_CONFIRM_MS));
   const card = board.snapshot(REPO).roster.find((m) => m.member === "g/a")!;
   assert.equal(card.state, "waiting");
-  assert.match(badgeAt(run.id, at + BADGE_CONFIRM_MS)!.reason, /^waiting, not done p1, in a wait /);
+  const hung = base + BUSY_MAX_MS + 1000;
+  board.livenessTick(run.id, new Date(hung), linked);
+  board.livenessTick(run.id, new Date(hung + BADGE_CONFIRM_MS), linked);
+  assert.match(badgeAt(run.id, hung + BADGE_CONFIRM_MS)!.reason, /^waiting, not done p1, a background task, no growth /);
   stop.abort();
   await held;
 });

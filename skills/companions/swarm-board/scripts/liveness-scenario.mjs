@@ -6,7 +6,8 @@
 // park then the agent ends, a rejoin by a fresh agent; and one control, an agent truly gone. After LOST_MS and two
 // ticks it checks that only the control is lost and that nobody is stalled. Then, on a second run with a 20 s stall
 // window (D55 amended, U-F22, scaled from 5 min; SWARM_STALL_FLOOR_MS lowers the 5 min floor for it): a member works 25 s after its task, then waits in re-armed waits:
-// not stalled 15 s into the waiting, stalled once past the window counted from the wait, never from the work.
+// not stalled 15 s into the waiting, stalled once past the window counted from the wait, never from the work; beside it
+// (O-F3, D55 amended) a member with its own background test open waits past the window too: busy, never stalled.
 //
 //   node scripts/liveness-scenario.mjs [--cli <path to swarm.mjs>] [--keep]
 //
@@ -70,7 +71,7 @@ const killLink = async (agent) => {
 };
 /** One transcript line, as Claude Code writes them; the link reads it as growth. */
 const write = (agent, line) => fs.appendFileSync(agent.transcript, JSON.stringify({ timestamp: new Date().toISOString(), ...line }) + "\n");
-const toolUse = (agent, id, name, input) => write(agent, { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }], usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } });
+const toolUse = (agent, id, name, input) => write(agent, { type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id, name, input }], stop_reason: "tool_use", usage: { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } });
 const toolResult = (agent, id, text) => write(agent, { type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: text }] } });
 
 const seats = ["restart", "drop", "tasked", "background", "parked", "rejoin", "gone"];
@@ -204,7 +205,7 @@ try {
   const SPELL_STALL_S = 20;
   const orch2 = agentFor("spl/orchestrator");
   const spellSeats = path.join(home, "spell-seats.json");
-  fs.writeFileSync(spellSeats, JSON.stringify([{ id: "spell", blockers: [] }]));
+  fs.writeFileSync(spellSeats, JSON.stringify([{ id: "spell", blockers: [] }, { id: "bgwait", blockers: [] }]));
   const opened2 = swarm(orch2, "open", "--kind", "brainstorm", "--group", "spl", "--title", "waiting spell", "--seats", spellSeats, "--stall-ms", String(SPELL_STALL_S * 1000));
   const run2 = opened2.split(/\r?\n/)[0].trim();
   const m2 = opened2.match(LINK_LINE);
@@ -219,9 +220,23 @@ try {
   startLink(spell);
   agents.spell = spell;
   orch.extra = orch2;
-  swarm(orch2, "phase", "p1", "go", "--for", "spell", "--as", orch2.member);
+  const bgWaiter = agentFor("spl/bgwait");
+  // its transcript holds its join, as the harness writes it, so its link locates it and reports its background task
+  toolUse(bgWaiter, "bgw-join", "Bash", { command: `node swarm.mjs join --run ${run2} --seat bgwait --doing tests --as ${bgWaiter.member}` });
+  const joinedBg = swarm(bgWaiter, "join", "--run", run2, "--seat", "bgwait", "--doing", "tests", "--as", bgWaiter.member);
+  toolResult(bgWaiter, "bgw-join", joinedBg);
+  const mb = joinedBg.match(LINK_LINE);
+  bgWaiter.linkArgv = [mb[1], ...mb[2].trim().split(" ")];
+  startLink(bgWaiter);
+  agents.bgWaiter = bgWaiter;
+  swarm(orch2, "phase", "p1", "go", "--for", "spell,bgwait", "--as", orch2.member);
   swarm(orch2, "post", "@spell your part of p1", "--task", "--as", orch2.member);
+  swarm(orch2, "post", "@bgwait your part of p1", "--task", "--as", orch2.member);
   swarm(spell, "deliver", "--as", spell.member);
+  swarm(bgWaiter, "deliver", "--as", bgWaiter.member);
+  // O-F3: its test suite runs in a background task of its own, never notified, while it waits on the board
+  toolUse(bgWaiter, "bgw-1", "Bash", { command: "npm test", run_in_background: true });
+  toolResult(bgWaiter, "bgw-1", "Command running in background with ID: bgw1. Output is being written to: x");
   log(`run ${run2}: spell works ${SPELL_STALL_S + 5} s after its task`);
   for (let s = 0; s < SPELL_STALL_S + 5; s += 5) {
     toolUse(spell, `sw-${s}`, "Read", { file_path: "z" });
@@ -230,15 +245,17 @@ try {
   }
   const waitStarted = Date.now();
   let waits = 0;
-  /** One foreground board wait, as the harness writes it, held `s` seconds, then a re-arm a second later. */
-  const heldWait = async (s) => {
+  /** One foreground board wait of `agent`, as the harness writes it, held `s` seconds, then a re-arm a second later. */
+  const heldWaitOf = async (agent, s) => {
     const id = `wait-${++waits}`;
-    toolUse(spell, id, "Bash", { command: `node swarm.mjs wait --mentions --as ${spell.member}` });
-    const done = new Promise((r) => spawn(process.execPath, [CLI, "wait", "--mentions", "--timeout", String(s * 1000), "--as", spell.member], { cwd: repo, env: spell.env, stdio: "ignore" }).once("exit", r));
+    toolUse(agent, id, "Bash", { command: `node swarm.mjs wait --mentions --as ${agent.member}` });
+    const done = new Promise((r) => spawn(process.execPath, [CLI, "wait", "--mentions", "--timeout", String(s * 1000), "--as", agent.member], { cwd: repo, env: agent.env, stdio: "ignore" }).once("exit", r));
     await done;
-    toolResult(spell, id, "");
+    toolResult(agent, id, "");
     await sleep(1);
   };
+  /** spell and bgwait wait side by side, each its own held wait of `s` seconds. */
+  const heldWait = (s) => Promise.all([heldWaitOf(spell, s), heldWaitOf(bgWaiter, s)]);
   const spellEntry = () => {
     const r = JSON.parse(swarm(orch2, "roster", "--json"));
     return (Array.isArray(r) ? r : r.members ?? r.roster ?? []).find((e) => e.name === spell.member);
@@ -253,6 +270,10 @@ try {
   const told2b = swarm(orch2, "deliver", "--as", orch2.member);
   const recoveredSpell = (told2b.match(/recovered spl\/spell/g) ?? []).length;
   // the card may read between two waits (the re-arm's second): the alarm and its absence of recovered are the facts
+  const bgEntry = JSON.parse(swarm(orch2, "roster", "--json"));
+  const bgCard = (Array.isArray(bgEntry) ? bgEntry : bgEntry.members ?? bgEntry.roster ?? []).find((e) => e.name === bgWaiter.member);
+  const toldStalledBg = (told2a + told2b).match(/stalled spl\/bgwait|spl\/bgwait \(owing\)/g)?.length ?? 0;
+  check(bgCard?.badge == null && toldStalledBg === 0, `bgwait (O-F3): waits past ${SPELL_STALL_S} s over its own background test, never stalled (${bgCard?.state}${bgCard?.badge ? `, ${bgCard.badge.name}: ${bgCard.badge.reason}` : ""}; told ${toldStalledBg})`);
   check(toldStalledSpell(told2b) === 1 && recoveredSpell === 0, `spell: re-armed waits past ${SPELL_STALL_S} s, told stalled once and never recovered (stalled ${toldStalledSpell(told2b)}, recovered ${recoveredSpell})`);
 } catch (e) {
   failures++;
