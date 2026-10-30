@@ -169,7 +169,7 @@ async function until(what: string, ok: () => boolean, ms = 3000) {
 }
 const callsOf = (frames: Frame[], id: string) => frames.filter((f) => f.type === "call" && f.id === id);
 const exitLink = async (server: { connections: StubConnection[] }, link: { done: Promise<LinkStop> }) => {
-  server.connections.at(-1)!.send({ type: "refused", reason: "shutdown" });
+  server.connections.at(-1)!.send({ type: "refused", reason: "closed" });
   await link.done;
 };
 
@@ -203,7 +203,7 @@ test("a wait pending on a pipe that closes is cancelled at the server (D16, D30)
   await exitLink(server, link);
 });
 
-for (const reason of ["secret", "version", "superseded", "shutdown", "closed"] as const) {
+for (const reason of ["version", "superseded", "closed"] as const) {
   test(`hello names the member with supersede; refused ${reason} makes the link exit (D15, D27, D30)`, async () => {
     const server = await stubServer((f, conn) => f.type === "hello" && conn.send({ type: "refused", reason }));
     servers.push(server);
@@ -215,6 +215,21 @@ for (const reason of ["secret", "version", "superseded", "shutdown", "closed"] a
     const hello = server.frames()[0];
     assert.equal(hello.type, "hello");
     assert.deepEqual(hello.type === "hello" && [hello.member, hello.supersede, hello.secret], [{ name: MEMBER, run: RUN }, true, "s3cret"]);
+  });
+}
+
+for (const reason of ["shutdown", "secret"] as const) {
+  test(`plan D56: refused ${reason} is a drop, never an exit: the link reconnects and says hello again`, async () => {
+    let refusedOnce = false;
+    const server = await stubServer((f, conn) => {
+      if (f.type !== "hello") return;
+      if (!refusedOnce) return void ((refusedOnce = true), conn.send({ type: "refused", reason }));
+      conn.send({ type: "welcome", version: f.version });
+    });
+    servers.push(server);
+    const link = startLink(dataHome(server.port));
+    await until("a second hello", () => server.frames().filter((f) => f.type === "hello").length >= 2);
+    await exitLink(server, link);
   });
 }
 

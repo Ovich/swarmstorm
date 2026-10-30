@@ -112,7 +112,8 @@ async function listenOnPipe(pipe: string, onPipe: (s: net.Socket) => void): Prom
   return second === "taken" ? null : second;
 }
 
-/** Runs one member's link until it exits: its member's `end`, a `refused`, no server for a minute
+/** Runs one member's link until it exits: its member's `end`, a `refused` (superseded, version, closed; never a
+ *  shutdown, D56), no server for a minute
  *  after a drop, idle, or its agent finished (D15). Meanwhile it finds its member's transcript and
  *  sends the board what the agent is doing (D8, D10). Resolves with why it stopped, said on stderr
  *  (D42); rejects only when no server state file appears at start. */
@@ -228,13 +229,21 @@ export async function runLink(opts: {
         socket?.close();
         return;
       }
+      // plan D56: a server shutting down (or one restarted with a new secret) is a drop: the loop re-reads the state and
+      // reconnects within its minute; only a superseding link, a version, or the run's close ends the link
+      if (f.reason === "shutdown" || f.reason === "secret") {
+        socket?.close();
+        return;
+      }
       exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
     } else if (f.type === "result") {
       const asked = unanswered.get(f.id);
       if (!asked) return; // already answered, or its pipe closed: never delivered twice
       unanswered.delete(f.id);
       if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
-      if (asked.call.method === "end" && f.ok) exit({ why: "ended" }, "ended");
+      // its own member's end only: the orchestrator ending another seat (`end --seat`) keeps its link
+      const endedName = (asked.call.args[0] as { name?: unknown } | undefined)?.name;
+      if (asked.call.method === "end" && f.ok && (endedName === undefined || endedName === opts.member)) exit({ why: "ended" }, "ended");
     }
   };
 
