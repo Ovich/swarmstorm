@@ -7,7 +7,8 @@ and from what the run left (its merges, the agreements and findings on the threa
 
 ## The post
 
-`$S post --file <path> --as <group>/orchestrator`, one task per post, to one worker, its id the
+`$S post --task --file <path> --as <group>/orchestrator`, one task per post, to one worker (the one member it
+mentions; `--task` records it as that member's task for the open phase, and its card reads `working on` it), its id the
 run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 
 ```markdown

@@ -101,18 +101,15 @@ waits: in the foreground; a seat runs on the plugin's
     `back` when you call again) and a run whose every member is silent (`stalled run <id>`). Members
     stalled at one tick come in one line, `stalled <group>: N members: …`, each with its rule,
     and the `next` line gives each member's move after its name. Told again when the set of
-    stalled members changes, or every 15 min for the same set, still one line. It names its rule, the member's last line and, on the line after it, the
-    move that rule asks for: `turn ended` (a post does not wake it), `in turn, no line for 2 min`
-    (its model may be hung), `background <cmd> silent 60 s` or `15 min` (a task it awaits),
-    `call open 15 min, may be long or hung`, `waiting, not done <phase>` (it waits while owing
-    its part). **Read that `next` line and make that move**: the rule says why the member is
-    stuck, so it alone knows what reaches it, a mention for a member in a wait, a direct message
-    for one whose turn ended. A member in a board wait over a task of its own it started reads
-    `busy <N> min · background <cmd>` and draws no alert, until the task has run 15 min.
-  - **`lost <member>`**: it carries the `lost` badge: its agent finished without `end`, or its
-    link has been lost 30 s and its transcript has not grown for 30 s; once. It is not running:
-    dispatch a fresh agent into its seat, or close the seat (*A lost member*). A member whose turn
-    ended on a background task of its own is busy on it, never lost: its harness resumes it.
+    stalled members changes, or every 15 min for the same set, still one line. A stall is a board fact alone, never its
+    transcript, its `doing` or its own posts: it owes the open phase and, past the stall time, either `waiting, not done
+    <phase>` (a wait the board holds, owing its part) or `not done <phase>, no board call for N s` (out of a wait; a post,
+    `doing` or endorsement is no board call). On the line after it, the move: **read that `next` line and make that
+    move**: a mention reaches a member in a wait, a direct message one whose turn ended. A background task or a long
+    call is activity on its card (`busy <N> min · background <cmd>`), never a stall.
+  - **`lost <member>`**: it carries the `lost` badge: its link has been lost 30 s and the board holds no wait of
+    it; once. A transcript that says finished is not lost. It is not running: dispatch a fresh agent into its seat, or
+    close the seat (*A lost member*).
   - **`recovered <member>`**: a member told `lost` reads present again, its badge cleared; once. Do not dispatch into
     its seat; if you already did, close one of the two.
   - **`idle`**: every member is `waiting` in a board wait; once when it begins, then again
@@ -187,9 +184,9 @@ it; dispatch a fresh worker, which joins the same seat; repost its open task.
 again. On `idle`, a member its peers may need (one holding files, a debate seat) keeps waiting;
 one only you need (a worker between tasks with nothing held, a verifier until its phase) you
 park: `$S park <seat> [--until <phase>] --as <group>/orchestrator`. It is told to end its turn
-without `end`; its card reads `dormant until <phase>`; it carries no badge and raises no `idle`,
-`stalled`, `lost` or `liveness`, and all-done does not wait for it. Its own next call lifts the park, as does
-`$S unpark <seat>`: resume it (`SendMessage`) with its next task, or, where the harness has no
+without `end`; its card reads `parked until <phase>`; it carries no badge and raises no `idle`,
+`stalled`, `lost` or `liveness`, its unread kept for its return, and all-done does not wait for it. Only you lift
+the park, its own calls never do: `$S unpark <seat>`, then resume it (`SendMessage`) with its next task, or, where the harness has no
 resume, dispatch a fresh agent that joins the same seat.
 
 ## Close

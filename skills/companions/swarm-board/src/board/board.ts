@@ -723,6 +723,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // board-split D48: `idle_ended`, the word the board uses; a store from before named it otherwise
   if (columnsOf("participants").includes("dormant") && !columnsOf("participants").includes("idle_ended")) db.exec("ALTER TABLE participants RENAME COLUMN dormant TO idle_ended"); // AGENTS EXCEPTION (rule D24): the old column's name, read once to rename it
   upkeep("participants", "idle_ended", "idle_ended INTEGER NOT NULL DEFAULT 0");
+  // board-split D48 (U-F2): the doing an older server wrote for a park or an unpark is no member's own: cleared
+  db.exec("UPDATE participants SET doing = '' WHERE doing = 'unparked' OR doing LIKE 'parked until %' OR doing LIKE 'dormant until %'"); // AGENTS EXCEPTION (rule D24): an older server's words, read once to clear them
   // board-split D30: parked by the orchestrator (`park <seat>`): no alert of any kind, out of all-done, until
   // its next call or `unpark`
   upkeep("participants", "parked", "parked INTEGER NOT NULL DEFAULT 0");
@@ -1314,10 +1316,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (!row || seat === ORCHESTRATOR) throw new Error(`${verb}: no live member in seat ${seat} of run ${fresh.run}`);
     if ((Number(row.parked) === 1) === parked) throw new Error(`${verb}: ${fresh.plan}/${seat} is ${parked ? "already parked" : "not parked"}`);
     return transaction(() => {
-      // D33, D34 (S35, S38): the park is the member's latest fact; a parked seat says until which phase it sleeps
+      // D34 (S38): a parked seat says until which phase it sleeps, in its state (`parkedUntil`); board-split D48 (U-F2):
+      // the member's `doing` is its own, never written by the board
       const until_ = until?.trim() || null;
-      const shown = parked ? (until_ ? `parked until ${until_}` : "parked until its next task") : "unparked";
-      db.prepare("UPDATE participants SET parked = ?, parked_until = ?, doing = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, shown, Number(row.id));
+      db.prepare("UPDATE participants SET parked = ?, parked_until = ? WHERE id = ?").run(parked ? 1 : 0, parked ? until_ : null, Number(row.id));
       return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
     });
   };
@@ -1377,7 +1379,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return { member, state: "working", doing: null, since: progressAtOf(p, run, a), ...linkDown };
   };
   /** board-split D49: a member's trouble from board facts alone, never its transcript, its `doing`, its own posts or a
-   *  background task. lost: its link lost past LINK_LOST_MS and no wait held. stalled: it owes the open phase and its
+   *  background task. lost: its link lost past LINK_LOST_MS, or none since its join that long, and no wait held. stalled: it owes the open phase and its
    *  last board call is older than the stall time, or it waits in a held wait owing past it (a lock wait apart: the
    *  lock rule tells it). blocked is `badgeOf`'s, over this. */
   const troubleOf = (p: Row, run: Row, presence: Presence, t: number): { badge: Badge; rule?: StallRule; owes?: string } | null => {
@@ -1386,6 +1388,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const link = presence(member);
     if (heldSince == null && !link.connected && link.lostAt != null && t - link.lostAt >= LINK_LOST_MS)
       return { badge: { name: "lost", reason: "its link was lost", since: link.lostAt } };
+    // U-F3: a member whose link never came reads lost once LINK_LOST_MS has passed since its join
+    const seatedAt = Date.parse(seatedAtOf(p));
+    if (heldSince == null && !link.connected && link.lostAt == null && t - seatedAt >= LINK_LOST_MS)
+      return { badge: { name: "lost", reason: "no link since its join", since: seatedAt } };
     const owes = owedNameOf(p, run);
     if (owes == null) return null;
     const stallMs = Number(run.stall_ms ?? STALL_MS_DEFAULT);

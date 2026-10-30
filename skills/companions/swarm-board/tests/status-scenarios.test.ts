@@ -9,6 +9,7 @@ import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { LINK_LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 
 const REPO = "/repos/status/.git";
 let dir: string;
@@ -117,6 +118,8 @@ test("4: unpark: back to its wait's state, its badges from board facts again", a
   const out = shown(run.id, "g/b");
   assert.notEqual(out.state, "parked");
   assert.equal(out.badge, null);
+  // the unpark is for it: read, then its wait is held
+  board.deliver(b);
   const held = waitOf(b, 400);
   assert.equal(shown(run.id, "g/b").state, "waiting");
   await held;
@@ -139,4 +142,23 @@ test("6: a parked member's own wait leaves it parked: only unpark lifts a park",
   await held;
   board.setDoing(b, "back");
   assert.deepEqual(shown(run.id, "g/b"), { state: "parked", badge: null });
+});
+
+test("U-F2: a park leaves the member's doing its own; a doing an older server wrote for a park or an unpark is cleared at open (board-split D48)", async () => {
+  const { b, orch } = setup();
+  board.setDoing(b, "reading the plan");
+  board.park(orch, "b", "p2");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "reading the plan");
+  board.unpark(orch, "b");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "reading the plan");
+  board.close();
+  const raw = openRawStore(path.join(dir, "swarm.sqlite"));
+  try {
+    raw.prepare("UPDATE participants SET doing = 'unparked' WHERE seat = 'b'").run();
+    raw.prepare("UPDATE participants SET doing = 'parked until its next task' WHERE seat = 'a'").run();
+  } finally {
+    raw.close();
+  }
+  board = await openBoard(path.join(dir, "swarm.sqlite"));
+  for (const m of ["g/a", "g/b"]) assert.equal(board.snapshot(REPO).roster.find((r) => r.member === m)!.doing, "", m);
 });
