@@ -4,56 +4,11 @@
 // carries no code figures and no claims (V-19).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { STALL_MS_DEFAULT } from "../../src/board/liveness.ts";
-import { stopServerOf } from "../fixtures/server.ts";
-import { normalise, pin } from "./golden.ts";
-
-const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "cli", "index.ts");
-
-type Scene = { home: string; repo: string; call: (...argv: string[]) => { status: number | null; text: string }; must: (...argv: string[]) => string; done: () => void };
-
-/** A scratch repository on `main`, its board home, and a seats file of `seats`. */
-function scene(seats: object[] = [{ id: "w1", blockers: [] }]): Scene & { seatsFile: string } {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-open-identity-"));
-  const repo = path.join(home, "repo");
-  fs.mkdirSync(repo);
-  const git = (...argv: string[]) => assert.equal(spawnSync("git", argv, { cwd: repo, encoding: "utf8" }).status, 0);
-  git("init", "-q", "-b", "main");
-  fs.writeFileSync(path.join(repo, "a.ts"), "export {};\n");
-  git("add", ".");
-  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "root");
-  const env = { ...process.env, SWARM_ROOT: home, SWARMSTORM_HOME: home, SWARM_NO_POLLER: "1" };
-  const call = (...argv: string[]) => {
-    const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: repo, encoding: "utf8", env });
-    return { status: r.status, text: normalise(`${r.stdout}${r.stderr}`, home, new Map()) };
-  };
-  const must = (...argv: string[]) => {
-    const r = call(...argv);
-    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.text}`);
-    return r.text;
-  };
-  const seatsFile = path.join(home, "seats.json");
-  fs.writeFileSync(seatsFile, JSON.stringify(seats));
-  return {
-    home,
-    repo,
-    seatsFile,
-    call,
-    must,
-    done: () => {
-      stopServerOf(home);
-      fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    },
-  };
-}
-
-const openTask = (s: ReturnType<typeof scene>, group: string, ...more: string[]) =>
-  s.call("open", "--kind", "task", "--group", group, "--title", group, "--seats", s.seatsFile, "--onto", "main", ...more);
+import { pin } from "./golden.ts";
+import { openTask, scratchRepo as scene } from "./scratch-repo.ts";
 
 test("V-1: a second open of a group open on the project is refused, naming the open run and how to go on", () => {
   const s = scene();
