@@ -201,7 +201,11 @@ test("a newer wait of a member, from another process, supersedes the older: it r
   const t0 = Date.now();
   const newer = other.wait(other.participant(s5.name)!, { timeoutMs: 10_000, mentionsOnly: true });
   assert.deepEqual(await older, { full: [], lines: [], superseded: true });
-  assert.ok(olderAt - t0 < 1000, `superseded after ${olderAt - t0} ms`);
+  // S31: another process hears the newer wait by the store's watch, at once; a watch event can be missed, and then the
+  // re-read every WAIT_POLL_MS (board.ts, 1000 ms) catches it: the promise is "at most one poll late", so the bound is
+  // one poll period plus the poll already in flight when the event was missed, never the poll period itself
+  const WAIT_POLL_MS = 1000;
+  assert.ok(olderAt - t0 < 2 * WAIT_POLL_MS, `superseded after ${olderAt - t0} ms`);
   board.post(s3, "@S5 rebase onto abc");
   const d = await newer;
   assert.equal(d.superseded, undefined);
