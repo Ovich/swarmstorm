@@ -232,7 +232,7 @@ function coreStateOf(m) {
   if (m.orchestrator) return "waiting";
   return m.inHeldWait ? "waiting" : "working";
 }
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
     "use strict";
@@ -271,6 +271,9 @@ var init_liveness = __esm({
     IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     STALL_MS_DEFAULT = 5 * 60 * 1e3;
+    BADGE_CONFIRM_MS = 10 * 1e3;
+    badgeConfirmMs = () => Number(process.env.SWARM_BADGE_CONFIRM_MS) || BADGE_CONFIRM_MS;
+    stallMsFloor = () => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
     LOST_MS = 60 * 1e3;
@@ -2786,12 +2789,19 @@ function formatSubscriptions(subs) {
 function mentions(m, me) {
   return m.mentions.includes(me.name) || m.mentions.includes(`${me.plan}/*`);
 }
+function alarmAbout(m, me) {
+  const e = eventOf(m);
+  if (!e || !MEMBER_ALARMS.has(e)) return false;
+  const body = ` ${m.body}`;
+  return body.includes(` ${me.name}:`) || body.includes(` ${me.name} (`);
+}
 function wakes(m, me, subs) {
   if (m.from === me.name && !(m.event && isEvent(m.event) && eventDef(m.event).toAuthor)) return false;
   if (mentions(m, me)) return true;
   const e = eventOf(m);
   if (!e) return false;
   if (eventDef(e).always) return true;
+  if (alarmAbout(m, me)) return false;
   return subs.some((s) => !s.carry && (s.event === e || e === "joined" && s.event === "composition") && (s.scope === "any" || m.run === me.run));
 }
 function carries(m, me, subs) {
@@ -2799,10 +2809,11 @@ function carries(m, me, subs) {
   if (wakes(m, me, subs)) return false;
   const e = eventOf(m);
   if (!e) return false;
+  if (alarmAbout(m, me)) return false;
   if ((eventDef(e).ambient || e === "joined") && m.run === me.run) return true;
   return subs.some((s) => s.carry === true && s.event === e && (s.scope === "any" || m.run === me.run));
 }
-var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, all, allEvents, isEvent, RENAMED_EVENTS, currentEventName, eventNames, eventDef;
+var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, all, allEvents, isEvent, RENAMED_EVENTS, currentEventName, eventNames, eventDef, MEMBER_ALARMS;
 var init_events2 = __esm({
   "src/board/events.ts"() {
     "use strict";
@@ -2868,6 +2879,7 @@ var init_events2 = __esm({
     currentEventName = (s) => RENAMED_EVENTS[s] ?? s;
     eventNames = () => Object.keys(allEvents());
     eventDef = (name) => allEvents()[name];
+    MEMBER_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "recovered", "liveness"]);
   }
 });
 
@@ -3184,6 +3196,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("messages", "task_phase", "task_phase TEXT");
   upkeep("deliveries", "at", "at TEXT");
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
+  upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
   upkeep("seats", "on_events", "on_events TEXT");
   upkeep("seats", "busy_max", "busy_max INTEGER");
   upkeep("member_activity", "open_shell", "open_shell INTEGER NOT NULL DEFAULT 0");
@@ -3706,21 +3719,19 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
     const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
     if (spell) waitSpells.set(Number(p.id), spell);
-    const rearming = !inHeldWait && spell != null && t - spell.inAt < WAIT_SPELL_BREAK_MS && a?.bg_target == null && (!ownCallOpen || Number(a.open_wait) === 1);
-    const inWaitSpell = inHeldWait || rearming;
     const stall = stalledOf(
       {
         shownState,
         owes,
         taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run3),
         clockFloorAt: Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at))),
-        inHeldWait: inWaitSpell,
-        waitSpellSince: inWaitSpell ? spell.since : null,
+        inHeldWait,
+        waitSpellSince: inHeldWait ? spell.since : null,
         openCallSince: ownCallOpen ? Number(a.open_since) : null,
         background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
         transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
         signAt: Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt),
-        stallMs: Number(run3.stall_ms ?? STALL_MS_DEFAULT),
+        stallMs: Math.max(Number(run3.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor()),
         silentMs: Number(run3.silent_ms ?? SILENT_MS),
         busyMaxMs: seatBusyMaxOf(Number(run3.id), member) ?? BUSY_MAX_MS,
         lockStall
@@ -3733,20 +3744,33 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const episodeOpenOf = (run3, member, badge) => db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run3, member, badge) != null;
   const episodeStep = (run3, member, badge, on, t, silent = false) => {
-    const row = db.prepare("SELECT rowid AS id, pending_at, opened_at FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND closed_at IS NULL").get(run3, member, badge);
+    const row = db.prepare("SELECT rowid AS id, pending_at, opened_at, clearing_at FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND closed_at IS NULL").get(run3, member, badge);
     if (on) {
       if (!row) {
         db.prepare("INSERT INTO badge_episodes (run, member, badge, pending_at) VALUES (?, ?, ?, ?)").run(run3, member, badge, t);
         return null;
       }
-      if (row.opened_at != null || Number(row.pending_at) >= t) return null;
-      db.prepare("UPDATE badge_episodes SET opened_at = ? WHERE rowid = ?").run(t, Number(row.id));
+      if (row.opened_at != null) {
+        if (row.clearing_at != null) db.prepare("UPDATE badge_episodes SET clearing_at = NULL WHERE rowid = ?").run(Number(row.id));
+        return null;
+      }
+      if (row.clearing_at != null) db.prepare("UPDATE badge_episodes SET clearing_at = NULL WHERE rowid = ?").run(Number(row.id));
+      if (t - Number(row.pending_at) < badgeConfirmMs()) return null;
+      db.prepare("UPDATE badge_episodes SET opened_at = ?, clearing_at = NULL WHERE rowid = ?").run(t, Number(row.id));
       return "opened";
     }
     if (!row) return null;
     if (row.opened_at == null) {
-      db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(row.id));
+      if (row.clearing_at == null) db.prepare("UPDATE badge_episodes SET clearing_at = ? WHERE rowid = ?").run(t, Number(row.id));
+      else if (t - Number(row.clearing_at) >= badgeConfirmMs()) db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(row.id));
       return null;
+    }
+    if (!silent) {
+      if (row.clearing_at == null) {
+        db.prepare("UPDATE badge_episodes SET clearing_at = ? WHERE rowid = ?").run(t, Number(row.id));
+        return null;
+      }
+      if (t - Number(row.clearing_at) < badgeConfirmMs()) return null;
     }
     db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE rowid = ?").run(t, Number(row.id));
     return silent ? null : "closed";
@@ -3767,7 +3791,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const shows = (name) => opts.predicate === true || episodeOpenOf(Number(run3.id), String(p.seat), name);
     const lost = lostOf(p, run3, t);
     if (lost) return { ...activity, badge: shows("lost") ? lost : null };
-    const stalledRaw = stalledBadgeOf(p, run3, t, activity.state);
+    const stalledRaw = stalledBadgeOf(p, run3, t, memberStateOf(p, run3.state === "open"));
     const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
     return { ...activity, badge: stalled?.badge ?? null, ...stalled?.rule ? { rule: stalled.rule } : {}, ...stalled?.owes ? { owes: stalled.owes } : {} };
   };
@@ -4069,11 +4093,12 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return transaction(() => {
         let entry2 = "new";
         const id = transaction(() => {
-          const existing = db.prepare("SELECT id, nick, ended_at FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
+          const existing = db.prepare("SELECT id, nick, ended_at, subs FROM participants WHERE run = ? AND seat = ?").get(run3, seat);
           const seatRow = db.prepare("SELECT on_events FROM seats WHERE run = ? AND id = ?").get(run3, seat);
           if (!seatRow && !existing) throw new Error(`seat ${seat} is not declared in run ${run3}: declare it first with \`seat add ${seat}\``);
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
-          const subs = JSON.stringify(on ?? seatOn ?? profile.defaults.member);
+          const kept = existing?.subs == null ? [] : JSON.parse(String(existing.subs));
+          const subs = on != null ? JSON.stringify(on) : kept.length > 0 ? String(existing.subs) : JSON.stringify(seatOn ?? profile.defaults.member);
           const fresh = () => unusedNick(String(r.repo));
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
@@ -8976,6 +9001,7 @@ var init_server = __esm({
 init_proc();
 init_board();
 init_kinds();
+init_liveness();
 init_events2();
 init_home();
 import fs13 from "node:fs";
@@ -9620,6 +9646,8 @@ var WORDING = {
   done: (cli, phase, as) => `${cli} done ${phase} --as ${as}`,
   thread: (cli, as) => `${cli} thread --as ${as}`,
   end: (cli, as) => `${cli} end --as ${as}`,
+  /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
+  stallClamped: (askedMs, floorMs) => `--stall-ms ${askedMs} is under the ${floorMs} ms floor of the stall window: the run uses ${floorMs}`,
   // ── the run's page ──
   /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
    *  an older aiview's `/board` takes it as its hash */
@@ -10466,6 +10494,7 @@ ${verbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === void 0 ? void 0 : Number(rawStall);
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
+      const stallClamped = stallMs !== void 0 && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
       refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       if (protocol !== void 0 && !/^[a-z0-9][a-z0-9-]*$/.test(protocol)) fail(`--protocol takes a name in lower case, digits and dashes (build-verify), got ${protocol}`);
@@ -10482,7 +10511,7 @@ ${verbHelp()}`);
         title: need("--title"),
         link: args.flag("--link") ?? null,
         seats: readSeats(seatsFile),
-        ...stallMs !== void 0 ? { stallMs } : {},
+        ...stallMs !== void 0 ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {},
         ...protocol !== void 0 ? { protocol } : {},
         // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
         base: args.flag("--onto") ?? baseAt(process.cwd())
@@ -10490,7 +10519,7 @@ ${verbHelp()}`);
       const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
       const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
-      const lines = (url) => [String(run3.id), url, link, next].filter((l) => l !== null).join("\n");
+      const lines = (url) => [String(run3.id), stallClamped, url, link, next].filter((l) => l !== null).join("\n");
       if (!doc.registered) {
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
         emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, ...next ? { next } : {} }, lines(null));
