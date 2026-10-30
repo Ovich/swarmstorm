@@ -122,10 +122,12 @@ else process.exit(1);
 const aiviewCalls = (log: string): string[][] => fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as string[]);
 const boardRepos = (boards: string): string[] => (JSON.parse(fs.readFileSync(boards, "utf8")) as Record<string, string[]>).p ?? [];
 
+/** Each open names a group of its own: a group names one open run per project (board-split#D58). */
+let openedGroups = 0;
 const openWith = (aiview: string, cwd = repo) => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
-  return spawnSync(process.execPath, [CLI, "open", "--plan", "review-tool", "--title", "A plan", "--seats", slices, "--json"], {
+  return spawnSync(process.execPath, [CLI, "open", "--plan", `review-tool-${++openedGroups}`, "--title", "A plan", "--seats", slices, "--json"], {
     cwd,
     encoding: "utf8",
     env: { ...env(), SWARM_AIVIEW: aiview },
@@ -184,8 +186,12 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   const slices = path.join(toolRoot, "s.json");
   const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--seats", slices);
   assert.equal(text.status, 0, text.stderr);
-  // idea 3: the run id, the link line, then the next step, last
-  assert.match(text.stdout, /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\nnext: no protocol[^\n]*\n$/, "the run id, the link line, the next step");
+  // idea 3: the run id, the link line, how each seat joins (V-16), the checked-out target's detach (V-20), then the next step, last
+  assert.match(
+    text.stdout,
+    /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\neach seat joins [^\n]*\n[^\n]* is checked out at [^\n]*switch --detach\nnext: no protocol[^\n]*\n$/,
+    "the run id, the link line, the seats' join, the detach, the next step",
+  );
   const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
   try {
     assert.deepEqual(board.runs().map((x) => x.id).sort(), [out.run, Number(text.stdout.split("\n")[0])].sort());

@@ -1,0 +1,3 @@
+exit 0
+each seat joins with this, run first by its member, <seat> one of w1, v1: node <cli> join --run 1 --seat <seat> --doing "waiting for a task" --as vt/<seat>
+main is checked out at <home>/repo: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: git -C <home>/repo switch --detach

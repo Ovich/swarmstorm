@@ -203,6 +203,13 @@ export const WORDING = {
   phaseStillOwed: (previous: string, members: string[]) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
   /** V-18: aiview's project add, with the same env prefix as every other command line */
   aiviewProjectAdd: (envPrefix: string, launcher: string, cwd: string): Command => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
+  // ── T51 (board-split#D58): open and the run's identity ──
+  /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
+  groupAlreadyOpen: (group: string, run: number, cli: Command) =>
+    `open: refused: group ${group} already has run ${run} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run}), or open under another --group`,
+  /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
+  seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
+  seatJoin: (cli: Command, run: number, group: string, doing: string): Command => `${cli} join --run ${run} --seat <seat> --doing ${doing} --as ${group}/<seat>`,
 } as const;
 
 /** `run 7 board-split (architect, tech-lead) and run 8 shop (architect)`: each run holding decision authority, its roles. */

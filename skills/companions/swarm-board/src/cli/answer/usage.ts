@@ -2,6 +2,7 @@
 // help is the code pack's, in code-wording.ts. `cli` is this CLI as a member runs it.
 import { CODE_IN_CORE_HELP } from "./code-wording.ts";
 import type { Command } from "./wording.ts";
+import { STALL_MS_DEFAULT } from "../../board/liveness.ts";
 
 /** The core verbs' help; `events` the board's event names. */
 export const coreUsage = (cli: Command, events: string[]): string =>
@@ -9,7 +10,7 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
     "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
     CODE_IN_CORE_HELP.ontoLine,
-    "          # --stall-ms: no counter moved this long posts stalled, default 60000; ends on the command that starts your link",
+    `          # --stall-ms: no counter moved this long posts stalled, default and floor ${STALL_MS_DEFAULT}; ends on the command that starts your link`,
     "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
     '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", …], "busyMax"?: <ms, its bound on a non-shell call; a verifier\'s 300000>}]',
     "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",

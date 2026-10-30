@@ -217,7 +217,7 @@ async function caller(): Promise<Participant> {
   const as = args.flag("--as");
   const wt = as ? null : worktreeOf(process.cwd());
   const p = as
-    ? ((await board.participant(as)) ?? fail(`unknown member ${as}`))
+    ? ((await board.participant(as, placeRepoOf(process.cwd()))) ?? fail(`unknown member ${as}`))
     : ((wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
   const direct = board;
   if (p.place && fs.existsSync(p.place)) callerWorktree = p.place;
@@ -725,8 +725,12 @@ async function main(): Promise<void> {
 ` +
             `  ${WORDING.aiviewProjectAdd(HOME_OVERRIDE ? `SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))} ` : "", shellWord(fwd(home.launcher)), shellWord(fwd(process.cwd())))}`,
         );
+      const openRepo = repoOf(process.cwd());
+      // board-split#D58: one open run per group on a project, said before anything opens
+      const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
+      if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
       const run = await board.openRun({
-        repo: repoOf(process.cwd()),
+        repo: openRepo,
         kind,
         group,
         title: need("--title"),
@@ -746,7 +750,13 @@ async function main(): Promise<void> {
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
       // board-split D28: this run and another open one on the project hold decision authority: the decisions run's line
       const decisions = decisionsLines(await board.runs(), self().join(" "), writeDecisionsSeats, run.id);
-      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, ...decisions, next].filter((l): l is string => l !== null).join("\n");
+      // V-16 (AGENTS rule 10): how each declared seat joins, runnable as printed
+      const seatIds = run.seats.map((s) => s.id);
+      const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run.id, shellWord(run.group), shellWord("waiting for a task"))) : null;
+      // board-split#D66 (V-20): a run of workers whose target branch is checked out: every fast-forward into it would be refused
+      const holding = profileOf(run.kind).member === "worker" && run.base ? worktreeHolding(process.cwd(), run.base) : null;
+      const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run.base!, holding, CODE_WORDING.detach(shellWord(holding))) : null;
+      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, seatsJoin, detachLine, ...decisions, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
@@ -1223,7 +1233,7 @@ async function main(): Promise<void> {
         process.exitCode = 5;
         // G36: the member whose worktree holds it, so the orchestrator knows whom to ask
         const holder = (await board.roster(p.repo)).find((r) => r.worktree && path.resolve(r.worktree).toLowerCase() === path.resolve(holding).toLowerCase());
-        const line = `${onto} is checked out at ${holding}${holder ? ` (${holder.name}'s worktree)` : ""}: ask the orchestrator to detach it, then run merge-lock again`;
+        const line = CODE_WORDING.ontoCheckedOutAtMerge(onto, holding, holder?.name ?? null, CODE_WORDING.detach(shellWord(holding)));
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }

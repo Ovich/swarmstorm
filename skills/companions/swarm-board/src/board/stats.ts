@@ -168,7 +168,8 @@ function timeline(joined: number, over: number, calls: number[], exact: Span[], 
   return out;
 }
 
-/** The packs whose figures `swarm stats` carries: every registered pack's, on every run, as before the split. */
+/** The packs whose totals and files `swarm stats` carries: every registered pack's; a run's own figures are its kind's
+ *  pack's alone (registry.statsFiguresFor, V-19). */
 const statsPacks = (): StatsFigures[] => registry.statsFigures();
 
 /** The run's figures computed from the raw rows; `now` ends an open run and a member still there. Reads, never writes. */
@@ -188,7 +189,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   const nameOf = (p: Row): string => `${r.plan}/${p.seat}`;
   const messages = db.prepare(`SELECT * FROM messages WHERE run = ? OR (run IS NULL AND author IN (${marks})) ORDER BY seq`).all(id, ...ids) as Row[];
   const orchestrators = new Set(people.filter((p) => String(p.seat) === ORCHESTRATOR).map((p) => Number(p.id)));
-  const packRuns = statsPacks().map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
+  const packRuns = registry.statsFiguresFor(kind).map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
 
   const members: MemberStats[] = people.map((p) => {
     const pid = Number(p.id);

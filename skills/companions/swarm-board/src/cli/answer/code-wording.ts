@@ -10,7 +10,7 @@ export const CODE_IN_CORE_HELP = {
   ontoLine: "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
   pauseRefuses: "claim and merge-lock refused",
   closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
-  joinMakes: "on a code run (plan, task) it makes your worktree under the data home, branch swarm/<run>-<group>/<seat>, or reuses it",
+  joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at your first claim or merge-lock, or reuses it",
   onExample: "agreement,any:merged",
   pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   withoutAs: "the member joined from this worktree",
@@ -44,6 +44,12 @@ export const CODE_WORDING = {
     `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward, then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
+  /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
+  detach: (worktree: string): Command => `git -C ${worktree} switch --detach`,
+  ontoCheckedOutAtOpen: (onto: string, worktree: string, detach: Command) =>
+    `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
+  ontoCheckedOutAtMerge: (onto: string, worktree: string, holder: string | null, detach: Command) =>
+    `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: ${wait} for its merged event`,
 
   // S32: said at the grant, before the rebase and the report, never after the report is written

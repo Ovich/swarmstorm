@@ -450,7 +450,8 @@ export interface Board {
   };
   /** The run's composition now (D3): the orchestrator, then every declared seat in order. */
   composition(run: RunId): Composition;
-  participant(name: string): Participant | null; // "<plan>/<seat>" or "<plan>/orchestrator"
+  /** "<plan>/<seat>" or "<plan>/orchestrator"; `repo`: the caller's project, whose run of that group is taken first (D58). */
+  participant(name: string, repo?: string | null): Participant | null;
   /** Who is calling (D28): the one live member whose place holds `place` (the caller's folder). */
   identify(who: { place?: string }): Participant | null;
   setDoing(p: Participant, doing: string): void;
@@ -524,6 +525,11 @@ const PHASE_NAME = /^[\w.-]+$/;
  *  A correlated subquery over a seats row aliased `s`. */
 const SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
+/** V-16: the closed run a seat stands for: a run of the same project whose group is the seat's id (the decisions run
+ *  seats one per authority run, named for its group), when the latest of that group is closed; else NULL. A correlated
+ *  subquery over a seats row aliased `s`. */
+const SEAT_STOOD_FOR_CLOSED_SQL = `(SELECT CASE WHEN o.state = 'closed' THEN o.id END FROM runs o
+  WHERE o.repo = (SELECT repo FROM runs WHERE id = s.run) AND o.plan = s.id AND o.id != s.run ORDER BY (o.state = 'open') DESC, o.id DESC LIMIT 1)`;
 /** The events a member receives though it is their author: the board posts them in its name. */
 const TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
 const ORCHESTRATOR = "orchestrator";
@@ -897,13 +903,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     title: String(r.title),
     link: r.link == null ? null : String(r.link),
     state: r.state === "closed" ? "closed" : "open",
-    seats: (db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)) as Row[]).map((s) => ({
+    seats: (db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived, ${SEAT_STOOD_FOR_CLOSED_SQL} AS stood_for FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(Number(r.id)) as Row[]).map((s) => ({
       id: String(s.id),
       ...(s.role == null ? {} : { role: String(s.role) }),
       ...(s.area == null ? {} : { area: String(s.area) }),
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
-      state: String(s.derived) as SeatState,
+      state: (s.stood_for != null ? "done" : String(s.derived)) as SeatState,
       ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
@@ -1242,13 +1248,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   /** The run's composition (D3, D6): the orchestrator first, then every declared seat in order. */
   const compositionOf = (run: RunId): Composition => {
-    const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run) as Row[];
+    const seats = db.prepare(`SELECT s.*, ${SEAT_STOOD_FOR_CLOSED_SQL} AS stood_for FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(run) as Row[];
     const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run) as Row[];
     const goneSet = new Set((db.prepare("SELECT member FROM badge_episodes WHERE run = ? AND badge = 'lost' AND opened_at IS NOT NULL AND closed_at IS NULL").all(run) as Row[]).map((x) => String(x.member)));
     const plan = String(runRow(run).plan);
     const showRole = new Set(seats.map((s) => (s.role == null ? "" : String(s.role)))).size > 1;
     const entry = (seat: string, s?: Row): CompositionEntry => {
       const p = people.find((x) => String(x.seat) === seat);
+      // V-16: a seat standing for a run that has closed is ended with it, never read as owing
+      const standsForClosed = s?.stood_for != null;
       return {
         seat,
         member: p ? `${plan}/${seat}` : null,
@@ -1256,7 +1264,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         ...(s?.role == null ? {} : { role: String(s.role) }),
         ...(s?.area == null ? {} : { area: String(s.area) }),
         // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined",
+        state: standsForClosed || p?.ended_at != null ? "ended" : !p ? "not joined" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined",
       };
     };
     const entries = [entry(ORCHESTRATOR), ...seats.map((s) => entry(String(s.id), s))];
@@ -1781,6 +1789,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const roles = [...new Set(authority)];
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) throw new Error(`the stall threshold takes a positive whole number of ms, got ${stallMs}`);
       const id = transaction(() => {
+        // board-split#D58: a group names one open run per project, so `--as <group>/<seat>` names one member
+        const sameGroup = db.prepare("SELECT id FROM runs WHERE repo = ? AND plan = ? AND state = 'open'").get(repo, group) as Row | undefined;
+        if (sameGroup) throw new Error(`group ${group} already has run ${sameGroup.id} open on this project`);
         // the group is stored as the plan (D44)
         const r = db
           .prepare("INSERT INTO runs (repo, kind, plan, title, link, opened_at, stall_ms, protocol, authority, base) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -2049,15 +2060,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return compositionOf(run);
     },
 
-    participant(name) {
+    participant(name, repo = null) {
       const i = name.lastIndexOf("/");
       if (i <= 0) return null;
       const plan = name.slice(0, i);
       const seat = name.slice(i + 1);
-      // the latest run of that plan holding that seat, an open one first
+      // board-split#D58: the caller's project first, then its one open run of that group, then the latest closed one
       const r = db
-        .prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.state = 'open') DESC, r.id DESC LIMIT 1`)
-        .get(plan, seat) as Row | undefined;
+        .prepare(`${PARTICIPANT_SQL} WHERE r.plan = ? AND p.seat = ? ORDER BY (r.repo = ?) DESC, (r.state = 'open') DESC, r.id DESC LIMIT 1`)
+        .get(plan, seat, repo ?? "") as Row | undefined;
       return r ? toParticipant(r) : null;
     },
 

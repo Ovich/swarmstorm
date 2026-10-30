@@ -261,8 +261,15 @@ describe("claimRows (D7)", () => {
       { path: "a.ts", holders: ["alpha/S1", "beta/S2"], shared: true },
       { path: "b.ts", holders: ["beta/S2"], shared: false },
     ]);
-    expect(claimRows(snap, 1).map((r) => r.path)).toEqual(["a.ts"]);
+    expect(claimRows(snap, 1)!.map((r) => r.path)).toEqual(["a.ts"]);
     expect(claimRows(snap, 99)).toEqual([]);
+  });
+
+  test("V-19: a brainswarm run has no claims row; a code run keeps it", () => {
+    const roster = [member("alpha", "S1", "Old Owl", "working")];
+    const held = [{ path: "a.ts", holders: ["alpha/S1"], interface: false }];
+    expect(claimRows(board([{ ...run(1, "alpha", "AL"), kind: "brainstorm" }], roster, [], held), 1)).toBeNull();
+    expect(claimRows(board([run(1, "alpha", "AL")], roster, [], held), 1)!.map((r) => r.path)).toEqual(["a.ts"]);
   });
 
   test("two runs of one group: a run's tab shows only what its own members hold", () => {
@@ -275,8 +282,8 @@ describe("claimRows (D7)", () => {
       { path: "old.ts", holders: ["same/S1"], interface: false },
       { path: "new.ts", holders: ["same/S2"], interface: false },
     ];
-    expect(claimRows(board(runs, roster, [], held), 6).map((r) => r.path)).toEqual(["new.ts"]);
-    expect(claimRows(board(runs, roster, [], held), 5).map((r) => r.path)).toEqual(["old.ts"]);
+    expect(claimRows(board(runs, roster, [], held), 6)!.map((r) => r.path)).toEqual(["new.ts"]);
+    expect(claimRows(board(runs, roster, [], held), 5)!.map((r) => r.path)).toEqual(["old.ts"]);
   });
 });
 

@@ -1,0 +1,2 @@
+exit 1
+open: refused: group vt already has run 1 open on this project, and --as vt/<seat> names one member. Close it first (node <cli> close --run 1), or open under another --group

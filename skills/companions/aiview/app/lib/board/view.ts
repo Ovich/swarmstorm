@@ -616,10 +616,13 @@ export function agents(snap: BoardSnapshot, run: RunId): SnapshotMember[] {
   return r ? orderRoster(membersOf(snap, r)) : [];
 }
 
-/** The held files with their holders: those held by one run's members, or every one (null). */
-export function claimRows(snap: BoardSnapshot, run: RunId | null): { path: string; holders: string[]; shared: boolean }[] {
+/** The held files with their holders: those held by one run's members, or every one (null); null for a run that holds
+ *  no files, so no claims row shows under it. */
+export function claimRows(snap: BoardSnapshot, run: RunId | null): { path: string; holders: string[]; shared: boolean }[] | null {
   const r = run == null ? null : snap.runs.find((x) => x.run === run);
   if (run != null && !r) return [];
+  // V-19 (D66): a brainswarm's seats hold no files: no claims row under it
+  if (r?.kind === "brainstorm") return null;
   // by the run's members, as the strip: another run of the same group holds nothing here
   const members = r ? new Set(membersOf(snap, r).map((m) => m.member)) : null;
   const inRun = (holder: string): boolean => !members || members.has(holder);

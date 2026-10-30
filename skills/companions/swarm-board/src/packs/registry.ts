@@ -36,6 +36,11 @@ export const registry = {
     const own = role === null ? undefined : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
     return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null)!);
   },
+  /** The part of `swarm stats` a run of `kind` carries: its members' pack's alone, none for a run with no pack (V-19, D66). */
+  statsFiguresFor(kind: string): StatsFigures[] {
+    const stats = registry.forMember(kind, null).pack?.stats;
+    return stats ? [stats] : [];
+  },
   /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
   statsFigures(): StatsFigures[] {
     return Object.values(PACKS).flatMap((p) => (p.stats ? [p.stats] : []));
