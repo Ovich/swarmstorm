@@ -9170,6 +9170,14 @@ function lineFrames(sock, onFrame) {
     }
   });
 }
+function resentCall(p) {
+  const { call } = p;
+  if (call.type !== "call" || call.method !== "wait") return call;
+  const options = call.args[1];
+  if (typeof options?.timeoutMs !== "number") return call;
+  const remainingMs = Math.max(0, options.timeoutMs - (Date.now() - p.sentAt));
+  return { ...call, args: [call.args[0], { ...options, timeoutMs: remainingMs }, ...call.args.slice(2)] };
+}
 function callsOver(firstSend) {
   let send = firstSend;
   const pending = /* @__PURE__ */ new Map();
@@ -9184,7 +9192,7 @@ function callsOver(firstSend) {
       while (given.length && given[given.length - 1] === void 0) given.pop();
       const frame = { type: "call", id, method, args: given };
       return new Promise((resolve, reject) => {
-        pending.set(id, { call: frame, resolve, reject });
+        pending.set(id, { call: frame, sentAt: Date.now(), resolve, reject });
         send(frame);
       });
     },
@@ -9204,7 +9212,7 @@ function callsOver(firstSend) {
     },
     reroute(to) {
       send = to;
-      for (const p of pending.values()) send(p.call);
+      for (const p of pending.values()) send(resentCall(p));
     }
   };
 }
@@ -9242,31 +9250,47 @@ async function connectBoard(opts) {
   if (opts.member) {
     const member = opts.member;
     const harness = opts.harness ?? inHarnessSession();
-    const sock = await openLinkPipe(opts.dataRoot, member, harness ? opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS : null);
-    if (sock) {
-      const calls2 = callsOver((f) => sock.write(`${encode(f)}
+    const linkWaitMs = harness ? opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS : null;
+    const firstSock = await openLinkPipe(opts.dataRoot, member, linkWaitMs);
+    if (firstSock) {
+      let linkSock = firstSock;
+      const calls2 = callsOver((f) => linkSock.write(`${encode(f)}
 `));
-      lineFrames(sock, (f) => calls2.settle(f));
       let direct = null;
       let closing = false;
-      sock.on("close", () => {
-        if (closing) return;
-        connectServer(state).then(
-          (conn2) => {
-            direct = conn2;
-            conn2.onFrame((f) => calls2.settle(f));
-            conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
-            calls2.reroute(conn2.send);
-          },
-          () => calls2.fail(`swarm: ${member.name}'s link closed the pipe`)
-        );
-      });
-      sock.on("error", () => {
-      });
+      const rerouteAfterLinkClosed = async () => {
+        const relaunched = await openLinkPipe(opts.dataRoot, member, HARNESS_LINK_WAIT_MS).catch(() => null);
+        if (closing) {
+          relaunched?.destroy();
+          return;
+        }
+        if (relaunched) {
+          wireLink(relaunched);
+          calls2.reroute((f) => relaunched.write(`${encode(f)}
+`));
+          return;
+        }
+        const conn2 = await connectServer(await ensureServer(opts.dataRoot));
+        direct = conn2;
+        conn2.onFrame((f) => calls2.settle(f));
+        conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
+        calls2.reroute(conn2.send);
+      };
+      const wireLink = (sock) => {
+        linkSock = sock;
+        lineFrames(sock, (f) => calls2.settle(f));
+        sock.on("close", () => {
+          if (closing) return;
+          rerouteAfterLinkClosed().catch(() => calls2.fail(`swarm: ${member.name}'s link closed the pipe`));
+        });
+        sock.on("error", () => {
+        });
+      };
+      wireLink(firstSock);
       return Object.assign(asRemote(calls2.call), {
         close: () => {
           closing = true;
-          sock.destroy();
+          linkSock.destroy();
           direct?.close();
         },
         linkMissing: false

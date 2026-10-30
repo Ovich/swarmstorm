@@ -150,6 +150,13 @@ try {
   // a rebuild under live members: a new bundle, and the next verb replaces the server with it (D28); every live link
   // meets it, stops as 'new version' and is started again by its launcher on the new bundle (plan D56, amended)
   await sleep(10);
+  // T45 (U-F31): a member holds a foreground wait across the rebuild; its link relaunches under it
+  const rebuildWait = spawn(process.execPath, [CLI, "wait", "--mentions", "--timeout", "30000", "--as", agents.restart.member], { cwd: repo, env: agents.restart.env, stdio: ["ignore", "pipe", "pipe"] });
+  let rebuildWaitOut = "";
+  rebuildWait.stdout.on("data", (c) => (rebuildWaitOut += c));
+  rebuildWait.stderr.on("data", (c) => (rebuildWaitOut += c));
+  const rebuildWaitExit = new Promise((r) => rebuildWait.once("exit", r));
+  await sleep(3);
   log("rebuild");
   fs.appendFileSync(path.join(tool, "dist-cli", "cli.mjs"), `
 // rebuilt ${new Date().toISOString()}
@@ -157,6 +164,10 @@ try {
   swarm(orch, "status");
   await sleep(8);
   check(liveLinks.every((a) => a.link && a.link.exitCode === null), "every live link outlived the rebuild (its launcher's process lives on)");
+  const rebuildWaitCode = await rebuildWaitExit;
+  check(rebuildWaitCode === 0, `a wait held across the rebuild ends with exit 0 (${rebuildWaitCode}: ${rebuildWaitOut.trim().split(/\r?\n/).pop()})`);
+  const nextWait = spawnSync(process.execPath, [CLI, "wait", "--mentions", "--timeout", "2000", "--as", agents.restart.member], { cwd: repo, env: agents.restart.env, encoding: "utf8", timeout: 60_000 });
+  check(nextWait.status === 0, `the member's next wait works (${nextWait.status}: ${(nextWait.stderr || nextWait.stdout).trim().split(/\r?\n/).pop()})`);
   const linksDir = path.join(home, "links");
   const pids = fs.existsSync(linksDir) ? fs.readdirSync(linksDir, { recursive: true }).filter((f) => String(f).endsWith(".pid")).length : 0;
   log(`${pids} link pid file(s) after the rebuild`);

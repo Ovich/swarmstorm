@@ -199,7 +199,17 @@ function lineFrames(sock: net.Socket, onFrame: (f: Frame) => void): void {
   });
 }
 
-type Pending = { call: Frame; resolve: (v: unknown) => void; reject: (e: Error) => void };
+type Pending = { call: Frame; sentAt: number; resolve: (v: unknown) => void; reject: (e: Error) => void };
+
+/** A call resent on a new channel: a wait holds only what remains of its hold, never its whole hold again (board-split D56, T45). */
+function resentCall(p: Pending): Frame {
+  const { call } = p;
+  if (call.type !== "call" || call.method !== "wait") return call;
+  const options = call.args[1] as { timeoutMs?: number } | undefined;
+  if (typeof options?.timeoutMs !== "number") return call;
+  const remainingMs = Math.max(0, options.timeoutMs - (Date.now() - p.sentAt));
+  return { ...call, args: [call.args[0], { ...options, timeoutMs: remainingMs }, ...call.args.slice(2)] };
+}
 type Calls = {
   call: (method: RpcMethod, args: unknown[]) => Promise<unknown>;
   settle: (f: Frame) => void;
@@ -225,7 +235,7 @@ function callsOver(firstSend: (f: Frame) => void): Calls {
       while (given.length && given[given.length - 1] === undefined) given.pop();
       const frame: Frame = { type: "call", id, method, args: given };
       return new Promise((resolve, reject) => {
-        pending.set(id, { call: frame, resolve, reject });
+        pending.set(id, { call: frame, sentAt: Date.now(), resolve, reject });
         send(frame);
       });
     },
@@ -245,7 +255,7 @@ function callsOver(firstSend: (f: Frame) => void): Calls {
     },
     reroute(to) {
       send = to;
-      for (const p of pending.values()) send(p.call);
+      for (const p of pending.values()) send(resentCall(p));
     },
   };
 }
@@ -292,31 +302,49 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
   if (opts.member) {
     const member = opts.member;
     const harness = opts.harness ?? inHarnessSession();
-    const sock = await openLinkPipe(opts.dataRoot, member, harness ? (opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS) : null);
-    if (sock) {
-      const calls = callsOver((f) => sock.write(`${encode(f)}
+    const linkWaitMs = harness ? (opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS) : null;
+    const firstSock = await openLinkPipe(opts.dataRoot, member, linkWaitMs);
+    if (firstSock) {
+      let linkSock: net.Socket = firstSock;
+      const calls = callsOver((f) => linkSock.write(`${encode(f)}
 `));
-      lineFrames(sock, (f) => calls.settle(f));
       let direct: Awaited<ReturnType<typeof connectServer>> | null = null;
       let closing = false;
-      // the link exits when its member ends or its run closes (D15): what the verb still asks goes to the server
-      sock.on("close", () => {
-        if (closing) return;
-        connectServer(state).then(
-          (conn) => {
-            direct = conn;
-            conn.onFrame((f) => calls.settle(f));
-            conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
-            calls.reroute(conn.send);
-          },
-          () => calls.fail(`swarm: ${member.name}'s link closed the pipe`),
-        );
-      });
-      sock.on("error", () => {});
+      // board-split D56 (T45): the link closes when it relaunches itself on a new version (the server replaced with it), or
+      // when its member ends or its run closes (D15). The calls still pending go on, resent: to the relaunched link when one
+      // answers, else straight to the server running now, never the one this verb started on.
+      const rerouteAfterLinkClosed = async (): Promise<void> => {
+        const relaunched = await openLinkPipe(opts.dataRoot, member, HARNESS_LINK_WAIT_MS).catch(() => null);
+        if (closing) {
+          relaunched?.destroy();
+          return;
+        }
+        if (relaunched) {
+          wireLink(relaunched);
+          calls.reroute((f) => relaunched.write(`${encode(f)}
+`));
+          return;
+        }
+        const conn = await connectServer(await ensureServer(opts.dataRoot));
+        direct = conn;
+        conn.onFrame((f) => calls.settle(f));
+        conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+        calls.reroute(conn.send);
+      };
+      const wireLink = (sock: net.Socket): void => {
+        linkSock = sock;
+        lineFrames(sock, (f) => calls.settle(f));
+        sock.on("close", () => {
+          if (closing) return;
+          rerouteAfterLinkClosed().catch(() => calls.fail(`swarm: ${member.name}'s link closed the pipe`));
+        });
+        sock.on("error", () => {});
+      };
+      wireLink(firstSock);
       return Object.assign(asRemote(calls.call), {
         close: () => {
           closing = true;
-          sock.destroy();
+          linkSock.destroy();
           direct?.close();
         },
         linkMissing: false,
