@@ -251,8 +251,9 @@ test("merge-lock onto a branch checked out in a worktree names the worktree, say
   assert.equal(r.status, 5, r.stderr);
   const lines = r.stdout.trim().split(/\r?\n/);
   assert.equal(lines.length, 1, r.stdout);
-  assert.match(lines[0], /^main is checked out at (.+): ask the orchestrator to detach it, then run merge-lock again$/);
-  assert.equal(path.resolve(lines[0].match(/at (.+?): ask/)![1]), fs.realpathSync.native(repo));
+  // V-20 (board-split#D66): the refusal names the detach command, runnable as printed
+  assert.match(lines[0], /^main is checked out at (.+): git would refuse your fast-forward; ask the orchestrator to detach it \(git -C (.+) switch --detach\), then run merge-lock again$/);
+  assert.equal(path.resolve(lines[0].match(/at (.+?): git/)![1]), fs.realpathSync.native(repo));
   git(repo, "checkout", "-q", "--detach");
   assert.ok(cli(wtA, "merge-lock", "--onto", "main").includes("granted: "), "the refusal held no lock");
 });
