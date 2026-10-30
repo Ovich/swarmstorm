@@ -1,0 +1,3 @@
+exit 1
+--- stderr
+phase x: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member

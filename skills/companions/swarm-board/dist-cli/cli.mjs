@@ -10044,7 +10044,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   decisionsRunOpen: (runs, decisionsRun, seatAdds) => `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}` + (seatAdds.length ? `; add the missing seat${seatAdds.length > 1 ? "s" : ""}: ${seatAdds.join(" ; ")}` : ""),
   // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
-  doneCounted: (phase, progress, all2) => `done ${phase}: ${progress}${all2 ? "; the orchestrator is told every member is done" : ""}`,
+  /** V-43: with a lost member owing the phase, "every member" is not said: the orchestrator's own line says "but the lost" */
+  doneCounted: (phase, progress, all2, lost) => `done ${phase}: ${progress}${all2 ? lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done" : ""}`,
+  /** V-44: `phase --for` with no seat in it */
+  phaseForEmpty: (name) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
   /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
   phaseParkedMember: (member, cli, seat, as) => `${member} is parked and not counted in this phase: unpark it when it should take its part: ${cli} unpark ${seat} --as ${as}`,
   /** V-35: a member owing the phase just opened whose agent is lost */
@@ -10995,6 +10998,7 @@ ${verbHelp()}`);
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       const watch = args.list("--watch");
       const only = args.list("--for");
+      if (args.has("--for") && !only.length) fail(WORDING.phaseForEmpty(name));
       const previous = (await board.currentPhase(p.run))?.name ?? null;
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...watch.length ? { watch } : {}, ...only.length ? { for: only } : {} } : void 0);
       const stillOwed = previous !== null && m.stillOwed.length ? WORDING.phaseStillOwed(previous, m.stillOwed) : null;
@@ -11089,8 +11093,8 @@ ${verbHelp()}`);
         break;
       }
       const open = (await board.currentPhase(p.run))?.name ?? name;
-      const line = r.notOwed ? WORDING.doneNotOwed(name, r.notOwed) : r.already ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null) : r.late ? WORDING.doneLate(name, open, r.owesNow) : WORDING.doneCounted(name, progressText(r.progress), r.all);
-      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
+      const line = r.notOwed ? WORDING.doneNotOwed(name, r.notOwed) : r.already ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null) : r.late ? WORDING.doneLate(name, open, r.owesNow) : WORDING.doneCounted(name, progressText(r.progress), r.all, r.progress.gone.length > 0);
+      const facts = unmerged && !(r.notOwed && "parked" in r.notOwed) ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;

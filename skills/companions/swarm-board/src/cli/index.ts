@@ -832,6 +832,8 @@ async function main(): Promise<void> {
       const watch = args.list("--watch");
       // --for: only these seats are woken and owe their done; a seat with nothing to do is not woken (tokens)
       const only = args.list("--for");
+      // V-44: an empty --for is refused, never read as a phase for every member
+      if (args.has("--for") && !only.length) fail(WORDING.phaseForEmpty(name));
       const previous = (await board.currentPhase(p.run))?.name ?? null;
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
       // V-6 (D62): the members that still owed the phase this one replaces, named once
@@ -952,8 +954,9 @@ async function main(): Promise<void> {
           ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null)
           : r.late
             ? WORDING.doneLate(name, open, r.owesNow)
-            : WORDING.doneCounted(name, progressText(r.progress), r.all);
-      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
+            : WORDING.doneCounted(name, progressText(r.progress), r.all, r.progress.gone.length > 0);
+      // V-43: a parked member is not told to merge (merge-lock refuses it while parked)
+      const facts = unmerged && !(r.notOwed && "parked" in r.notOwed) ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;

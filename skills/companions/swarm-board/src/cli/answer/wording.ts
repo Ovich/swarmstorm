@@ -198,7 +198,11 @@ export const WORDING = {
 
   // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
-  doneCounted: (phase: string, progress: string, all: boolean) => `done ${phase}: ${progress}${all ? "; the orchestrator is told every member is done" : ""}`,
+  /** V-43: with a lost member owing the phase, "every member" is not said: the orchestrator's own line says "but the lost" */
+  doneCounted: (phase: string, progress: string, all: boolean, lost: boolean) =>
+    `done ${phase}: ${progress}${all ? (lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done") : ""}`,
+  /** V-44: `phase --for` with no seat in it */
+  phaseForEmpty: (name: string) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
   /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
   phaseParkedMember: (member: string, cli: Command, seat: string, as: string) =>
     `${member} is parked and not counted in this phase: unpark it when it should take its part: ${cli} unpark ${seat} --as ${as}`,
