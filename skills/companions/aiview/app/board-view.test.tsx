@@ -447,11 +447,17 @@ test("the claims row falls back to collapsed when storage throws, and still open
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("blocked");
   });
-  show([APP], null);
+  // a code run's tab: the opening run here is the brainswarm, which has no claims row (V-19)
+  show([APP], 1);
   const toggle = screen.getByRole("button", { name: /Claims/ });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
+});
+
+test("V-19: under a brainswarm run, no claims row", () => {
+  show([APP], 3);
+  expect(screen.queryByRole("button", { name: /Claims/ })).toBeNull();
 });
 
 test("under a closed run, no claims row", () => {
