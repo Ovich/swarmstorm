@@ -2946,6 +2946,14 @@ var init_call_label = __esm({
 // src/board/board.ts
 import fs8 from "node:fs";
 import path8 from "node:path";
+function alarmSubjectOf(m) {
+  const meta = m.meta;
+  const group = m.from.split("/")[0];
+  if (meta && typeof meta.rule === "string" && typeof meta.member === "string") return `${group}/${meta.member}`;
+  if (meta && typeof meta.linkDown === "string") return meta.linkDown;
+  const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
+  return head ?? null;
+}
 function messageLine(m) {
   const first = m.body.split(/\r?\n/)[0];
   const text = first.length > LINE_WIDTH ? `${first.slice(0, LINE_WIDTH - 1)}\u2026` : first;
@@ -4716,11 +4724,15 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       });
       const events = db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN).map((r) => {
         const m = toMessage(r);
+        const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
+        const subject = alarm ? alarmSubjectOf(m) : null;
+        const aboutAnother = subject != null && subject !== m.from;
         return {
           seq: m.seq,
           at: m.at,
           kind: m.kind,
-          from: m.from,
+          from: aboutAnother ? BOARD_AUTHOR : m.from,
+          ...subject ? { subject } : {},
           body: m.body,
           about: m.about,
           run: m.run,
@@ -4839,7 +4851,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
   };
   return board2;
 }
-var progressText, goneSuffix, PROTOCOL_NAME, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
+var progressText, goneSuffix, PROTOCOL_NAME, BOARD_ALARMS, BOARD_AUTHOR, PHASE_NAME, SEAT_STATE_SQL, TO_AUTHOR, ORCHESTRATOR2, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RECORDS_SINCE2, RETENTION_DEFAULT_DAYS, DAY_MS2, EVENTS_SHOWN, CASELESS3;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4855,6 +4867,8 @@ var init_board = __esm({
     progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+    BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
+    BOARD_AUTHOR = "swarm";
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.dormant = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;

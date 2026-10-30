@@ -418,17 +418,20 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     return said("flag", "act", "⚑ flag · open", TIPS.flag, answer.state);
   }
   // the board server's liveness events, told apart from the board's plain lines (`swarm` liveness)
+  // board-split#D51: an alarm's header names the member it tells of, never its author's card
+  const told = memberEventMember(e, run);
+  const who = told ? `${splitMember(told).seat} ` : "";
   if (e.kind === "event" && e.event === "stalled") {
     const rule = stallRuleOf(e);
-    if (rule) return said("stalled", "act", `◷ stalled · ${STALL_WORDS[rule] ?? rule}`, TIPS.stalledMember, rule);
+    if (rule) return said("stalled", "act", `◷ ${who}stalled · ${STALL_WORDS[rule] ?? rule}`, TIPS.stalledMember, rule);
     return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
   }
   if (e.kind === "event" && e.event === "liveness") {
-    return isLinkDown(e) ? said("liveness", "wait", "liveness · link down", TIPS.linkDown, "link-down") : said("liveness", "wait", "liveness · blind", TIPS.liveness);
+    return isLinkDown(e) ? said("liveness", "wait", `liveness · ${who}link down`, TIPS.linkDown, "link-down") : said("liveness", "wait", `liveness · ${who}blind`, TIPS.liveness);
   }
-  if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", "↺ recovered", TIPS.recovered);
+  if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", `↺ ${who}recovered`, TIPS.recovered);
   // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
-  if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${e.event}`, TIPS.gone);
+  if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${who}${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
@@ -554,6 +557,8 @@ const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "lost
 /** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
 function memberEventMember(e: SnapshotEvent, run: RunSummary): string | null {
   if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;
+  // board-split#D51: the board names it (an alarm served as the board's carries its subject)
+  if (e.subject) return e.subject;
   if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}`;
   if (e.meta && "linkDown" in e.meta) return e.meta.linkDown;
   return new RegExp(`^${e.event} (\\S+?):? `).exec(e.body)?.[1] ?? null;

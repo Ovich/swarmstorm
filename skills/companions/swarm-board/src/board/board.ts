@@ -284,7 +284,23 @@ export type SnapshotEvent = {
   event?: EventName | null;
   mentions?: string[];
   meta?: MessageMeta | null;
+  /** board-split D51: the member, `<group>/<id>`, a board alarm tells of; absent on any other item or an alarm about a run. */
+  subject?: string;
 };
+/** board-split D51: the board's own alarms about a member. Stored under the orchestrator's row (its run, its wake), they
+ *  are served as the board's (`from: swarm`) when they tell of another member, with that member as `subject`. */
+export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
+export const BOARD_AUTHOR = "swarm";
+/** The member a board alarm tells of: the stall rule's member in its run's group, a lost link's member, else the body's head. */
+function alarmSubjectOf(m: Message): string | null {
+  const meta = m.meta as Record<string, unknown> | null | undefined;
+  const group = m.from.split("/")[0];
+  if (meta && typeof meta.rule === "string" && typeof meta.member === "string") return `${group}/${meta.member}`;
+  if (meta && typeof meta.linkDown === "string") return meta.linkDown;
+  // `lost <group>/<id>: …`, `recovered <group>/<id>: …`; a run's idle stall (`stalled <group>: 3 members …`) names none
+  const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
+  return head ?? null;
+}
 export type QueueSeat = { seat: string; role?: string; area?: string; link: string | null; state: string; blockers: string[]; member: string | null };
 /** The edit goes through; `notice` names the other holders the first time only, per member and path. */
 export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
@@ -2760,11 +2776,16 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN) as Row[]
       ).map((r) => {
         const m = toMessage(r);
+        const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
+        const subject = alarm ? alarmSubjectOf(m) : null;
+        // about another member: the board's; a run's idle stall, or one about the orchestrator itself, stays its own (D36)
+        const aboutAnother = subject != null && subject !== m.from;
         return {
           seq: m.seq,
           at: m.at,
           kind: m.kind,
-          from: m.from,
+          from: aboutAnother ? BOARD_AUTHOR : m.from,
+          ...(subject ? { subject } : {}),
           body: m.body,
           about: m.about,
           run: m.run,
