@@ -140,7 +140,7 @@ test("a member working, its transcript grown seconds ago, is never stalled howev
   assert.equal(badgeAt(run, base + 3 * 3600_000 + 5000), null);
 });
 
-test("parking a stalled member closes its episode without a recovered", () => {
+test("parking a stalled member closes its episode without a recovered; its unpark tells none either (U-F25)", () => {
   const { run } = owing();
   const due = Date.now() + SILENT_MS + 1000;
   board.livenessTick(run, new Date(due), linked);
@@ -149,6 +149,10 @@ test("parking a stalled member closes its episode without a recovered", () => {
   board.park(board.participant("g/orchestrator")!, "a");
   board.livenessTick(run, new Date(due + 10_000), linked);
   board.unpark(board.participant("g/orchestrator")!, "a");
+  // U-F25: an unpark opens nothing and closes nothing: no recovered at the ticks after it either
+  board.recordActivity(run, "a", act({ grewAt: due + 11_000 }), new Date(due + 11_000));
+  board.livenessTick(run, new Date(due + 12_000), linked);
+  board.livenessTick(run, new Date(due + 17_000), linked);
   assert.equal(events("recovered").length, 0);
   assert.equal(badgeAt(run, due + 10_000), null, "unparked: a fresh episode needs two ticks again");
 });

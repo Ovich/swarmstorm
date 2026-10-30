@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type LinkFact, type Presence } from "../src/board/board.ts";
 import { LOST_MS } from "../src/board/liveness.ts";
+import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/lost/.git";
 let dir: string;
@@ -30,9 +31,9 @@ const setup = () => {
   board.join({ run: run.id, seat: "a", doing: "x", files: [] });
   return run.id;
 };
-/** The badge every reader shows of g/a after a tick at now. */
+/** The badge every reader shows of g/a after the server ticked at now (two ticks: D55's confirm). */
 const badgeOfA = (run: number): string | null => {
-  board.livenessTick(run, new Date(), presence);
+  tick2(board, run, new Date(), presence);
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge?.name ?? null;
   const row = board.roster(REPO).find((r) => r.name === "g/a")!.badge?.name ?? null;
   const ticked = board.memberStates(run, new Date()).find((s) => s.member === "a")!.badge?.name ?? null;

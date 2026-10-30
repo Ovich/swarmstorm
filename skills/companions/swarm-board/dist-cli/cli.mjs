@@ -227,7 +227,7 @@ function coreStateOf(m) {
   if (m.orchestrator) return "waiting";
   return m.inHeldWait ? "waiting" : "working";
 }
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
     "use strict";
@@ -270,8 +270,6 @@ var init_liveness = __esm({
     BUSY_MAX_MS = 15 * 60 * 1e3;
     LOST_MS = 60 * 1e3;
     HEARTBEAT_MS = 5 * 1e3;
-    IN_TURN_MS = 120 * 1e3;
-    OWE_WAIT_MS = 10 * 60 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
     LOCK_HELD_MS = 10 * 60 * 1e3;
     SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
@@ -2290,7 +2288,7 @@ var init_code = __esm({
         const lock = tablesOf(ctx).heldMergeLock(member);
         if (!lock) return null;
         const since = Date.parse(lock.grantedAt);
-        return t - since >= LOCK_HELD_MS ? { reason: `holds the merge lock ${Math.round((t - since) / 6e4)} min`, since } : null;
+        return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
       },
       // the code tables' DDL and an older store's upkeep, then the store over them (D20)
       openTables: (deps) => {
@@ -2969,6 +2967,36 @@ var init_call_label = __esm({
   }
 });
 
+// src/board/stall.ts
+function stalledOf(f, t) {
+  if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
+  if (f.owes == null || f.taskDeliveredAt == null) return null;
+  const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
+  if (f.inHeldWait) {
+    return t - floor >= f.stallMs ? { rule: "owing", since: floor, fact: `not done ${f.owes}, in a wait` } : null;
+  }
+  const opened = f.openCallSince ?? f.background?.since ?? null;
+  if (opened != null) {
+    const grewAt = Math.max(floor, opened, f.transcriptGrewAt ?? 0, f.background?.grewAt ?? 0);
+    const what = f.openCallSince != null ? "a call open" : "a background task";
+    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `not done ${f.owes}, ${what}, no growth` } : null;
+  }
+  const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
+  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `not done ${f.owes}, no activity` } : null;
+}
+function ageText(ageMs) {
+  const s = Math.max(0, Math.round(ageMs / 1e3));
+  return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`;
+}
+function reasonOf(state, fact, ageMs) {
+  return `${state}, ${fact} ${ageText(ageMs)}`;
+}
+var init_stall = __esm({
+  "src/board/stall.ts"() {
+    "use strict";
+  }
+});
+
 // src/board/board.ts
 import fs8 from "node:fs";
 import path8 from "node:path";
@@ -3081,12 +3109,16 @@ async function openBoard(dbPath = SQLITE_PATH) {
     CREATE INDEX IF NOT EXISTS token_readings_by_run ON token_readings (run, t);
     -- a liveness warning posted, once per member and condition (none, unreadable); a good read clears unreadable
     CREATE TABLE IF NOT EXISTS liveness_warned (run INTEGER NOT NULL, member TEXT NOT NULL, cond TEXT NOT NULL, PRIMARY KEY (run, member, cond));
-    -- a member's latest activity, from its link's frames (swarm-relay D9); stalled_at: the last stalled told of it (D11)
+    -- board-split D55: a member's lost or stalled episode: pending at its predicate's first tick, opened at the second
+    -- (its alarm), closed when the predicate is false (recovered), or at park or end
+    CREATE TABLE IF NOT EXISTS badge_episodes (run INTEGER NOT NULL, member TEXT NOT NULL, badge TEXT NOT NULL, pending_at INTEGER NOT NULL, opened_at INTEGER, closed_at INTEGER);
+    CREATE INDEX IF NOT EXISTS badge_episodes_open ON badge_episodes (run, member, badge, closed_at);
+    -- a member's latest activity, from its link's frames (swarm-relay D9);
     CREATE TABLE IF NOT EXISTS member_activity (
       run INTEGER NOT NULL, member TEXT NOT NULL,
       grew_at INTEGER, tokens INTEGER NOT NULL DEFAULT 0, context INTEGER,
       open_tool TEXT, open_target TEXT, open_since INTEGER, last_tool TEXT,
-      finished INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL, stalled_at INTEGER,
+      finished INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,
       PRIMARY KEY (run, member));
     -- a member's link as the server last saw it: connected, else lost since lost_at (ms epoch); swarm-relay D37
     CREATE TABLE IF NOT EXISTS member_links (
@@ -3173,8 +3205,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "open_command", "open_command TEXT");
   upkeep("member_activity", "bg_label", "bg_label TEXT");
   upkeep("member_activity", "bg_command", "bg_command TEXT");
-  upkeep("member_activity", "owe_since", "owe_since INTEGER");
-  upkeep("member_activity", "wait_left_at", "wait_left_at INTEGER");
+  db.exec(`INSERT INTO badge_episodes (run, member, badge, pending_at, opened_at)
+             SELECT w.run, w.member, 'lost', 0, 0 FROM liveness_warned w WHERE w.cond = 'gone'
+               AND NOT EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = w.run AND e.member = w.member AND e.badge = 'lost' AND e.closed_at IS NULL);
+           DELETE FROM liveness_warned WHERE cond = 'gone';`);
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
@@ -3474,7 +3508,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const compositionOf = (run3) => {
     const seats = db.prepare("SELECT * FROM seats WHERE run = ? ORDER BY ord").all(run3);
     const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run3);
-    const goneSet = new Set(db.prepare("SELECT member FROM liveness_warned WHERE run = ? AND cond = 'gone'").all(run3).map((x) => String(x.member)));
+    const goneSet = new Set(db.prepare("SELECT member FROM badge_episodes WHERE run = ? AND badge = 'lost' AND opened_at IS NOT NULL AND closed_at IS NULL").all(run3).map((x) => String(x.member)));
     const plan = String(runRow(run3).plan);
     const showRole = new Set(seats.map((s) => s.role == null ? "" : String(s.role))).size > 1;
     const entry2 = (seat, s) => {
@@ -3522,7 +3556,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     due.lastToldAt = t;
     for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...i.meta ? { meta: i.meta } : {} });
   };
-  const stalledToldOf = /* @__PURE__ */ new Map();
   const idleSince = /* @__PURE__ */ new Map();
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
@@ -3637,41 +3670,78 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
   };
-  const stalledOf = (p, run3, t, shownState = "waiting") => {
+  const stalledBadgeOf = (p, run3, t, shownState = "waiting") => {
     const member = String(p.seat);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const packStall = String(p.seat) === ORCHESTRATOR2 ? null : (() => {
+    const seatedAt = Date.parse(seatedAtOf(p));
+    const lockStall = String(p.seat) === ORCHESTRATOR2 ? null : (() => {
       const m = participantById(Number(p.id));
-      return packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+      const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
+      return s ? { fact: s.reason, since: s.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
     })();
-    if (packStall) return { badge: stalledBadge(packStall.reason, packStall.since), rule: "lock" };
-    const owes = owedNameOf(p, run3);
-    if (owes == null) return null;
-    const taskDeliveredAt = taskDeliveredAtOf(p, run3);
-    if (taskDeliveredAt == null) return null;
-    const stallMs = Number(run3.stall_ms ?? STALL_MS_DEFAULT);
-    const resumedAt = Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at)), taskDeliveredAt);
-    if (heldSince != null) {
-      if (lockWaitOf(Number(p.id), t)) return null;
-      const a2 = activityOf(Number(run3.id), member);
-      const since = Math.max(a2?.owe_since == null ? heldSince : Number(a2.owe_since), resumedAt);
-      if (t - since < stallMs) return null;
-      return { badge: stalledBadge(`${shownState}, not done ${owes}, ${Math.round((t - since) / 1e3)} s`, since), rule: "owing", owes };
-    }
     const a = activityOf(Number(run3.id), member);
-    if (a?.open_tool != null) return null;
-    const lastSign = Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), Date.parse(seatedAtOf(p)), resumedAt);
-    if (t - lastSign < Number(run3.silent_ms ?? SILENT_MS)) return null;
-    return { badge: stalledBadge(`${shownState}, not done ${owes}, no activity for ${Math.round((t - lastSign) / 1e3)} s`, lastSign), rule: "silent", owes };
+    const owes = owedNameOf(p, run3);
+    const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
+    const stall = stalledOf(
+      {
+        shownState,
+        owes,
+        taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run3),
+        clockFloorAt: Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at))),
+        inHeldWait: heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1),
+        openCallSince: ownCallOpen ? Number(a.open_since) : null,
+        background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
+        transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
+        signAt: Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt),
+        stallMs: Number(run3.stall_ms ?? STALL_MS_DEFAULT),
+        silentMs: Number(run3.silent_ms ?? SILENT_MS),
+        busyMaxMs: seatBusyMaxOf(Number(run3.id), member) ?? BUSY_MAX_MS,
+        lockStall
+      },
+      t
+    );
+    if (!stall || heldSince != null && lockWaitOf(Number(p.id), t) && stall.rule !== "lock") return null;
+    const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
+    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...owes != null && stall.rule !== "lock" ? { owes } : {} };
+  };
+  const episodeOpenOf = (run3, member, badge) => db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run3, member, badge) != null;
+  const episodeStep = (run3, member, badge, on, t, silent = false) => {
+    const row = db.prepare("SELECT rowid AS id, pending_at, opened_at FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND closed_at IS NULL").get(run3, member, badge);
+    if (on) {
+      if (!row) {
+        db.prepare("INSERT INTO badge_episodes (run, member, badge, pending_at) VALUES (?, ?, ?, ?)").run(run3, member, badge, t);
+        return null;
+      }
+      if (row.opened_at != null || Number(row.pending_at) >= t) return null;
+      db.prepare("UPDATE badge_episodes SET opened_at = ? WHERE rowid = ?").run(t, Number(row.id));
+      return "opened";
+    }
+    if (!row) return null;
+    if (row.opened_at == null) {
+      db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(row.id));
+      return null;
+    }
+    db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE rowid = ?").run(t, Number(row.id));
+    return silent ? null : "closed";
+  };
+  const closeEpisodesOutside = (run3, watched, t) => {
+    const keep = new Set(watched);
+    for (const e of db.prepare("SELECT rowid AS id, member, opened_at FROM badge_episodes WHERE run = ? AND closed_at IS NULL").all(run3)) {
+      if (keep.has(String(e.member))) continue;
+      if (e.opened_at == null) db.prepare("DELETE FROM badge_episodes WHERE rowid = ?").run(Number(e.id));
+      else db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE rowid = ?").run(t, Number(e.id));
+    }
   };
   const memberView = (p, run3, t, opts = {}) => {
     const activity = activityShownOf(p, run3, opts.withHolder ?? true, t);
     if (Number(p.parked) === 1 || p.ended_at != null) return { ...activity, badge: null };
     const blocked = blockedOf(p, run3);
     if (blocked) return { ...activity, badge: blocked };
+    const shows = (name) => opts.predicate === true || episodeOpenOf(Number(run3.id), String(p.seat), name);
     const lost = lostOf(p, run3, t);
-    if (lost) return { ...activity, badge: lost };
-    const stalled = stalledOf(p, run3, t, activity.state);
+    if (lost) return { ...activity, badge: shows("lost") ? lost : null };
+    const stalledRaw = stalledBadgeOf(p, run3, t, activity.state);
+    const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
     return { ...activity, badge: stalled?.badge ?? null, ...stalled?.rule ? { rule: stalled.rule } : {}, ...stalled?.owes ? { owes: stalled.owes } : {} };
   };
   const stalledBadge = (reason, since) => ({ name: "stalled", reason, since });
@@ -3682,31 +3752,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run3.id), Number(p.id), String(run3.phase));
     return done ? null : String(run3.phase);
   };
-  const stalledNoActivityAt = /* @__PURE__ */ new Map();
-  const keepOwingSpan = (run3, p, a, t) => {
-    const set = (oweSince, leftAt2) => {
-      const was = a.owe_since == null ? null : Number(a.owe_since);
-      if (was === oweSince && (a.wait_left_at == null ? null : Number(a.wait_left_at)) === leftAt2) return;
-      const spanChanged = was !== oweSince;
-      db.prepare(`UPDATE member_activity SET owe_since = ?, wait_left_at = ?${spanChanged ? ", stalled_at = NULL" : ""} WHERE run = ? AND member = ?`).run(oweSince, leftAt2, Number(run3.id), String(p.seat));
-    };
-    const held = heldWaits.get(Number(p.id));
-    const inWait = held != null && a.open_tool != null && Number(a.open_wait) === 1;
-    if (owedNameOf(p, run3) == null) return set(null, null);
-    if (inWait) return set(a.owe_since == null ? held : Number(a.owe_since), null);
-    if (a.owe_since == null) return;
-    const leftAt = a.wait_left_at == null ? t : Number(a.wait_left_at);
-    const progressAt = p.progress_at == null ? 0 : Date.parse(String(p.progress_at));
-    const otherCall = a.open_tool != null && Number(a.open_wait) !== 1;
-    const lapsed = t - leftAt >= Number(run3.stall_ms ?? STALL_MS_DEFAULT);
-    if (otherCall || progressAt > leftAt || lapsed) return set(null, null);
-    set(Number(a.owe_since), leftAt);
-  };
-  const statesOf = (run3, t) => {
+  const statesOf = (run3, t, predicate = false) => {
     const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
     if (!r) return /* @__PURE__ */ new Map();
     const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run3);
-    return new Map(live2.map((p) => [String(p.seat), memberView(p, r, t)]));
+    return new Map(live2.map((p) => [String(p.seat), memberView(p, r, t, { predicate })]));
   };
   const LOCK_NAME = /^[a-z0-9:._/-]{1,80}$/;
   const memberRowOf = (id) => db.prepare("SELECT p.*, r.plan AS plan, r.repo AS repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
@@ -3798,7 +3848,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (phase == null) return null;
     const rows = db.prepare(
       `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.idle_ended, p.parked, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
-           EXISTS (SELECT 1 FROM liveness_warned w WHERE w.run = p.run AND w.member = p.seat AND w.cond = 'gone') AS gone
+           EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = p.run AND e.member = p.seat AND e.badge = 'lost' AND e.opened_at IS NOT NULL AND e.closed_at IS NULL) AS gone
          FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR2}'`
     ).all(phase, run3);
     const runR = runRow(run3);
@@ -3916,7 +3966,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           }
           db.prepare("DELETE FROM seats WHERE run = ?").run(run3);
           registry.forgetRun(db, run3);
-          for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run3);
+          for (const table of ["phase_done", "transcripts", "token_readings", "liveness_warned", "badge_episodes", "member_activity", "member_links"]) db.prepare(`DELETE FROM ${table} WHERE run = ?`).run(run3);
           db.prepare("UPDATE runs SET pruned_at = ? WHERE id = ?").run(at.toISOString(), run3);
         }
         for (const repo of touched) bump(repo);
@@ -4014,6 +4064,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
             );
             db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run3, seat);
             db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run3, seat);
+            db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run3, seat);
+            db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run3, seat);
             db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run3, seat);
             return Number(existing.id);
           }
@@ -4345,11 +4397,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const t = at.getTime();
       transaction(() => {
         db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run3, new Date(t - READINGS_KEPT_MS).toISOString());
-        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run3)) {
-          const a = activityOf(run3, String(p.seat));
-          if (a) keepOwingSpan(r, p, a, t);
-        }
-        const states = statesOf(run3, t);
+        const states = statesOf(run3, t, true);
         const parkedSeats = new Set(db.prepare("SELECT seat FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 1").all(run3).map((x) => String(x.seat)));
         const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR2 && !parkedSeats.has(st.member));
         const orch = orchestratorIn(run3);
@@ -4358,48 +4406,37 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         let moved = false;
         const stalledNow = [];
         for (const st of others) {
-          if (st.badge?.name !== "lost") {
-            if (Number(db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = 'gone'").run(run3, st.member).changes) === 1) {
-              insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
-              postComposition(orch, st.member, "+", "back");
-            }
-          } else if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, 'gone')").run(run3, st.member).changes) === 1) {
+          const lostStep = episodeStep(run3, st.member, "lost", st.badge?.name === "lost", t);
+          if (lostStep === "opened") {
             raiseAlert(run3, { body: `lost ${orch.plan}/${st.member}: ${st.badge.reason}`, event: EVENTS.lost.name });
             postComposition(orch, st.member, "-", "lost");
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (lostRow) releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
+            moved = true;
+          } else if (lostStep === "closed") {
+            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+            postComposition(orch, st.member, "+", "back");
+            moved = true;
           }
-          const a = activityOf(run3, st.member);
-          const stalledAt = a?.stalled_at == null ? stalledNoActivityAt.get(`${run3}:${st.member}`) ?? null : Number(a.stalled_at);
-          if (st.badge?.name !== "stalled" || r.paused != null || !presence(st.member).connected) {
-            const owingSpanOpen = a?.owe_since != null;
-            if (stalledAt != null && !owingSpanOpen) {
-              if (a) db.prepare("UPDATE member_activity SET stalled_at = NULL WHERE run = ? AND member = ?").run(run3, st.member);
-              stalledNoActivityAt.delete(`${run3}:${st.member}`);
-              moved = true;
-            }
-            continue;
+          if (r.paused != null) continue;
+          const step = episodeStep(run3, st.member, "stalled", st.badge?.name === "stalled", t, st.badge?.name === "lost");
+          if (step === "opened") {
+            const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
+            stalledNow.push({ st, meta });
+          } else if (step === "closed") {
+            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
+            moved = true;
           }
-          const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
-          stalledNow.push({ st, meta, due: stalledAt == null });
         }
-        const stalledSet = stalledNow.map((x) => `${x.st.member}:${x.st.rule ?? ""}:${x.st.since ?? ""}`).sort().join(",");
-        const lastTold = stalledToldOf.get(run3);
-        const sameSetTold = lastTold != null && lastTold.set === stalledSet;
-        if (stalledNow.some((x) => x.due) && !sameSetTold) {
-          stalledToldOf.set(run3, { set: stalledSet, at: t });
-          if (stalledNow.length === 1) {
-            const [{ st, meta }] = stalledNow;
-            raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
-          } else {
-            const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
-            const ruled = stalledNow.find((x) => x.meta)?.meta;
-            const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}`;
-            raiseAlert(run3, { body, event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
-          }
-          for (const { st } of stalledNow) {
-            if (Number(db.prepare("UPDATE member_activity SET stalled_at = ? WHERE run = ? AND member = ?").run(t, run3, st.member).changes) === 0) stalledNoActivityAt.set(`${run3}:${st.member}`, t);
-          }
+        closeEpisodesOutside(run3, others.map((st) => st.member), t);
+        if (stalledNow.length === 1) {
+          const [{ st, meta }] = stalledNow;
+          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
+        } else if (stalledNow.length > 1) {
+          const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
+          const ruled = stalledNow.find((x) => x.meta)?.meta;
+          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}`;
+          raiseAlert(run3, { body, event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
         }
         flushAlerts(run3, t, orch);
         if (r.paused == null) {
@@ -4464,7 +4501,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             }
           }
         }
-        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
+        const badgesNow = [...statesOf(run3, t).values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
         if (badgesShown.get(run3) !== badgesNow) {
           if (badgesShown.has(run3)) moved = true;
           badgesShown.set(run3, badgesNow);
@@ -4908,6 +4945,7 @@ var init_board = __esm({
     init_names();
     init_liveness();
     init_call_label();
+    init_stall();
     progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
