@@ -125,6 +125,8 @@ export interface Participant {
   name: string; // "<plan>/<seat>"
   nick: string; // the funny name given at join (D43), and to an orchestrator at open (plan D17)
   ended: boolean;
+  /** board-split D30, D60: parked by the orchestrator; its own calls answer parked first. */
+  parked: boolean;
   /** The folder it works in, registered at join (a code member's worktree); null for the orchestrator or a member with no pack. */
   place: string | null;
   /** A `wait --mentions` of this participant is pending (D49, D61). */
@@ -938,6 +940,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     name: `${r.plan}/${r.seat}`,
     nick: nickOf(r),
     ended: r.ended_at != null,
+    parked: Number(r.parked ?? 0) === 1,
     place: r.place == null ? null : String(r.place),
     listening: listensNow(r),
     subscriptions: subsOf(r),
@@ -2015,7 +2018,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       packOf(member)?.onJoin?.(member, packCtxOf(member), files);
       // G5, D4: one line per join: the joined event names the seat as a composition line would, and every
       // member of the run hears it carried (events.ts), so no composition line beside it
-      insertMessage(member, `joined: ${doing} · + ${seatWho(run, seat)}${entry === "back" ? " back" : ""}`, null, "event", undefined, { event: EVENTS.joined.name });
+      // break-flow V-15: a re-join posts no second joined: a seat whose member had ended reads as one `<seat> back`
+      // line (`+ <seat> <nick> back: <doing>`); the same member joining again while seated posts nothing
+      if (entry === "new") insertMessage(member, `joined: ${doing} · + ${seatWho(run, seat)}`, null, "event", undefined, { event: EVENTS.joined.name });
+      else if (entry === "back") insertMessage(member, `+ ${seatWho(run, seat)} back: ${doing}`, null, "event", undefined, { event: EVENTS.joined.name });
       // D5: the last declared seat to get a member tells the orchestrator once
       if (entry === "new") {
         const declared = Number((db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run) as Row).n);

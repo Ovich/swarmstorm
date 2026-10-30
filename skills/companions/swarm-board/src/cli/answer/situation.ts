@@ -14,6 +14,8 @@ export type Situation = {
   run: number;
   seat: string;
   ended: boolean;
+  /** parked by the orchestrator (D30, D60): every own call answers parked first */
+  parked: boolean;
   /** a background listener of the member's is running (the link's report, D4) */
   listenerRunning: boolean;
   /** how the member listens: a seat in the foreground, a worker and the orchestrator in the background */
@@ -46,6 +48,7 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     run: me.run,
     seat: me.seat,
     ended: !!me.ended,
+    parked: !!me.parked,
     listenerRunning: !!me.listening,
     listens: me.seat === "orchestrator" ? "orchestrator" : profile.member === "worker" ? "background" : "foreground",
     wholeThread: !!profile.wholeThread,

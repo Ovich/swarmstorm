@@ -125,7 +125,7 @@ test("golden lost (board-split D49): a link lost past LOST_MS with no wait held 
   assert.deepEqual(eventsOf("lost").map((e) => e.body), ["lost g/a: its link was lost"]);
   assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").liveness?.badge?.name], ["lost", "lost"]);
   const lost = eventsOf("lost")[0];
-  assert.equal(eventStep(lost as never, orch, "swarm"), WORDING.lostMove);
+  assert.equal(eventStep(lost as never, orch, "swarm"), WORDING.lostMove("swarm", "a", "g/orchestrator"));
   tick2(board, run.id, at(base, 2), linked);
   assert.equal(eventsOf("recovered").length, 1);
   assert.equal(badgeIn(run.id, "a", at(base, 2)).badge, null);

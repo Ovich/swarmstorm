@@ -225,6 +225,8 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (calls.get(call.id) !== rec) return; // cancelled meanwhile
       answer(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === undefined ? null : value }));
       if (call.method === "closeRun") closed(Number(args[0]));
+      // V-17 (D56): an ended member's link is told so, and exits 0 on its own before its worktree goes
+      if (call.method === "end") ended((args[0] as { name?: string } | undefined)?.name);
       if (call.method === "join") freshPresence(value as { member: { run: number; seat: string } });
     };
     if (out instanceof Promise) out.then(settle, (e: Error) => calls.get(call.id) === rec && fail(e.message));
@@ -234,6 +236,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   // D30: a closed run's links are told so
   const closed = (run: number): void => {
     for (const s of speakers) if (s.member?.run === run) refuse(s, "closed");
+  };
+  // its own end, or the orchestrator's end --seat: the member's link is done as at a close
+  const ended = (member: string | undefined): void => {
+    for (const s of speakers) if (member && s.member?.name === member) refuse(s, "closed");
   };
 
   const httpServer = http.createServer((req, res) => {

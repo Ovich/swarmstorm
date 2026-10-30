@@ -1,3 +1,2 @@
-exit 1
---- stderr
-merged: you do not hold the merge lock; run node <cli> merge-lock --onto "<branch>" --as g/w1 first, then merge, then merged again
+exit 0
+run 1 closed: run end and return your summary: node <cli> end --as g/w1; your link and listener background tasks end on their own now, and their end notices are not news

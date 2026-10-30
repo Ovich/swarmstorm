@@ -2026,21 +2026,24 @@ function stopLinks(runId, members) {
     } catch {
       continue;
     }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
-      try {
-        process.kill(pid);
-        pids.push(pid);
-      } catch {
-      }
-    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
       fs4.rmSync(file);
     } catch {
     }
   }
-  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+  const pauseSync = (ms2) => hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms2})`]);
+  for (const end = Date.now() + OWN_EXIT_GRACE_MS; Date.now() < end && pids.some(alive); ) pauseSync(100);
+  const left = pids.filter(alive);
+  for (const pid of left) {
+    try {
+      process.kill(pid);
+    } catch {
+    }
+  }
+  for (let i = 0; i < 40 && left.some(alive); i++) pauseSync(50);
 }
-var DEFAULT_TIMING, pause, pipeAnswers, alive;
+var DEFAULT_TIMING, pause, pipeAnswers, alive, OWN_EXIT_GRACE_MS;
 var init_link = __esm({
   "src/link/link.ts"() {
     "use strict";
@@ -2063,6 +2066,7 @@ var init_link = __esm({
         return false;
       }
     };
+    OWN_EXIT_GRACE_MS = 3e3;
   }
 });
 
@@ -3375,6 +3379,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     name: `${r.plan}/${r.seat}`,
     nick: nickOf(r),
     ended: r.ended_at != null,
+    parked: Number(r.parked ?? 0) === 1,
     place: r.place == null ? null : String(r.place),
     listening: listensNow(r),
     subscriptions: subsOf(r),
@@ -4185,7 +4190,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
         });
         const member = participantById(id);
         packOf(member)?.onJoin?.(member, packCtxOf(member), files);
-        insertMessage(member, `joined: ${doing} \xB7 + ${seatWho(run3, seat)}${entry2 === "back" ? " back" : ""}`, null, "event", void 0, { event: EVENTS.joined.name });
+        if (entry2 === "new") insertMessage(member, `joined: ${doing} \xB7 + ${seatWho(run3, seat)}`, null, "event", void 0, { event: EVENTS.joined.name });
+        else if (entry2 === "back") insertMessage(member, `+ ${seatWho(run3, seat)} back: ${doing}`, null, "event", void 0, { event: EVENTS.joined.name });
         if (entry2 === "new") {
           const declared = Number(db.prepare("SELECT COUNT(*) AS n FROM seats WHERE run = ?").get(run3).n);
           const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run3, ORCHESTRATOR2).n);
@@ -8881,6 +8887,7 @@ async function runBoardServer(opts) {
       if (calls.get(call.id) !== rec) return;
       answer2(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
       if (call.method === "closeRun") closed(Number(args2[0]));
+      if (call.method === "end") ended(args2[0]?.name);
       if (call.method === "join") freshPresence(value);
     };
     if (out instanceof Promise) out.then(settle, (e) => calls.get(call.id) === rec && fail2(e.message));
@@ -8888,6 +8895,9 @@ async function runBoardServer(opts) {
   };
   const closed = (run4) => {
     for (const s of speakers) if (s.member?.run === run4) refuse(s, "closed");
+  };
+  const ended = (member) => {
+    for (const s of speakers) if (member && s.member?.name === member) refuse(s, "closed");
   };
   const httpServer = http.createServer((req, res) => {
     if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
@@ -9781,7 +9791,11 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   superseded: "superseded by a newer wait",
   // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
   idle: (wait) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  ended: (run3) => `you have ended in run ${run3}: this listener stops; nothing to re-arm`,
+  ended: (run3) => `you have ended in run ${run3}: this listener stops; nothing to re-arm; return your summary now`,
+  /** break-flow V-4, V-17 (D61): every verb of a member that has ended, its run still open, answers this first */
+  endedMember: (run3) => `you have ended in run ${run3}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
+  /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
+  verbRefused: (verb, why) => `${verb} refused: ${why}`,
   // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
   delivered: "these lines are delivered; the task-end notice is the same event",
   // ── the phase ──
@@ -9838,7 +9852,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   lockFree: (cli, name, as) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
   breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
   breachOther: (member) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
-  lostMove: "its agent is not running: dispatch it again, or close its seat",
+  /** break-flow V-17: the end verb as it runs, never "close its seat" */
+  lostMove: (cli, seat, as) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D44: block and unblock, to the seat they name */
   blockedWait: "you are blocked on the person: stop where you are, change nothing, and wait in the foreground until unblock",
   unblockedGoOn: "unblocked: go on with your task",
@@ -9929,7 +9944,9 @@ init_events2();
 init_kinds();
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine = (s) => {
-  if (s.seat === "orchestrator" || s.ended || !s.pause) return null;
+  if (s.seat === "orchestrator" || s.ended) return null;
+  if (s.parked) return WORDING.parkedStop;
+  if (!s.pause) return null;
   return WORDING.paused(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 var owedLine = (s, opts = {}) => {
@@ -9953,7 +9970,9 @@ var joinStep = (s, showedPosts) => {
   return idleWorker ? WORDING.nothingYet(waitCommand(s, true)) : nextStep(s);
 };
 var heardStep = (s) => {
-  if (s.ended || s.listenerRunning) return null;
+  if (s.ended) return null;
+  if (s.parked) return WORDING.parkedStop;
+  if (s.listenerRunning) return null;
   if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
   return pausedLine(s) ?? owedLine(s, { brief: true });
 };
@@ -9966,6 +9985,11 @@ var phaseHeaders = (s, showPause = true) => {
   return { printed: WORDING.phasePaused(short, why), full: WORDING.phasePaused(whole, why), first };
 };
 var closedLine = (s) => WORDING.closed(s.run, WORDING.end(s.cli, s.as));
+var gateLine = (s, listener = false) => {
+  if (s.closed) return closedLine(s);
+  if (!s.ended || s.seat === "orchestrator") return null;
+  return listener ? WORDING.ended(s.run) : WORDING.endedMember(s.run);
+};
 function eventStep(m, me, cli, event = eventOf(m)) {
   const as = shellWord(me.name);
   const orchestrator = me.seat === "orchestrator";
@@ -10005,8 +10029,10 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       if (!member || !orchestrator) return null;
       return member === me.name ? WORDING.breachOwn : WORDING.breachOther(member);
     }
-    case "lost":
-      return orchestrator ? WORDING.lostMove : null;
+    case "lost": {
+      const seat = /^lost [^/\s]+\/([^:\s]+):/.exec(m.body)?.[1];
+      return orchestrator ? WORDING.lostMove(cli, shellWord(seat ?? "<seat>"), as) : null;
+    }
     case "block":
       return m.mentions.includes(me.name) ? WORDING.blockedWait : null;
     case "unblock":
@@ -10062,6 +10088,7 @@ async function readSituation(board2, me, opts) {
     run: me.run,
     seat: me.seat,
     ended: !!me.ended,
+    parked: !!me.parked,
     listenerRunning: !!me.listening,
     listens: me.seat === "orchestrator" ? "orchestrator" : profile.member === "worker" ? "background" : "foreground",
     wholeThread: !!profile.wholeThread,
@@ -10171,7 +10198,7 @@ function answer(r, s) {
       if (r.outcome === "superseded") return { lines: [WORDING.superseded], next: null, phase: null };
       if (r.outcome === "ended") return { lines: [WORDING.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
-        const next2 = r.idle ? WORDING.idle(r.foregroundAgain) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
+        const next2 = s.parked ? pausedLine(s) : r.idle ? WORDING.idle(r.foregroundAgain) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
         return { lines: [next2], next: next2, phase: null };
       }
       const headers = phaseHeaders(s, !pausedLine(s));
@@ -10433,7 +10460,7 @@ var refusedPaused = async (p, verb) => {
   const line = await pausedLine2(p);
   if (!line) return false;
   process.exitCode = 4;
-  emit({ run: p.run, paused: true, refused: verb, next: line }, `${verb} refused: ${line}`);
+  emit({ run: p.run, paused: true, refused: verb, next: line }, WORDING.verbRefused(verb, line));
   return true;
 };
 var PHASELESS = "none";
@@ -10508,11 +10535,11 @@ var firstPhaseLine = (kind, group, protocol) => {
   const pointer = "(its protocol.md's phase table names them)";
   return protocol ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}` : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
-var answeredClosed = async (p) => {
+var answeredGate = async (p, listener = false) => {
   const s = await situation(p);
-  if (!s.closed) return false;
-  const line = closedLine(s);
-  emit({ run: p.run, closed: true, next: line }, line);
+  const line = gateLine(s, listener);
+  if (!line) return false;
+  emit({ run: p.run, ...s.closed ? { closed: true } : { ended: true }, next: line }, line);
   return true;
 };
 var unmatchedLines = async (p, body) => {
@@ -10857,7 +10884,7 @@ ${verbHelp()}`);
     }
     case "done": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
       const unmerged = await board.packCall(p, "unmerged", {});
       let r;
@@ -10906,6 +10933,7 @@ ${verbHelp()}`);
     case "subscribe":
     case "unsubscribe": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       const subs = subscriptionsArg(args.positional.join(",") || fail(`${args.verb}: which events?`));
       const after = args.verb === "subscribe" ? await board.subscribe(p, subs) : await board.unsubscribe(p, subs);
       await emitHeard(p, { member: p.name, subscriptions: after }, `${p.name} wakes on: ${formatSubscriptions(after) || "mentions and urgent posts only"}`);
@@ -10913,7 +10941,8 @@ ${verbHelp()}`);
     }
     case "doing": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
+      if (await refusedPaused(p, "doing")) break;
       const text = args.positional.join(" ") || fail("doing: what?");
       await board.setDoing(p, text);
       await emitHeard(p, { member: p.name, doing: text }, `${p.name} doing: ${text}`);
@@ -10922,7 +10951,7 @@ ${verbHelp()}`);
     case "post":
     case "agree": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       const file = args.flag("--file");
       const body = (file ? fs13.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
@@ -10951,7 +10980,7 @@ ${verbHelp()}`);
     }
     case "endorse": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       const raw = (args.positional[0] ?? fail("endorse: which seq?")).replace(/^#/, "");
       const seq = Number(raw);
       if (!Number.isInteger(seq)) fail(`endorse takes a seq, got ${raw}`);
@@ -10969,7 +10998,7 @@ ${verbHelp()}`);
       } catch (e) {
         if (!(e instanceof CliError)) throw e;
       }
-      if (by && await answeredClosed(by)) break;
+      if (by && await answeredGate(by)) break;
       const m = await board.read(seq, by);
       if (by) emitAnswer({ ...m }, answer({ verb: "read", shown: { text: fullText(m) }, member: true }, await situation(by, true)));
       else {
@@ -10993,7 +11022,7 @@ ${verbHelp()}`);
         break;
       }
       const me = await caller();
-      if (await answeredClosed(me)) break;
+      if (await answeredGate(me)) break;
       const name = args.positional[0];
       const posts = await board.thread(me, name);
       emitAnswer({ posts }, answer({ verb: "thread", phase: name ?? null, shown: posts.map((m) => ({ text: fullText(m) })) }, await situation(me)));
@@ -11001,7 +11030,7 @@ ${verbHelp()}`);
     }
     case "deliver": {
       const me = await caller();
-      if (await answeredClosed(me)) break;
+      if (await answeredGate(me)) break;
       const mentionsOnly = args.has("--mentions");
       const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
       const a = answer({ verb: "deliver", mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(me, d.full.length > 0 || d.lines.length > 0));
@@ -11010,13 +11039,13 @@ ${verbHelp()}`);
     }
     case "wait": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p, true)) break;
       const raw = args.flag("--timeout");
       const timeout = raw === void 0 ? void 0 : Number(raw);
       if (timeout !== void 0 && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(p, await board.wait(p, { timeoutMs: timeout, mentionsOnly }));
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p, true)) break;
       if (d.superseded) {
         emit(d, answer({ verb: "wait", outcome: "superseded" }, await situation(p)).lines[0]);
         break;
@@ -11046,7 +11075,7 @@ ${verbHelp()}`);
       break;
     }
     case "roster": {
-      if (args.flag("--as") && await answeredClosed(await caller())) break;
+      if (args.flag("--as") && await answeredGate(await caller())) break;
       const repo = projectRepo();
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
@@ -11073,6 +11102,7 @@ ${verbHelp()}`);
     }
     case "claim": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "claim")) break;
       await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
@@ -11096,6 +11126,7 @@ ${verbHelp()}`);
     }
     case "release": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       refuseWithoutPack(p, "release");
       const all2 = args.has("--all");
       if (!all2 && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
@@ -11114,6 +11145,7 @@ ${verbHelp()}`);
     }
     case "merge-lock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "merge-lock")) break;
       const onto = args.flag("--onto") ?? (await runOf(p.run))?.base ?? need("--onto");
       await madeWorktree(p, "merge-lock");
@@ -11145,6 +11177,7 @@ ${verbHelp()}`);
     }
     case "merged": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
       const reportFile = args.flag("--report-file");

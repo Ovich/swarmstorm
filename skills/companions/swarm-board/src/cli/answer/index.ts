@@ -7,7 +7,7 @@ import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, wait
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedLine, eventStep, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
+export { closedLine, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { decisionsLines, type WriteDecisionsSeats } from "./decisions.ts";
@@ -52,9 +52,12 @@ export function answer(r: VerbResult, s: Situation): Answer {
       if (r.outcome === "superseded") return { lines: [W.superseded], next: null, phase: null };
       if (r.outcome === "ended") return { lines: [W.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
-        const next = r.idle
-          ? W.idle(r.foregroundAgain)
-          : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
+        // D60: a parked member is told it is parked before it is told it is idle
+        const next = s.parked
+          ? pausedLine(s)!
+          : r.idle
+            ? W.idle(r.foregroundAgain)
+            : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
         return { lines: [next], next, phase: null };
       }
       const headers = phaseHeaders(s, !pausedLine(s));

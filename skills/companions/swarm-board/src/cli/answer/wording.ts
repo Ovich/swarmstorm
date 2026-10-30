@@ -37,7 +37,12 @@ export const WORDING = {
   superseded: "superseded by a newer wait",
   // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
   idle: (wait: Command) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm`,
+  ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm; return your summary now`,
+  /** break-flow V-4, V-17 (D61): every verb of a member that has ended, its run still open, answers this first */
+  endedMember: (run: number) =>
+    `you have ended in run ${run}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
+  /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
+  verbRefused: (verb: string, why: string) => `${verb} refused: ${why}`,
   // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
   delivered: "these lines are delivered; the task-end notice is the same event",
 
@@ -115,7 +120,8 @@ export const WORDING = {
   lockFree: (cli: Command, name: string, as: string) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
   breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
   breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
-  lostMove: "its agent is not running: dispatch it again, or close its seat",
+  /** break-flow V-17: the end verb as it runs, never "close its seat" */
+  lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D44: block and unblock, to the seat they name */
   blockedWait: "you are blocked on the person: stop where you are, change nothing, and wait in the foreground until unblock",
   unblockedGoOn: "unblocked: go on with your task",

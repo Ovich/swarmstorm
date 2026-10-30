@@ -343,7 +343,7 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
   const line = await pausedLine(p);
   if (!line) return false;
   process.exitCode = 4;
-  emit({ run: p.run, paused: true, refused: verb, next: line }, `${verb} refused: ${line}`);
+  emit({ run: p.run, paused: true, refused: verb, next: line }, WORDING.verbRefused(verb, line));
   return true;
 };
 /** `--protocol none`: a run phaseless on purpose. */
@@ -446,12 +446,13 @@ const nextStep = async (p: Participant): Promise<string> => rules.nextStep(await
 /** What a verb that heard from the member ends on (D9). */
 const heardStep = async (p: Participant): Promise<string | null> => rules.heardStep(await situation(p));
 
-/** True, having printed the closed line, when `p`'s run is closed: the verb writes nothing more. */
-const answeredClosed = async (p: Participant): Promise<boolean> => {
+/** break-flow D61: the gate before every member verb, core and code pack. True, having printed the closed or ended
+ *  line, when `p`'s run is closed or `p` has ended: the verb writes nothing more. */
+const answeredGate = async (p: Participant, listener = false): Promise<boolean> => {
   const s = await situation(p);
-  if (!s.closed) return false;
-  const line = rules.closedLine(s);
-  emit({ run: p.run, closed: true, next: line }, line);
+  const line = rules.gateLine(s, listener);
+  if (!line) return false;
+  emit({ run: p.run, ...(s.closed ? { closed: true } : { ended: true }), next: line }, line);
   return true;
 };
 
@@ -886,7 +887,7 @@ async function main(): Promise<void> {
     }
     case "done": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
       // board-split D63: a done with work not merged is accepted, the branch named to the member and the orchestrator
       const unmerged = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string; onto: string | null } | null;
@@ -957,6 +958,7 @@ async function main(): Promise<void> {
     case "subscribe":
     case "unsubscribe": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       const subs = subscriptionsArg(args.positional.join(",") || fail(`${args.verb}: which events?`));
       const after = args.verb === "subscribe" ? await board.subscribe(p, subs) : await board.unsubscribe(p, subs);
       await emitHeard(p, { member: p.name, subscriptions: after }, `${p.name} wakes on: ${formatSubscriptions(after) || "mentions and urgent posts only"}`);
@@ -964,7 +966,9 @@ async function main(): Promise<void> {
     }
     case "doing": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
+      // D60: a parked member changes nothing it shows
+      if (await refusedPaused(p, "doing")) break;
       const text = args.positional.join(" ") || fail("doing: what?");
       await board.setDoing(p, text);
       await emitHeard(p, { member: p.name, doing: text }, `${p.name} doing: ${text}`);
@@ -973,7 +977,7 @@ async function main(): Promise<void> {
     case "post":
     case "agree": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       // --file: a long body (a table, quotes, guillemets) read from a file, never through the shell's quoting
       const file = args.flag("--file");
       const body = (file ? fs.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
@@ -1004,7 +1008,7 @@ async function main(): Promise<void> {
     }
     case "endorse": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p)) break;
       const raw = (args.positional[0] ?? fail("endorse: which seq?")).replace(/^#/, "");
       const seq = Number(raw);
       if (!Number.isInteger(seq)) fail(`endorse takes a seq, got ${raw}`);
@@ -1023,7 +1027,7 @@ async function main(): Promise<void> {
       } catch (e) {
         if (!(e instanceof CliError)) throw e;
       }
-      if (by && (await answeredClosed(by))) break;
+      if (by && (await answeredGate(by))) break;
       const m = await board.read(seq, by);
       // the phase the message's run is in, first; a member owing the open phase is told to do it, last
       if (by) emitAnswer({ ...m }, answer({ verb: "read", shown: { text: fullText(m) }, member: true }, await situation(by, true)));
@@ -1050,7 +1054,7 @@ async function main(): Promise<void> {
         break;
       }
       const me = await caller();
-      if (await answeredClosed(me)) break;
+      if (await answeredGate(me)) break;
       const name = args.positional[0];
       const posts = await board.thread(me, name);
       emitAnswer({ posts }, answer({ verb: "thread", phase: name ?? null, shown: posts.map((m) => ({ text: fullText(m) })) }, await situation(me)));
@@ -1058,7 +1062,7 @@ async function main(): Promise<void> {
     }
     case "deliver": {
       const me = await caller();
-      if (await answeredClosed(me)) break;
+      if (await answeredGate(me)) break;
       // --mentions: only what is for the member (a mention, an urgent post, a subscribed event), never blocking
       const mentionsOnly = args.has("--mentions");
       const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)));
@@ -1069,14 +1073,14 @@ async function main(): Promise<void> {
     }
     case "wait": {
       const p = await caller();
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p, true)) break;
       const raw = args.flag("--timeout");
       const timeout = raw === undefined ? undefined : Number(raw);
       if (timeout !== undefined && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
       const d = withNext(p, await board.wait(p, { timeoutMs: timeout, mentionsOnly }));
       // the run closed while this wait was pending: the close ended the member
-      if (await answeredClosed(p)) break;
+      if (await answeredGate(p, true)) break;
       if (d.superseded) {
         // a newer wait of this member gets what arrives (D64)
         emit(d, answer({ verb: "wait", outcome: "superseded" }, await situation(p)).lines[0]);
@@ -1114,7 +1118,7 @@ async function main(): Promise<void> {
     }
     case "roster": {
       // a member asking (--as) learns its run closed
-      if (args.flag("--as") && (await answeredClosed(await caller()))) break;
+      if (args.flag("--as") && (await answeredGate(await caller()))) break;
       const repo = projectRepo();
       const roster = await board.roster(repo);
       // each run's title and phase above its members
@@ -1144,6 +1148,7 @@ async function main(): Promise<void> {
     }
     case "claim": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "claim")) break;
       await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
@@ -1175,6 +1180,7 @@ async function main(): Promise<void> {
     }
     case "release": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       refuseWithoutPack(p, "release");
       const all = args.has("--all");
       if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
@@ -1194,6 +1200,7 @@ async function main(): Promise<void> {
     }
     case "merge-lock": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       if (await refusedPaused(p, "merge-lock")) break;
       // the branch merged into: --onto, else the branch the run was opened onto (board-split F3, D2); required only when neither says
       const onto = args.flag("--onto") ?? (await runOf(p.run))?.base ?? need("--onto");
@@ -1234,6 +1241,7 @@ async function main(): Promise<void> {
     }
     case "merged": {
       const p = await caller();
+      if (await answeredGate(p)) break;
       refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
       // the report rides on the merge: one post, the orchestrator's one wake; "-" merges silently, recorded in the run only

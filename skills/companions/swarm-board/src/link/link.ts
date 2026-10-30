@@ -395,8 +395,13 @@ function commandLine(pid: number): string | null {
   return (r.stdout ?? "").trim() || null;
 }
 
+/** How long `stopLinks` lets a link the server already told (its run closed, its member ended) exit on its own. */
+const OWN_EXIT_GRACE_MS = 3000;
+
 /** Stops the members' links before their worktrees go (Windows refuses to remove a folder a live process holds):
- *  only the pid each link wrote under this data home, and only while that process is still a link. */
+ *  only the pid each link wrote under this data home, and only while that process is still a link. The server has
+ *  told each its run closed or its member ended, so each is given its grace to exit 0 on its own (V-17); a kill, exit 1
+ *  on Windows, is the fallback for one still there. */
 export function stopLinks(runId: number, members: string[]): void {
   const pids: number[] = [];
   for (const member of members) {
@@ -407,15 +412,18 @@ export function stopLinks(runId: number, members: string[]): void {
     } catch {
       continue;
     }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) {
-      try {
-        process.kill(pid);
-        pids.push(pid);
-      } catch {}
-    }
+    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
       fs.rmSync(file);
     } catch {}
   }
-  for (let i = 0; i < 40 && pids.some(alive); i++) hiddenSpawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
+  const pauseSync = (ms: number) => hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+  for (const end = Date.now() + OWN_EXIT_GRACE_MS; Date.now() < end && pids.some(alive); ) pauseSync(100);
+  const left = pids.filter(alive);
+  for (const pid of left) {
+    try {
+      process.kill(pid);
+    } catch {}
+  }
+  for (let i = 0; i < 40 && left.some(alive); i++) pauseSync(50);
 }

@@ -47,6 +47,8 @@ export type Scene = {
   /** A `wait --mentions` of `as` left pending in the background until `stop`. */
   listen: (as: string) => Promise<void>;
   stop: () => void;
+  /** The scene's data home, for a process a test spawns itself. */
+  home: string;
 };
 
 /** Replaces what differs between runs of the same scene by a stable placeholder. */
@@ -105,6 +107,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
   const s: Scene = {
     role,
     me,
+    home,
     other: member,
     must,
     call: (...argv) => {

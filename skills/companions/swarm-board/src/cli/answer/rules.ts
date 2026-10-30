@@ -10,9 +10,12 @@ import { shellWord, WORDING as W } from "./wording.ts";
 /** The member's wait command: a background listener holds until something comes, a foreground wait carries its hold. */
 export const waitCommand = (s: Situation, foreground = false): string => W.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : undefined);
 
-/** The member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
+/** The member's one step while it is held: parked (D60: before anything, a pause included), or its run paused; null
+ *  when neither, for the orchestrator and an ended member. */
 export const pausedLine = (s: Situation): string | null => {
-  if (s.seat === "orchestrator" || s.ended || !s.pause) return null;
+  if (s.seat === "orchestrator" || s.ended) return null;
+  if (s.parked) return W.parkedStop;
+  if (!s.pause) return null;
   return W.paused(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
 };
 
@@ -51,7 +54,10 @@ export const joinStep = (s: Situation, showedPosts: boolean): string => {
 /** What a verb that heard from the member ends on: nothing for an ended member or one whose listener runs; a seat is told
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {
-  if (s.ended || s.listenerRunning) return null;
+  if (s.ended) return null;
+  // D60: a parked member is told it is parked, whatever else runs
+  if (s.parked) return W.parkedStop;
+  if (s.listenerRunning) return null;
   // S21, board-split F8: the owed phase is news once, at the wake or join that showed it; a verb that heard from a
   // working member only asks for its listener
   if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
@@ -71,6 +77,14 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
 
 /** The one line a member of a closed run reads from every member verb. */
 export const closedLine = (s: Situation): string => W.closed(s.run, W.end(s.cli, s.as));
+
+/** break-flow D61: the line every member verb answers before anything of its own, core and code pack alike: the run
+ *  closed, or the member ended (`listener`: a wait, told it stops); null when neither, and the verb runs. */
+export const gateLine = (s: Situation, listener = false): string | null => {
+  if (s.closed) return closedLine(s);
+  if (!s.ended || s.seat === "orchestrator") return null;
+  return listener ? W.ended(s.run) : W.endedMember(s.run);
+};
 
 /** The line under an event, for the member `me` it reached; null when the event asks nothing of it (D36, D59). The board
  *  posts the fact (the event, its meta, its mentions); which line its reader runs next is chosen here. */
@@ -117,8 +131,11 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       // G2: the orchestrator's own kill is its own to correct, never a message to itself
       return member === me.name ? W.breachOwn : W.breachOther(member);
     }
-    case "lost":
-      return orchestrator ? W.lostMove : null;
+    case "lost": {
+      // the body names the member: `lost <group>/<seat>: <why>`
+      const seat = /^lost [^/\s]+\/([^:\s]+):/.exec(m.body)?.[1];
+      return orchestrator ? W.lostMove(cli, shellWord(seat ?? "<seat>"), as) : null;
+    }
     case "block":
       // board-split D44: the blocked seat waits on the person, in the foreground, until unblock
       return m.mentions.includes(me.name) ? W.blockedWait : null;

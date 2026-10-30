@@ -127,7 +127,7 @@ test("G38: an empty wait --mentions prints the re-arm line; an ended member's, w
     const empty = s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");
     assert.equal(empty.text, `nothing yet; wait, in the foreground (${FOREGROUND}): ${WAIT(s.me)}\n`);
     s.must("end", "--seat", s.me.split("/")[1], "--as", "g/orchestrator");
-    assert.match(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200").text, /^you have ended in run \d+: this listener stops; nothing to re-arm\n$/);
+    assert.match(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200").text, /^you have ended in run \d+: this listener stops; nothing to re-arm; return your summary now\n$/);
   } finally {
     s.stop();
   }

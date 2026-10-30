@@ -8,7 +8,7 @@ const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters
 
 const me: Participant = {
   id: 1, run: 7, repo: "/r/.git", kind: "brainstorm", plan: "idea", seat: "skeptic", name: "idea/skeptic", nick: "Zesty Moose",
-  ended: false, place: null, listening: true, subscriptions: [], pack: null, verify: false, kindPack: null,
+  ended: false, parked: false, place: null, listening: true, subscriptions: [], pack: null, verify: false, kindPack: null,
 };
 const msg = (over: Partial<Message> = {}): Message => ({
   seq: 5, repo: "/r/.git", from: "idea/architect", body: "x", about: null, kind: "msg", mentions: [], at: "", run: 7,
