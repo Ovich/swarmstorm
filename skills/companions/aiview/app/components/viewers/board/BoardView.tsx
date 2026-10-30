@@ -3,7 +3,7 @@
 // Analytics, and the across-runs view. aiview's theme; board.css reaches only `.board`.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "../../../hooks/useBoard.ts";
-import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pausedText, runHue, runTabs, seatCount, workerCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
+import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pausedText, runHue, runTabs, seatCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
 import {
   boardFieldsOf,
   DEFAULT_SCOPE,
@@ -129,7 +129,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
         : [],
     [snapshot, picked],
   );
-  const archivedLine = useMemo(() => (archived ? { closed: archived.closed, summary: archived.kind === "brainstorm" ? seatCount(archived.of) : archived.kind === "task" ? workerCount(archived.of) : `${archived.done} of ${archived.of} slices` } : null), [archived]);
+  const archivedLine = useMemo(() => (archived ? { closed: archived.closed, summary: archived.kind === "brainstorm" || archived.kind === "task" ? seatCount(archived.of) : `${archived.done} of ${archived.of} slices` } : null), [archived]);
 
   useEffect(() => {
     if (postToShow === null || runView !== "conversation") return;

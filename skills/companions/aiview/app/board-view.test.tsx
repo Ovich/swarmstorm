@@ -22,6 +22,8 @@ vi.mock("./hooks/useBoard.ts", () => ({
 
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
 import { AgentLabel, AgentMark, MemberTag } from "./components/viewers/board/chips.tsx";
+import { countText } from "./components/viewers/board/RunTabs.tsx";
+import type { RunTab } from "./lib/board/view.ts";
 import { CLAIMS_EXPANDED_KEY } from "./components/viewers/board/ClaimsRow.tsx";
 
 afterEach(() => {
@@ -636,4 +638,11 @@ test("the board as an author reads swarm, with the board's mark", () => {
   expect(document.querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("the board");
   expect(document.querySelector('[data-component="MemberTag"]')?.textContent).toBe("swarm");
   expect(document.body.textContent).not.toMatch(/undefined/);
+});
+
+// U-F16 (rule 12): a task run's tab counts its seats, never "workers"
+test("a task run's tab says its seats on hover", () => {
+  const tab = { run: 9, code: "BS", title: "board split", kind: "task", state: "live", done: 0, of: 6, protocol: "build-verify" } as RunTab;
+  expect(countText(tab)).toBe("6 seats");
+  expect(countText({ ...tab, of: 1 })).toBe("1 seat");
 });

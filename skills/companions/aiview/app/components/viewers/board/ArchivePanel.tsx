@@ -1,7 +1,7 @@
 // The archive (D7, D18, prototype #643): every closed run, newest first, searchable on title, code,
 // orchestrator and kind; a drawer from the left. A row picks the run; ×, Escape or a click outside closes.
 import { useEffect, useRef, useState } from "react";
-import { seatCount, workerCount, type ArchivedRun, type RunId } from "../../../lib/board/view.ts";
+import { seatCount, type ArchivedRun, type RunId } from "../../../lib/board/view.ts";
 
 /** "Oct 14, 22:28", local time. */
 function closedAt(iso: string): string {
@@ -13,7 +13,7 @@ function closedAt(iso: string): string {
 
 /** A row's meta: a plan counts its slices, a brainstorm its seats (its slice rows are seats). */
 function runMeta(r: ArchivedRun): string {
-  const count = r.kind === "brainstorm" ? seatCount(r.of) : r.kind === "task" ? workerCount(r.of) : `${r.done}/${r.of} slices`;
+  const count = r.kind === "brainstorm" || r.kind === "task" ? seatCount(r.of) : `${r.done}/${r.of} slices`;
   return `${count} · ${r.orchestrator}`;
 }
 
