@@ -3006,7 +3006,7 @@ function stalledOf(f, t) {
   if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
-  if (f.inHeldWait) {
+  if (f.inHeldWait && f.background == null) {
     const from = Math.max(floor, f.waitSpellSince ?? floor);
     return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `not done ${f.owes}, in a wait` } : null;
   }
