@@ -118,10 +118,10 @@ test("open ends on the command that starts the member's link, join prints it bef
   const opened = r.cli(r.repo, "open", "--plan", "link-plan", "--title", "T", "--seats", slices).trimEnd().split(/\r?\n/);
   const run = Number(opened[0]);
   const linkLine = /^start your link now, in the background \(your harness's background task\): node (\S+) (link .*)$/;
-  // idea 3: the link line, then the next step, last
+  // idea 3, F10: the link line after the id, the next step last (the seats' join and the detach between, T51)
   assert.match(opened.at(-1)!, /^next: /);
-  assert.match(opened.at(-2)!, linkLine);
-  assert.ok(opened.at(-2)!.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.at(-2)!);
+  const orchestratorLink = opened.find((l) => linkLine.test(l))!;
+  assert.ok(orchestratorLink.endsWith(`link --run ${run} --as link-plan/orchestrator`), opened.join("\n"));
   // S15: a task unread, so the join ends on the background listener
   r.cli(r.repo, "post", "@S3 your task", "--as", "link-plan/orchestrator");
   const joined = r.cli(r.wtA, "join", "--run", String(run), "--seat", "S3", "--doing", "x").trimEnd().split(/\r?\n/);

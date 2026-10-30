@@ -186,7 +186,7 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   const slices = path.join(toolRoot, "s.json");
   const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--seats", slices);
   assert.equal(text.status, 0, text.stderr);
-  // idea 3: the run id, the link line, how each seat joins (V-16), the checked-out target's detach (V-20), then the next step, last
+  // idea 3, F10: the run id, the link line, how each seat joins (V-16), the checked-out target's detach (V-20), then the next step, last
   assert.match(
     text.stdout,
     /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\neach seat joins [^\n]*\n[^\n]* is checked out at [^\n]*switch --detach\nnext: no protocol[^\n]*\n$/,

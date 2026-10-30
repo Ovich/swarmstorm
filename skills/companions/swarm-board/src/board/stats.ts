@@ -168,8 +168,8 @@ function timeline(joined: number, over: number, calls: number[], exact: Span[], 
   return out;
 }
 
-/** The packs whose totals and files `swarm stats` carries: every registered pack's; a run's own figures are its kind's
- *  pack's alone (registry.statsFiguresFor, V-19). */
+/** The packs whose figures `swarm stats` carries: every registered pack's, a member's and the totals on every run; a run's
+ *  own block its kind's pack's alone (V-19). */
 const statsPacks = (): StatsFigures[] => registry.statsFigures();
 
 /** The run's figures computed from the raw rows; `now` ends an open run and a member still there. Reads, never writes. */
@@ -189,7 +189,10 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
   const nameOf = (p: Row): string => `${r.plan}/${p.seat}`;
   const messages = db.prepare(`SELECT * FROM messages WHERE run = ? OR (run IS NULL AND author IN (${marks})) ORDER BY seq`).all(id, ...ids) as Row[];
   const orchestrators = new Set(people.filter((p) => String(p.seat) === ORCHESTRATOR).map((p) => Number(p.id)));
-  const packRuns = registry.statsFiguresFor(kind).map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
+  const packRuns = statsPacks().map((f) => f.ofRun({ db, run: r, people, messages, recorded, runOver, orchestrators, nameOf }));
+  // V-19 (D66): the run-level figures (merges, the lock, conflicts) are its kind's pack's alone; a brainswarm carries none
+  const kindPacks = new Set(registry.statsFiguresFor(kind));
+  const kindPackRuns = packRuns.filter((_, i) => kindPacks.has(statsPacks()[i]));
 
   const members: MemberStats[] = people.map((p) => {
     const pid = Number(p.id);
@@ -244,7 +247,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
     closedAt,
     lengthMs: Number.isNaN(length) ? null : length,
     recorded,
-    ...Object.assign({}, ...packRuns.map((f) => f.runFields())),
+    ...Object.assign({}, ...kindPackRuns.map((f) => f.runFields())),
     members,
   };
   if (kind === "brainstorm") {
@@ -257,7 +260,7 @@ function computeRun(db: DatabaseSync, r: Row, now: number, silentAfterMs: number
     });
     return { ...base, brainstorm };
   }
-  return { ...base, ...Object.assign({}, ...packRuns.map((f) => f.kindFields() ?? {})) };
+  return { ...base, ...Object.assign({}, ...kindPackRuns.map((f) => f.kindFields() ?? {})) };
 }
 
 /** The skeptic's participant ids (D30): the seat with id `skeptic`, else the first seat whose row subscribes to `agreement`. */
