@@ -179,7 +179,7 @@ const projectFlag = (): string | undefined => {
  *  of its paths that is a repository; the cwd's without the flag. An unknown one fails `no project <name>`. */
 const projectRepo = (): string => {
   const asked = projectFlag();
-  if (asked === undefined) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
+  if (asked === undefined) return placeRepoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
   if (fs.existsSync(asked)) return repoOf(path.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
   const repo = covered.filter((p) => fs.existsSync(p)).map((p) => repoOf(p)).find((r) => r !== null);

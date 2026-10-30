@@ -10268,7 +10268,7 @@ var projectFlag = () => {
 };
 var projectRepo = () => {
   const asked = projectFlag();
-  if (asked === void 0) return repoOf2(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
+  if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
   if (fs13.existsSync(asked)) return repoOf2(path13.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
   const repo = covered.filter((p) => fs13.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
