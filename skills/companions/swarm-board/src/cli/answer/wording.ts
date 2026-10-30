@@ -199,6 +199,10 @@ export const WORDING = {
   // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
   doneCounted: (phase: string, progress: string, all: boolean) => `done ${phase}: ${progress}${all ? "; the orchestrator is told every member is done" : ""}`,
+  /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
+  phaseParkedMember: (member: string, unpark: Command) => `${member} is parked and not counted in this phase: unpark it when it should take its part: ${unpark}`,
+  /** V-35: a member owing the phase just opened whose agent is lost */
+  phaseLostMember: (member: string, move: string) => `${member} owes this phase and is lost: ${move}`,
   /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
   doneNotOwed: (phase: string, why: { parked: true } | { forSeats: string[] }) =>
     `done ${phase} recorded; ${"parked" in why ? "you are parked: not counted until unparked" : `you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`}`,

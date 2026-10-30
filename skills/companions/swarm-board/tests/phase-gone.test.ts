@@ -59,9 +59,9 @@ test("four members, one gone, the three others done: all-done once, naming the g
   tick2(board, run.id, at(base, 2), presence);
   const all = events("all-done");
   assert.equal(all.length, 1);
-  assert.equal(all[0].body, "all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase");
+  assert.equal(all[0].body, "all done diverge but the lost: 3/3 done; lost, not done: idea/d: dispatch each again or end its seat, then open the next phase");
   const progress = board.phaseProgress(run.id)!;
-  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [] });
+  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [], parked: [] });
   assert.equal(progressText(progress), "3/3 done, 1 lost: d");
 });
 
@@ -72,7 +72,7 @@ test("the last member not done going gone fires all-done at the tick, once (D41)
   assert.equal(events("all-done").length, 0);
   goneD(run.id, base);
   tick2(board, run.id, at(base, 2), presence);
-  assert.deepEqual(events("all-done").map((e) => e.body), ["all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase"]);
+  assert.deepEqual(events("all-done").map((e) => e.body), ["all done diverge but the lost: 3/3 done; lost, not done: idea/d: dispatch each again or end its seat, then open the next phase"]);
 });
 
 test("every member not gone in a held wait: idle fires, naming the gone (D41, D34)", async () => {
@@ -93,11 +93,11 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
   tick2(board, run.id, at(base, 60), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [], parked: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
   tick2(board, run.id, at(base, 61), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [], parked: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
   tick2(board, run.id, at(base, 62), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");
@@ -121,4 +121,16 @@ test("without any gone member, all-done, idle and the progress line read exactly
   board.phase(orchestrator, "diverge", "again");
   for (const m of ["a", "b"]) board.done(members[m], "diverge");
   assert.equal(events("all-done").length, 2);
+});
+
+test("V-35: a phase opened --for a lost member counts it lost from its open, and all-done never says every member", () => {
+  const { run, members, orchestrator } = setup();
+  const base = Date.now() + 60_000;
+  goneD(run.id, base);
+  board.phase(orchestrator, "fix", "fix it", { for: ["c", "d"] });
+  assert.deepEqual(board.phaseProgress(run.id)!.gone, ["idea/d"]);
+  board.done(members.c, "fix");
+  const all = events("all-done").map((e) => e.body).filter((b) => b.includes(" fix"));
+  assert.equal(all.length, 1);
+  assert.doesNotMatch(all[0], /every member/);
 });

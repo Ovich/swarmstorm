@@ -1769,7 +1769,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const allDoneOnce = (author: Participant, progress: PhaseProgress): boolean => {
     if (!everyOwingDone(progress)) return false;
     if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(author.run, ORCHESTRATOR, `all-done ${progress.phase}`).changes) !== 1) return false;
-    insertMessage(author, `all done ${progress.phase}: every member is done (${progress.done}/${progress.of})${goneSuffix(progress.gone)}; open the next phase`, null, "event", [`${author.plan}/${ORCHESTRATOR}`], {
+    // V-35: "every member" only when no member owing the phase is lost; a lost one is named with the move it needs
+    const body = progress.gone.length
+      ? `all done ${progress.phase} but the lost: ${progress.done}/${progress.of} done; lost, not done: ${progress.gone.join(", ")}: dispatch each again or end its seat, then open the next phase`
+      : `all done ${progress.phase}: every member is done (${progress.done}/${progress.of}); open the next phase`;
+    insertMessage(author, body, null, "event", [`${author.plan}/${ORCHESTRATOR}`], {
       event: EVENTS["all-done"].name,
       meta: { phase: progress.phase },
     });

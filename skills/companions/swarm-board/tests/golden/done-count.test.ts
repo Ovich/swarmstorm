@@ -118,3 +118,19 @@ test("golden V-27: the phase text and the done event say the --for set and the c
     s.stop();
   }
 });
+
+test("golden V-34: a phase opened for a member parked until it names it with its unpark; the count names it parked", async () => {
+  const s = await scene("orchestrator", "owes-first");
+  try {
+    const orch = s.me;
+    const worker = s.other;
+    const seat = worker.split("/")[1];
+    s.must("park", seat, "--until", "build-3", "--as", orch);
+    const opened = s.call("phase", "build-3", "build 3", "--as", orch);
+    pin("done-count.orchestrator.phase-parked-until", opened);
+    assert.match(opened.text, new RegExp(`${worker} is parked and not counted in this phase: unpark it .* unpark ${seat} --as`));
+    assert.match(s.call("status").text, new RegExp(`0/0 done, 1 parked: ${seat}`));
+  } finally {
+    s.stop();
+  }
+});

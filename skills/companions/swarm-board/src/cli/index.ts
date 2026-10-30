@@ -835,12 +835,21 @@ async function main(): Promise<void> {
       // board-split D65: opened during a pause, the phase reaches its members at the resume
       const pausedNow = (await board.runs()).find((r) => r.id === m.run)?.paused != null;
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
-      const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
+      const opened = await board.phaseProgress(m.run);
+      const idleEnded = (opened?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
+      // V-34 (D70): a member parked until this phase, or named in its --for, stays parked: named with its unpark; no auto-unpark
+      const seatOf = (member: string): string => member.slice(member.lastIndexOf("/") + 1);
+      const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
+      const parkedFor = runRepo === undefined ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.state === "parked" && (r.parkedUntil === name || only.includes(r.seat)));
+      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, `${cli} unpark ${shellWord(r.seat)} --as ${shellWord(p.name)}`));
+      // V-35: a member owing it whose agent is lost is named with the move it needs
+      const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord(seatOf(member)), shellWord(p.name))));
       const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, parked: parkedLines, lost: lostLines, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
         console.log(seqLine(m));
         if (pausedLine) console.log(pausedLine);
         if (stillOwed) console.log(stillOwed);
+        for (const line of [...parkedLines, ...lostLines]) console.log(line);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
