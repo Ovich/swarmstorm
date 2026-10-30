@@ -594,10 +594,10 @@ test("--help lists no serve: the board server is a hidden verb", () => {
 test("status has no server: the data home, the store and the open runs", () => {
   const empty = run("status", "--json");
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["decisions", "home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
   const id = openRun();
   const s = JSON.parse(run("status", "--json").stdout);
-  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(s).sort(), ["decisions", "home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
   assert.equal(s.home, toolRoot);
   assert.equal(s.runs, 1);
   const text = run("status").stdout;
