@@ -2985,7 +2985,8 @@ function stalledOf(f, t) {
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
   if (f.inHeldWait) {
-    return t - floor >= f.stallMs ? { rule: "owing", since: floor, fact: `not done ${f.owes}, in a wait` } : null;
+    const from = Math.max(floor, f.waitSpellSince ?? floor);
+    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `not done ${f.owes}, in a wait` } : null;
   }
   const opened = f.openCallSince ?? f.background?.since ?? null;
   if (opened != null) {
@@ -2996,6 +2997,11 @@ function stalledOf(f, t) {
   const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
   return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `not done ${f.owes}, no activity` } : null;
 }
+function nextWaitSpell(prev, waitOpenedAt, t) {
+  if (waitOpenedAt == null) return prev;
+  const goesOn = prev != null && Math.min(t, waitOpenedAt) - prev.inAt < WAIT_SPELL_BREAK_MS;
+  return { since: goesOn ? prev.since : waitOpenedAt, inAt: t };
+}
 function ageText(ageMs) {
   const s = Math.max(0, Math.round(ageMs / 1e3));
   return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`;
@@ -3003,9 +3009,11 @@ function ageText(ageMs) {
 function reasonOf(state, fact, ageMs) {
   return `${state}, ${fact} ${ageText(ageMs)}`;
 }
+var WAIT_SPELL_BREAK_MS;
 var init_stall = __esm({
   "src/board/stall.ts"() {
     "use strict";
+    WAIT_SPELL_BREAK_MS = 1e4;
   }
 });
 
@@ -3572,6 +3580,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
   const heldWaits = /* @__PURE__ */ new Map();
+  const waitSpells = /* @__PURE__ */ new Map();
   const badgesShown = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
@@ -3694,13 +3703,19 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const a = activityOf(Number(run3.id), member);
     const owes = owedNameOf(p, run3);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
+    const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
+    const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
+    if (spell) waitSpells.set(Number(p.id), spell);
+    const rearming = !inHeldWait && spell != null && t - spell.inAt < WAIT_SPELL_BREAK_MS && a?.bg_target == null && (!ownCallOpen || Number(a.open_wait) === 1);
+    const inWaitSpell = inHeldWait || rearming;
     const stall = stalledOf(
       {
         shownState,
         owes,
         taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run3),
         clockFloorAt: Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at))),
-        inHeldWait: heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1),
+        inHeldWait: inWaitSpell,
+        waitSpellSince: inWaitSpell ? spell.since : null,
         openCallSince: ownCallOpen ? Number(a.open_since) : null,
         background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
         transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
