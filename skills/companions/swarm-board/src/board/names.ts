@@ -1,5 +1,5 @@
 // A member's funny name (D43): an adjective and an animal, picked at random at join among
-// those no active member of the repository carries.
+// those no active member of the project carries.
 
 const ADJECTIVES = [
   "Sleepy", "Grumpy", "Brave", "Clumsy", "Dizzy", "Fuzzy", "Gentle", "Hasty", "Jolly", "Lucky",

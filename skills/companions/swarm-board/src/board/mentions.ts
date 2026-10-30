@@ -28,7 +28,7 @@ export const nameHandle = (nick: string): string => nick.replace(/\s+/g, "").toL
  * is every member of the sender's plan; `@IW`, an open plan's two-letter code alone, is every
  * member of that plan, and wins over a seat of that name in the sender's plan; `@<plan>/S3` and
  * `@<code>·S3` cross plans. A code is resolved against `plans`, the plans open on the
- * repository; an unknown code is dropped. `@all` names nobody.
+ * project; an unknown code is dropped. `@all` names nobody.
  * `@SleepyOtter` is the member of that funny name, whatever its plan: `names` maps each
  * active member's `nameHandle` to its `<plan>/<seat>`.
  */

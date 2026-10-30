@@ -165,6 +165,14 @@ const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] =
 /** The tool's folder (swarm.mjs's), the aiview skill beside it. */
 const toolRoot = (): string => process.env.SWARM_ROOT ?? path.dirname(path.resolve(process.argv[1]));
 
+/** board-split D47: `--project <path>`, the old `--repo` read as it with one line saying so. */
+const projectFlag = (): string | undefined => {
+  const project = args.flag("--project");
+  if (project !== undefined) return project;
+  const old = args.flag("--repo");
+  if (old !== undefined) console.error(WORDING.flagRenamed("--repo", "--project"));
+  return old;
+};
 const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
 
 const runArg = (): number => {
@@ -218,7 +226,7 @@ const heldLine = (files: { path: string; interface: boolean }[]): string => {
   return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
 };
 
-/** `roster`: every member of the repository, for whom holds a file `r` declared. */
+/** `roster`: every member of the project, for whom holds a file `r` declared. */
 const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string => {
   const files = heldLine(r.held);
   // D19 (F9): a declared file another member held at the join is not claimed; the roster names it and its holder
@@ -1045,7 +1053,7 @@ async function main(): Promise<void> {
     case "roster": {
       // a member asking (--as) learns its run closed
       if (args.flag("--as") && (await answeredClosed(await caller()))) break;
-      const repo = repoOf(path.resolve(args.flag("--repo") ?? process.cwd()));
+      const repo = repoOf(path.resolve(projectFlag() ?? process.cwd()));
       const roster = await board.roster(repo);
       // each run's title and phase above its members
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
@@ -1299,7 +1307,7 @@ async function main(): Promise<void> {
         }
       });
       const stats = await board.stats({
-        repo: repoOf(path.resolve(args.flag("--repo") ?? process.cwd())),
+        repo: repoOf(path.resolve(projectFlag() ?? process.cwd())),
         ...(run !== undefined ? { run } : {}),
         // a named run is read whatever its age: no default period (plan D40)
         ...(all ? {} : since !== undefined ? { since } : run !== undefined ? {} : { since: "30d" }),

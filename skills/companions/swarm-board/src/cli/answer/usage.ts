@@ -23,7 +23,7 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  unpark  <seat> [--as <member>]                                  # lifts a park (orchestrator)",
     "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
     `  close   --run <id>                                              # (orchestrator); ${CODE_IN_CORE_HELP.closeRemoves}`,
-    `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the repository root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
+    `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,…"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
     `          # --on <events>: what wakes your wait --mentions besides mentions and urgent posts, e.g. ${CODE_IN_CORE_HELP.onExample}; else the seat row's on, else the kind's defaults`,
     "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
     "  unsubscribe [--as <member>] <events>",
@@ -38,7 +38,7 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message for you, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
     "          # once your run is closed, wait, deliver, read, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end …",
     "          # --mentions: only a mention of you, an urgent post or an event you subscribed to ends it; the rest stays for deliver (a seat's run: the wake brings every unread post)",
-    "  roster  [--repo <path>] [--as <member>]",
+    "  roster  [--project <path>] [--as <member>]",
     "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
     "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
     "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command",
@@ -54,8 +54,8 @@ export const coreUsage = (cli: Command, events: string[]): string =>
 /** `stats` is for an outside reader, never a member: not in the core help, its own (D33). */
 export const statsUsage = (cli: Command): string =>
   [
-    `usage: ${cli} stats [--repo <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
-    "  the figures of a repository's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
+    `usage: ${cli} stats [--project <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
+    "  the figures of a project's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
     "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
     `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${cli} read <seq>`,
   ].join("\n");

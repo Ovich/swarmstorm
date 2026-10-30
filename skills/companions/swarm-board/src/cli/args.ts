@@ -11,7 +11,8 @@ const VALUE_FLAGS = new Set([
   "--about",
   "--with",
   "--timeout",
-  "--repo",
+  "--repo", // board-split D47: the old name of --project, read as it
+  "--project",
   "--port",
   "--onto",
   "--kind",

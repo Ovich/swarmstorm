@@ -1,4 +1,4 @@
-// Where the board's store lives: the data home, beside aiview's index, never in a repository.
+// Where the board's store lives: the data home, beside aiview's index, never in a project's checkout.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

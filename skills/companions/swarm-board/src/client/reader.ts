@@ -14,10 +14,15 @@ export { planCode, nameHandle, parseMentions } from "../board/mentions.ts";
 export type { Kind } from "../board/kinds.ts";
 export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "../board/board.ts";
 
+/** board-split D47: a project as aiview reads it, the one word; `RepoSummary` is its older name, kept for readers built on it. */
+export type ProjectSummary = RepoSummary;
+
 export interface BoardReader {
   /** Most recently active first, as Board.repos(). */
   repos(): Promise<RepoSummary[]>;
-  /** Rejects "no repository <repo>", as Board.snapshot() throws. */
+  /** board-split D47: the same as repos(), by the one word. */
+  projects(): Promise<ProjectSummary[]>;
+  /** Rejects "no project <key>", as Board.snapshot() throws. */
   snapshot(repo: string): Promise<BoardSnapshot>;
   /** As Board.stats: the figures of the scope's runs. */
   stats(scope: StatsScope): Promise<Stats>;
@@ -102,6 +107,7 @@ export async function openBoardReader(opts: { dataRoot: string; swarmEntry?: str
 
   return {
     repos: () => call("repos", []),
+    projects: () => call("repos", []),
     snapshot: (repo) => call("snapshot", [repo]),
     stats: (scope) => call("stats", [scope]),
     onChange(listener) {

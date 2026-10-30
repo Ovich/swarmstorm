@@ -1,5 +1,5 @@
 // The board — with claims.ts (D35), the only module that sees SQL. Runs, the plan's slices,
-// participants, the thread of each repository, who has had what, who is calling,
+// participants, the thread of each project, who has had what, who is calling,
 // and waking a `wait`; claims and the merge lock live in claims.ts, behind this Board. Callers hold the typed Board openBoard() returns; the schema,
 // member names, mention parsing, path normalisation, refusal wording and the waking
 // mechanism stay in here.
@@ -290,7 +290,7 @@ export type QueueSeat = { seat: string; role?: string; area?: string; link: stri
 export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
 export type EditHeld = { allowed: false; refusal: string };
 export type { LockTurn, SnapshotFile } from "../packs/registry.ts";
-/** One repository as the page reads it: the core's fields and the pack's (board-split#D18). */
+/** One project as the page reads it: the core's fields and the pack's (board-split#D18). */
 export type BoardSnapshot = PackSnapshotFields & {
   repo: string;
   name: string;
@@ -387,7 +387,7 @@ export interface Board {
    *  store for every process, is older than UPKEEP_EVERY_MS. The time is recorded first, so a
    *  process due at the same moment skips, and a failure waits for the next due upkeep. True when it ran. */
   upkeepIfDue(now?: Date): boolean;
-  /** The open runs, every repository. */
+  /** The open runs, every project. */
   runs(): Run[];
 
   /** `place` is ignored when the member has no pack; `files` are refused when it has no claims.
@@ -411,7 +411,7 @@ export interface Board {
    *  "merged and ended" when it merged since it joined, else "ended" (D66). */
   end(p: Participant): void;
   roster(repo: string): RosterEntry[];
-  /** Members of the repository's open runs who have ended, as `<plan>/<seat>`: a mention of one reaches nobody. */
+  /** Members of the project's open runs who have ended, as `<plan>/<seat>`: a mention of one reaches nobody. */
   endedMembers(repo: string): string[];
   /** The repository-relative paths `p` holds a claim on now. */
   heldBy(p: Participant): string[];
@@ -447,11 +447,11 @@ export interface Board {
   stats(scope: StatsScope): Stats;
 
   // the page (D39)
-  /** Every repository with an open run or a closed run within the retention (D46); a run kept only as a pruned author never. */
+  /** Every project with an open run or a closed run within the retention (D46); a run kept only as a pruned author never. */
   repos(): RepoSummary[];
-  /** Everything the page draws for one repository; throws `no repository <id>` for one it does not list. */
+  /** Everything the page draws for one project; throws `no project <key>` for one it does not list. */
   snapshot(repo: string): BoardSnapshot;
-  /** Called with the repository of every write, from this process or any other. Returns the unsubscribe. */
+  /** Called with the project of every write, from this process or any other. Returns the unsubscribe. */
   onChange(listener: (repo: string) => void): () => void;
 
   close(): void;
@@ -708,7 +708,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   // idea 2: a carried message past CARRY_MAX_MS for a member, marked by the tick: it wakes that member's wait
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
-  // idea 4: named locks, store-wide (a port is the machine's, not a repository's), and who waits on each
+  // idea 4: named locks, store-wide (a port is the machine's, not a project's), and who waits on each
   db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
     CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
     CREATE TABLE IF NOT EXISTS lock_releases (name TEXT PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, how TEXT NOT NULL);`);
@@ -731,7 +731,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
-  // Waking and watching: every write moves its repository's version; once committed, the waits
+  // Waking and watching: every write moves its project's version; once committed, the waits
   // and watchers of this process are woken at once (swarm-relay D14): the server is the one
   // process that writes, so no file carries the wake to another (no `.signal`, D14). The poll
   // stays as the floor.
@@ -826,7 +826,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const nickOf = (r: Row): string => (r.nick == null ? String(r.seat) : String(r.nick));
 
   /** A subscription stored scoped `main` (before plan D1) reads as `any`. */
-  /** A funny name no active member of the repository carries (D43, plan D17), kept for the run. */
+  /** A funny name no active member of the project carries (D43, plan D17), kept for the run. */
   const unusedNick = (repo: string): string => {
     const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL`).all(repo) as Row[];
     return funnyName(rows.map(nickOf));
@@ -895,7 +895,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const openPlans = (repo: string): string[] =>
     (db.prepare("SELECT DISTINCT plan FROM runs WHERE repo = ? AND state = 'open'").all(repo) as Row[]).map((r) => String(r.plan));
 
-  /** The repository's active members: their funny names, as a mention writes them, to their names (D43). */
+  /** The project's active members: their funny names, as a mention writes them, to their names (D43). */
   const activeNames = (repo: string): Map<string, string> => {
     const rows = db
       .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL AND p.seat != '${ORCHESTRATOR}'`)
@@ -1125,7 +1125,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 },
     };
   };
-  /** A repository is its common git dir; it is shown by its checkout's folder name. */
+  /** A project is keyed by its common git dir (the code pack's repository); it is shown by its checkout's folder name. */
   const repoName = (repo: string): string => {
     const base = path.basename(repo);
     return base.toLowerCase() === ".git" ? path.basename(path.dirname(repo)) : base.replace(/\.git$/i, "");
@@ -1475,8 +1475,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const h = holderOf(w, t);
     return `lock ${String(w.name)}, held by ${h.nick} (${h.state})`;
   };
-  /** Releases every lock participant `id` holds (unlock, end, gone, close): one `unlocked <name>` per repository with
-   *  waiters, mentioning each live waiter, posted by the holder in its own repository and by a waiter in another, so
+  /** Releases every lock participant `id` holds (unlock, end, gone, close): one `unlocked <name>` per project with
+   *  waiters, mentioning each live waiter, posted by the holder in its own project and by a waiter in another, so
    *  every waiter's wait sees it. Also drops `id`'s own waits on locks. */
   const releaseLocksOf = (id: number, how: LockRelease["how"], why: string, only?: string): string[] => {
     const held = (only == null
@@ -2662,7 +2662,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
     snapshot(repo) {
       const runRows = listedRuns().filter((r) => r.repo === repo);
-      if (!runRows.length) throw new Error(`no repository ${repo}`);
+      if (!runRows.length) throw new Error(`no project ${repo}`);
       const runIds = runRows.map((r) => Number(r.id));
       const marks = runIds.map(() => "?").join(", ");
 
@@ -2678,7 +2678,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         return statesByRun.get(run)!.get(member);
       };
       const cutoff = t - STALE_MS;
-      // the pack's fields of the repository: the lock and its turns, the files held, the flags (D18)
+      // the pack's fields of the project: the lock and its turns, the files held, the flags (D18)
       const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
@@ -2760,7 +2760,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const nameOf = new Map(people.map((r) => [`${r.run}/${r.seat}`, `${r.plan}/${r.seat}`]));
       const queues: Record<string, QueueSeat[]> = {};
       for (const run of runRows) {
-        // a later run of the same plan on the repository replaces the earlier one
+        // a later run of the same plan on the project replaces the earlier one
         queues[String(run.plan)] = sliceRows
           .filter((s) => Number(s.run) === Number(run.id))
           .map((s) => ({
