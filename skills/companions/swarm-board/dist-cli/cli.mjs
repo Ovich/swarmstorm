@@ -10095,6 +10095,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli, run3, group, doing, seat = "<seat>") => `${cli} join --run ${run3} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  /** V-48: a word that is no verb of this CLI, for every caller */
+  unknownVerb: (word, cli) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
   joinAsOtherGroup: (given, run3, group, corrected) => `join: refused: --as ${given} is not this seat of run ${run3}, whose group is ${group}: ${corrected}`
 };
@@ -11653,7 +11655,7 @@ ${verbHelp()}`);
       break;
     }
     default:
-      fail(USAGE);
+      fail(WORDING.unknownVerb(args.verb ?? "", CLI));
   }
 }
 if (!args.verb) {
