@@ -962,6 +962,11 @@ async function main(): Promise<void> {
       break;
     }
     case "join": {
+      // V-42 (board-split#D58): --as names the run's own group, never another run's member
+      const joinAs = args.flag("--as");
+      const joinRun = await runOf(runArg());
+      if (joinAs !== undefined && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
+        fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord(joinRun.group), shellWord(need("--doing")), shellWord(joinedSeat()))));
       const own = await memberWorktree(runArg(), joinedSeat());
       const { member, roster, composition } = await board.join({
         run: runArg(),

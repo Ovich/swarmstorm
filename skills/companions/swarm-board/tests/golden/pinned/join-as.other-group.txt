@@ -1,0 +1,2 @@
+exit 1
+join: refused: --as va/w1 is not this seat of run 2, whose group is vb: node <cli> join --run 2 --seat w1 --doing x --as vb/w1

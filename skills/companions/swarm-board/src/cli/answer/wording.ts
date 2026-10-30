@@ -229,7 +229,10 @@ export const WORDING = {
     `open: refused: group ${group} already has run ${run} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run}), or open under another --group`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
-  seatJoin: (cli: Command, run: number, group: string, doing: string): Command => `${cli} join --run ${run} --seat <seat> --doing ${doing} --as ${group}/<seat>`,
+  seatJoin: (cli: Command, run: number, group: string, doing: string, seat = "<seat>"): Command => `${cli} join --run ${run} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
+  joinAsOtherGroup: (given: string, run: number, group: string, corrected: Command) =>
+    `join: refused: --as ${given} is not this seat of run ${run}, whose group is ${group}: ${corrected}`,
 } as const;
 
 /** `run 7 board-split (architect, tech-lead) and run 8 shop (architect)`: each run holding decision authority, its roles. */
