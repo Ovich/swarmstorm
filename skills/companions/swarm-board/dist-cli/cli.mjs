@@ -4738,7 +4738,10 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       if (opts.task) {
         if (fresh.seat !== ORCHESTRATOR2) throw new Error(`post --task: only the orchestrator posts a task; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR2}`);
         const to = (m.mentions ?? []).filter((n) => n.startsWith(`${fresh.plan}/`) && n !== fresh.name);
-        if (to.length !== 1 || (m.mentions ?? []).length !== 1) throw new Error("post --task: mention exactly one member of your run, the one the task is for");
+        if (to.length !== 1 || (m.mentions ?? []).length !== 1)
+          throw new Error(
+            `post --task: a task mentions exactly one member of your run, the one it is for; this post mentions ${(m.mentions ?? []).join(", ") || "nobody"}: keep @ on that member alone and write every other name in backticks`
+          );
         const phase = runRow(fresh.run).phase;
         db.prepare("UPDATE messages SET task_for = ?, task_phase = ? WHERE seq = ?").run(to[0], phase == null ? null : String(phase), m.seq);
       }
@@ -10017,6 +10020,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   phaseStillOwed: (previous, members) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
   /** V-18: aiview's project add, with the same env prefix as every other command line */
   aiviewProjectAdd: (envPrefix, launcher, cwd) => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
+  /** V-31 (AGENTS rule 10): stats' last line, the --json command as this CLI runs */
+  statsJson: (cli) => `${cli} stats --json for every figure`,
   // ── T51 (board-split#D58): open and the run's identity ──
   /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
   groupAlreadyOpen: (group, run3, cli) => `open: refused: group ${group} already has run ${run3} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run3}), or open under another --group`,
@@ -10407,9 +10412,11 @@ var lengthText = (ms2) => {
   return minutes >= 1 ? `${minutes}m` : `${Math.round(ms2 / 1e3)}s`;
 };
 var statsLine = (r) => {
+  const head = `${r.code} ${r.title} \xB7 ${r.kind} \xB7 ${lengthText(r.lengthMs)} \xB7 ${r.closedAt === null ? "open" : "closed"}`;
+  if (!("firstMergeAtMs" in r)) return head;
   const c = r.plan?.conflicts;
   const conflicts = !c || r.recorded && r.firstMergeAtMs === null ? "\u2014" : c.known === null ? "unknown" : c.unknownMerges ? `${c.known} + ${c.unknownMerges} unknown` : String(c.known);
-  return `${r.code} ${r.title} \xB7 ${r.kind} \xB7 ${lengthText(r.lengthMs)} \xB7 ${r.closedAt === null ? "open" : "closed"} \xB7 conflicts ${conflicts}`;
+  return `${head} \xB7 conflicts ${conflicts}`;
 };
 var CliError = class extends Error {
 };
@@ -11434,7 +11441,7 @@ ${verbHelp()}`);
       emit(stats, () => {
         if (!stats.runs.length) console.log("no run in this scope");
         for (const r of stats.runs) console.log(statsLine(r));
-        console.log("swarm stats --json for every figure");
+        console.log(WORDING.statsJson(self().join(" ")));
       });
       break;
     }
