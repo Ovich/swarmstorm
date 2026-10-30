@@ -707,6 +707,26 @@ test("each write fires onChange once with its repository", async () => {
   off();
 });
 
+// plan D55 (4): a fact write moves the version in its own write, so a snapshot reader hears it within one tick
+test("a link fact written reaches an onChange reader within one tick, its link up and its link down", async () => {
+  const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
+  board.join({ run: run.id, seat: "S3", doing: "page", files: [], place: wt("s3") });
+  const watcher = await another();
+  const seen: string[] = [];
+  const off = watcher.onChange((repo) => seen.push(repo));
+  const heard = async (what: string): Promise<void> => {
+    const t0 = Date.now();
+    while (!seen.length && Date.now() - t0 < 1500) await new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(seen, [REPO], `${what}: ${JSON.stringify(seen)}`);
+    seen.length = 0;
+  };
+  board.recordLink(run.id, "S3", { connected: true, lostAt: null });
+  await heard("link up");
+  board.recordLink(run.id, "S3", { connected: false, lostAt: Date.now() });
+  await heard("link down");
+  off();
+});
+
 test("calls counts every board call of a member, one each, a wait's looks none (D66)", async () => {
   const { s3, s5 } = claimed();
   const calls = () => board.snapshot(REPO).roster.find((r) => r.member === s3.name)!.calls;

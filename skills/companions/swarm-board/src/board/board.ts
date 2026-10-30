@@ -2452,7 +2452,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           }
         }
         // U-F20: a badge that came or went with time alone (lost, stalled) is a change too, so a reader's card follows it
-        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
+        // plan D55 (4): the whole drawn view (state, badge and since when) is compared, never the reason's text,
+        // whose age moves every tick
+        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
         // a server's first tick only learns them: what a reader drew at its connect is this already
         if (badgesShown.get(run) !== badgesNow) {
           if (badgesShown.has(run)) moved = true;
@@ -2885,6 +2887,9 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
     recordLink(run, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run, member, link.connected ? 1 : 0, link.lostAt);
+      // plan D55 (4): a link up or down is a fact; its write moves the version, so a reader redraws at once
+      const linkRun = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined;
+      if (linkRun) bump(String(linkRun.repo));
     },
 
     savedLinks() {

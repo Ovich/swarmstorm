@@ -9278,20 +9278,21 @@ var init_home2 = __esm({
 });
 
 // ../swarm-board/src/board/liveness.ts
-var IDLE_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, BUSY_MAX_MS, STALLED_AGAIN_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
     IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
+    STALL_MS_DEFAULT = 5 * 60 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
-    STALLED_AGAIN_MS = 15 * 60 * 1e3;
     LINK_LOST_MS = 30 * 1e3;
     IN_TURN_MS = 120 * 1e3;
     OWE_WAIT_MS = 10 * 60 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
     LOCK_HELD_MS = 10 * 60 * 1e3;
+    SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
   }
 });
 
@@ -9375,8 +9376,9 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
     let log = "ignore";
     try {
       fs10.mkdirSync(dataRoot, { recursive: true });
-      fs10.writeFileSync(serverLogFile(dataRoot), "");
       log = fs10.openSync(serverLogFile(dataRoot), "a");
+      fs10.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
+`);
     } catch {
     }
     const child = hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
@@ -9393,7 +9395,8 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const lines = fs10.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all = fs10.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const lines = all.slice(all.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
   }

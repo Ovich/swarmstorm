@@ -506,18 +506,11 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     if (member) latestStallOf.set(memberKey(i.run, member), i.seq);
   }
   const saidSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.run === i.run && splitMember(x.from).seat === member);
-  // V4: a stall has passed once the member's liveness reads neither quiet, gone nor under a rule, without a post
+  // V4, plan D55: a stall has passed once the board's badge for the member is no longer stalled; aiview derives none
   const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
   const livenessOf = new Map(snap.roster.map((r) => [r.member, r.liveness]));
-  // board-split#D36: the board's badge, when it sends one, says the trouble; else the older liveness words do
-  const badgeOf = new Map(snap.roster.map((r) => [r.member, r.badge as SnapshotMember["badge"] | undefined]));
-  const stallPassed = (i: Item, member: string): boolean => {
-    const key = `${groupOf.get(i.run)}/${member}`;
-    const badge = badgeOf.get(key);
-    if (badge !== undefined) return badge === null;
-    const l = livenessOf.get(key);
-    return !!l && (l.state as string) !== "quiet" && (l.state as string) !== "gone" && !l.rule;
-  };
+  const badgeOf = new Map(snap.roster.map((r) => [r.member, r.badge ?? null]));
+  const stallPassed = (i: Item, member: string): boolean => badgeOf.get(`${groupOf.get(i.run)}/${member}`)?.name !== "stalled";
   // F9: a link-down row leaves once the member's link reads it again after the row; a gone row once a
   // `recovered` of the member follows, or its liveness reads anything but gone
   const linkBack = (i: Item, member: string): boolean => {
@@ -525,13 +518,7 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
     return typeof aliveAt === "number" && aliveAt > Date.parse(i.at);
   };
   const recoveredSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.kind === "recovered" && toldOf.get(x.seq) === member);
-  const goneHolds = (i: Item, member: string): boolean => {
-    if (recoveredSince(i, member)) return false;
-    const badge = badgeOf.get(member);
-    if (badge !== undefined) return badge?.name === "lost";
-    const l = livenessOf.get(member);
-    return !l || (l.state as string) === "gone";
-  };
+  const goneHolds = (i: Item, member: string): boolean => !recoveredSince(i, member) && badgeOf.get(member)?.name === "lost";
   return items.filter((i) => {
     const member = toldOf.get(i.seq);
     if (i.kind === "liveness" && i.state === "link-down" && member) return !linkBack(i, member);

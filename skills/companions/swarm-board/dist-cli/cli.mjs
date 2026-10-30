@@ -4458,7 +4458,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
             }
           }
         }
-        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.badge?.name ?? ""}`).join(",");
+        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
         if (badgesShown.get(run3) !== badgesNow) {
           if (badgesShown.has(run3)) moved = true;
           badgesShown.set(run3, badgesNow);
@@ -4822,6 +4822,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
     recordLink(run3, member, link) {
       db.prepare("INSERT OR REPLACE INTO member_links (run, member, connected, lost_at) VALUES (?, ?, ?, ?)").run(run3, member, link.connected ? 1 : 0, link.lostAt);
+      const linkRun = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run3);
+      if (linkRun) bump(String(linkRun.repo));
     },
     savedLinks() {
       return db.prepare("SELECT * FROM member_links").all().map((r) => ({

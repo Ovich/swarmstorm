@@ -309,35 +309,17 @@ test("the liveness never takes the word: a busy or waiting activity leaves the b
   }
 });
 
-test("a stalled member keeps its word and carries a stalled badge, its reason on hover, never the word", () => {
-  show([APP], 1, [withActivity({ state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress for 960s, link alive; last Bash", tokens: null, movedAt: null, progressAt: minutesAgo(16), aliveAt: Date.now() - 5000 })]);
-  const card = activeCard();
-  expect(card.querySelector(".state")!.textContent).toBe(WORKING_WORD);
-  expect(card.querySelector(".state")!.className).not.toMatch(/stalled/);
-  const badge = badgeOf(card)!;
-  expect(badge.textContent).toBe("stalled");
-  expect(badge.title).toBe("stalled for 16 min: no progress for 960s, link alive; last Bash");
-  expect(agesOf(card)!.textContent).toBe("progress 16 min · alive 5 s");
-});
-
+// plan D55 (4): aiview derives no badge; an older board's liveness words (quiet, gone, a rule, stale) carry none
 test.each([
-  ["ended", "quiet"],
-  ["call", "busy"],
-  ["owing", "quiet"],
-])("a member stalled under rule %s reads by the rule: a stalled badge", (rule, state) => {
-  show([APP], 1, [withActivity({ state, rule, doing: "Bash npm test", since: minutesAgo(2), reason: "anything at all", tokens: null, movedAt: null })]);
-  expect(badgeOf(activeCard())!.textContent).toBe("stalled");
-});
-
-test("an older board's gone reads as a lost badge, its quiet as stalled; a working member whose link is down carries none", () => {
-  show([APP], 1, [withActivity({ state: "gone", doing: "Read", since: null, reason: "link lost", tokens: null, movedAt: null })]);
-  expect(badgeOf(activeCard())!.textContent).toBe("lost");
-  expect(activeCard().classList.contains("lost")).toBe(true);
+  ["quiet", { state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress", tokens: null, movedAt: null }],
+  ["gone", { state: "gone", doing: "Read", since: null, reason: "link lost", tokens: null, movedAt: null }],
+  ["a stall rule", { state: "busy", rule: "call", doing: "Bash npm test", since: minutesAgo(2), reason: "x", tokens: null, movedAt: null }],
+])("a snapshot with no badge draws none, its liveness reading %s", (_name, liveness) => {
+  show([APP], 1, [withActivity(liveness)]);
+  expect(badgeOf(activeCard())).toBeNull();
+  expect(activeCard().querySelector(".state")!.textContent).toBe(WORKING_WORD);
   cleanup();
-  show([APP], 1, [withActivity({ state: "quiet", doing: "Read", since: minutesAgo(2), reason: "no activity yet", tokens: null, movedAt: null })]);
-  expect(badgeOf(activeCard())!.textContent).toBe("stalled");
-  cleanup();
-  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, reason: "link down", tokens: null, movedAt: null })]);
+  show([APP], 1, [withMember({ badge: undefined, liveness, stale: true, lastCall: new Date(minutesAgo(30)).toISOString() })]);
   expect(badgeOf(activeCard())).toBeNull();
 });
 
@@ -351,7 +333,7 @@ test.each([
   const card = activeCard();
   expect(card.querySelector(".state")!.textContent).toBe(WORKING_WORD);
   expect(badgeOf(card)!.textContent).toBe(name);
-  expect(badgeOf(card)!.title).toBe(`${name} for 3 min: ${reason}`);
+  expect(badgeOf(card)!.title).toBe(`${name}: ${reason}`);
   expect(card.classList.contains("lost")).toBe(name === "lost");
 });
 

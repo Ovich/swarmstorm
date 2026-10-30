@@ -20,8 +20,6 @@ function activityOf(p: SnapshotMember): MemberActivity | null {
   return l && ACTIVITY_STATES.has(l.state) ? l : null;
 }
 
-const minutesSince = (since: number, now: number): string => `${Math.max(1, Math.round((now - since) / 60000))} min`;
-
 /** An age as a person reads it at a glance: seconds under a minute, minutes under an hour, then hours. */
 function ageSince(at: number, now: number): string {
   const secs = Math.max(0, Math.round((now - at) / 1000));
@@ -78,20 +76,12 @@ function UnreadCount({ p }: { p: SnapshotMember }) {
   );
 }
 
-/** The member's badge (D35, D36): the board's, its reason on hover; from an older board, read off its activity
- *  (a stall rule or quiet: stalled; gone: lost). Null when none, and always for a parked or ended member (D30). */
-export function troubleOf(p: MemberOnBoard, activity: MemberActivity | null, now: number): { kind: BadgeName; reason: string } | null {
+/** The member's badge, the board's alone (plan D55): its name, and on hover the board's reason (state word, the fact
+ *  and its age, as the board's formatter writes it). Null when the snapshot carries none: aiview derives no badge. */
+export function troubleOf(p: MemberOnBoard): { kind: BadgeName; reason: string } | null {
   const state = boardStateOf(p);
   if (state === "ended" || state === "parked") return null;
-  const held = (since: number | null) => (since !== null ? ` for ${minutesSince(since, now)}` : "");
-  if (p.badge !== undefined) return p.badge ? { kind: p.badge.name, reason: `${p.badge.name}${held(p.badge.since)}${p.badge.reason ? `: ${p.badge.reason}` : ""}` } : null;
-  if (activity) {
-    const kind: BadgeName | null = activity.rule || activity.state === "quiet" ? "stalled" : activity.state === "gone" ? "lost" : null;
-    if (!kind) return null;
-    return { kind, reason: `${kind}${held(activity.since)}${activity.reason ? `: ${activity.reason}` : ""}` };
-  }
-  if (p.stale) return { kind: "stalled", reason: `stalled: no call for ${minutesSince(Date.parse(p.lastCall), now)}` };
-  return null;
+  return p.badge ? { kind: p.badge.name, reason: p.badge.reason ? `${p.badge.name}: ${p.badge.reason}` : p.badge.name } : null;
 }
 
 /** The trouble badge beside the state word (D35). */
@@ -203,7 +193,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
   const orch = p.seat === ORCHESTRATOR;
   const activity = isEnded(p) ? null : activityOf(p);
   const status = stateWordOf(p);
-  const trouble = troubleOf(p, activity, now);
+  const trouble = troubleOf(p);
   const line = isEnded(p) ? null : activityLine(p, activity, now);
   // the face shows the ages and the activity line; the hover title repeats them, the trouble's reason with them
   const hoverTitle = [p.doing, trouble?.reason, activity && agesText(activity, now), line?.text].filter(Boolean).join("\n");
@@ -250,7 +240,7 @@ type Bucket = (typeof BUCKETS)[number]["id"];
 /** The member's section: the ended by the board's word, the attention by its badge (D35), waiting by the board's word. */
 function bucketOf(p: SnapshotMember): Bucket {
   if (isEnded(p)) return "ended";
-  if (troubleOf(p, activityOf(p), Date.now())) return "attention";
+  if (troubleOf(p)) return "attention";
   return boardStateOf(p) === "waiting" ? "waiting" : "active";
 }
 
@@ -258,7 +248,7 @@ function bucketOf(p: SnapshotMember): Bucket {
 function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; onFollow: () => void; now: number }) {
   const activity = isEnded(p) ? null : activityOf(p);
   const status = stateWordOf(p);
-  const trouble = troubleOf(p, activity, now);
+  const trouble = troubleOf(p);
   return (
     <button
       className={["row", boardStateOf(p), trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
@@ -332,7 +322,7 @@ export function AgentStrip({
   const byBucket = new Map<Bucket, SnapshotMember[]>(BUCKETS.map((b) => [b.id, []]));
   for (const p of rest) byBucket.get(bucketOf(p))!.push(p);
   // under Needs attention, the stalled and blocked before the lost: they can still be steered
-  const lost = (p: SnapshotMember) => Number(troubleOf(p, activityOf(p), now)?.kind === "lost");
+  const lost = (p: SnapshotMember) => Number(troubleOf(p)?.kind === "lost");
   byBucket.get("attention")!.sort((a, b) => lost(a) - lost(b));
   const shown = (b: Bucket): SnapshotMember[] => (only && only !== b ? [] : byBucket.get(b)!.filter((p) => matches(p, nicks.get(p.member), q)));
   const groups = BUCKETS.map((b) => ({ ...b, list: shown(b.id) })).filter((g) => g.list.length > 0);
@@ -398,7 +388,7 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
       {agents.map((p) => {
         const activity = isEnded(p) ? null : activityOf(p);
         const status = stateWordOf(p);
-        const trouble = troubleOf(p, activity, now);
+        const trouble = troubleOf(p);
         return (
           <button
             key={p.member}
@@ -428,7 +418,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
   const ended = isEnded(p);
   const activity = ended ? null : activityOf(p);
   const status = stateWordOf(p);
-  const trouble = troubleOf(p, activity, now);
+  const trouble = troubleOf(p);
   const line = ended ? null : activityLine(p, activity, now);
   return (
     <div
