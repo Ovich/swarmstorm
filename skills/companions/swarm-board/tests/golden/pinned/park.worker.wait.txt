@@ -11,4 +11,3 @@ unparked @g/w1
 #<seq> g/orchestrator (event)  <ts>
 parked @g/w1
 you are parked: end your turn now, without end; the orchestrator resumes you at your next task
-these lines are delivered; the task-end notice is the same event
