@@ -530,13 +530,17 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   });
 }
 
-/** The run header's pause words: `waiting on the person: <what>` for `pause --person`, `paused: <why>` for a plain
- *  pause, null when the run is not paused. */
-export function pausedText(run: RunSummary): string | null {
+/** The run header's pause chip (board-split#D57): `On you` for `pause --person`, `Paused` for the orchestrator's
+ *  pause, its reason for the tooltip; null when the run is not paused. */
+export interface PauseChip {
+  label: "On you" | "Paused";
+  reason: string | null;
+}
+
+export function pauseChip(run: RunSummary): PauseChip | null {
   const pause = run.paused;
   if (!pause) return null;
-  if (pause.person) return `waiting on the person${pause.text ? `: ${pause.text}` : ""}`;
-  return pause.text ? `paused: ${pause.text}` : "paused";
+  return { label: pause.person ? "On you" : "Paused", reason: pause.text || null };
 }
 
 /** The board's events that tell of one member (stalled, liveness, gone, recovered): its member in the event's data or

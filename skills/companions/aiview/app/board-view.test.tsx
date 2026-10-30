@@ -567,13 +567,17 @@ test("a run that names a protocol shows it on its tab's hover, the kind otherwis
 
 const pausedRun = (paused: { text: string; person: boolean } | null) => ({ ...LIVE, runs: LIVE.runs.map((r) => (r.run === 1 ? { ...r, paused } : r)) }) as BoardSnapshot;
 
+// board-split#D57: the phase chip's shape, amber, a pause icon, 'On you' or 'Paused', the reason in the tooltip
 test.each([
-  [{ text: "approve the mockup", person: true }, "waiting on the person: approve the mockup"],
-  [{ text: "hold for the review", person: false }, "paused: hold for the review"],
-])("the conversation's head shows the run's pause: %o", (paused, said) => {
+  [{ text: "approve the mockup", person: true }, "On you", "person"],
+  [{ text: "hold for the review", person: false }, "Paused", "orchestrator"],
+])("the conversation's head shows the run's pause chip: %o", (paused, label, by) => {
   show([APP], 1, [pausedRun(paused)]);
-  const pause = document.querySelector('[data-component="RunPause"]');
-  expect(pause?.textContent).toBe(said);
+  const pause = document.querySelector('[data-component="RunPause"]')!;
+  expect(pause.textContent).toBe(label);
+  expect(pause.getAttribute("data-pause")).toBe(by);
+  expect(pause.getAttribute("title")).toBe(paused.text);
+  expect(pause.querySelector("svg")).not.toBeNull();
 });
 
 test("a run that is not paused shows no pause on its head", () => {

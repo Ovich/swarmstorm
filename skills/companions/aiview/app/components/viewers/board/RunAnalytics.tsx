@@ -1,7 +1,7 @@
 import type { RunSummary } from "../../../../../swarm-board/src/client/reader.ts";
 import { useStats } from "../../../hooks/useStats.ts";
 import { runLine, summaryLine, type RunView } from "../../../lib/board/analytics.ts";
-import { pausedText } from "../../../lib/board/view.ts";
+import { pauseChip } from "../../../lib/board/view.ts";
 import { BrainstormRunAnalytics } from "./BrainstormRunAnalytics.tsx";
 import { PlanRunAnalytics } from "./PlanRunAnalytics.tsx";
 import { RunViewSwitch } from "./RunViewSwitch.tsx";
@@ -28,7 +28,7 @@ export function RunAnalytics({
   const state = error ? "error" : stats === null ? "loading" : (run?.kind ?? "loading");
   return (
     <>
-      <RunViewSwitch view="analytics" line={run && stats ? runLine(run, stats.totals) : summaryLine(summary)} phase={summary.phase ?? null} phases={phases} pause={pausedText(summary)} json={body} onView={onView} />
+      <RunViewSwitch view="analytics" line={run && stats ? runLine(run, stats.totals) : summaryLine(summary)} phase={summary.phase ?? null} phases={phases} pause={pauseChip(summary)} json={body} onView={onView} />
       <section className="analytics" data-component="RunAnalytics" data-state={state}>
         {error ? (
           <p className="notice">{error}</p>

@@ -24,7 +24,15 @@ const DEFAULT_SWARM_ENTRY = path.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs
 /** What a running board server writes in its data home: one there, the reader opens at start. */
 const SERVER_STATE_FILE = "swarm-server.json";
 
-export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: string } = {}): BoardRoutes {
+export function mountBoard(
+  sse: SseHub,
+  opts: {
+    dataRoot?: string;
+    swarmEntry?: string;
+    /** The repositories of the project a key names (its name, as `/api/project-board` resolves it); null when none. */
+    reposOfProject?: (key: string) => string[] | null;
+  } = {},
+): BoardRoutes {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
   const swarmEntry = opts.swarmEntry ?? DEFAULT_SWARM_ENTRY;
   let reader: BoardReader | null = null;
@@ -76,6 +84,18 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     return norm(a) === norm(b);
   };
 
+  /** The board's repository a key names: a git dir in any spelling, or a project's name, its first repository with a
+   *  board (verify-3 F16); undefined when none. */
+  const repoOfKey = (repos: { repo: string }[], key: string): string | undefined => {
+    const direct = repos.find((r) => sameRepo(r.repo, key))?.repo;
+    if (direct) return direct;
+    for (const asked of opts.reposOfProject?.(key) ?? []) {
+      const repo = repos.find((r) => sameRepo(r.repo, asked))?.repo;
+      if (repo) return repo;
+    }
+    return undefined;
+  };
+
   /** The board a request names: a run's, or a project's (`?project=`, an older `?repo=` still read, D47); `missing` is the
    *  404's message, never a fallback to another project (board-split#D41: no global scope). `/api/run?id=` kept as `?run=`. */
   const repoNamed = async (board: BoardReader, url: URL): Promise<{ repo: string } | { missing: string }> => {
@@ -87,7 +107,7 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
       return repo ? { repo } : { missing: `no run ${run}` };
     }
     if (key !== null) {
-      const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
+      const repo = repoOfKey(repos, key);
       return repo ? { repo } : { missing: `no project ${key}` };
     }
     return { missing: "no project named: ask ?project=<project> or ?run=<id>" };
@@ -109,7 +129,7 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     const key = projectAsked(q);
     // a named repository is read as `swarm stats --repo` reads it, its run whatever its age, pruned with its summary
     // kept or not in the board's list (plan D40); a run named alone is found among the runs the board lists
-    const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : undefined;
+    const known = key !== null ? repoOfKey(await board.repos(), key) : undefined;
     const named = key !== null ? (known ? { repo: known } : { missing: `no project ${key}` }) : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");

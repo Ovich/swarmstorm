@@ -83,7 +83,15 @@ export function startServer(
     const build = servedBuild(path.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
-  const board = mountBoard(sse, { dataRoot: boardDataRoot, swarmEntry });
+  // `/api/board?project=` takes the project's name as `/api/project-board` resolves it (verify-3 F16)
+  const board = mountBoard(sse, {
+    dataRoot: boardDataRoot,
+    swarmEntry,
+    reposOfProject: (key) => {
+      const slug = projectOfBoardKey(key);
+      return slug === null ? null : index.boardRepos(slug);
+    },
+  });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher((dir, name) =>
     index
@@ -112,19 +120,21 @@ export function startServer(
   const json = (res: http.ServerResponse, obj: unknown, status = 200) => send(res, status, JSON.stringify(obj));
 
   /** The project a board hash's `project=` names (D41, D47): a project's slug, or the name of a repository on a project's
-   *  board, mapped to the project whose paths cover it; null when none does. */
-  const projectOfBoardKey = (key: string): string | null => {
+   *  board, mapped to the project whose paths cover it, or (an older `#board&repo=` link, U-F32) a repository's git
+   *  dir or checkout itself; null when none does. */
+  function projectOfBoardKey(key: string): string | null {
     const projects = index.allProjects();
     if (projects.some((x) => x.slug === key)) return key;
     // a board keys a repository by its git dir or its checkout: the checkout is the folder the name is
     const checkoutOf = (repo: string): string => repo.replace(/[\\/]+$/, "").replace(/[\\/]\.git$/i, "");
+    if (path.isAbsolute(key)) return projectForCwd(checkoutOf(key), projects)?.slug ?? null;
     const named = (repo: string): boolean => path.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
     for (const x of projects) {
       const repo = index.boardRepos(x.slug).find(named);
       if (repo) return projectForCwd(checkoutOf(repo), projects)?.slug ?? x.slug;
     }
     return null;
-  };
+  }
   /** Moves the tabs on `project` (D41), or, none open there, opens a new tab at `hash`; the tabs that heard it. */
   const toProjectTabs = (project: string, event: unknown, hash: string): { tabs: number; opened: boolean } => {
     const tabs = sse.broadcastTo(project, event);

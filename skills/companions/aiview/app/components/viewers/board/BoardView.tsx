@@ -3,7 +3,7 @@
 // Analytics, and the across-runs view. aiview's theme; board.css reaches only `.board`.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "../../../hooks/useBoard.ts";
-import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pausedText, runHue, runTabs, seatCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
+import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pauseChip, runHue, runTabs, seatCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
 import {
   boardFieldsOf,
   DEFAULT_SCOPE,
@@ -215,7 +215,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             <RunAnalytics key={selectedRun.run} repo={snapshot.repo} summary={selectedRun} onView={(v) => showRunView(selectedRun.run, v)} onOpenPost={openPost} phases={phases} />
           ) : (
             <>
-              {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} pause={pausedText(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
+              {selectedRun && <RunViewSwitch view="conversation" line={summaryLine(selectedRun)} pause={pauseChip(selectedRun)} phase={selectedRun.phase ?? null} phases={phases} json={null} onView={(v) => showRunView(selectedRun.run, v)} />}
               {/* the roster sits left of the conversation, under a run tab only: All has none */}
               <div className={selectedRun && members.length > 0 ? (rosterOpen ? "run-body with-roster" : "run-body with-roster roster-folded") : "run-body"}>
                 {selectedRun && members.length > 0 && (

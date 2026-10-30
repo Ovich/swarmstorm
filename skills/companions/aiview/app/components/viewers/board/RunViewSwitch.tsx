@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Phase } from "../../../../../swarm-board/src/client/reader.ts";
 import type { RunView } from "../../../lib/board/analytics.ts";
+import type { PauseChip } from "../../../lib/board/view.ts";
 
 /** A run tab's head (plan D31, prototype #677 `run`, `brun`, `conv`): Conversation / Analytics, the run's
  *  line, and on Analytics "Copy as JSON", the run's answer as the server sent it, equal to
@@ -56,8 +57,8 @@ export function RunViewSwitch({
   phase?: Phase | null;
   /** Every phase the run opened, in order: drawn as a strip, the last one current. Empty: the current phase alone. */
   phases?: { name: string; text: string }[];
-  /** The run's pause in words (`waiting on the person: …`, `paused: …`), null when it runs: shown on both views. */
-  pause?: string | null;
+  /** The run's pause (`On you` or `Paused`, its reason), null when it runs: shown on both views (D57). */
+  pause?: PauseChip | null;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -75,8 +76,17 @@ export function RunViewSwitch({
   return (
     <div className="runhead" data-component="RunViewSwitch" data-state={view === "analytics" && copied ? "analytics+copied" : view}>
       {pause && (
-        <span className="runpause" data-component="RunPause" title={`The run is paused: ${pause}`}>
-          {pause}
+        <span
+          className="runpause"
+          data-component="RunPause"
+          data-pause={pause.label === "On you" ? "person" : "orchestrator"}
+          title={pause.reason ?? (pause.label === "On you" ? "The run waits on you" : "The orchestrator paused the run")}
+        >
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <rect x="4" y="3" width="3" height="10" rx="1" />
+            <rect x="9" y="3" width="3" height="10" rx="1" />
+          </svg>
+          <span className="name">{pause.label}</span>
         </span>
       )}
       {phases.length > 1 ? (

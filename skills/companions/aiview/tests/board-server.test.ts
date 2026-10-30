@@ -201,3 +201,18 @@ test("document events unchanged", async () => {
   assert.deepEqual(events.find((e) => e.type === "changed"), { type: "changed", id: docId });
   assert.ok(!events.some((e) => e.type === "board-changed"), "a document edit is never board-changed");
 });
+
+test("?project= takes the project's name, as /api/project-board resolves it; the git dir still read (verify-3 F16)", async () => {
+  const named = path.join(tmp, "named", ".git");
+  fs.mkdirSync(named, { recursive: true });
+  await writer.openRun({ repo: named, group: "named", title: "Named", seats: [] });
+  index.upsertProject("one-proj", { addPaths: [path.dirname(named)] });
+  index.addBoardRepo("one-proj", named);
+  const byName = (await (await fetch(`${base}/api/board?project=one-proj`)).json()) as BoardBody;
+  assert.equal(byName.snapshot.repo, (await writer.runs()).find((r) => r.group === "named")!.repo);
+  const stats = await fetch(`${base}/api/stats?project=one-proj&since=all`);
+  assert.equal(stats.status, 200);
+  const unknown = await fetch(`${base}/api/board?project=no-such-proj`);
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(await unknown.json(), { error: "no project no-such-proj" });
+});

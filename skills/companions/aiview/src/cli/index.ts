@@ -61,7 +61,7 @@ const USAGE = [
   "  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
   "  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice",
   "  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0",
-  "  board [--repo <path>] [--project <slug>] [--open]   # the project's board page: its repositories, a repository added; prints the link",
+  "  board [--project <name>] [--open]   # the project's board page: its repositories; prints the link",
   "  init                                     # create the data home; report where everything lives",
 ].join("\n");
 

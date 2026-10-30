@@ -97,6 +97,9 @@ test("a board key names its project: a slug as itself, a repository on a board b
   assert.equal((await fetch(`${base}/api/project-board?project=nowhere`)).status, 404);
   // D47: an older `?repo=` link still answers, as `?project=`
   assert.equal(((await (await fetch(`${base}/api/project-board?repo=shop`)).json()) as { project?: string }).project, "beta");
+  // U-F32: an older `#board&repo=<git dir>` names its project by the git dir itself
+  assert.equal((await of(encodeURIComponent(path.join(tmp, "beta", "shop", ".git")))).project, "beta");
+  assert.equal((await fetch(`${base}/api/project-board?project=${encodeURIComponent(path.join(tmp, "elsewhere", ".git"))}`)).status, 404);
 });
 
 test("the board hash: written, read, and given its project once", () => {

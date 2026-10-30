@@ -1,7 +1,7 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, pausedText, runTabs, type Item } from "./lib/board/view.ts";
+import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, pauseChip, runTabs, type Item } from "./lib/board/view.ts";
 import { PHASE, PHASED } from "./board-fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
@@ -424,10 +424,11 @@ describe("a phase separator (swarm phase)", () => {
   });
 });
 
-test("idea 2, B12: the run header says waiting on the person for a pause --person, paused as before otherwise", () => {
-  expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "approve idea 1", person: true } })).toBe("waiting on the person: approve idea 1");
-  expect(pausedText({ ...run(1, "alpha", "AL"), paused: { text: "hold on", person: false } })).toBe("paused: hold on");
-  expect(pausedText(run(1, "alpha", "AL"))).toBeNull();
+test("idea 2, B12: the run header's chip says On you for a pause --person, Paused for the orchestrator's (D57)", () => {
+  expect(pauseChip({ ...run(1, "alpha", "AL"), paused: { text: "approve idea 1", person: true } })).toEqual({ label: "On you", reason: "approve idea 1" });
+  expect(pauseChip({ ...run(1, "alpha", "AL"), paused: { text: "hold on", person: false } })).toEqual({ label: "Paused", reason: "hold on" });
+  expect(pauseChip({ ...run(1, "alpha", "AL"), paused: { text: "", person: false } })).toEqual({ label: "Paused", reason: null });
+  expect(pauseChip(run(1, "alpha", "AL"))).toBeNull();
 });
 
 describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is back", () => {
