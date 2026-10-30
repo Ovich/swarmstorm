@@ -15,6 +15,8 @@ export type StallFacts = {
   clockFloorAt: number;
   /** In a board wait the server holds as its open call, not a lock wait (the lock rule tells that). */
   inHeldWait: boolean;
+  /** board-split D55 (amended, U-F22): when its current waiting spell began (`nextWaitSpell`); null out of one. */
+  waitSpellSince: number | null;
   /** Its open tool call (not the board wait), or null. */
   openCallSince: number | null;
   /** Its background task, or null; `grewAt`: its output last moved. */
@@ -40,8 +42,10 @@ export function stalledOf(f: StallFacts, t: number): Stall | null {
   if (f.owes == null || f.taskDeliveredAt == null) return null;
   const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
   if (f.inHeldWait) {
-    // a re-armed wait resets its own start, so the window runs from the task, the phase or the resume
-    return t - floor >= f.stallMs ? { rule: "owing", since: floor, fact: `not done ${f.owes}, in a wait` } : null;
+    // board-split D55 amended (U-F22): from the later of the floor and the waiting spell's start; the work before
+    // the spell never counts as waiting, and a re-armed wait keeps its spell
+    const from = Math.max(floor, f.waitSpellSince ?? floor);
+    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `not done ${f.owes}, in a wait` } : null;
   }
   const opened = f.openCallSince ?? f.background?.since ?? null;
   if (opened != null) {
@@ -51,6 +55,21 @@ export function stalledOf(f: StallFacts, t: number): Stall | null {
   }
   const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
   return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `not done ${f.owes}, no activity` } : null;
+}
+
+/** board-split D55 (amended): out of any wait this long breaks a waiting spell; a re-arm, out for a second, keeps it. */
+export const WAIT_SPELL_BREAK_MS = 10_000;
+
+/** A member's waiting spell: `since` its first wait opened, `inAt` the last time it was seen in a wait. */
+export type WaitSpell = { since: number; inAt: number };
+
+/** board-split D55 (amended): the waiting spell after a look at time `t`. In a wait (`waitOpenedAt` the held wait's
+ *  start): the spell goes on unless it was out of any wait for WAIT_SPELL_BREAK_MS, else a new one starts at that
+ *  wait's opening. Out of a wait: the spell is kept for its break test, null when there was none. */
+export function nextWaitSpell(prev: WaitSpell | null, waitOpenedAt: number | null, t: number): WaitSpell | null {
+  if (waitOpenedAt == null) return prev;
+  const goesOn = prev != null && Math.min(t, waitOpenedAt) - prev.inAt < WAIT_SPELL_BREAK_MS;
+  return { since: goesOn ? prev!.since : waitOpenedAt, inAt: t };
 }
 
 /** The age as a reader reads it: seconds under two minutes, else minutes. */

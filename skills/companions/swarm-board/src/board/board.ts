@@ -17,7 +17,7 @@ import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIP
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
-import { reasonOf, stalledOf } from "./stall.ts";
+import { nextWaitSpell, reasonOf, stalledOf, WAIT_SPELL_BREAK_MS, type WaitSpell } from "./stall.ts";
 
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
@@ -1282,6 +1282,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
   /** The waits this process holds, by participant id, and since when (ms epoch): the waiting of D35. */
   const heldWaits = new Map<number, number>();
+  /** board-split D55 (amended, U-F22): each participant's waiting spell, by id: the held-wait window counts from it. */
+  const waitSpells = new Map<number, WaitSpell>();
   /** U-F20: per run, the badges its last tick read, so a badge changing with time alone tells the readers. */
   const badgesShown = new Map<RunId, string>();
   const orchestratorIn = (run: RunId): Participant =>
@@ -1450,13 +1452,20 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const a = activityOf(Number(run.id), member);
     const owes = owedNameOf(p, run);
     const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
+    const inHeldWait = heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1);
+    const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
+    if (spell) waitSpells.set(Number(p.id), spell);
+    // a re-arm, out of its waits for a second (nothing open but the next wait), is still the spell: no recovered
+    const rearming = !inHeldWait && spell != null && t - spell.inAt < WAIT_SPELL_BREAK_MS && a?.bg_target == null && (!ownCallOpen || Number(a!.open_wait) === 1);
+    const inWaitSpell = inHeldWait || rearming;
     const stall = stalledOf(
       {
         shownState,
         owes,
         taskDeliveredAt: owes == null ? null : taskDeliveredAtOf(p, run),
         clockFloorAt: Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at))),
-        inHeldWait: heldSince != null && !lockWaitOf(Number(p.id), t) && (a == null || Number(a.open_wait) === 1),
+        inHeldWait: inWaitSpell,
+        waitSpellSince: inWaitSpell ? spell!.since : null,
         openCallSince: ownCallOpen ? Number(a!.open_since) : null,
         background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
         transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),

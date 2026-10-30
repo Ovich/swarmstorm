@@ -4,7 +4,9 @@
 // its link reads). It plays, at once: a server restart with live members (their links reconnecting, D56), a link
 // drop and reconnect within seconds, a phase opened and its task posted later, a long background test,
 // park then the agent ends, a rejoin by a fresh agent; and one control, an agent truly gone. After LOST_MS and two
-// ticks it checks that only the control is lost and that nobody is stalled.
+// ticks it checks that only the control is lost and that nobody is stalled. Then, on a second run with a 20 s stall
+// window (D55 amended, U-F22, scaled from 5 min): a member works 25 s after its task, then waits in re-armed waits:
+// not stalled 15 s into the waiting, stalled once past the window counted from the wait, never from the work.
 //
 //   node scripts/liveness-scenario.mjs [--cli <path to swarm.mjs>] [--keep]
 //
@@ -186,11 +188,65 @@ try {
   const gone = entryOf("gone");
   check(gone?.badge?.name === "lost" && toldLost("gone"), `gone (control): lost and told (${gone?.badge?.name ?? "no badge"})`);
   check(!toldStalled, "nobody told stalled");
+
+  // U-F22: the held-wait window counts from the waiting spell
+  const SPELL_STALL_S = 20;
+  const orch2 = agentFor("spl/orchestrator");
+  const spellSeats = path.join(home, "spell-seats.json");
+  fs.writeFileSync(spellSeats, JSON.stringify([{ id: "spell", blockers: [] }]));
+  const opened2 = swarm(orch2, "open", "--kind", "brainstorm", "--group", "spl", "--title", "waiting spell", "--seats", spellSeats, "--stall-ms", String(SPELL_STALL_S * 1000));
+  const run2 = opened2.split(/\r?\n/)[0].trim();
+  const m2 = opened2.match(LINK_LINE);
+  if (m2) {
+    orch2.linkArgv = [m2[1], ...m2[2].trim().split(" ")];
+    startLink(orch2);
+  }
+  const spell = agentFor("spl/spell");
+  const joined2 = swarm(spell, "join", "--run", run2, "--seat", "spell", "--doing", "spell", "--as", spell.member);
+  const mj = joined2.match(LINK_LINE);
+  spell.linkArgv = [mj[1], ...mj[2].trim().split(" ")];
+  startLink(spell);
+  agents.spell = spell;
+  orch.extra = orch2;
+  swarm(orch2, "phase", "p1", "go", "--for", "spell", "--as", orch2.member);
+  swarm(orch2, "post", "@spell your part of p1", "--task", "--as", orch2.member);
+  swarm(spell, "deliver", "--as", spell.member);
+  log(`run ${run2}: spell works ${SPELL_STALL_S + 5} s after its task`);
+  for (let s = 0; s < SPELL_STALL_S + 5; s += 5) {
+    toolUse(spell, `sw-${s}`, "Read", { file_path: "z" });
+    toolResult(spell, `sw-${s}`, "ok");
+    await sleep(5);
+  }
+  const waitStarted = Date.now();
+  let waits = 0;
+  /** One foreground board wait, as the harness writes it, held `s` seconds, then a re-arm a second later. */
+  const heldWait = async (s) => {
+    const id = `wait-${++waits}`;
+    toolUse(spell, id, "Bash", { command: `node swarm.mjs wait --mentions --as ${spell.member}` });
+    const done = new Promise((r) => spawn(process.execPath, [CLI, "wait", "--mentions", "--timeout", String(s * 1000), "--as", spell.member], { cwd: repo, env: spell.env, stdio: "ignore" }).once("exit", r));
+    await done;
+    toolResult(spell, id, "");
+    await sleep(1);
+  };
+  const spellEntry = () => {
+    const r = JSON.parse(swarm(orch2, "roster", "--json"));
+    return (Array.isArray(r) ? r : r.members ?? r.roster ?? []).find((e) => e.name === spell.member);
+  };
+  const toldStalledSpell = (text) => (text.match(/stalled spl\/spell/g) ?? []).length;
+  await heldWait(8);
+  await heldWait(6);
+  const early = spellEntry();
+  const told2a = swarm(orch2, "deliver", "--as", orch2.member);
+  check(early?.badge == null && toldStalledSpell(told2a) === 0, `spell: ${Math.round((Date.now() - waitStarted) / 1000)} s into its waits after ${SPELL_STALL_S + 5} s of work, not stalled (${early?.state}${early?.badge ? `, ${early.badge.name}: ${early.badge.reason}` : ""})`);
+  while (Date.now() - waitStarted < (SPELL_STALL_S + 6) * 1000) await heldWait(5);
+  const late = spellEntry();
+  const told2b = swarm(orch2, "deliver", "--as", orch2.member);
+  check(late?.badge?.name === "stalled" && toldStalledSpell(told2b) === 1, `spell: re-armed waits past ${SPELL_STALL_S} s, stalled and told once (${late?.badge?.name ?? "no badge"}, told ${toldStalledSpell(told2b)})`);
 } catch (e) {
   failures++;
   log(`FAIL ${e.stack ?? e}`);
 } finally {
-  for (const a of [orch, ...Object.values(agents)]) if (a.link && a.link.exitCode === null) a.link.kill();
+  for (const a of [orch, orch.extra, ...Object.values(agents)].filter(Boolean)) if (a.link && a.link.exitCode === null) a.link.kill();
   spawnSync(process.execPath, [CLI, "serve", "stop"], { cwd: repo, env: orch.env });
   if (!KEEP) fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
   else log(`kept ${home}`);

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { BUSY_MAX_MS, SILENT_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
-import { reasonOf, stalledOf, type StallFacts } from "../src/board/stall.ts";
+import { nextWaitSpell, reasonOf, stalledOf, WAIT_SPELL_BREAK_MS, type StallFacts, type WaitSpell } from "../src/board/stall.ts";
 import type { MemberActivity } from "../src/wire.ts";
 
 const T0 = 1_800_000_000_000;
@@ -19,6 +19,7 @@ const facts = (o: Partial<StallFacts> = {}): StallFacts => ({
   taskDeliveredAt: T0,
   clockFloorAt: T0 - MIN,
   inHeldWait: false,
+  waitSpellSince: null,
   openCallSince: null,
   background: null,
   transcriptGrewAt: null,
@@ -36,6 +37,34 @@ test("stalledOf, held wait: owing in a held wait past the stall window from the 
   assert.deepEqual(stalledOf(f, T0 + STALL_MS_DEFAULT), { rule: "owing", since: T0, fact: "not done p1, in a wait" });
   // a phase opened or a resume after the task moves the floor
   assert.equal(stalledOf({ ...f, clockFloorAt: T0 + MIN }, T0 + STALL_MS_DEFAULT), null);
+});
+
+test("stalledOf, held wait (U-F22): the window counts from the waiting spell, never the work before it", () => {
+  // worked 8 min after the task, then a wait: 5 min into the spell, not stalled; at the stall window, stalled from the spell
+  const spell = T0 + 8 * MIN;
+  const f = facts({ inHeldWait: true, shownState: "waiting", waitSpellSince: spell });
+  assert.equal(stalledOf(f, spell + 4 * 1000), null);
+  assert.equal(stalledOf(f, spell + STALL_MS_DEFAULT - 1), null);
+  assert.deepEqual(stalledOf(f, spell + STALL_MS_DEFAULT), { rule: "owing", since: spell, fact: "not done p1, in a wait" });
+  // a spell before the task: the task's delivery is the later start
+  assert.equal(stalledOf({ ...f, waitSpellSince: T0 - 30 * MIN }, T0 + STALL_MS_DEFAULT - 1), null);
+});
+
+test("nextWaitSpell: a re-arm keeps the spell, 10 s out breaks it, work out of a wait never starts one", () => {
+  const s = 1000;
+  let spell: WaitSpell | null = nextWaitSpell(null, null, T0);
+  assert.equal(spell, null);
+  spell = nextWaitSpell(spell, T0 + s, T0 + 2 * s);
+  assert.deepEqual(spell, { since: T0 + s, inAt: T0 + 2 * s });
+  // the same wait, ticks on
+  spell = nextWaitSpell(spell, T0 + s, T0 + 170 * s);
+  // out for a second (the re-arm), a new wait: the spell goes on
+  spell = nextWaitSpell(nextWaitSpell(spell, null, T0 + 171 * s), T0 + 172 * s, T0 + 172 * s);
+  assert.equal(spell!.since, T0 + s);
+  // out WAIT_SPELL_BREAK_MS (working), then a wait: a new spell from that wait
+  const back = T0 + 172 * s + WAIT_SPELL_BREAK_MS;
+  spell = nextWaitSpell(spell, back, back + s);
+  assert.deepEqual(spell, { since: back, inAt: back + s });
 });
 
 test("stalledOf, silent: out of a wait, nothing open, no sign and no growth past SILENT_MS", () => {
