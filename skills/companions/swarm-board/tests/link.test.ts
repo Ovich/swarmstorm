@@ -233,6 +233,21 @@ for (const reason of ["shutdown", "secret"] as const) {
   });
 }
 
+test("plan D56 (amended): a server restarted on a newer bundle is met once (its hello, so the server records the drop as version), then the link stops as 'new version' for its launcher to start it again", async () => {
+  const server = await stubServer();
+  servers.push(server);
+  const home = dataHome(server.port);
+  const link = startLink(home);
+  await until("welcomed", () => server.frames().some((f) => f.type === "hello"));
+  // the rebuild: a new server of another bundle takes the state file; the old one drops the link
+  const rebuilt = await stubServer((f, conn) => f.type === "hello" && conn.send({ type: "refused", reason: "version" }));
+  servers.push(rebuilt);
+  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port: rebuilt.port, secret: "s3cret", version: "0000000000000000" }));
+  server.connections.at(-1)!.drop();
+  assert.deepEqual(await link.done, { why: "new version" });
+  assert.equal(rebuilt.frames().filter((f) => f.type === "hello").length, 1, "met the new server once");
+});
+
 test("the server dropped and back: unanswered calls are resent, none answered twice to a pipe", async () => {
   let answering = false;
   const server = await stubServer((f, conn) => {

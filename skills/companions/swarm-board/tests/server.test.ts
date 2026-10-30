@@ -350,6 +350,26 @@ test("gone is posted within 65 s of a link lost and not back; never for an ended
   assert.deepEqual(goneEvents(await value(c, "snapshot", REPO)).map((e) => e.body), [`lost ${s1.name}: its link was lost (socket)`]);
 });
 
+test("plan D56 (amended): a member's link of an older bundle, refused for its version, is a drop of cause `version`, never lost within the window", async () => {
+  const { c, run, s1, link } = await linkedRun();
+  link.socket.close();
+  await link.closed;
+  await untilLinkLost(run.id, "S1");
+  const { reply } = await hello({ version: "0000000000000000", member: { name: s1.name, run: run.id } });
+  assert.deepEqual(reply, { type: "refused", reason: "version" });
+  const db = openRawStore(path.join(dir, "swarm.sqlite"));
+  try {
+    assert.equal((db.prepare("SELECT cause FROM member_links WHERE run = ? AND member = 'S1'").get(run.id) as { cause: string }).cause, "version");
+  } finally {
+    db.close();
+  }
+  // its relaunched link, on the server's bundle, comes back within the window: no lost
+  await welcomed({ member: { name: s1.name, run: run.id } });
+  skew += 61_000;
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal(goneEvents(await value(c, "snapshot", REPO)).filter((e) => e.body.includes(s1.name)).length, 0);
+});
+
 test("an upkeep or tick that throws is logged to stderr, and the server goes on", async () => {
   const { c, run, link } = await linkedRun();
   const broken = await value(c, "openRun", { repo: REPO, group: "b", title: "B", seats: SEATS });

@@ -1858,6 +1858,10 @@ async function runLink(opts) {
       for (const { call } of unanswered.values()) sendUp(call);
       flushActivity();
     } else if (f.type === "refused") {
+      if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
+        socket?.close();
+        return;
+      }
       if (f.reason === "version" && !versionRetried) {
         versionRetried = true;
         console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
@@ -1916,7 +1920,10 @@ async function runLink(opts) {
       if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
       await pause(timing.reconnectEveryMs);
       s = readServerState(opts.dataRoot);
-      if (s && s.version !== bundleVersion()) return exit({ why: "server of another version" });
+      if (s && s.version !== bundleVersion()) {
+        await connectOnce(s);
+        return exit({ why: "new version" });
+      }
     }
   };
   const onPipe = (pipe) => {
@@ -11104,11 +11111,18 @@ if (args.verb === "--help") {
   console.log(args.positional[0] === "code" ? CODE_USAGE : USAGE);
   process.exit(0);
 }
+var relaunchLink = async () => {
+  await new Promise((r) => setTimeout(r, 300));
+  const { spawn: spawn2 } = await import("node:child_process");
+  const child = spawn2(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env, windowsHide: true });
+  return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
+};
 if (args.verb === "link") {
   try {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
     clearLinkTold(member);
-    await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
+    const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
+    if (stop.why === "new version") process.exit(await relaunchLink());
     process.exit(0);
   } catch (e) {
     console.error(`swarm link: ${e.message}`);

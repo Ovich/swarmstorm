@@ -61,7 +61,9 @@ function readServerState(dataRoot: string): ServerState | null {
 export type LinkStop =
   | { why: "refused"; reason: Refused["reason"] }
   | { why: "no server"; forMs: number }
-  | { why: "ended" | "closed" | "finished" | "idle" | "pipe taken" | "server of another version" };
+  | { why: "ended" | "closed" | "finished" | "idle" | "pipe taken" | "server of another version" }
+  /** plan D56 (amended): the server runs a newer bundle; the link's launcher starts it again on that bundle */
+  | { why: "new version" };
 
 function describeStop(stop: LinkStop): string {
   if (stop.why === "refused") return `refused ${stop.reason}`;
@@ -223,6 +225,11 @@ export async function runLink(opts: {
     } else if (f.type === "refused") {
       // U-F14: refused for its version, the link re-reads the state file and tries once more: a server replaced between
       // its read and its hello is met again; a second refusal, or a state of another version, ends it
+      // plan D56 (amended): a server of a newer bundle refused it: the loop sees the state's version and relaunches
+      if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
+        socket?.close();
+        return;
+      }
       if (f.reason === "version" && !versionRetried) {
         versionRetried = true;
         console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
@@ -292,8 +299,12 @@ export async function runLink(opts: {
       if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
       await pause(timing.reconnectEveryMs);
       s = readServerState(opts.dataRoot);
-      // D28: a server of another version would refuse it; said as such, never as a bare refusal
-      if (s && s.version !== bundleVersion()) return exit({ why: "server of another version" });
+      // plan D56 (amended): a server of another version (a rebuild) is met once, so it records the drop as `version`,
+      // then the link stops to be started again by its launcher on the new bundle, the same member and session
+      if (s && s.version !== bundleVersion()) {
+        await connectOnce(s);
+        return exit({ why: "new version" });
+      }
     }
   };
 

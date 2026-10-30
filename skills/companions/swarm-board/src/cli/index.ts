@@ -1450,6 +1450,14 @@ if (args.verb === "--help") {
   console.log(args.positional[0] === "code" ? CODE_USAGE : USAGE);
   process.exit(0);
 }
+/** Runs this link's own command line again (the launcher, which loads the bundle built now) and resolves with its exit code. */
+const relaunchLink = async (): Promise<number> => {
+  // the old pipe is closing: give the named pipe a moment to be free before the new link listens on it
+  await new Promise((r) => setTimeout(r, 300));
+  const { spawn } = await import("node:child_process");
+  const child = spawn(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env, windowsHide: true });
+  return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
+};
 if (args.verb === "link") {
   // a member's link, started by its agent from join's or open's last line, or detached by a verb that
   // found none (D32): not a member's verb, so not in the usage
@@ -1457,7 +1465,10 @@ if (args.verb === "link") {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
     // V11: a link that starts clears its member's told mark, so a link lost later is told once more
     clearLinkTold(member);
-    await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
+    const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
+    // plan D56 (amended): a rebuild met: the same command again, through the launcher, loads the new bundle; this process
+    // stays its parent so the harness's background task lives on, and ends with it
+    if (stop.why === "new version") process.exit(await relaunchLink());
     process.exit(0);
   } catch (e) {
     console.error(`swarm link: ${(e as Error).message}`);

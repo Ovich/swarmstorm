@@ -20,7 +20,7 @@ const argOf = (name) => {
   const i = process.argv.indexOf(name);
   return i > 0 ? process.argv[i + 1] : null;
 };
-const CLI = path.resolve(argOf("--cli") ?? path.join(here, "..", "swarm.mjs"));
+const SOURCE_CLI = path.resolve(argOf("--cli") ?? path.join(here, "..", "swarm.mjs"));
 const KEEP = process.argv.includes("--keep");
 const LOST_S = 60;
 const GROUP = "liv";
@@ -30,6 +30,12 @@ const repo = path.join(home, "repo");
 const transcripts = path.join(home, "transcripts", "project");
 fs.mkdirSync(repo, { recursive: true });
 fs.mkdirSync(transcripts, { recursive: true });
+// the tool runs from a copy in the scratch home, so the rebuild step can change its bundle without touching the checkout
+const tool = path.join(home, "tool");
+fs.mkdirSync(tool);
+fs.copyFileSync(SOURCE_CLI, path.join(tool, "swarm.mjs"));
+fs.cpSync(path.join(path.dirname(SOURCE_CLI), "dist-cli"), path.join(tool, "dist-cli"), { recursive: true });
+const CLI = path.join(tool, "swarm.mjs");
 spawnSync("git", ["init", "-q", "-b", "main", repo]);
 spawnSync("git", ["-C", repo, "-c", "user.name=s", "-c", "user.email=s@s", "commit", "-q", "--allow-empty", "-m", "root"]);
 
@@ -138,6 +144,20 @@ try {
   const liveLinks = [orch, agents.restart, agents.drop, agents.tasked, agents.background, agents.rejoin];
   await sleep(3);
   check(liveLinks.every((a) => a.link && a.link.exitCode === null), "every live link outlived the restart");
+
+  // a rebuild under live members: a new bundle, and the next verb replaces the server with it (D28); every live link
+  // meets it, stops as 'new version' and is started again by its launcher on the new bundle (plan D56, amended)
+  await sleep(10);
+  log("rebuild");
+  fs.appendFileSync(path.join(tool, "dist-cli", "cli.mjs"), `
+// rebuilt ${new Date().toISOString()}
+`);
+  swarm(orch, "status");
+  await sleep(8);
+  check(liveLinks.every((a) => a.link && a.link.exitCode === null), "every live link outlived the rebuild (its launcher's process lives on)");
+  const linksDir = path.join(home, "links");
+  const pids = fs.existsSync(linksDir) ? fs.readdirSync(linksDir, { recursive: true }).filter((f) => String(f).endsWith(".pid")).length : 0;
+  log(`${pids} link pid file(s) after the rebuild`);
 
   // members at work keep their transcripts growing now and then
   const working = [agents.restart, agents.drop, agents.tasked, agents.rejoin];
