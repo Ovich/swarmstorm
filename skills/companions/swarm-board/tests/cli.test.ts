@@ -984,7 +984,7 @@ test("done: a member's done is counted, roster and status show n/m done, the las
   assert.match(wrong.stderr, /the current phase is diverge/);
   const first = run("done", "diverge", "--as", `idea/${a}`);
   assert.equal(first.status, 0, first.stderr);
-  assert.match(first.stdout, /^done diverge: members done 1\/2$/m);
+  assert.match(first.stdout, /^done diverge: 1\/2 done$/m);
   assert.match(first.stdout, /wait for the next phase.* wait --mentions --as idea\//);
   assert.match(run("roster").stdout, new RegExp(`^run ${id} {2}An idea {2}phase diverge: every idea {2}1/2 done$`, "m"));
   assert.match(run("status").stdout, /phase diverge: every idea {2}1\/2 done/);

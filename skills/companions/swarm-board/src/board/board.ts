@@ -41,13 +41,15 @@ export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "even
 
 /** The phase a run's orchestrator opened last (`phase <name> <text>`). */
 export type Phase = { name: string; text: string };
-/** How many of the run's members (the orchestrator apart) ran `done` for its current phase. */
-/** `of` leaves out the members gone and not done (swarm-relay D41); `gone` names them, `<group>/<member>`. */
-/** `idleEnded`: the seats counted though their member ended (idle-ended, or named by `--for`): each needs a dispatch to be done. */
-export type PhaseProgress = { phase: string; done: number; of: number; gone: string[]; idleEnded: string[] };
-/** The progress as every line prints it: `3/3 done`, and `, 1 lost` only when a member is lost (D41, board-split D36;
- *  the JSON key stays `gone`, frozen for readers). */
-export const progressText = (p: PhaseProgress): string => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
+// board-split D62: the phase's done count has one home, owing.ts; the JSON key `gone` stays, frozen for readers
+import { everyOwingDone, owesPhase, phaseCount, phaseIsForSeat, progressText, type PhaseMember, type PhaseProgress, type PhaseScope } from "./owing.ts";
+export { progressText, type PhaseProgress };
+/** A project is keyed by its common git dir (the code pack's repository); without an aiview project it is shown by its
+ *  checkout's folder name. */
+export const projectFolderName = (repo: string): string => {
+  const base = path.basename(repo);
+  return base.toLowerCase() === ".git" ? path.basename(path.dirname(repo)) : base.replace(/\.git$/i, "");
+};
 /** The lost members as a line's suffix: ` (1 lost: idea/b)`, empty when none (D41). */
 export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");
 /** A member's activity from its transcript and its link (swarm-relay D9, D31, E12, D12): what it does, never trouble. */
@@ -210,6 +212,7 @@ export type Delivery = { full: Message[]; lines: string[]; superseded?: true };
 
 /** What the page draws (D39). */
 export type RunSummary = {
+  /** `done`/`of`: the open phase's count (D62) when a phase is open; before one, the seats done of the seats */
   run: number; kind: Kind; plan: string; group: string; code: string; title: string; link: string | null; open: boolean; members: number; done: number; of: number;
   /** The run's current phase, null until one is opened; absent from a reader before it. */
   phase?: Phase | null;
@@ -356,8 +359,9 @@ export interface Board {
   closeRun(run: RunId): void;
   /** The orchestrator opens phase `name` with `text`, the current one ending with it: a `phase` event in its run,
    *  body `phase <name>: <text>`, mentioning `<group>/*` so every member of the run wakes; sets the run's
-   *  current phase and clears its done marks. Refused to anyone else and on a closed run, whatever the kind. */
-  phase(p: Participant, name: string, text: string, opts?: { watch?: string[]; for?: string[] }): Message;
+   *  current phase and clears its done marks. Refused to anyone else and on a closed run, whatever the kind.
+   *  `stillOwed`: the members that owed the phase it replaces, not done (board-split D62, V-6). */
+  phase(p: Participant, name: string, text: string, opts?: { watch?: string[]; for?: string[] }): Message & { stillOwed: string[] };
   /** True when `p`, a member, has nothing to do: its last two `wait --mentions` in a row returned empty on their hold,
    *  and it owes no phase part and holds no claim (an unread mention would have ended the wait). */
   idle(p: Participant): boolean;
@@ -400,8 +404,9 @@ export interface Board {
   /** A member finished the current phase `name`: stored once per run, member and phase, a `done` event to the
    *  orchestrator; when every member is done, one `all-done` event to it. Refused to the orchestrator, before any
    *  phase and on a phase that is not the current one. `already`: it had run done for it before (no event). */
-  /** `unmerged`: the member's branch holding work not merged (board-split D63), carried in the done's body. */
-  done(p: Participant, name: string, opts?: { unmerged?: string }): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; message: Message | null };
+  /** `unmerged`: the member's branch holding work not merged (board-split D63), carried in the done's body.
+   *  `owesNow`: for a late done, the phase the member owes now (D62, V-5). */
+  done(p: Participant, name: string, opts?: { unmerged?: string }): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; owesNow: string | null; message: Message | null };
   /** The current phase's done count; null before the first phase. */
   phaseProgress(run: RunId): PhaseProgress | null;
   /** The run's last activity, ISO: its open, a member's join or call, a message by one of its members. Throws on an unknown run. */
@@ -1188,6 +1193,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const id = Number(r.id);
     const count = (sql: string): number => Number((db.prepare(sql).get(id) as Row).n);
     const open = r.state === "open";
+    // board-split D62 (U-F40): one count per run; with a phase open, done/of are the phase's count, never a second one
+    const progress = progressOf(id, r.phase == null ? null : String(r.phase));
     return {
       run: id,
       kind: profileOf(String(r.kind ?? "plan")).kind,
@@ -1198,20 +1205,15 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       link: r.link == null ? null : String(r.link),
       open,
       members: open ? count(`SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != '${ORCHESTRATOR}' AND ended_at IS NULL`) : 0,
-      done: count(`SELECT COUNT(*) AS n FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} = 'done'`),
-      of: count("SELECT COUNT(*) AS n FROM seats WHERE run = ?"),
+      done: progress ? progress.done : count(`SELECT COUNT(*) AS n FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} = 'done'`),
+      of: progress ? progress.of : count("SELECT COUNT(*) AS n FROM seats WHERE run = ?"),
       phase: phaseOf(r),
-      progress: progressOf(id, r.phase == null ? null : String(r.phase)),
+      progress,
       stallMs: Number(r.stall_ms ?? STALL_MS_DEFAULT),
       protocol: r.protocol == null ? null : String(r.protocol),
       authority: authorityOf(r.authority),
       paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 },
     };
-  };
-  /** A project is keyed by its common git dir (the code pack's repository); it is shown by its checkout's folder name. */
-  const repoName = (repo: string): string => {
-    const base = path.basename(repo);
-    return base.toLowerCase() === ".git" ? path.basename(path.dirname(repo)) : base.replace(/\.git$/i, "");
   };
 
   // onChange: one watcher per open Board, shared by its listeners.
@@ -1608,12 +1610,40 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const stalledBadge = (reason: string, since: number | null): Badge => ({ name: "stalled", reason, since });
   const minutes = (ms: number): number => Math.round(ms / 60000);
   /** False for a seat the run's current phase is not for (`phase --for`); true when the phase is for every member. */
-  const phaseIsFor = (run: Row, seat: string): boolean => run.phase_for == null || (JSON.parse(String(run.phase_for)) as string[]).includes(seat);
-  /** The phase `p` owes now: the run's open phase it has not run `done` for; null for the orchestrator or none open. */
+  const phaseIsFor = (run: Row, seat: string): boolean => phaseIsForSeat(phaseScopeOf(run, String(run.phase)), seat);
+  /** board-split D62: the scope `phase` is counted in: the run's open phase carries its --for, an earlier one none. */
+  const phaseScopeOf = (run: Row, phase: string): PhaseScope => {
+    const open = run.phase === phase;
+    return { open, forSeats: open && run.phase_for != null ? (JSON.parse(String(run.phase_for)) as string[]) : null };
+  };
+  /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them for `phase`. */
+  const phaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
+    (
+      db
+        .prepare(
+          `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.idle_ended, p.parked, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
+             EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = p.run AND e.member = p.seat AND e.badge = 'lost' AND e.opened_at IS NOT NULL AND e.closed_at IS NULL) AS lost
+           FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}' AND (? IS NULL OR p.id = ?) ORDER BY p.id`,
+        )
+        .all(phase, run, onlyId ?? null, onlyId ?? null) as Row[]
+    ).map((r) => ({
+      member: `${r.plan}/${r.seat}`,
+      seat: String(r.seat),
+      done: Number(r.done) === 1,
+      ended: r.ended_at != null,
+      idleEnded: Number(r.idle_ended) === 1,
+      // board-split D30, D62: a parked member is out of the count, done or not, until resumed
+      parked: Number(r.parked) === 1,
+      // D41: lost as the last tick told it
+      lost: Number(r.lost) === 1,
+    }));
+  /** The phase `p` owes now (D62's one owing rule): the run's open phase, for its seat, not parked, not ended, not done;
+   *  null for the orchestrator or none open. */
   const owedNameOf = (p: Row, run: Row): string | null => {
-    if (String(p.seat) === ORCHESTRATOR || run.state !== "open" || run.phase == null || !phaseIsFor(run, String(p.seat))) return null;
-    const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(run.id), Number(p.id), String(run.phase));
-    return done ? null : String(run.phase);
+    if (String(p.seat) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
+    const phase = String(run.phase);
+    const [me] = phaseMembersOf(Number(run.id), phase, Number(p.id));
+    return me && owesPhase(me, phaseScopeOf(run, phase)) ? phase : null;
   };
   /** The states of a run's live members (not ended), keyed by member. */
   const statesOf = (run: RunId, t: number, predicate = false): Map<string, MemberState> => {
@@ -1714,40 +1744,19 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       }
     }
     if (progress.of - progress.done === 1) {
-      const owing = (db.prepare("SELECT id, seat FROM participants WHERE run = ? AND seat != ? AND ended_at IS NULL").all(p.run, ORCHESTRATOR) as Row[]).find(
-        (o) => phaseIsFor(r, String(o.seat)) && !db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(p.run, Number(o.id), name) && !progress.gone.includes(`${p.plan}/${o.seat}`),
-      );
-      if (owing) return `all but ${String(owing.seat)}`;
+      const scope = phaseScopeOf(r, name);
+      const straggler = phaseMembersOf(p.run, name).find((m) => owesPhase(m, scope) && !progress.gone.includes(m.member));
+      if (straggler) return `all but ${straggler.seat}`;
     }
     return null;
   };
-  /** The phase's done count: members done, of the members (the orchestrator apart) not ended without their done. */
-  const progressOf = (run: RunId, phase: string | null): PhaseProgress | null => {
-    if (phase == null) return null;
-    const rows = db
-      .prepare(
-        `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.idle_ended, p.parked, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
-           EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = p.run AND e.member = p.seat AND e.badge = 'lost' AND e.opened_at IS NOT NULL AND e.closed_at IS NULL) AS gone
-         FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}'`,
-      )
-      .all(phase, run) as Row[];
-    // D41: a member gone (as the last tick told it) and not done holds no phase; it counts again once back
-    // `phase --for`: only the seats it is for owe it, and count
-    const runR = runRow(run);
-    // an idle-ended seat still owes; so does an ended seat the current phase names in --for
-    const named = (seat: string): boolean => runR.phase === phase && runR.phase_for != null && phaseIsFor(runR, seat);
-    const live = rows.filter((r) => (Number(r.done) === 1 || r.ended_at == null || Number(r.idle_ended) === 1 || named(String(r.seat))) && (runR.phase !== phase || phaseIsFor(runR, String(r.seat))));
-    // board-split D49 (A1-2): a parked member is never counted lost
-    const gone = live.filter((r) => Number(r.done) !== 1 && r.ended_at == null && Number(r.parked) !== 1 && Number(r.gone) === 1);
-    // board-split D30: a parked member not done is out of the count until resumed
-    const counted = live.filter((r) => !gone.includes(r) && !(Number(r.parked) === 1 && Number(r.done) !== 1));
-    const idleEnded = counted.filter((r) => Number(r.done) !== 1 && r.ended_at != null).map((r) => `${r.plan}/${r.seat}`);
-    return { phase, done: counted.filter((r) => Number(r.done) === 1).length, of: counted.length, gone: gone.map((r) => `${r.plan}/${r.seat}`), idleEnded };
-  };
+  /** The phase's done count (board-split D62): owing.ts's one count over the run's members. */
+  const progressOf = (run: RunId, phase: string | null): PhaseProgress | null =>
+    phase == null ? null : phaseCount(phase, phaseMembersOf(run, phase), phaseScopeOf(runRow(run), phase));
   /** `all-done` to the orchestrator, once per run and phase whoever reaches it first: the last `done`, or the tick
    *  that finds the last member not done gone (D41). */
   const allDoneOnce = (author: Participant, progress: PhaseProgress): boolean => {
-    if (!(progress.of > 0 && progress.done === progress.of)) return false;
+    if (!everyOwingDone(progress)) return false;
     if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(author.run, ORCHESTRATOR, `all-done ${progress.phase}`).changes) !== 1) return false;
     insertMessage(author, `all done ${progress.phase}: every member is done (${progress.done}/${progress.of})${goneSuffix(progress.gone)}; open the next phase`, null, "event", [`${author.plan}/${ORCHESTRATOR}`], {
       event: EVENTS["all-done"].name,
@@ -2145,14 +2154,21 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           // G43: a phase for some seats (--for) takes only the tasks of those seats
           .filter((m) => !only.length || only.includes(seatOf(m.seats[0]!)))
           .filter((m) => !new RegExp(`#${m.seq}(?![0-9])`).test(said));
-        const told = tasks.length ? `${said}; its tasks posted before it: ${tasks.map((m) => `#${m.seq} ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
+        // V-21: `#12 for w1`, so a phase text that already names the seat does not read `w1 … w1`
+        const told = tasks.length ? `${said}; tasks posted before it: ${tasks.map((m) => `#${m.seq} for ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
+        // board-split D62 (V-6): who owed the phase this one replaces, read before it is replaced
+        const before = runRow(fresh.run);
+        const stillOwed = before.phase == null ? [] : (() => {
+          const scope = phaseScopeOf(before, String(before.phase));
+          return phaseMembersOf(fresh.run, String(before.phase)).filter((m) => owesPhase(m, scope)).map((m) => m.member);
+        })();
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         // D41: its all-done told once per opening
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return insertMessage(fresh, `phase ${name}: ${told}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } });
+        return { ...insertMessage(fresh, `phase ${name}: ${told}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed };
       });
     },
 
@@ -2285,6 +2301,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
       const orch = `${fresh.plan}/${ORCHESTRATOR}`;
+      // board-split D62 (V-5): what the member owes once this done is recorded, so its answer names it
+      const owesNow = (): string | null => owedNameOf(db.prepare("SELECT * FROM participants WHERE id = ?").get(fresh.id) as Row, runRow(fresh.run));
       // idea 2: a done for a phase opened earlier in the run, not the current one, is accepted, recorded, and wakes
       if (current.name !== name) {
         const opened = (db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ?").all(fresh.run, EVENTS.phase.name) as Row[]).some(
@@ -2294,16 +2312,16 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         return transaction(() => {
           const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
           const progress = progressOf(fresh.run, name)!;
-          if (!added) return { progress, all: false, already: true, late: true, message: null };
+          if (!added) return { progress, all: false, already: true, late: true, owesNow: owesNow(), message: null };
           const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}${unmergedSuffix}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
-          return { progress, all: false, already: false, late: true, message };
+          return { progress, all: false, already: false, late: true, owesNow: owesNow(), message };
         });
       }
       return transaction(() => {
         const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
         const progress = progressOf(fresh.run, name)!;
-        const all = progress.of > 0 && progress.done === progress.of;
-        if (!added) return { progress, all, already: true, late: false, message: null };
+        const all = everyOwingDone(progress);
+        if (!added) return { progress, all, already: true, late: false, owesNow: null, message: null };
         // board-split D33 (S35): the done is the member's latest fact, shown over an older doing
         db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         // idea 2: the done wakes the orchestrator only in the person's cases, named in its body; otherwise it is carried
@@ -2312,7 +2330,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
-        return { progress, all, already: false, late: false, message };
+        return { progress, all, already: false, late: false, owesNow: null, message };
       });
     },
 
@@ -2332,13 +2350,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
     },
 
     owedPhase(p) {
-      const row = db.prepare("SELECT id, run, seat, ended_at FROM participants WHERE id = ?").get(p.id) as Row | undefined;
-      if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR) return null;
+      // board-split D62: the one owing rule, owedNameOf's
+      const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
+      if (!row || row.ended_at != null) return null;
       const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(row.run)) as Row | undefined;
-      const current = r && r.state === "open" ? phaseOf(r) : null;
-      if (!current || !phaseIsFor(r!, String(row.seat))) return null;
-      const done = db.prepare("SELECT 1 FROM phase_done WHERE run = ? AND participant = ? AND phase = ?").get(Number(row.run), Number(row.id), current.name);
-      return done ? null : current;
+      return r && owedNameOf(row, r) != null ? phaseOf(r) : null;
     },
 
     recordActivity(run, member, act, at) {
@@ -2828,7 +2844,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       // repositories with an open run first, then the most recent run first
       const latest = (runs: RunSummary[]): number => Math.max(...runs.map((x) => x.run));
       return [...byRepo.entries()]
-        .map(([repo, runs]) => ({ repo, name: repoName(repo), runs }))
+        .map(([repo, runs]) => ({ repo, name: projectFolderName(repo), runs }))
         .sort((a, b) => Number(b.runs.some((x) => x.open)) - Number(a.runs.some((x) => x.open)) || latest(b.runs) - latest(a.runs));
     },
 
@@ -2948,7 +2964,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
       return {
         repo,
-        name: repoName(repo),
+        name: projectFolderName(repo),
         runs: runRows.map(runSummary),
         ...packPart.fields,
         roster,

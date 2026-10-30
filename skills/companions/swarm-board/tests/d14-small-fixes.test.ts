@@ -61,7 +61,7 @@ test("V1: done with no phase prints usage and a corrected form", () => {
   const r = run("done", "--as", "p/S3");
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /^usage: .* done <phase> --as <member>$/m);
-  assert.match(r.stderr, /^e\.g\. .* done build --as p\/S3$/m);
+  assert.match(r.stderr, /^e\.g\. .* done <phase> --as p\/S3$/m);
 });
 
 test("G30: a closed run's thread is read with --run, every post or one phase; read-only", () => {

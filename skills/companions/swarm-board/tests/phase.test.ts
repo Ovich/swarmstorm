@@ -152,7 +152,7 @@ test("a phase names the tasks the orchestrator posted before it that its text do
   // a post that only mentions a member is no task
   board.post(orchestrator, "@architect a judgement");
   const m = board.phase(orchestrator, "build", `the first wave: #${cited.seq} architect`);
-  assert.equal(m.body, `phase build: the first wave: #${cited.seq} architect; its tasks posted before it: #${uncited.seq} skeptic`);
+  assert.equal(m.body, `phase build: the first wave: #${cited.seq} architect; tasks posted before it: #${uncited.seq} for skeptic`);
   // the next phase counts only what came after this one
   assert.equal(board.phase(orchestrator, "verify", "check").body, "phase verify: check");
 });
@@ -162,5 +162,5 @@ test("G43: a phase for some seats (--for) names only the tasks posted to those s
   board.post(orchestrator, "@architect a task during the build", { task: true });
   const toSkeptic = board.post(orchestrator, "@skeptic check the holes", { task: true });
   const m = board.phase(orchestrator, "verify", "check it", { for: ["skeptic"] });
-  assert.equal(m.body, `phase verify: check it; its tasks posted before it: #${toSkeptic.seq} skeptic`);
+  assert.equal(m.body, `phase verify: check it; tasks posted before it: #${toSkeptic.seq} for skeptic`);
 });

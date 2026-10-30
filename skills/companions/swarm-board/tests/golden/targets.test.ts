@@ -79,7 +79,7 @@ test("G17 target: the phase-open wake names the worker's task posted before it",
     expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "5000"), [
       REARM(s.me),
       `#<seq> ${O} (event)  <ts>`,
-      "phase build: build the thing; its tasks posted before it: #<seq> w1",
+      "phase build: build the thing; tasks posted before it: #<seq> for w1",
       // the worker's own task named on its done line: no line added (D2)
       `when your part of build (your task #<seq>) is posted: node <cli> done build --as ${s.me}`,
     ]);

@@ -91,6 +91,7 @@ export function startServer(
       const slug = projectOfBoardKey(key);
       return slug === null ? null : index.boardRepos(slug);
     },
+    projectOfKey: (key) => projectOfBoardKey(key),
   });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher((dir, name) =>

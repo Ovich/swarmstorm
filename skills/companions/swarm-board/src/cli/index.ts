@@ -4,7 +4,7 @@ import { hiddenSpawnSync } from "../proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
+import { openBoard, progressText, projectFolderName, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
@@ -14,7 +14,7 @@ import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type Connected
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
-import { boardHome, projectPaths, registerBoard } from "./aiview-board.ts";
+import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
 import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
 import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
@@ -310,6 +310,8 @@ const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w
 /** A path with forward slashes: git and both shells take it, and PowerShell shows no doubled backslash. */
 const fwd = (p: string): string => p.split("\\").join("/");
 // G3: a board on a home other than the default is reached only with that home, so every printed command carries it
+/** board-split D47 (V-18): a project's one name in a line: its aiview slug, else its folder; never its git dir. */
+const projectNameOf = (): ((repo: string) => string) => projectNamer({ toolRoot: toolRoot(), cwd: process.cwd(), fallback: projectFolderName });
 const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))}`] : []), "node", shellWord(process.argv[1].replace(/\\/g, "/"))];
 
 /** How a member listens, the one source the docs point at: a seat waits in the foreground (a subagent
@@ -721,7 +723,7 @@ async function main(): Promise<void> {
         fail(
           `open: no aiview project covers ${process.cwd()}, so the run's board would show nowhere. Declare it, then open again:
 ` +
-            `  node ${home.launcher} project add <slug> --path ${process.cwd()}`,
+            `  ${WORDING.aiviewProjectAdd(HOME_OVERRIDE ? `SWARMSTORM_HOME=${shellWord(fwd(HOME_OVERRIDE))} ` : "", shellWord(fwd(home.launcher)), shellWord(fwd(process.cwd())))}`,
         );
       const run = await board.openRun({
         repo: repoOf(process.cwd()),
@@ -808,7 +810,10 @@ async function main(): Promise<void> {
       const watch = args.list("--watch");
       // --for: only these seats are woken and owe their done; a seat with nothing to do is not woken (tokens)
       const only = args.list("--for");
+      const previous = (await board.currentPhase(p.run))?.name ?? null;
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
+      // V-6 (D62): the members that still owed the phase this one replaces, named once
+      const stillOwed = previous !== null && m.stillOwed.length ? WORDING.phaseStillOwed(previous, m.stillOwed) : null;
       // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
       const cli = self().join(" ");
       const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
@@ -819,9 +824,10 @@ async function main(): Promise<void> {
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
       const idleEnded = ((await board.phaseProgress(m.run))?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
       const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
         console.log(seqLine(m));
         if (pausedLine) console.log(pausedLine);
+        if (stillOwed) console.log(stillOwed);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
         console.log(next);
@@ -888,7 +894,8 @@ async function main(): Promise<void> {
     case "done": {
       const p = await caller();
       if (await answeredGate(p)) break;
-      const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done build --as ${asWord()}`);
+      // V-21: the example names the phase open now, never a made-up one
+      const name = args.positional[0] ?? usageError("done: which phase?", "done <phase> --as <member>", `done ${(await board.currentPhase(p.run))?.name ?? "<phase>"} --as ${asWord()}`);
       // board-split D63: a done with work not merged is accepted, the branch named to the member and the orchestrator
       const unmerged = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string; onto: string | null } | null;
       let r;
@@ -900,13 +907,17 @@ async function main(): Promise<void> {
         emit({ member: p.name, phase: name, done: null, none: true }, WORDING.doneNone);
         break;
       }
-      // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases)
-      const line = r.late
-        ? `late done ${name} (not the current phase), recorded; the orchestrator is told`
-        : `${r.already ? "already done" : "done"} ${name}: members done ${r.progress.done}/${r.progress.of}${r.progress.gone.length ? `, ${r.progress.gone.length} lost` : ""}${r.all ? "; the orchestrator is told every member is done" : ""}`;
+      // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases);
+      // V-5: its answer names what the member owes now; a repeat says already done; the count is owing.ts's (D62)
+      const open = (await board.currentPhase(p.run))?.name ?? name;
+      const line = r.already
+        ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null)
+        : r.late
+          ? WORDING.doneLate(name, open, r.owesNow)
+          : WORDING.doneCounted(name, progressText(r.progress), r.all);
       const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
-      emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late }, a, false);
+      emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;
     }
     case "join": {
@@ -1132,9 +1143,10 @@ async function main(): Promise<void> {
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: [] as string[] }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
       emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
-        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
+        const projectName = projectNameOf();
+        for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
         for (const l of held) console.log(`lock ${lockLine(l, null)}`);
-        if (!runs.size) console.log(WORDING.noRunIn(repo));
+        if (!runs.size) console.log(WORDING.noRunIn(projectName(repo)));
         let shown: number | null = null;
         for (const r of roster) {
           const run = runs.get(r.run);
@@ -1449,7 +1461,8 @@ async function main(): Promise<void> {
       const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
       emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
         if (!held.length && !merge.length) console.log("no lock held");
-        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(m.project, m.holder, m.since));
+        const projectName = projectNameOf();
+        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since));
         for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
       });
       break;
@@ -1475,11 +1488,12 @@ async function main(): Promise<void> {
       emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
-        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(m.project, m.holder, m.since)}`);
+        const projectName = projectNameOf();
+        for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since)}`);
         for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
-          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${r.repo}`);
+          console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${projectName(r.repo)}`);
           for (const s of r.seats) console.log(`  ${s.id} ${s.state}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
           for (const m of open[i].members) {
             const files = heldLine(m.files);

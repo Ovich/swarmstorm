@@ -1,0 +1,5 @@
+exit 1
+--- stderr
+done: which phase?
+usage: node <cli> done <phase> --as <member>
+e.g. node <cli> done build --as g/w1

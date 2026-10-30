@@ -2,4 +2,4 @@ exit 1
 --- stderr
 done: which phase?
 usage: node <cli> done <phase> --as <member>
-e.g. node <cli> done build --as g/orchestrator
+e.g. node <cli> done <phase> --as g/orchestrator

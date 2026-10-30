@@ -62,7 +62,7 @@ test("four members, one gone, the three others done: all-done once, naming the g
   assert.equal(all[0].body, "all done diverge: every member is done (3/3) (1 lost: idea/d); open the next phase");
   const progress = board.phaseProgress(run.id)!;
   assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [] });
-  assert.equal(progressText(progress), "3/3 done, 1 lost");
+  assert.equal(progressText(progress), "3/3 done, 1 lost: d");
 });
 
 test("the last member not done going gone fires all-done at the tick, once (D41)", () => {
@@ -84,7 +84,7 @@ test("every member not gone in a held wait: idle fires, naming the gone (D41, D3
   for (const s of [2, 3]) tick2(board, run.id, at(base, s), presence);
   const idles = events("idle").map((e) => e.body);
   assert.equal(idles.length, 1, "once (D34)");
-  assert.match(idles[0], /^idle 0s: every member is waiting \(1 lost: idea\/d\); phase diverge 0\/3 done, 1 lost$/);
+  assert.match(idles[0], /^idle 0s: every member is waiting \(1 lost: idea\/d\); phase diverge 0\/3 done, 1 lost: d$/);
   await Promise.all(waits);
 });
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Phase } from "../../../../../swarm-board/src/client/reader.ts";
 import type { RunView } from "../../../lib/board/analytics.ts";
-import type { PauseChip } from "../../../lib/board/view.ts";
+import { phaseCountText, type PauseChip, type PhaseCount } from "../../../lib/board/view.ts";
 
 /** A run tab's head (plan D31, prototype #677 `run`, `brun`, `conv`): Conversation / Analytics, the run's
  *  line, and on Analytics "Copy as JSON", the run's answer as the server sent it, equal to
@@ -65,6 +65,7 @@ export function RunViewSwitch({
   phase = null,
   phases = [],
   pause = null,
+  progress = null,
 }: {
   view: RunView;
   line: string;
@@ -75,6 +76,8 @@ export function RunViewSwitch({
   phases?: { name: string; text: string }[];
   /** The run's pause (`On you` or `Paused`, its reason), null when it runs: shown on both views (D57). */
   pause?: PauseChip | null;
+  /** The open phase's one done count (board-split D62), the lost named on hover; null before the first phase. */
+  progress?: PhaseCount | null;
 }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
@@ -125,6 +128,7 @@ export function RunViewSwitch({
           {phase.text && <span className="said" title={phase.text}>{phase.text}</span>}
         </span>
       )}
+      {progress && <PhaseCountChip progress={progress} />}
       <span className="runtools" role="group" aria-label="This run">
         {view === "analytics" && <span className="runline" title={line}>{line}</span>}
         {view === "analytics" && json !== null && (
@@ -141,5 +145,16 @@ export function RunViewSwitch({
         )}
       </span>
     </div>
+  );
+}
+
+/** The open phase's done count beside its chip (board-split D62): `2/7 done`, the lost members named on hover. */
+function PhaseCountChip({ progress }: { progress: PhaseCount }) {
+  const lost = progress.gone.map((m) => m.slice(m.lastIndexOf("/") + 1));
+  const tip = `phase ${progress.phase}: ${phaseCountText(progress)}${lost.length ? " (lost members are out of the count)" : ""}`;
+  return (
+    <span className="runcount" data-component="PhaseCount" title={tip}>
+      {progress.done}/{progress.of} done{lost.length ? `, ${lost.length} lost` : ""}
+    </span>
   );
 }

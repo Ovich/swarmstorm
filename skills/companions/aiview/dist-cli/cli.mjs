@@ -9792,7 +9792,10 @@ function mountBoard(sse, opts = {}) {
     const named = await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const [repos, snapshot] = await Promise.all([board.repos(), board.snapshot(named.repo)]);
-    json(res, { repos: repos.filter((r) => r.repo === named.repo), snapshot });
+    const key = projectAsked(url.searchParams);
+    const slug = key === null ? null : opts.projectOfKey?.(key) ?? null;
+    const withProjectName = (o) => slug === null ? o : { ...o, name: slug };
+    json(res, { repos: repos.filter((r) => r.repo === named.repo).map(withProjectName), snapshot: withProjectName(snapshot) });
   };
   const answerStats = async (board, url, res) => {
     const q = url.searchParams;
@@ -9938,7 +9941,8 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     reposOfProject: (key) => {
       const slug = projectOfBoardKey(key);
       return slug === null ? null : index.boardRepos(slug);
-    }
+    },
+    projectOfKey: (key) => projectOfBoardKey(key)
   });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(

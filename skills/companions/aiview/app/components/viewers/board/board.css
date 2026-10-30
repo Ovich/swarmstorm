@@ -407,6 +407,7 @@
 .board .runhead .runphase { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; padding-left: 10px; border-left: 1px solid var(--border); }
 .board .runhead .runphase .name { flex: none; white-space: nowrap; font-weight: 600; color: var(--foreground); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
 .board .runhead .runphase .said { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.board .runhead .runcount { flex: none; white-space: nowrap; font-size: 12px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .board .runhead .ghost { margin-left: auto; font-size: 12px; color: var(--accent); }
 .board .analytics .kpis.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 /* the across view's brainstorm row, under the plan row when both kinds are chosen (D46) */

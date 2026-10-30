@@ -153,11 +153,12 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
   }
 }
 
-/** G17: the member's own tasks posted before the phase, as its text names them (`its tasks posted before it: #12 w1, #13 w2 w3`). */
+/** G17: the member's own tasks posted before the phase, as its text names them (`tasks posted before it: #12 for w1, #13 for w2 w3`;
+ *  a text stored before V-21 reads `its tasks posted before it: #12 w1`). */
 const tasksOf = (body: string, seat: string): string[] =>
-  (/; its tasks posted before it: (.+)$/.exec(body)?.[1] ?? "")
+  (/; (?:its )?tasks posted before it: (.+)$/.exec(body)?.[1] ?? "")
     .split(", ")
-    .map((t) => t.split(" "))
+    .map((t) => t.split(" ").filter((word) => word !== "for"))
     .filter(([, ...seats]) => seats.includes(seat))
     .map(([seq]) => seq);
 

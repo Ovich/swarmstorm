@@ -31,6 +31,8 @@ export function mountBoard(
     swarmEntry?: string;
     /** The repositories of the project a key names (its name, as `/api/project-board` resolves it); null when none. */
     reposOfProject?: (key: string) => string[] | null;
+    /** The project's slug a key names, as the board's hash carries it (board-split D47); null when none. */
+    projectOfKey?: (key: string) => string | null;
   } = {},
 ): BoardRoutes {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
@@ -118,8 +120,12 @@ export function mountBoard(
     const named = await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const [repos, snapshot] = await Promise.all([board.repos(), board.snapshot(named.repo)]);
+    // board-split D47 (V-18): the project's one name, the slug the hash carries, over the checkout's folder name
+    const key = projectAsked(url.searchParams);
+    const slug = key === null ? null : (opts.projectOfKey?.(key) ?? null);
+    const withProjectName = <T extends { name: string }>(o: T): T => (slug === null ? o : { ...o, name: slug });
     // the named repository's summary alone: an answer never carries another repository's runs (D41, Q1)
-    json(res, { repos: repos.filter((r) => r.repo === named.repo), snapshot });
+    json(res, { repos: repos.filter((r) => r.repo === named.repo).map(withProjectName), snapshot: withProjectName(snapshot) });
   };
 
   /** The figures of a scope, `BoardReader.stats()` as it answers; the scope maps the CLI's flags one to one

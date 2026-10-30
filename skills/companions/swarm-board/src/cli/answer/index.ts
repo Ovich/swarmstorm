@@ -111,7 +111,8 @@ export function answer(r: VerbResult, s: Situation): Answer {
     }
     case "done": {
       if (r.none) return { lines: [W.doneNone], next: null, phase: null };
-      const next = W.doneWaitNext(waitCommand(s, true));
+      // V-5: a done that leaves the member owing the open phase (a late one) gives that step, never the wait for the next
+      const next = owedLine(s, { brief: true }) ?? W.doneWaitNext(waitCommand(s, true));
       return { lines: [r.line, ...(r.facts ?? []), next], next, phase: null };
     }
     case "heard": {

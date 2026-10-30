@@ -189,6 +189,20 @@ export const WORDING = {
   decisionsRunOpen: (runs: { run: number; group: string; roles: string[] }[], decisionsRun: number, seatAdds: Command[]) =>
     `decision authority held by ${decisionHolders(runs)}: settle your common decisions in the decisions run, run ${decisionsRun}` +
     (seatAdds.length ? `; add the missing seat${seatAdds.length > 1 ? "s" : ""}: ${seatAdds.join(" ; ")}` : ""),
+
+  // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
+  /** a done of the open phase: the one count (owing.ts), the lost named in it */
+  doneCounted: (phase: string, progress: string, all: boolean) => `done ${phase}: ${progress}${all ? "; the orchestrator is told every member is done" : ""}`,
+  /** a done run again for the same phase: nothing new recorded; for a phase no longer open, what the member owes now */
+  doneAlready: (phase: string, progress: string | null, late: { owesNow: string | null } | null) =>
+    `already done ${phase}${progress ? `: ${progress}` : ""}; nothing new recorded${late && !late.owesNow ? "; you owe nothing now" : ""}`,
+  /** V-5: a done for a phase no longer open: recorded; the owed line after it names the phase owed now, else this says none is */
+  doneLate: (phase: string, current: string, owesNow: string | null) =>
+    `done ${phase} recorded late (the open phase is ${current}; the orchestrator is told)${owesNow ? "" : "; you owe nothing now"}`,
+  /** V-6: a phase opened while members still owed the one it replaces */
+  phaseStillOwed: (previous: string, members: string[]) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
+  /** V-18: aiview's project add, with the same env prefix as every other command line */
+  aiviewProjectAdd: (envPrefix: string, launcher: string, cwd: string): Command => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
 } as const;
 
 /** `run 7 board-split (architect, tech-lead) and run 8 shop (architect)`: each run holding decision authority, its roles. */

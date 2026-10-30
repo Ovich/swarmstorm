@@ -30,7 +30,8 @@ export const CODE_WORDING = {
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
   declaredNotClaimed: (paths: string[]) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
-  memberFact: { merging: "merging (holds the merge lock)" },
+  // V-21: printed after the state word, which already reads `merging`
+  memberFact: { merging: "holds the merge lock" },
   /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
   mergeLockLine: (project: string, holder: string, since: string) => `merge lock of ${project}  held by ${holder} since ${since}`,
 

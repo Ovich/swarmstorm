@@ -244,7 +244,17 @@ export function phaseOf(e: SnapshotEvent): { name: string; text: string } {
 export const seatCount = (of: number): string => `${of} ${of === 1 ? "seat" : "seats"}`;
 
 /** An open run as a tab: `quiet` while its orchestrator has a `quiet` event no `back` answered. */
-export type RunTab = { run: RunId; code: string; title: string; kind: Kind; state: "live" | "quiet" | "closed"; done: number; of: number; /** the protocol the run follows, null when none */ protocol: string | null };
+export type RunTab = {
+  run: RunId; code: string; title: string; kind: Kind; state: "live" | "quiet" | "closed"; done: number; of: number; /** the protocol the run follows, null when none */ protocol: string | null;
+  /** the open phase's one done count (board-split D62), null before the first phase */
+  progress: PhaseCount | null;
+};
+/** The open phase's done count as the board gives it: `gone` names the lost members, out of the count (D41). */
+export type PhaseCount = { phase: string; done: number; of: number; gone: string[] };
+/** The count as the CLI prints it: `2/7 done`, `, 1 lost: w2` naming each lost member (D62). */
+export function phaseCountText(p: PhaseCount): string {
+  return `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost: ${p.gone.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ")}` : ""}`;
+}
 /** A closed run in the archive; `outcome` null while the snapshot holds none (D18). */
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };
 /** What the conversation shows: one run (null = All), or the member followed. */
@@ -342,7 +352,7 @@ function tabOf(snap: BoardSnapshot, run: RunSummary): RunTab {
   const orch = orchestratorOf(run);
   const quiet = snap.events.some((e) => e.from === orch && isQuiet(e) && !quietAnswered(e, snap.events));
   const state = !run.open ? "closed" : quiet ? "quiet" : "live";
-  return { run: run.run, code: run.code, title: run.title, kind: run.kind, state, done: run.done, of: run.of, protocol: run.protocol ?? null };
+  return { run: run.run, code: run.code, title: run.title, kind: run.kind, state, done: run.done, of: run.of, protocol: run.protocol ?? null, progress: run.progress ?? null };
 }
 
 /** The open runs, in opening order. */

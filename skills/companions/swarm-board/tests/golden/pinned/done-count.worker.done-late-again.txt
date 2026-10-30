@@ -1,0 +1,3 @@
+exit 0
+already done build; nothing new recorded
+you owe phase verify: do your part, then mark it done: node <cli> done verify --as g/w1

@@ -2,12 +2,14 @@
 // archived run picked as a tab with ×, and the merge lock at the row's end, always visible.
 // Analytics, beside the lock, opens the across-runs view; while it shows, no run tab is pressed.
 import type { BoardSnapshot } from "../../../../../swarm-board/src/client/reader.ts";
-import { runHue, seatCount, type RunId, type RunTab } from "../../../lib/board/view.ts";
+import { phaseCountText, runHue, seatCount, type RunId, type RunTab } from "../../../lib/board/view.ts";
 import { AnalyticsButton } from "./AnalyticsButton.tsx";
 import { MergeLock } from "./MergeLock.tsx";
 
 /** A tab's count, as words: a plan's slices merged of its slices, a brainstorm's or a task's seats (rule 12); null for none. */
 export function countText(tab: RunTab): string | null {
+  // board-split D62: with a phase open, the phase's one count
+  if (tab.progress) return `phase ${tab.progress.phase} ${phaseCountText(tab.progress)}`;
   if (tab.of === 0) return null;
   return tab.kind === "brainstorm" || tab.kind === "task" ? seatCount(tab.of) : `${tab.done}/${tab.of} merged`;
 }

@@ -65,3 +65,21 @@ export function projectPaths(input: { toolRoot: string; cwd: string; name: strin
   const same = (slug: string) => (process.platform === "win32" ? slug.toLowerCase() === input.name.toLowerCase() : slug === input.name);
   return projects.find((p) => same(p.slug))?.paths ?? null;
 }
+
+/** board-split D47 (V-18): the one name of a project, as the board's hash and aiview's page carry it: the slug of the
+ *  aiview project whose paths cover the repository's checkout, else `fallback` (its folder name). One `aiview project`
+ *  call for every repository asked. */
+export function projectNamer(input: { toolRoot: string; cwd: string; fallback: (repo: string) => string }): (repo: string) => string {
+  const launcher = aiviewLauncher(input.toolRoot);
+  const listed = launcher ? callAiview(launcher, input.cwd, ["project"]) : null;
+  const projects = listed?.ok && Array.isArray(listed.out) ? (listed.out as { slug: string; paths: string[] }[]) : [];
+  const norm = (p: string): string => {
+    const forward = path.resolve(p).split("\\").join("/").replace(/\/+$/, "");
+    return process.platform === "win32" ? forward.toLowerCase() : forward;
+  };
+  const covers = (root: string, checkout: string): boolean => checkout === root || checkout.startsWith(`${root}/`);
+  return (repo) => {
+    const checkout = norm(path.basename(repo).toLowerCase() === ".git" ? path.dirname(repo) : repo);
+    return projects.find((p) => p.paths.some((root) => covers(norm(root), checkout)))?.slug ?? input.fallback(repo);
+  };
+}
