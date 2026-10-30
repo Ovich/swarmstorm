@@ -88,3 +88,33 @@ test("golden V-18: status names the run's project, never its git dir", async () 
     s.stop();
   }
 });
+
+test("golden V-28: a done from a parked seat says it is not counted, never a count", async () => {
+  const s = await scene("orchestrator", "owes-first");
+  try {
+    const orch = s.me;
+    const worker = s.other;
+    const seat = worker.split("/")[1];
+    s.must("park", seat, "--as", orch);
+    const parked = s.call("done", "build", "--as", worker);
+    pin("done-count.worker.done-parked", parked);
+    assert.match(parked.text, /^done build recorded; you are parked: not counted until unparked$/m);
+  } finally {
+    s.stop();
+  }
+});
+
+test("golden V-27: the phase text and the done event say the --for set and the count once", async () => {
+  const s = await scene("orchestrator", "owes-first");
+  try {
+    const orch = s.me;
+    const worker = s.other;
+    const seat = worker.split("/")[1];
+    s.must("phase", "fix", `${seat} only`, "--for", seat, "--as", orch);
+    const runLine = s.call("status").text.split("\n").find((l) => l.startsWith("run "))!;
+    pin("done-count.status.phase-for", { status: 0, text: runLine });
+    assert.doesNotMatch(runLine, new RegExp(`${seat} only ${seat}`));
+  } finally {
+    s.stop();
+  }
+});

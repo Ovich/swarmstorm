@@ -920,11 +920,14 @@ async function main(): Promise<void> {
       // a done for a phase no longer current is accepted and told to the orchestrator (idea 2, §3: overlapping phases);
       // V-5: its answer names what the member owes now; a repeat says already done; the count is owing.ts's (D62)
       const open = (await board.currentPhase(p.run))?.name ?? name;
-      const line = r.already
-        ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null)
-        : r.late
-          ? WORDING.doneLate(name, open, r.owesNow)
-          : WORDING.doneCounted(name, progressText(r.progress), r.all);
+      // V-28: a seat the count leaves out is told why before anything else; V-5: a late done names what is owed now
+      const line = r.notOwed
+        ? WORDING.doneNotOwed(name, r.notOwed)
+        : r.already
+          ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null)
+          : r.late
+            ? WORDING.doneLate(name, open, r.owesNow)
+            : WORDING.doneCounted(name, progressText(r.progress), r.all);
       const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);

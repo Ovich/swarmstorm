@@ -33,7 +33,8 @@ const VALUE_FLAGS = new Set([
   "--unlocked",
 ]);
 /** Flags taking every value up to the next flag: `--files a b c`, or `--files "a,b,c"`. */
-const LIST_FLAGS = new Set(["--files"]);
+// V-27: --for takes seats like --files takes paths; read as a value, never as part of the phase text
+const LIST_FLAGS = new Set(["--files", "--for"]);
 
 export interface ParsedArgs {
   verb: string | undefined;

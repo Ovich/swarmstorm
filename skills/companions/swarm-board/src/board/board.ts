@@ -44,6 +44,8 @@ export type Phase = { name: string; text: string };
 // board-split D62: the phase's done count has one home, owing.ts; the JSON key `gone` stays, frozen for readers
 import { everyOwingDone, owesPhase, phaseCount, phaseIsForSeat, progressText, type PhaseMember, type PhaseProgress, type PhaseScope } from "./owing.ts";
 export { progressText, type PhaseProgress };
+/** Why a member's done is not in the open phase's count (D62, V-28): parked, or the phase is for other seats. */
+export type NotOwed = { parked: true } | { forSeats: string[] } | null;
 /** A project is keyed by its common git dir (the code pack's repository); without an aiview project it is shown by its
  *  checkout's folder name. */
 export const projectFolderName = (repo: string): string => {
@@ -405,8 +407,9 @@ export interface Board {
    *  orchestrator; when every member is done, one `all-done` event to it. Refused to the orchestrator, before any
    *  phase and on a phase that is not the current one. `already`: it had run done for it before (no event). */
   /** `unmerged`: the member's branch holding work not merged (board-split D63), carried in the done's body.
-   *  `owesNow`: for a late done, the phase the member owes now (D62, V-5). */
-  done(p: Participant, name: string, opts?: { unmerged?: string }): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; owesNow: string | null; message: Message | null };
+   *  `owesNow`: for a late done, the phase the member owes now (D62, V-5). `notOwed`: why the open phase's count leaves
+   *  this member out, parked or not in its --for seats (D62, V-28); null when it is counted. */
+  done(p: Participant, name: string, opts?: { unmerged?: string }): { progress: PhaseProgress; all: boolean; already: boolean; late: boolean; owesNow: string | null; notOwed: NotOwed; message: Message | null };
   /** The current phase's done count; null before the first phase. */
   phaseProgress(run: RunId): PhaseProgress | null;
   /** The run's last activity, ISO: its open, a member's join or call, a message by one of its members. Throws on an unknown run. */
@@ -2313,6 +2316,13 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
       const orch = `${fresh.plan}/${ORCHESTRATOR}`;
       // board-split D62 (V-5): what the member owes once this done is recorded, so its answer names it
+      // V-28: a seat the count leaves out is told so, never shown a count it is not in
+      const notOwedOf = (): NotOwed => {
+        const r = runRow(fresh.run);
+        if (fresh.parked) return { parked: true };
+        const scope = phaseScopeOf(r, name);
+        return phaseIsForSeat(scope, fresh.seat) ? null : { forSeats: scope.forSeats ?? [] };
+      };
       const owesNow = (): string | null => owedNameOf(db.prepare("SELECT * FROM participants WHERE id = ?").get(fresh.id) as Row, runRow(fresh.run));
       // idea 2: a done for a phase opened earlier in the run, not the current one, is accepted, recorded, and wakes
       if (current.name !== name) {
@@ -2323,25 +2333,26 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         return transaction(() => {
           const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
           const progress = progressOf(fresh.run, name)!;
-          if (!added) return { progress, all: false, already: true, late: true, owesNow: owesNow(), message: null };
+          if (!added) return { progress, all: false, already: true, late: true, owesNow: owesNow(), notOwed: null, message: null };
           const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}${unmergedSuffix}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
-          return { progress, all: false, already: false, late: true, owesNow: owesNow(), message };
+          return { progress, all: false, already: false, late: true, owesNow: owesNow(), notOwed: null, message };
         });
       }
       return transaction(() => {
         const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
         const progress = progressOf(fresh.run, name)!;
         const all = everyOwingDone(progress);
-        if (!added) return { progress, all, already: true, late: false, owesNow: null, message: null };
+        if (!added) return { progress, all, already: true, late: false, owesNow: null, notOwed: notOwedOf(), message: null };
         // board-split D33 (S35): the done is the member's latest fact, shown over an older doing
         db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         // idea 2: the done wakes the orchestrator only in the person's cases, named in its body; otherwise it is carried
         const wakeCase = doneWakeCase(fresh, name, progress);
-        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${unmergedSuffix}${wakeCase ? `: ${wakeCase}` : ""}`;
+        // V-27: the count and who still owes it together, the unmerged branch last
+        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}${unmergedSuffix}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
-        return { progress, all, already: false, late: false, owesNow: null, message };
+        return { progress, all, already: false, late: false, owesNow: null, notOwed: notOwedOf(), message };
       });
     },
 

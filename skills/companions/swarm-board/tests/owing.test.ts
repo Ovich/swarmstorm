@@ -29,3 +29,44 @@ test("an ended member that never ran done owes nothing; an idle-ended one still 
   const p = phaseCount("build", [member("w1", { ended: true }), member("w2", { ended: true, idleEnded: true })], open);
   assert.deepEqual([p.of, p.idleEnded], [1, ["g/w2"]]);
 });
+
+test("V-28: done from a seat outside --for is recorded and says the phase is for other seats", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { openBoard } = await import("../src/board/board.ts");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-owing-"));
+  const board = await openBoard(path.join(dir, "swarm.sqlite"));
+  try {
+    const run = board.openRun({ repo: "/repos/one/.git", kind: "brainstorm", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, title: id, blockers: [] })) });
+    const w = Object.fromEntries(["w1", "w2"].map((id) => [id, board.join({ run: run.id, seat: id, doing: "x", files: [] }).member]));
+    board.phase(board.participant("g/orchestrator")!, "build", "w1 only", { for: ["w1"] });
+    const outside = board.done(w.w2, "build");
+    assert.deepEqual(outside.notOwed, { forSeats: ["w1"] });
+    assert.deepEqual([outside.progress.done, outside.progress.of], [0, 1]);
+    assert.equal(board.done(w.w1, "build").notOwed, null);
+  } finally {
+    board.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test("V-27: the done event says the count and who still owes it together, the unmerged branch last", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { openBoard } = await import("../src/board/board.ts");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-owing-"));
+  const board = await openBoard(path.join(dir, "swarm.sqlite"));
+  try {
+    const run = board.openRun({ repo: "/repos/one/.git", kind: "brainstorm", group: "g", title: "T", seats: ["w1", "w2", "v1"].map((id) => ({ id, title: id, blockers: [] })) });
+    const w = Object.fromEntries(["w1", "w2", "v1"].map((id) => [id, board.join({ run: run.id, seat: id, doing: "x", files: [] }).member]));
+    board.phase(board.participant("g/orchestrator")!, "build", "build it");
+    board.done(w.w2, "build");
+    const r = board.done(w.w1, "build", { unmerged: "swarm/1-g/w1" });
+    assert.equal(r.message?.body, "done build (2/3): all but v1; unmerged swarm/1-g/w1");
+  } finally {
+    board.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});

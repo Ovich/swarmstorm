@@ -4447,6 +4447,12 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const current = phaseOf(runRow(fresh.run));
       if (!current) throw new Error(`done ${name}: no phase is open in run ${fresh.run}`);
       const orch = `${fresh.plan}/${ORCHESTRATOR2}`;
+      const notOwedOf = () => {
+        const r = runRow(fresh.run);
+        if (fresh.parked) return { parked: true };
+        const scope = phaseScopeOf(r, name);
+        return phaseIsForSeat(scope, fresh.seat) ? null : { forSeats: scope.forSeats ?? [] };
+      };
       const owesNow = () => owedNameOf(db.prepare("SELECT * FROM participants WHERE id = ?").get(fresh.id), runRow(fresh.run));
       if (current.name !== name) {
         const opened = db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ?").all(fresh.run, EVENTS.phase.name).some(
@@ -4456,23 +4462,23 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         return transaction(() => {
           const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
           const progress = progressOf(fresh.run, name);
-          if (!added) return { progress, all: false, already: true, late: true, owesNow: owesNow(), message: null };
+          if (!added) return { progress, all: false, already: true, late: true, owesNow: owesNow(), notOwed: null, message: null };
           const message = insertMessage(fresh, `late done ${name}; the current phase is ${current.name}${unmergedSuffix}`, null, "event", [orch], { event: EVENTS.done.name, meta: { phase: name } });
-          return { progress, all: false, already: false, late: true, owesNow: owesNow(), message };
+          return { progress, all: false, already: false, late: true, owesNow: owesNow(), notOwed: null, message };
         });
       }
       return transaction(() => {
         const added = Number(db.prepare("INSERT OR IGNORE INTO phase_done (run, participant, phase, at) VALUES (?, ?, ?, ?)").run(fresh.run, fresh.id, name, now()).changes) > 0;
         const progress = progressOf(fresh.run, name);
         const all2 = everyOwingDone(progress);
-        if (!added) return { progress, all: all2, already: true, late: false, owesNow: null, message: null };
+        if (!added) return { progress, all: all2, already: true, late: false, owesNow: null, notOwed: notOwedOf(), message: null };
         db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(`done ${name}`, fresh.id);
         const wakeCase = doneWakeCase(fresh, name, progress);
-        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${unmergedSuffix}${wakeCase ? `: ${wakeCase}` : ""}`;
+        const body = `done ${name} (${progress.done}/${progress.of})${goneSuffix(progress.gone)}${wakeCase ? `: ${wakeCase}` : ""}${unmergedSuffix}`;
         const message = insertMessage(fresh, body, null, "event", wakeCase ? [orch] : [], { event: EVENTS.done.name, meta: { phase: name } });
         markPhaseOpenDelivered(fresh, name);
         allDoneOnce(fresh, progress);
-        return { progress, all: all2, already: false, late: false, owesNow: null, message };
+        return { progress, all: all2, already: false, late: false, owesNow: null, notOwed: notOwedOf(), message };
       });
     },
     lastActivity(run3) {
@@ -9478,7 +9484,7 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--report-file",
   "--unlocked"
 ]);
-var LIST_FLAGS = /* @__PURE__ */ new Set(["--files"]);
+var LIST_FLAGS = /* @__PURE__ */ new Set(["--files", "--for"]);
 function parseArgs(argv) {
   const [verb, ...rest] = argv;
   const listed = /* @__PURE__ */ new Set();
@@ -10001,6 +10007,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
   /** a done of the open phase: the one count (owing.ts), the lost named in it */
   doneCounted: (phase, progress, all2) => `done ${phase}: ${progress}${all2 ? "; the orchestrator is told every member is done" : ""}`,
+  /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
+  doneNotOwed: (phase, why) => `done ${phase} recorded; ${"parked" in why ? "you are parked: not counted until unparked" : `you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`}`,
   /** a done run again for the same phase: nothing new recorded; for a phase no longer open, what the member owes now */
   doneAlready: (phase, progress, late) => `already done ${phase}${progress ? `: ${progress}` : ""}; nothing new recorded${late && !late.owesNow ? "; you owe nothing now" : ""}`,
   /** V-5: a done for a phase no longer open: recorded; the owed line after it names the phase owed now, else this says none is */
@@ -11011,7 +11019,7 @@ ${verbHelp()}`);
         break;
       }
       const open = (await board.currentPhase(p.run))?.name ?? name;
-      const line = r.already ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null) : r.late ? WORDING.doneLate(name, open, r.owesNow) : WORDING.doneCounted(name, progressText(r.progress), r.all);
+      const line = r.notOwed ? WORDING.doneNotOwed(name, r.notOwed) : r.already ? WORDING.doneAlready(name, r.late ? null : progressText(r.progress), r.late ? { owesNow: r.owesNow } : null) : r.late ? WORDING.doneLate(name, open, r.owesNow) : WORDING.doneCounted(name, progressText(r.progress), r.all);
       const facts = unmerged ? [CODE_WORDING.unmergedAtDone(unmerged.branch, unmerged.left, self().join(" "), shellWord2(unmerged.onto ?? "<branch>"), shellWord2(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
