@@ -579,15 +579,18 @@ test("the launcher prints the build command when dist-cli is absent", () => {
   assert.match(r.stderr, /not built\. Run: npm install && npm run build/);
 });
 
-test("the launcher has no hook verb: usage, exit 1, and the usage never names a hook (D58)", () => {
+test("the launcher has no hook verb: the unknown-verb line, exit 1, and neither help names a hook (D58, V-48, AGENTS rule 11)", () => {
   const launcher = path.resolve(path.dirname(CLI), "..", "..", "swarm.mjs");
   assert.ok(fs.existsSync(path.join(path.dirname(launcher), "dist-cli", "cli.mjs")), "build first: npm run build");
   for (const kind of ["pre", "post"]) {
     const r = spawnSync(process.execPath, [launcher, "hook", kind], { cwd: repo, input: "{}", encoding: "utf8", env: env() });
     assert.equal(r.status, 1, kind);
-    assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ <verb>/);
-    assert.doesNotMatch(r.stderr, /hook/i);
+    assert.match(r.stderr, /^hook: no such verb; the verbs are in (SWARMSTORM_HOME=[^ ]+ )?node [^ ]+ --help, the code verbs in [^\n]+ --help code\n?$/);
     assert.equal(r.stdout, "");
+  }
+  for (const help of [["--help"], ["--help", "code"]]) {
+    const r = spawnSync(process.execPath, [launcher, ...help], { cwd: repo, encoding: "utf8", env: env() });
+    assert.doesNotMatch(r.stdout + r.stderr, /hook/i, help.join(" "));
   }
 });
 
