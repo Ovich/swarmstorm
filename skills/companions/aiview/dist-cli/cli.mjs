@@ -9253,7 +9253,7 @@ var init_wire = __esm({
       "snapshot",
       "composition"
     ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
@@ -9278,18 +9278,18 @@ var init_home2 = __esm({
 });
 
 // ../swarm-board/src/board/liveness.ts
-var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, READINGS_KEPT_MS, BUSY_MAX_MS, LINK_LOST_MS, IN_TURN_MS, OWE_WAIT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
+var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
 var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
     IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     STALL_MS_DEFAULT = 5 * 60 * 1e3;
+    BADGE_CONFIRM_MS = 10 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     BUSY_MAX_MS = 15 * 60 * 1e3;
-    LINK_LOST_MS = 30 * 1e3;
-    IN_TURN_MS = 120 * 1e3;
-    OWE_WAIT_MS = 10 * 60 * 1e3;
+    LOST_MS = 60 * 1e3;
+    HEARTBEAT_MS = 5 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
     LOCK_HELD_MS = 10 * 60 * 1e3;
     SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
@@ -9319,6 +9319,7 @@ var init_link = __esm({
     "use strict";
     init_proc2();
     init_home2();
+    init_liveness();
     init_wire();
     init_transcripts();
     DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
@@ -9476,6 +9477,14 @@ function lineFrames(sock, onFrame) {
     }
   });
 }
+function resentCall(p) {
+  const { call } = p;
+  if (call.type !== "call" || call.method !== "wait") return call;
+  const options = call.args[1];
+  if (typeof options?.timeoutMs !== "number") return call;
+  const remainingMs = Math.max(0, options.timeoutMs - (Date.now() - p.sentAt));
+  return { ...call, args: [call.args[0], { ...options, timeoutMs: remainingMs }, ...call.args.slice(2)] };
+}
 function callsOver(firstSend) {
   let send = firstSend;
   const pending = /* @__PURE__ */ new Map();
@@ -9490,7 +9499,7 @@ function callsOver(firstSend) {
       while (given.length && given[given.length - 1] === void 0) given.pop();
       const frame = { type: "call", id, method, args: given };
       return new Promise((resolve, reject) => {
-        pending.set(id, { call: frame, resolve, reject });
+        pending.set(id, { call: frame, sentAt: Date.now(), resolve, reject });
         send(frame);
       });
     },
@@ -9510,7 +9519,7 @@ function callsOver(firstSend) {
     },
     reroute(to) {
       send = to;
-      for (const p of pending.values()) send(p.call);
+      for (const p of pending.values()) send(resentCall(p));
     }
   };
 }
@@ -9548,31 +9557,47 @@ async function connectBoard(opts) {
   if (opts.member) {
     const member = opts.member;
     const harness = opts.harness ?? inHarnessSession();
-    const sock = await openLinkPipe(opts.dataRoot, member, harness ? opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS : null);
-    if (sock) {
-      const calls2 = callsOver((f) => sock.write(`${encode(f)}
+    const linkWaitMs = harness ? opts.harnessWaitMs ?? HARNESS_LINK_WAIT_MS : null;
+    const firstSock = await openLinkPipe(opts.dataRoot, member, linkWaitMs);
+    if (firstSock) {
+      let linkSock = firstSock;
+      const calls2 = callsOver((f) => linkSock.write(`${encode(f)}
 `));
-      lineFrames(sock, (f) => calls2.settle(f));
       let direct = null;
       let closing = false;
-      sock.on("close", () => {
-        if (closing) return;
-        connectServer(state).then(
-          (conn2) => {
-            direct = conn2;
-            conn2.onFrame((f) => calls2.settle(f));
-            conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
-            calls2.reroute(conn2.send);
-          },
-          () => calls2.fail(`swarm: ${member.name}'s link closed the pipe`)
-        );
-      });
-      sock.on("error", () => {
-      });
+      const rerouteAfterLinkClosed = async () => {
+        const relaunched = await openLinkPipe(opts.dataRoot, member, HARNESS_LINK_WAIT_MS).catch(() => null);
+        if (closing) {
+          relaunched?.destroy();
+          return;
+        }
+        if (relaunched) {
+          wireLink(relaunched);
+          calls2.reroute((f) => relaunched.write(`${encode(f)}
+`));
+          return;
+        }
+        const conn2 = await connectServer(await ensureServer(opts.dataRoot));
+        direct = conn2;
+        conn2.onFrame((f) => calls2.settle(f));
+        conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
+        calls2.reroute(conn2.send);
+      };
+      const wireLink = (sock) => {
+        linkSock = sock;
+        lineFrames(sock, (f) => calls2.settle(f));
+        sock.on("close", () => {
+          if (closing) return;
+          rerouteAfterLinkClosed().catch(() => calls2.fail(`swarm: ${member.name}'s link closed the pipe`));
+        });
+        sock.on("error", () => {
+        });
+      };
+      wireLink(firstSock);
       return Object.assign(asRemote(calls2.call), {
         close: () => {
           closing = true;
-          sock.destroy();
+          linkSock.destroy();
           direct?.close();
         },
         linkMissing: false
@@ -9740,6 +9765,15 @@ function mountBoard(sse, opts = {}) {
     };
     return norm2(a) === norm2(b);
   };
+  const repoOfKey = (repos, key) => {
+    const direct = repos.find((r) => sameRepo(r.repo, key))?.repo;
+    if (direct) return direct;
+    for (const asked of opts.reposOfProject?.(key) ?? []) {
+      const repo = repos.find((r) => sameRepo(r.repo, asked))?.repo;
+      if (repo) return repo;
+    }
+    return void 0;
+  };
   const repoNamed = async (board, url) => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
     const key = projectAsked(url.searchParams);
@@ -9749,7 +9783,7 @@ function mountBoard(sse, opts = {}) {
       return repo ? { repo } : { missing: `no run ${run}` };
     }
     if (key !== null) {
-      const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
+      const repo = repoOfKey(repos, key);
       return repo ? { repo } : { missing: `no project ${key}` };
     }
     return { missing: "no project named: ask ?project=<project> or ?run=<id>" };
@@ -9763,7 +9797,7 @@ function mountBoard(sse, opts = {}) {
   const answerStats = async (board, url, res) => {
     const q = url.searchParams;
     const key = projectAsked(q);
-    const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : void 0;
+    const known = key !== null ? repoOfKey(await board.repos(), key) : void 0;
     const named = key !== null ? known ? { repo: known } : { missing: `no project ${key}` } : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");
@@ -9820,7 +9854,7 @@ var init_board = __esm({
 });
 
 // src/server/sse.ts
-function createSseHub(heartbeatMs = HEARTBEAT_MS, hello = () => ({})) {
+function createSseHub(heartbeatMs = HEARTBEAT_MS2, hello = () => ({})) {
   const clients = /* @__PURE__ */ new Map();
   const drop = (res) => {
     if (clients.delete(res)) res.destroy();
@@ -9869,11 +9903,11 @@ function createSseHub(heartbeatMs = HEARTBEAT_MS, hello = () => ({})) {
     }
   };
 }
-var HEARTBEAT_MS;
+var HEARTBEAT_MS2;
 var init_sse = __esm({
   "src/server/sse.ts"() {
     "use strict";
-    HEARTBEAT_MS = 15e3;
+    HEARTBEAT_MS2 = 15e3;
   }
 });
 
@@ -9898,7 +9932,14 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     const build = servedBuild(path14.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
-  const board = mountBoard(sse, { dataRoot: boardDataRoot, swarmEntry });
+  const board = mountBoard(sse, {
+    dataRoot: boardDataRoot,
+    swarmEntry,
+    reposOfProject: (key) => {
+      const slug = projectOfBoardKey(key);
+      return slug === null ? null : index.boardRepos(slug);
+    }
+  });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(
     (dir, name) => index.all().find((d) => path14.dirname(d.abs_path) === dir && path14.basename(d.abs_path) === name)
@@ -9916,17 +9957,18 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
-  const projectOfBoardKey = (key) => {
+  function projectOfBoardKey(key) {
     const projects = index.allProjects();
     if (projects.some((x) => x.slug === key)) return key;
     const checkoutOf = (repo) => repo.replace(/[\\/]+$/, "").replace(/[\\/]\.git$/i, "");
+    if (path14.isAbsolute(key)) return projectForCwd(checkoutOf(key), projects)?.slug ?? null;
     const named = (repo) => path14.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
     for (const x of projects) {
       const repo = index.boardRepos(x.slug).find(named);
       if (repo) return projectForCwd(checkoutOf(repo), projects)?.slug ?? x.slug;
     }
     return null;
-  };
+  }
   const toProjectTabs = (project, event, hash) => {
     const tabs = sse.broadcastTo(project, event);
     if (tabs > 0) return { tabs, opened: false };
@@ -10656,7 +10698,7 @@ var USAGE = [
   "  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
   "  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice",
   "  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0",
-  "  board [--repo <path>] [--project <slug>] [--open]   # the project's board page: its repositories, a repository added; prints the link",
+  "  board [--project <name>] [--open]   # the project's board page: its repositories; prints the link",
   "  init                                     # create the data home; report where everything lives"
 ].join("\n");
 var registerOpts = () => ({
