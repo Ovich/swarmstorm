@@ -40,7 +40,7 @@ const shown = (member: string) => {
   const row = board.roster(REPO).find((r) => r.name === member);
   return {
     snapshot: [snap.state, snap.badge?.name ?? null],
-    roster: row ? [row.fact ?? row.state, row.badge?.name ?? null] : null,
+    roster: row ? [row.state, row.badge?.name ?? null] : null,
   };
 };
 /** One truth-table row: the snapshot reads `[state, badge]`, and the roster the same while the member is live. */
@@ -147,7 +147,9 @@ test("A1-2: parked after a lost was told: no lost in composition or progress", (
   board.livenessTick(run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 600_000 } : linked(m)));
   assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "lost");
   board.park(orch, "a");
-  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "joined");
+  // U-F4: the join answer's head lines (the composition) say parked, as the roster does
+  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "parked");
+  assert.ok(board.composition(run.id).lines.some((l) => l.startsWith("a ") && l.endsWith(": parked")));
   assert.deepEqual(board.phaseProgress(run.id)!.gone, []);
   pins("g/a", "parked", null);
 });
@@ -162,7 +164,11 @@ test("D50: a task is the orchestrator's post --task to one member, for the open 
   assert.deepEqual(owesOf(), { phase: "p1", task: task.seq });
   assert.throws(() => board.post(a, "@orchestrator mine", { task: true }), /only the orchestrator/);
   assert.throws(() => board.post(orch, "nobody", { task: true }), /exactly one member/);
-  // the next phase has no task until one is posted in it
+  // D50 amended (U-F8): the run's latest task holds across phases, and after its done; a newer one replaces it
   board.phase(orch, "p2", "next");
-  assert.deepEqual(owesOf(), { phase: "p2", task: null });
+  assert.deepEqual(owesOf(), { phase: "p2", task: task.seq });
+  board.done(a, "p2");
+  assert.deepEqual(owesOf(), { phase: null, task: task.seq });
+  const next = board.post(orch, "@a do T2", { task: true });
+  assert.deepEqual(owesOf(), { phase: null, task: next.seq });
 });

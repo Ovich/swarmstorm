@@ -1475,7 +1475,9 @@ test("D47: roster and stats take --project; the old --repo is read as it, with o
   assert.equal(now.stderr, "");
   const old = runIn(other, "roster", "--repo", repo);
   assert.equal(old.status, 0, old.stderr);
-  assert.equal(old.stdout, now.stdout);
+  // the two outputs a second apart may read the ages differently (0 s vs 1 s ago): compared without them
+  const ageless = (out: string): string => out.replace(/progress [^,]*, link [^ ]*( ago)?/g, "progress <age>, link <age>");
+  assert.equal(ageless(old.stdout), ageless(now.stdout));
   assert.equal(old.stderr, "--repo is now --project: read as --project, write that next time\n");
   const stats = runIn(other, "stats", "--project", repo, "--json");
   assert.equal(stats.status, 0, stats.stderr);

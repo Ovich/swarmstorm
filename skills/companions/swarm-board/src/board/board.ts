@@ -32,7 +32,7 @@ export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, Fi
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
 export type Seat = SeatSpec & { state: SeatState };
 /** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
-export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "lost" };
+export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "lost" | "parked" };
 /** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
 export type Declared = { path: string; interface: boolean }; // repository-relative
@@ -144,7 +144,7 @@ export interface RosterEntry {
   subscriptions: Subscription[];
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
   /** board-split D49: its one state (ended, parked, waiting in a held board wait, else working); what it does is `activity`. */
-  state: CoreMemberState;
+  state: SnapshotMemberState;
   /** What its pack says of it now (D36); absent when nothing. */
   fact?: MemberFact;
   activity: string | null;
@@ -1192,7 +1192,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         ...(s?.role == null ? {} : { role: String(s.role) }),
         ...(s?.area == null ? {} : { area: String(s.area) }),
         // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) && Number(p.parked) !== 1 ? "lost" : "joined",
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined",
       };
     };
     const entries = [entry(ORCHESTRATOR), ...seats.map((s) => entry(String(s.id), s))];
@@ -2472,7 +2472,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
-        state: memberStateOf(r, true),
+        // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
+        state: factEntry(toParticipant(r)).fact ?? memberStateOf(r, true),
         activity: Number(r.parked) === 1 ? null : (stateIn(Number(r.run), String(r.seat))?.doing ?? null),
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
@@ -2724,13 +2725,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id: number): Row | undefined => runsById.get(id);
-      /** board-split D50: the task the orchestrator posted `member` (`post --task`) in the run's open phase, never a
-       *  post that merely mentions it. */
+      /** board-split D50: the latest task the orchestrator posted `member` (`post --task`) in the run, never a post
+       *  that merely mentions it. */
       const latestTaskTo = (run: number, member: string): number | null => {
-        const phase = runById(run)?.phase;
-        const m = db
-          .prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ? AND task_phase IS ?")
-          .get(run, member, phase == null ? null : String(phase)) as Row | undefined;
+        // D50 (amended, U-F8): the run's latest, whatever phase it came in and whether the member said done since
+        const m = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run, member) as Row | undefined;
         return m?.seq == null ? null : Number(m.seq);
       };
       const roster: SnapshotMember[] = people.map((r) => {
@@ -2755,7 +2754,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...(orchestrator || s?.area == null ? {} : { area: String(s.area) }),
           doing: String(r.doing),
           state,
-          ...(core === "working" && owedPhase != null ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {}),
+          ...(() => {
+            if (core !== "working") return {};
+            const task = latestTaskTo(Number(r.run), `${r.plan}/${seat}`);
+            return owedPhase != null || task != null ? { owes: { phase: owedPhase, task } } : {};
+          })(),
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),

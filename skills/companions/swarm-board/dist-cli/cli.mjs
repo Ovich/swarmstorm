@@ -3450,7 +3450,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         ...s?.role == null ? {} : { role: String(s.role) },
         ...s?.area == null ? {} : { area: String(s.area) },
         // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
-        state: !p ? "not joined" : p.ended_at != null ? "ended" : goneSet.has(seat) && Number(p.parked) !== 1 ? "lost" : "joined"
+        state: !p ? "not joined" : p.ended_at != null ? "ended" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined"
       };
     };
     const entries = [entry2(ORCHESTRATOR2), ...seats.map((s) => entry2(String(s.id), s))];
@@ -4476,7 +4476,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         worktree: r.place == null ? null : String(r.place),
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
-        state: memberStateOf(r, true),
+        // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
+        state: factEntry(toParticipant(r)).fact ?? memberStateOf(r, true),
         activity: Number(r.parked) === 1 ? null : stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
@@ -4681,8 +4682,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id) => runsById.get(id);
       const latestTaskTo = (run3, member) => {
-        const phase = runById(run3)?.phase;
-        const m = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ? AND task_phase IS ?").get(run3, member, phase == null ? null : String(phase));
+        const m = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run3, member);
         return m?.seq == null ? null : Number(m.seq);
       };
       const roster = people.map((r) => {
@@ -4706,7 +4706,11 @@ ${freed.note}`, null, "event", freed.mentions, ended);
           ...orchestrator || s?.area == null ? {} : { area: String(s.area) },
           doing: String(r.doing),
           state,
-          ...core === "working" && owedPhase != null ? { owes: { phase: owedPhase, task: latestTaskTo(Number(r.run), `${r.plan}/${seat}`) } } : {},
+          ...(() => {
+            if (core !== "working") return {};
+            const task = latestTaskTo(Number(r.run), `${r.plan}/${seat}`);
+            return owedPhase != null || task != null ? { owes: { phase: owedPhase, task } } : {};
+          })(),
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
