@@ -66,6 +66,10 @@ export const registry = {
   heldOf(db: PackTablesDeps["db"], member: number): { path: string; interface: boolean }[] {
     return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
   },
+  /** The paths the member ever claimed, every pack's (S28). */
+  everClaimedOf(db: PackTablesDeps["db"], member: number): string[] {
+    return Object.values(PACKS).flatMap((p) => p.everClaimed?.(db, member) ?? []);
+  },
   /** Every pack's rows of a pruned member deleted (D20). */
   forgetMember(db: PackTablesDeps["db"], member: number): void {
     for (const p of Object.values(PACKS)) p.forget?.(db, { member });

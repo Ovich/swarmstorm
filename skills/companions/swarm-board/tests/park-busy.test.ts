@@ -9,6 +9,8 @@ import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
+import { observe } from "../src/link/transcripts.ts";
+import { toolCall, writeMain } from "./fixtures/transcripts.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -132,5 +134,33 @@ test("D45: the card's activity carries the call's own label and whole command, n
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: open, background: { target: "npm test", since: base, outputGrewAt: null } }), at(base, 0));
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
   assert.deepEqual([card.activity?.open?.label, card.activity?.open?.command], ["Build the viewer", "cd app && npm run build"]);
-  assert.deepEqual([card.activity?.background?.label, card.activity?.background?.command], [null, null]);
+  // no description, no command (an older link): the label is the target's short form
+  assert.deepEqual([card.activity?.background?.label, card.activity?.background?.command], ["npm test", null]);
+});
+
+test("D45 (F14): with no description the label is the command's short form; the board's own wait is marked, for the card to show no line", () => {
+  const { run } = setup();
+  const base = Date.now();
+  const command = "SWARMSTORM_HOME=/h node /p/swarm-board/swarm.mjs claim src/a.ts --as g/a";
+  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: command.slice(0, 50), since: base, label: null, command } }), at(base, 0));
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.activity?.open?.label, "board claim");
+  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Read", target: "/r/src/a.ts", since: base, label: null, command: "/r/src/a.ts" } }), at(base, 4));
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.activity?.open?.label, "Read · a.ts");
+  const wait = "node /p/swarm.mjs wait --mentions --as g/a";
+  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: wait, since: base, boardWait: true, label: null, command: wait } }), at(base, 8));
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.activity?.open?.boardWait, true);
+});
+
+test("D45 (F14) end to end: a transcript's call, read by the link, stored and served, keeps its label", () => {
+  const { run } = setup();
+  const served = (lines: object[], session: string) => {
+    const { activity } = observe(writeMain(path.join(dir, "projects"), "p", session, lines), null);
+    board.recordActivity(run.id, "a", activity, new Date());
+    return board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.activity?.open;
+  };
+  const described = served([toolCall("Bash", { command: "cd app && npm run build", description: "Build the viewer" }, "t1", "2026-10-22T10:00:00.000Z")], "s1");
+  assert.deepEqual([described?.label, described?.command], ["Build the viewer", "cd app && npm run build"]);
+  const bare = served([toolCall("Bash", { command: "CI=1 npm test -- --watch=false" }, "t2", "2026-10-22T10:00:00.000Z")], "s2");
+  assert.deepEqual([bare?.label, bare?.command], ["npm test --", "CI=1 npm test -- --watch=false"]);
+  assert.equal(served([toolCall("Bash", { command: "node /p/swarm.mjs wait --mentions --as g/a", description: "Wait" }, "t3", "2026-10-22T10:00:00.000Z")], "s3")?.boardWait, true);
 });

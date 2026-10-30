@@ -7,7 +7,7 @@ import type { Conflicts, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
-import { codeSnapshotOf, heldOf } from "./snapshot.ts";
+import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS } from "./events.ts";
 import { codeStats } from "./stats.ts";
@@ -78,6 +78,7 @@ export const codePack: Pack = {
   },
   snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
   held: (db, member) => heldOf(db, member),
+  everClaimed: (db, member) => everClaimedOf(db, member),
   forget: (db, scope) => ("member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run)),
   writes: CLAIM_WRITES,
 

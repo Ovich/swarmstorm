@@ -458,9 +458,16 @@ test("a file declared at join while another member holds it shows on the roster,
   cli(wtA, "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
   cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill", "--files", "src/a.ts:inside");
   const s5 = cli(wtB, "roster").split("\n").find((l) => l.includes("review-tool/S5"))!;
-  assert.match(s5, /declared, held by another: src\/a\.ts \(review-tool\/S3\); claim it once free/);
+  assert.match(s5, /declared, held by another: src\/a\.ts \(review-tool\/S3\); to share it, tell its holder what you change \(post --about it\), then claim it/);
   assert.doesNotMatch(s5, /files: /);
   const s3 = cli(wtB, "roster").split("\n").find((l) => l.includes("review-tool/S3"))!;
   assert.match(s3, /files: src\/a\.ts/);
   assert.doesNotMatch(s3, /declared, held/);
+  // F11 (S28): S5 shares it, S3 releases it after its merge; S3's declaration is spent, never "held by another"
+  assert.equal(swarm(wtB, "post", "@S3 I change the export", "--about", "src/a.ts").status, 0);
+  assert.equal(swarm(wtB, "claim", "src/a.ts").status, 0);
+  assert.equal(swarm(wtA, "release", "src/a.ts").status, 0);
+  const after = cli(wtB, "roster").split("\n");
+  assert.doesNotMatch(after.find((l) => l.includes("review-tool/S3"))!, /declared, held/);
+  assert.doesNotMatch(after.find((l) => l.includes("review-tool/S5"))!, /declared, held/);
 });

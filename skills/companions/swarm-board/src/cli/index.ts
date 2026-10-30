@@ -224,7 +224,7 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
   // D19 (F9): a declared file another member held at the join is not claimed; the roster names it and its holder
   const holderOf = (file: string): string | undefined =>
     roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
-  const mine = new Set(r.held.map((h) => h.path.toLowerCase()));
+  const mine = new Set([...r.held.map((h) => h.path), ...r.everClaimed].map((p) => p.split("\\").join("/").toLowerCase()));
   const unclaimed = r.files
     .map((f) => f.path.split("\\").join("/"))
     .filter((f) => !mine.has(f.toLowerCase()))

@@ -350,10 +350,12 @@ test("no verb reads a global active project (board-split D41): use and list --al
   run("project", "add", "CIIP");
   const use = run("use", "CIIP");
   assert.equal(use.status, 1);
-  assert.match(use.stderr, /aiview use is gone .*this directory or --project <slug>/);
+  assert.match(use.stderr, /aiview use is gone: .*this directory or --project <slug>/);
   const all = run("list", "--all");
   assert.equal(all.status, 1);
   assert.match(all.stderr, /list --all is gone/);
+  // F12: a user line names no plan or decision id
+  for (const line of [use.stderr, all.stderr]) assert.doesNotMatch(line, /board-split|\bD\d+\b/);
 });
 
 test("no verb reads a global active project (board-split D41): the project shown last scopes nothing", () => {

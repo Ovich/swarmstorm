@@ -619,6 +619,9 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
 function heldOf(db, id) {
   return db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface" }));
 }
+function everClaimedOf(db, id) {
+  return db.prepare("SELECT DISTINCT path FROM claim_log WHERE participant = ?").all(id).map((c) => String(c.path));
+}
 var init_snapshot = __esm({
   "src/packs/code/snapshot.ts"() {
     "use strict";
@@ -2272,6 +2275,7 @@ var init_code = __esm({
       },
       snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
       held: (db, member) => heldOf(db, member),
+      everClaimed: (db, member) => everClaimedOf(db, member),
       forget: (db, scope) => "member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run),
       writes: CLAIM_WRITES,
       run(verb, member, input, ctx, tables) {
@@ -2391,6 +2395,10 @@ var init_registry = __esm({
       /** What the member holds now, every pack's (F27). */
       heldOf(db, member) {
         return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
+      },
+      /** The paths the member ever claimed, every pack's (S28). */
+      everClaimedOf(db, member) {
+        return Object.values(PACKS).flatMap((p) => p.everClaimed?.(db, member) ?? []);
       },
       /** Every pack's rows of a pruned member deleted (D20). */
       forgetMember(db, member) {
@@ -2908,6 +2916,32 @@ var init_names = __esm({
       "Ibis",
       "Jackal"
     ];
+  }
+});
+
+// src/board/call-label.ts
+function shortCommand(command) {
+  const line = command.trim().replace(/^cd\s+\S+\s*(&&|;)\s*/, "");
+  const words = line.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0])) words.shift();
+  const board2 = words.findIndex((w) => /(^|[\\/])swarm(\.mjs)?$/.test(w));
+  if (board2 >= 0) return `board ${words[board2 + 1] ?? ""}`.trim();
+  const script = words.findIndex((w, i) => i > 0 && /\.(m?[jt]s|py|sh|ps1|cjs)$/.test(w));
+  if (script >= 0 && /^(node|python3?|bash|sh|pwsh|powershell|tsx|deno|bun)(\.exe)?$/i.test(fileName(words[0]))) return fileName(words[script]);
+  return [fileName(words[0] ?? ""), ...words.slice(1, 3)].join(" ");
+}
+function callLabel(call) {
+  if (call.label) return call.label;
+  const command = (call.command ?? call.target).trim();
+  if (!command) return null;
+  if (!call.name || call.name === "Bash" || call.name === "PowerShell" || /\s/.test(command)) return shortCommand(command);
+  return `${call.name} \xB7 ${fileName(command)}`;
+}
+var fileName;
+var init_call_label = __esm({
+  "src/board/call-label.ts"() {
+    "use strict";
+    fileName = (p) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
   }
 });
 
@@ -3465,8 +3499,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const a = activityOf(run3, seat);
     if (!a) return {};
     const text = (v) => v == null ? null : String(v);
-    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: text(a.open_label), command: text(a.open_command) };
-    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: text(a.bg_label), command: text(a.bg_command) };
+    const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: callLabel({ name: String(a.open_tool), target: String(a.open_target ?? ""), label: text(a.open_label), command: text(a.open_command) }), command: text(a.open_command) };
+    const background = a.bg_target == null ? null : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: callLabel({ target: String(a.bg_target), label: text(a.bg_label), command: text(a.bg_command) }), command: text(a.bg_command) };
     return { activity: { open, background } };
   };
   const setParked = (p, seat, parked, until) => {
@@ -4421,6 +4455,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         doing: String(r.doing),
         files: JSON.parse(String(r.files)),
         held: registry.heldOf(db, Number(r.id)),
+        everClaimed: registry.everClaimedOf(db, Number(r.id)),
         badge: badgeOf(r, runRow(Number(r.run)), stateIn(Number(r.run), String(r.seat))),
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place),
@@ -4811,6 +4846,7 @@ var init_board = __esm({
     init_events2();
     init_names();
     init_liveness();
+    init_call_label();
     progressText = (p) => `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost` : ""}`;
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -9413,7 +9449,7 @@ var CODE_WORDING = {
   ].join("\n"),
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
-  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; claim it once free`,
+  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
   memberFact: { merging: "merging (holds the merge lock)" },
   // ── the merge (V12: every command runnable as printed) ──
   mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
@@ -9967,7 +10003,7 @@ var heldLine = (files) => {
 var rosterLine = (r, roster, ages = false) => {
   const files = heldLine(r.held);
   const holderOf = (file) => roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
-  const mine = new Set(r.held.map((h) => h.path.toLowerCase()));
+  const mine = new Set([...r.held.map((h) => h.path), ...r.everClaimed].map((p) => p.split("\\").join("/").toLowerCase()));
   const unclaimed = r.files.map((f) => f.path.split("\\").join("/")).filter((f) => !mine.has(f.toLowerCase())).flatMap((f) => holderOf(f) ? [`${f} (${holderOf(f)})`] : []);
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;

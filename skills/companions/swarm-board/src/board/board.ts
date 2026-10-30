@@ -16,6 +16,7 @@ import { funnyName } from "./names.ts";
 import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, IN_TURN_MS, LINK_LOST_MS, LOCK_HELD_MS, OWE_WAIT_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALLED_AGAIN_MS, STALL_MS_DEFAULT, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
+import { callLabel } from "./call-label.ts";
 
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
@@ -136,6 +137,8 @@ export interface RosterEntry {
   files: Declared[];
   /** The claims it holds now (F27), repository-relative. */
   held: Declared[];
+  /** S28: the paths it ever claimed, released ones included; a declared file among them is no longer waited on. */
+  everClaimed: string[];
   /** board-split D36: its trouble beside its state (stalled, lost, blocked), null when none. */
   badge: Badge | null;
   subscriptions: Subscription[];
@@ -1253,11 +1256,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open =
       a.open_tool == null
         ? null
-        : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: text(a.open_label), command: text(a.open_command) };
+        : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: callLabel({ name: String(a.open_tool), target: String(a.open_target ?? ""), label: text(a.open_label), command: text(a.open_command) }), command: text(a.open_command) };
     const background =
       a.bg_target == null
         ? null
-        : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: text(a.bg_label), command: text(a.bg_command) };
+        : { target: String(a.bg_target), since: Number(a.bg_since), outputGrewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at), label: callLabel({ target: String(a.bg_target), label: text(a.bg_label), command: text(a.bg_command) }), command: text(a.bg_command) };
     return { activity: { open, background } };
   };
   /** board-split D30: park or unpark a seat of the orchestrator's run, one event mentioning the seat. */
@@ -2431,6 +2434,7 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         doing: String(r.doing),
         files: JSON.parse(String(r.files)) as Declared[],
         held: registry.heldOf(db, Number(r.id)),
+        everClaimed: registry.everClaimedOf(db, Number(r.id)),
         badge: badgeOf(r, runRow(Number(r.run)), stateIn(Number(r.run), String(r.seat))),
         subscriptions: subsOf(r),
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen

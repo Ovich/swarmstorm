@@ -92,3 +92,8 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
 export function heldOf(db: DatabaseSync, id: number): Declared[] {
   return (db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(id) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface" }));
 }
+
+/** Every path the member ever claimed, released ones included (S28): the roster's declared files no longer waited on. */
+export function everClaimedOf(db: DatabaseSync, id: number): string[] {
+  return (db.prepare("SELECT DISTINCT path FROM claim_log WHERE participant = ?").all(id) as Row[]).map((c) => String(c.path));
+}

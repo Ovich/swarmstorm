@@ -11023,7 +11023,7 @@ function cmdList() {
   const want = args.flags("--tag");
   const wantKind = args.flag("--kind") ?? "";
   if (args.has("--all")) {
-    console.error("list --all is gone (board-split D41): every list is one project's; pass --project <slug> for another");
+    console.error("list --all is gone: every list is one project's; pass --project <slug> for another");
     process.exit(1);
   }
   const index = openIndex();
@@ -11437,7 +11437,7 @@ async function runVerb() {
       cmdProject();
       break;
     case "use":
-      console.error("aiview use is gone (board-split D41): each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
+      console.error("aiview use is gone: each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
       process.exit(1);
       break;
     case "open":
