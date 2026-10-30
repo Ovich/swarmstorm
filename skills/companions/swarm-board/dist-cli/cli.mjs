@@ -3724,7 +3724,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (String(p.seat) === ORCHESTRATOR2 || run3.state !== "open") return null;
     const task = db.prepare("SELECT m.seq, d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)").get(Number(p.id), Number(run3.id), `${String(run3.plan)}/${String(p.seat)}`);
     if (task?.at == null) return null;
-    const reported = db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND (mentions LIKE ? OR event = 'merged') LIMIT 1").get(Number(run3.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run3.plan)}/${ORCHESTRATOR2}`)}%`);
+    const reported = db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1").get(Number(run3.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run3.plan)}/${ORCHESTRATOR2}`)}%`);
     return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
   };
   const unansweredOf = (run3, orch) => {

@@ -1433,8 +1433,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
     return r?.at == null ? null : Date.parse(String(r.at));
   };
-  /** board-split D64: with no phase open, the member's latest task (D50) delivered to it, when it has neither posted to
-   *  the orchestrator nor merged since; null otherwise. */
+  /** board-split D64: with no phase open, the member's latest task (D50) delivered to it, when it has not posted to
+   *  the orchestrator since (a merge's report is such a post); null otherwise. */
   const taskOwedReportOf = (p: Row, run: Row): { seq: number; deliveredAt: number } | null => {
     if (String(p.seat) === ORCHESTRATOR || run.state !== "open") return null;
     const task = db
@@ -1442,7 +1442,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
     if (task?.at == null) return null;
     const reported = db
-      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND (mentions LIKE ? OR event = 'merged') LIMIT 1")
+      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1")
       .get(Number(run.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run.plan)}/${ORCHESTRATOR}`)}%`);
     return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
   };
