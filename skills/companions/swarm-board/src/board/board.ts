@@ -2456,7 +2456,8 @@ ${freed.note}`, null, "event", freed.mentions, ended);
         // U-F20: a badge that came or went with time alone (lost, stalled) is a change too, so a reader's card follows it
         // plan D55 (4): the whole drawn view (state, badge and since when) is compared, never the reason's text,
         // whose age moves every tick
-        const badgesNow = [...states.values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
+        // board-split D55: the badges as shown, so an episode opened at this tick is drawn
+        const badgesNow = [...statesOf(run, t).values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
         // a server's first tick only learns them: what a reader drew at its connect is this already
         if (badgesShown.get(run) !== badgesNow) {
           if (badgesShown.has(run)) moved = true;

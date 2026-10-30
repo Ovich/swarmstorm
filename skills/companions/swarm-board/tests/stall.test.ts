@@ -88,7 +88,7 @@ const badgeAt = (run: number, t: number) => board.memberStates(run, new Date(t))
 
 /** A task run with one worker `a` owing p1, its task delivered now, its link spoken (no 'no transcript' line). */
 const owing = (): { run: number; a: Participant } => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", title: "a", blockers: [] }] });
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
