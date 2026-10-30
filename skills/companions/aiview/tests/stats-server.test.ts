@@ -36,7 +36,7 @@ const swarmStats = (...argv: string[]): Promise<string> =>
     ),
   );
 const route = async (query: string): Promise<string> => {
-  const r = await fetch(`${base}/api/stats?repo=${encodeURIComponent(repo)}&${query}`);
+  const r = await fetch(`${base}/api/stats?project=${encodeURIComponent(repo)}&${query}`);
   assert.equal(r.status, 200, `${query}: ${r.status}`);
   return r.text();
 };
@@ -142,7 +142,7 @@ test("the body equals `swarm stats --json`, text for text, for since=30d&closedO
 test("an unknown repository or run answers 404 with its error, and the server stays up (SL4)", async () => {
   const unknownRepo = await fetch(`${base}/api/stats?repo=${encodeURIComponent("/nowhere/.git")}`);
   assert.equal(unknownRepo.status, 404);
-  assert.deepEqual(await unknownRepo.json(), { error: "no repository /nowhere/.git" });
+  assert.deepEqual(await unknownRepo.json(), { error: "no project /nowhere/.git" });
   for (const query of ["run=999", `repo=${encodeURIComponent(repo)}&run=999`]) {
     const unknownRun = await fetch(`${base}/api/stats?${query}`);
     assert.equal(unknownRun.status, 404, query);

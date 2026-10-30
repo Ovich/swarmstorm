@@ -47,7 +47,7 @@ $A open "$F" --tag <topic>
 - **Fix metadata with `update`.** `aiview.sqlite` is the tool's to write, and scratch files stay unregistered.
 - **Prototypes are self-contained HTML**, per the `design-prototype` skill.
 - **A workbench is one HTML page, its data optionally in a sidecar `<stem>/` beside it, read only through the frame's bridge, per the `create-workbench` skill**; a trace is a workbench. `move` carries the sidecar with the page.
-- **The project's board is aiview's board page, `#board&repo=<key>`, never a document**: `swarm open` adds the run's repository to it with `aiview board --repo <path>`, and `aiview board` alone prints its link. aiview draws it through swarm's `client/reader.ts`, a client of swarm's board server, and never opens swarm's store. `&run=<id>` opens one run's tab; the older `/board#run=<id>` still opens.
+- **The project's board is aiview's board page, `#board&project=<name>`, never a document**: `swarm open` adds the run's repository to it with `aiview board --repo <path>`, and `aiview board` alone prints its link. aiview draws it through swarm's `client/reader.ts`, a client of swarm's board server, and never opens swarm's store. `&run=<id>` opens one run's tab; an older `repo=` link and `/board#run=<id>` still open.
 
 ## Publishing before the work is done
 

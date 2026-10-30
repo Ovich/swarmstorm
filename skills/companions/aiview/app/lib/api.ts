@@ -50,9 +50,9 @@ export async function fetchProjectBoard(project: string): Promise<string[]> {
   return ((await r.json()) as { repos: string[] }).repos;
 }
 
-/** The project a board hash's `repo=` names and its board's repositories (board-split#D41). */
-export async function fetchBoardOfKey(repo: string): Promise<{ project: string; repos: string[] }> {
-  const r = await fetch(`/api/project-board?repo=${encodeURIComponent(repo)}`);
+/** The project a board hash's `project=` names and its board's repositories (board-split#D41, D47). */
+export async function fetchBoardOfKey(project: string): Promise<{ project: string; repos: string[] }> {
+  const r = await fetch(`/api/project-board?project=${encodeURIComponent(project)}`);
   if (!r.ok) throw new Error(`GET /api/project-board: ${r.status}`);
   return (await r.json()) as { project: string; repos: string[] };
 }

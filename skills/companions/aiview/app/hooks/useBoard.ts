@@ -18,7 +18,7 @@ export interface BoardState {
 /** The board route for the page's selection: a run's repository, a repository, or the most recently active. */
 export function boardUrl({ repo, run }: { repo: string | null; run: number | null }): string {
   if (run !== null) return `/api/board?run=${run}`;
-  if (repo !== null) return `/api/board?repo=${encodeURIComponent(repo)}`;
+  if (repo !== null) return `/api/board?project=${encodeURIComponent(repo)}`;
   return "/api/board";
 }
 

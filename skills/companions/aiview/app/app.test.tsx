@@ -487,7 +487,7 @@ describe("the board page", () => {
     render(<BoardPage repos={[REPO, "C:/repos/two/.git"]} />);
     expect(await screen.findByText("No run on one yet.")).toBeTruthy();
     expect(document.querySelector('[data-component="BoardView"]')!.getAttribute("data-state")).toBe("no run yet");
-    expect(fetchMock.mock.calls[0][0]).toBe(`/api/board?repo=${encodeURIComponent(REPO)}`);
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/board?project=${encodeURIComponent(REPO)}`);
     expect(streams).toEqual(["/events"]);
     expect(document.querySelector("iframe")).toBeNull();
   });

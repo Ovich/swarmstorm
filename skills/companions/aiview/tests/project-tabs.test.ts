@@ -9,7 +9,7 @@ import type { AddressInfo } from "node:net";
 import type http from "node:http";
 import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
-import { boardHash, hashWithBoardRepo, readBoardHash } from "../src/core/boardhash.ts";
+import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
 import type { ShowResponse } from "../src/core/api.ts";
 
 let tmp: string;
@@ -91,16 +91,21 @@ test("a pointer from alpha reaches only alpha's tabs", async () => {
 });
 
 test("a board key names its project: a slug as itself, a repository on a board by its name", async () => {
-  const of = async (repo: string) => (await fetch(`${base}/api/project-board?repo=${repo}`)).json() as Promise<{ project?: string }>;
+  const of = async (repo: string) => (await fetch(`${base}/api/project-board?project=${repo}`)).json() as Promise<{ project?: string }>;
   assert.equal((await of("alpha")).project, "alpha");
   assert.equal((await of("shop")).project, "beta");
-  assert.equal((await fetch(`${base}/api/project-board?repo=nowhere`)).status, 404);
+  assert.equal((await fetch(`${base}/api/project-board?project=nowhere`)).status, 404);
+  // D47: an older `?repo=` link still answers, as `?project=`
+  assert.equal(((await (await fetch(`${base}/api/project-board?repo=shop`)).json()) as { project?: string }).project, "beta");
 });
 
 test("the board hash: written, read, and given its project once", () => {
-  assert.equal(boardHash("shop", 7), "#board&repo=shop&run=7");
-  assert.deepEqual(readBoardHash("#board&repo=shop&run=7"), { repo: "shop" });
-  assert.deepEqual(readBoardHash("#board&run=7"), { repo: null });
+  assert.equal(boardHash("shop", 7), "#board&project=shop&run=7");
+  assert.deepEqual(readBoardHash("#board&project=shop&run=7"), { project: "shop" });
+  assert.deepEqual(readBoardHash("#board&run=7"), { project: null });
   assert.equal(readBoardHash("#doc=3"), null);
-  assert.equal(hashWithBoardRepo("#board&run=7", "alpha"), "#board&repo=alpha&run=7");
+  assert.equal(hashWithBoardProject("#board&run=7", "alpha"), "#board&project=alpha&run=7");
+  // D47: a kept `repo=` link still reads as the project, and is rewritten as `project=`, never written back
+  assert.deepEqual(readBoardHash("#board&repo=shop&run=7"), { project: "shop" });
+  assert.equal(hashWithBoardProject("#board&repo=shop&run=7", "shop"), "#board&project=shop&run=7");
 });

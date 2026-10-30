@@ -45,7 +45,7 @@ test("useBoard reloads on board-changed of its repository only", async () => {
   const { result } = renderHook(() => useBoard({ repo: REPO, run: null }));
   await waitFor(() => expect(result.current.snapshot).not.toBeNull());
   expect(FakeEventSource.last!.url).toBe("/events");
-  expect(fetchMock.mock.calls[0][0]).toBe(`/api/board?repo=${encodeURIComponent(REPO)}`);
+  expect(fetchMock.mock.calls[0][0]).toBe(`/api/board?project=${encodeURIComponent(REPO)}`);
   act(() => FakeEventSource.last!.emit({ type: "board-changed", repo: "/other/.git" }));
   expect(fetchMock).toHaveBeenCalledTimes(1);
   // aiview's document events share the stream: a document's `changed` is not the board's

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBoardOfKey, fetchDocument, fetchProjectBoard, type DocumentResponse } from "./lib/api.ts";
-import { boardHash, hashWithBoardRepo, readBoardHash } from "../src/core/boardhash.ts";
+import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
 import { useDocuments } from "./hooks/useDocuments.ts";
 import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
 import { Sidebar } from "./components/shell/Sidebar.tsx";
@@ -14,7 +14,7 @@ import { PdfFrame } from "./components/viewers/PdfFrame.tsx";
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
 import { readRunInHash } from "./lib/board/analytics.ts";
 
-/** The board page's older address, still read; the board's own is its hash, `#board&repo=<key>` (board-split#D41). */
+/** The board page's older address, still read; the board's own is its hash, `#board&project=<name>` (board-split#D41, D47). */
 export const BOARD_PATH = "/board";
 
 /** The board page: the project's board, over the repositories its runs were opened in, or that it has none. */
@@ -96,23 +96,23 @@ export function App() {
     };
   }, []);
   const onBoard = path === BOARD_PATH || boardKey !== null;
-  const boardRepoKey = boardKey?.repo ?? null;
+  const boardProjectKey = boardKey?.project ?? null;
   // a board tab without a project takes the tab's (the most recently active, at its first load) once, into its hash
   useEffect(() => {
-    if (!onBoard || boardRepoKey !== null || !projectKnown || !activeProject) return;
-    history.replaceState(history.state, "", `${location.pathname}${hashWithBoardRepo(location.hash, activeProject)}`);
-    setBoardKey({ repo: activeProject });
-  }, [onBoard, boardRepoKey, projectKnown, activeProject]);
+    if (!onBoard || boardProjectKey !== null || !projectKnown || !activeProject) return;
+    history.replaceState(history.state, "", `${location.pathname}${hashWithBoardProject(location.hash, activeProject)}`);
+    setBoardKey({ project: activeProject });
+  }, [onBoard, boardProjectKey, projectKnown, activeProject]);
   /** The board's repositories, asked of the server for the project the hash names (the tab's project follows it);
    *  null while asking. */
   const [boardRepos, setBoardRepos] = useState<string[] | null>(null);
   useEffect(() => {
-    if (!onBoard || (boardRepoKey === null && !projectKnown)) return;
+    if (!onBoard || (boardProjectKey === null && !projectKnown)) return;
     let cancelled = false;
     setBoardRepos(null);
     const asked =
-      boardRepoKey !== null
-        ? fetchBoardOfKey(boardRepoKey).then((b) => {
+      boardProjectKey !== null
+        ? fetchBoardOfKey(boardProjectKey).then((b) => {
             if (!cancelled) chooseProject(b.project);
             return b.repos;
           })
@@ -122,13 +122,13 @@ export function App() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onBoard, boardRepoKey, boardRepoKey === null ? activeProject : "", projectKnown]);
+  }, [onBoard, boardProjectKey, boardProjectKey === null ? activeProject : "", projectKnown]);
   /** The board of `slug`, this tab's project by default, at its scoped address (D41). */
   const showBoard = (slug: string = activeProject) => {
     setDocumentsShown(false);
     history.pushState(null, "", `/${boardHash(slug)}`);
     setPath("/");
-    setBoardKey({ repo: slug });
+    setBoardKey({ project: slug });
   };
   /** Off the board to `/` with `hash`, as a new history entry. */
   const leaveBoard = (hash: string) => {

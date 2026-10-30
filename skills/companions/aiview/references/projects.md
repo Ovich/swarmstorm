@@ -27,7 +27,7 @@ removes the others.
 ## Each tab keeps its project
 
 **A tab's project is its own**: the open document's, or on the board the one its address names
-(`#board&repo=<key>[&run=<id>]`, the key a project's slug or a repository on its board), so a reload
+(`#board&project=<name>[&run=<id>]`, the name a project's slug or the name its board knows it by; an older `repo=` link still opens), so a reload
 keeps it. A tab opened without one takes the project shown last once (else the first) and writes it in.
 There is no global project and no All projects: each tab shows one project, each verb works in one.
 Two sessions on two projects never pull each other's tabs.

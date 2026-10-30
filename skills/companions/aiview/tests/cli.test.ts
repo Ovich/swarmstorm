@@ -672,7 +672,7 @@ test("board --repo adds the repository to the project's board once, makes the pr
     const out = JSON.parse(first.stdout) as { project: string; repos: string[]; url: string };
     assert.equal(out.project, "p");
     assert.deepEqual(out.repos, [one]);
-    assert.match(out.url, /^http:\/\/localhost:\d+\/#board&repo=p$/);
+    assert.match(out.url, /^http:\/\/localhost:\d+\/#board&project=p$/);
     const again = JSON.parse(run("board", "--repo", one, "--project", "p", "--json").stdout) as { repos: string[] };
     assert.deepEqual(again.repos, [one]);
     const second = JSON.parse(run("board", "--repo", two, "--project", "p", "--json").stdout) as { repos: string[] };

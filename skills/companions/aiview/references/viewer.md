@@ -34,7 +34,7 @@ to what the person was reading before the agent pointed, as the agent's `show --
 does; a tab the person has since moved is left where it is. The address bar
 holds the pointer (`#doc=12&show=Strip,Menu&variant=step-2`), so the link can be kept.
 
-**The board.** Board, first in the menu, is the page `#board&repo=<key>`: the tab's project's swarm
+**The board.** Board, first in the menu, is the page `#board&project=<name>`: the tab's project's swarm
 board, drawn by aiview itself from swarm's store, for the repositories the project's runs
 were opened in: one tab per run, the phase strip, the conversation, the agents beside it,
 the archive behind ☰. Switching the tab's project shows that project's board, in that tab alone. It follows aiview's theme and updates live as agents write; there is no second server

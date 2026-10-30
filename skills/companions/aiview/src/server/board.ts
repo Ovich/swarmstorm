@@ -63,6 +63,9 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     res.end(JSON.stringify(obj));
   };
 
+  /** The project a request names, `?project=`, or an older `?repo=` (a kept link, D47); null when it names none. */
+  const projectAsked = (q: URLSearchParams): string | null => q.get("project") ?? q.get("repo");
+
   /** Whether two spellings name one repository: `/` or `\`, on Windows any case, a worktree's `.git` its common one (aiview stores `/`, the board keys `\`). */
   const sameRepo = (a: string, b: string): boolean => {
     const norm = (r: string) => {
@@ -73,11 +76,11 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     return norm(a) === norm(b);
   };
 
-  /** The repository a request names: a run's, or a repository; `missing` is the 404's message, never a fallback to
-   *  another repository (board-split#D41: no global scope). `/api/run?id=` kept as `?run=`. */
+  /** The board a request names: a run's, or a project's (`?project=`, an older `?repo=` still read, D47); `missing` is the
+   *  404's message, never a fallback to another project (board-split#D41: no global scope). `/api/run?id=` kept as `?run=`. */
   const repoNamed = async (board: BoardReader, url: URL): Promise<{ repo: string } | { missing: string }> => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");
-    const key = url.searchParams.get("repo");
+    const key = projectAsked(url.searchParams);
     const repos = await board.repos();
     if (run !== null) {
       const repo = repos.find((r) => r.runs.some((x) => x.run === Number(run)))?.repo;
@@ -85,9 +88,9 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
     }
     if (key !== null) {
       const repo = repos.find((r) => sameRepo(r.repo, key))?.repo;
-      return repo ? { repo } : { missing: `no repository ${key}` };
+      return repo ? { repo } : { missing: `no project ${key}` };
     }
-    return { missing: "no repository named: ask ?repo=<repository> or ?run=<id>" };
+    return { missing: "no project named: ask ?project=<project> or ?run=<id>" };
   };
 
   /** One repository's whole board. */
@@ -103,11 +106,11 @@ export function mountBoard(sse: SseHub, opts: { dataRoot?: string; swarmEntry?: 
    *  (D34): `since=all` is `--all` (no since, every run kept), `closedOnly=1` is `--closed`, `kind` is `--kind`. */
   const answerStats = async (board: BoardReader, url: URL, res: http.ServerResponse): Promise<void> => {
     const q = url.searchParams;
-    const key = q.get("repo");
+    const key = projectAsked(q);
     // a named repository is read as `swarm stats --repo` reads it, its run whatever its age, pruned with its summary
     // kept or not in the board's list (plan D40); a run named alone is found among the runs the board lists
     const known = key !== null ? (await board.repos()).find((r) => sameRepo(r.repo, key))?.repo : undefined;
-    const named = key !== null ? (known ? { repo: known } : { missing: `no repository ${key}` }) : await repoNamed(board, url);
+    const named = key !== null ? (known ? { repo: known } : { missing: `no project ${key}` }) : await repoNamed(board, url);
     if ("missing" in named) return json(res, { error: named.missing }, 404);
     const run = q.get("run");
     const since = q.get("since");

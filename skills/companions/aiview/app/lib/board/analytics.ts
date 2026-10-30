@@ -93,8 +93,8 @@ export type StatsAsk = AcrossScope | { run: RunId };
  *  equals `swarm stats --repo <repo> --since 30d --closed --json` (or `--all`), a kind subset `--kind`
  *  (D34). One run: no period, so the body equals `swarm stats --repo <repo> --run <id> --all --json`. */
 export function statsUrl(repo: string, ask: StatsAsk): string {
-  if ("run" in ask) return `/api/stats?${new URLSearchParams({ repo, run: String(ask.run) }).toString()}`;
-  const q = new URLSearchParams({ repo, since: ask.period });
+  if ("run" in ask) return `/api/stats?${new URLSearchParams({ project: repo, run: String(ask.run) }).toString()}`;
+  const q = new URLSearchParams({ project: repo, since: ask.period });
   if (ask.kinds.length < KINDS.length) q.set("kind", ask.kinds.join(","));
   q.set("closedOnly", "1");
   return `/api/stats?${q.toString()}`;

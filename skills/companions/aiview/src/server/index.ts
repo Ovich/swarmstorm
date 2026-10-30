@@ -111,7 +111,7 @@ export function startServer(
   };
   const json = (res: http.ServerResponse, obj: unknown, status = 200) => send(res, status, JSON.stringify(obj));
 
-  /** The project a board hash's `repo=` names (D41): a project's slug, or the name of a repository on a project's
+  /** The project a board hash's `project=` names (D41, D47): a project's slug, or the name of a repository on a project's
    *  board, mapped to the project whose paths cover it; null when none does. */
   const projectOfBoardKey = (key: string): string | null => {
     const projects = index.allProjects();
@@ -180,9 +180,10 @@ export function startServer(
     }
     // The board page's source: the repositories the project's board reads, the project named (D41: no default).
     if (p === "/api/project-board") {
-      const key = url.searchParams.get("repo");
-      const slug = key ? projectOfBoardKey(key) : url.searchParams.get("project") || null;
-      if (slug === null) return json(res, { error: key ? `no project for ${key}` : "name a project: ?project=<slug> or ?repo=<key>" }, key ? 404 : 400);
+      // `?project=` a slug or the name the board keys it by; an older `?repo=` (a kept link) still read (D47)
+      const key = url.searchParams.get("project") || url.searchParams.get("repo") || null;
+      const slug = key ? projectOfBoardKey(key) : null;
+      if (slug === null) return json(res, { error: key ? `no project ${key}` : "name a project: ?project=<name>" }, key ? 404 : 400);
       return json(res, { project: slug, repos: index.boardRepos(slug) });
     }
     // Pinning is the person's, from the viewer: the index stores it, every tab hears it.

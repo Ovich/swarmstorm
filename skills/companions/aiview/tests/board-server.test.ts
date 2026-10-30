@@ -101,13 +101,14 @@ test("answers only the repository asked: no fallback, and no run of another repo
   await writer.openRun({ repo: OTHER, group: "other", title: "Other", seats: [] });
   const unasked = await fetch(`${base}/api/board`);
   assert.equal(unasked.status, 404);
-  assert.deepEqual(await unasked.json(), { error: "no repository named: ask ?repo=<repository> or ?run=<id>" });
-  const byKey = (await (await fetch(`${base}/api/board?repo=${encodeURIComponent(REPO)}`)).json()) as BoardBody;
+  assert.deepEqual(await unasked.json(), { error: "no project named: ask ?project=<project> or ?run=<id>" });
+  const byKey = (await (await fetch(`${base}/api/board?project=${encodeURIComponent(REPO)}`)).json()) as BoardBody;
   assert.equal(byKey.snapshot.repo, REPO);
   assert.deepEqual(byKey.repos.map((x) => x.repo), [REPO]);
   const otherRuns = (await writer.runs()).filter((x) => x.repo === OTHER).map((x) => x.id);
   assert.ok(otherRuns.length > 0);
   assert.ok(!byKey.snapshot.runs.some((r) => otherRuns.includes(r.run)), "repo A's answer carries no run of repo B");
+  // D47: an older `?repo=` still answers, as `?project=` does
   const other = (await (await fetch(`${base}/api/board?repo=${encodeURIComponent(OTHER)}`)).json()) as BoardBody;
   assert.deepEqual(other.repos.map((x) => x.repo), [OTHER]);
   assert.deepEqual(other.snapshot, await writer.snapshot(OTHER));
@@ -140,9 +141,9 @@ test("a repository asked in another spelling (/ for \\, aiview's stored form) an
 });
 
 test("404 for an unknown repository", async () => {
-  const r = await fetch(`${base}/api/board?repo=${encodeURIComponent("/nowhere/.git")}`);
+  const r = await fetch(`${base}/api/board?project=${encodeURIComponent("/nowhere/.git")}`);
   assert.equal(r.status, 404);
-  assert.deepEqual(await r.json(), { error: "no repository /nowhere/.git" });
+  assert.deepEqual(await r.json(), { error: "no project /nowhere/.git" });
 });
 
 test("with no server running, the reader starts it: 404 with no repository named, and the server stays up", async () => {
@@ -153,7 +154,7 @@ test("with no server running, the reader starts it: 404 with no repository named
     assert.equal(fs.existsSync(serverStateFile(home)), false, "no board server before the request");
     const r = await fetch(`${at}/api/board`);
     assert.equal(r.status, 404);
-    assert.deepEqual(await r.json(), { error: "no repository named: ask ?repo=<repository> or ?run=<id>" });
+    assert.deepEqual(await r.json(), { error: "no project named: ask ?project=<project> or ?run=<id>" });
     assert.equal(fs.existsSync(serverStateFile(home)), true, "the reader started the board server");
     assert.equal((await fetch(`${at}/api/documents`)).status, 200, "the server is still up");
   } finally {
