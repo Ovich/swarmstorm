@@ -8,6 +8,12 @@ Out: the merged branch, and the last judged findings table with the goal's state
 skill, when the mandate's `verify:` is on). Board: `$S open --kind task --protocol build-verify`
 for a task swarm; a plan's run keeps `--kind plan` and adds `--protocol build-verify`.
 
+**Propose a design phase first whenever it would help** (the `orchestrate` skill's
+`references/design-phase.md`, charter `design:`): a new module, an interface that changes, several
+builders on code that meets, or a shape still unclear. Say it in the proposal in one line, with
+why, the designer (a `d1` seat or you) and its short form; the person decides. A plan has its
+design in the plan already and needs none.
+
 ## Seats
 
 | Seat | Who | Does |
