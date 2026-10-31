@@ -81,8 +81,8 @@ test("D2: unlock wakes the waiter in another repository with unlocked <name>, an
 
 test("D3: a lock is released by end, by gone and by close, each telling its waiters unlocked", async () => {
   const { runA, a1, a2, b1, oA } = setup();
-  // a2 owes a task, so its link lost is lost (one owing nothing is only away)
-  board.post(oA, "@a2 do T1");
+  // a2 owes the open phase, so its link lost is lost (one owing nothing is only away)
+  board.phase(oA, "p1", "do T1", { for: ["a2"] });
   board.deliver(a2);
   for (const [name, release] of [
     ["app:one", () => board.end(a1)],

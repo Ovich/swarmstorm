@@ -29,7 +29,8 @@ test("D51: a lost alarm about a member is served from the board with its subject
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "g", title: "T", stallMs: 5000, seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  // a task delivered and not reported: it owes work, so its link down is lost
+  // the open phase undone: it owes work, so its link down is lost
+  board.phase(orch, "p1", "go on");
   board.post(orch, "@a go on");
   board.deliver(a);
   const base = Date.now();

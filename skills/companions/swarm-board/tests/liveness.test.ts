@@ -172,7 +172,7 @@ test("states: waiting is the open call the link read as the board's own wait, it
 
 test("states (board-split D49, D55): a finished transcript or silence is no badge; a link lost LOST_MS on a member owing its task is lost", () => {
   const { run, b, orchestrator } = setup();
-  taskTo(orchestrator, b);
+  board.phase(orchestrator, "p1", "go", { for: ["b"] });
   const base = Date.now() + 60_000;
   // a window past the scene: lost, never stalled, is what it watches
   stallDueAt(run.id, 600);
@@ -226,7 +226,7 @@ test("one member owing its task, no sign of work past the stall window: stalled 
 
 test("lost (board-split D49, D55): a finished transcript draws none; a link lost LOST_MS on a member owing its task draws one, once; never for an ended member (US3, D12)", () => {
   const { run, a, b, orchestrator } = setup();
-  taskTo(orchestrator, b);
+  board.phase(orchestrator, "p1", "go", { for: ["b"] });
   const base = Date.now() + 60_000;
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
   tick2(board, run.id, at(base, 1), presence);
