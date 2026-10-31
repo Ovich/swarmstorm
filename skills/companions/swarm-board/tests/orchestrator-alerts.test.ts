@@ -1,5 +1,5 @@
-// break-flow T55 (plan D64, D65): the orchestrator's idle and stall lines name a question left for it (V-8), a no-phase
-// task owes its report (V-9), a pause shows in status/roster and in a phase opened under it (V-10), and the
+// break-flow T55 (plan D64, D65): the orchestrator's idle and stall lines name a question left for it (V-8), a pause
+// shows in status/roster and in a phase opened under it (V-10), and the
 // task-end notice is told to the orchestrator's background listener alone (V-12).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -41,38 +41,11 @@ const taskedNoPhase = () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  const task = board.post(orch, "@a your task", { task: true });
+  const task = board.post(orch, "@a your task");
   for (const p of [a, orch]) board.deliver(p);
   board.recordActivity(run.id, "a", act(), new Date());
   return { run: run.id, a, orch, taskSeq: task.seq };
 };
-
-test("V-9 stalledOf: a no-phase task owes its report: the fact names the task", () => {
-  const T0 = 1_800_000_000_000;
-  const f = { owes: "task #7", owesReport: true, progressAt: T0, stallMs: STALL_MS_DEFAULT };
-  assert.deepEqual(stalledOf(f, T0 + STALL_MS_DEFAULT), { since: T0, fact: "task #7 delivered, no report, no activity" });
-});
-
-test("V-9: no phase open, a delivered task with no report reads stalled with no sign of progress past the window, once", () => {
-  const { run, taskSeq } = taskedNoPhase();
-  const due = Date.now() + STALL_MS_DEFAULT + 1000;
-  board.livenessTick(run, new Date(due), linked);
-  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
-  const stalled = events("stalled").map((e) => e.body);
-  assert.equal(stalled.length, 1);
-  assert.match(stalled[0], new RegExp(`^stalled g/a: working, task #${taskSeq} delivered, no report, no activity \\d+ min; no phase open$`));
-  board.livenessTick(run, new Date(due + 60_000), linked);
-  assert.equal(events("stalled").length, 1, "one alarm per episode");
-});
-
-test("V-9: a report to the orchestrator after the task ends the owing", () => {
-  const { run, a } = taskedNoPhase();
-  board.post(a, "@orchestrator done: here is my report");
-  const due = Date.now() + STALL_MS_DEFAULT + 1000;
-  board.livenessTick(run, new Date(due), linked);
-  board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
-  assert.equal(events("stalled").length, 0);
-});
 
 test("V-8: the idle line names a question to the orchestrator left unanswered; an answer clears it", async () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
@@ -96,7 +69,7 @@ test("V-8: the stalled line names the unanswered question too", () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
-  board.post(orch, "@a your part", { task: true });
+  board.post(orch, "@a your part");
   const question = board.post(a, "@orchestrator is p1 x or y?");
   for (const p of [a, orch]) board.deliver(p);
   board.recordActivity(run.id, "a", act(), new Date());
@@ -150,13 +123,6 @@ test("V-23: the board's lock-freed notice for a lost holder is never taken for a
   const idle = events("idle").map((e) => e.body);
   assert.equal(idle.length, 1);
   assert.match(idle[0], new RegExp(`unanswered @orchestrator #${question.seq} from g/w1$`));
-});
-
-test("V-24: the no-phase stall's command points at the task, never at a phase", () => {
-  const m = { seq: 1, at: "", author: "g/orchestrator", body: "", about: null, kind: "event", mentions: [], event: "stalled", meta: { rule: "silent", member: "w1" } } as unknown as Parameters<typeof eventStep>[0];
-  const line = eventStep(m, { name: "g/orchestrator", seat: "orchestrator" } as never, "swarm") ?? "";
-  assert.doesNotMatch(line, /your part of/);
-  assert.match(line, /@w1 your task/);
 });
 
 test("golden V-47: the orchestrator's post naming a lost member says it is lost, with the move, the post recorded", () => {

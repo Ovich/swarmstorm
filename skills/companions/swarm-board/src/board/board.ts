@@ -244,9 +244,6 @@ export type SnapshotMember = {
   state: SnapshotMemberState;
   /** What its pack says of it now (merging); absent when nothing. */
   fact?: MemberFact;
-  /** board-split D36: what a working member owes: the open phase (null with none open) and the seq of the latest
-   *  orchestrator post naming it (null when none); absent unless working. */
-  owes?: { phase: string | null; task: number | null };
   /** Deprecated by board-split D36 (the badge says it): no call for STALE_MS; kept for aiview until T16 reads `badge`. */
   stale: boolean;
   /** board-split D36: its trouble beside its state (stalled, lost, blocked), reason on hover; null when none, always for a parked or ended member (D30). */
@@ -475,7 +472,7 @@ export interface Board {
   /** `with`: an agreement's explicit parties, as seats or `<plan>/<seat>` (F25). */
   /** `task` (board-split D50): the orchestrator's task to the one member it mentions, recorded as that member's task
    *  for the open phase; a post without it never becomes a task. */
-  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind; with?: string[]; task?: boolean }): Message;
+  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind; with?: string[] }): Message;
   /** An agreement backed; throws on a message that is not an agreement, or on one's own. */
   endorse(p: Participant, seq: number): Message;
   /** `by`: the member reading, when known, counted as a call of its own (D66). */
@@ -739,9 +736,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "pruned_at", "pruned_at TEXT");
   // the board event a message is (D59); null on plain posts and rows from before
   upkeep("messages", "event", "event TEXT");
-  // board-split D50: a post the orchestrator made a member's task (`post --task`), and the phase it was posted in
-  upkeep("messages", "task_for", "task_for TEXT");
-  upkeep("messages", "task_phase", "task_phase TEXT");
   // board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery
   upkeep("deliveries", "at", "at TEXT");
   // a member's subscriptions, JSON (D59)
@@ -1344,7 +1338,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const memberStateOf = (p: Row, run: Row | undefined, t = Date.now()): CoreMemberState =>
     coreStateOf({ runOpen: run?.state === "open", ended: p.ended_at != null, parked: Number(p.parked) === 1, linkDown: run != null && lostOf(p, run, t) != null, owes: run != null && owesOf(p, run) });
   /** Whether a member owes work: the orchestrator always; a member the open phase undone, else a task not reported. */
-  const owesOf = (p: Row, run: Row): boolean => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null || (run.phase == null && taskOwedReportOf(p, run) != null);
+  const owesOf = (p: Row, run: Row): boolean => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null;
   /** A participant row's state at `t`: gone, waiting (its open call is the board wait), busy, working, else quiet. */
   /** S22: when the seat's current member joined (a re-join included), ISO. */
   const seatedAtOf = (p: Row): string => String(p.seated_at ?? p.joined_at);
@@ -1442,27 +1436,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // U-F6 (D45, D49): the last call ended; it is not what the member is on, so working names none
     return { member, state: "working", doing: null, since: progressAtOf(p, run, a) };
   };
-  /** board-split D54: when the member's latest task (`post --task`, D50) was delivered to it, ms; null with none delivered. */
-  const taskDeliveredAtOf = (p: Row, run: Row): number | null => {
-    const r = db
-      .prepare("SELECT d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)")
-      .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
-    return r?.at == null ? null : Date.parse(String(r.at));
-  };
-  /** board-split D64: with no phase open, the member's latest task (D50) delivered to it, when it has not posted to
-   *  the orchestrator since (a merge's report is such a post); null otherwise. */
-  const taskOwedReportOf = (p: Row, run: Row): { seq: number; deliveredAt: number } | null => {
-    if (String(p.seat) === ORCHESTRATOR || run.state !== "open") return null;
-    const task = db
-      .prepare("SELECT m.seq, d.at FROM messages m JOIN deliveries d ON d.seq = m.seq AND d.participant = ? WHERE m.seq = (SELECT MAX(seq) FROM messages WHERE run = ? AND task_for = ?)")
-      .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
-    if (task?.at == null) return null;
-    const reported = db
-      // its own post or urgent only: a board notice in its name (a lock freed from it) is never its report
-      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind IN ('msg', 'urgent') AND mentions LIKE ? LIMIT 1")
-      .get(Number(run.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run.plan)}/${ORCHESTRATOR}`)}%`);
-    return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
-  };
   /** board-split D64: the oldest post of a run's member mentioning its orchestrator that the orchestrator has not posted
    *  after; null when none waits on it. A member's own post or urgent only: a board notice in its name never is (D51, V-23). */
   const unansweredOf = (run: RunId, orch: Participant): { seq: number; from: string } | null => {
@@ -1511,22 +1484,19 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
    *  owing work) with no sign of progress for the run's stall window; its reason from reasonOf. */
   const stalledBadgeOf = (p: Row, run: Row, t: number, state: CoreMemberState): { badge: Badge; owes?: string } | null => {
     if (state !== "working") return null;
-    // board-split D64: with no phase open, a delivered task owes its report instead
-    const owedReport = run.phase == null ? taskOwedReportOf(p, run) : null;
-    const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run);
-    // the orchestrator owes its run, never a phase; board-split D54: no clock runs before a task is delivered
-    const deliveredAt = owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run);
-    if (owes == null || deliveredAt == null) return null;
+    // the orchestrator owes its run, never a phase
+    const owes = owedNameOf(p, run);
+    if (owes == null) return null;
     const a = activityOf(Number(run.id), String(p.seat));
     const ms = (iso: unknown): number => (iso == null ? 0 : Date.parse(String(iso)));
     // a held board wait is a board call, under way now
     const progressAt = heldWaits.has(Number(p.id))
       ? t
-      : Math.max(deliveredAt, ms(run.resumed_at), ms(run.phase_at), ms(p.board_call_at), ms(seatedAtOf(p)), a?.grew_at == null ? 0 : Number(a.grew_at), a?.open_tool == null ? 0 : Number(a.open_since));
+      : Math.max(ms(run.resumed_at), ms(run.phase_at), ms(p.board_call_at), ms(seatedAtOf(p)), a?.grew_at == null ? 0 : Number(a.grew_at), a?.open_tool == null ? 0 : Number(a.open_since));
     const stallMs = Math.max(Number(run.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
-    const stall = stalledOf({ owes, owesReport: owedReport != null, progressAt, stallMs }, t);
+    const stall = stalledOf({ owes, progressAt, stallMs }, t);
     if (!stall) return null;
-    return { badge: stalledBadge(reasonOf(state, stall.fact, t - stall.since), stall.since), ...(owedReport == null ? { owes } : {}) };
+    return { badge: stalledBadge(reasonOf(state, stall.fact, t - stall.since), stall.since), owes };
   };
   /** board-split D55 (amended, U-F27): a lost or stalled badge holds only once its episode opened (its predicate true
    *  for BADGE_CONFIRM_MS, by time, not by tick count); `predicate`: the tick's own read, before that confirm. */
@@ -2001,19 +1971,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           );
           // D7, G18: a re-join starts its liveness afresh: the earlier member's activity (a finished agent, a lost link
           // with its transcript) and the alerts told of it never carry into the new one
-          // D72: a member lost (its episode open) is replaced as an ended one is; read before the episodes close below
-          const replacing = entry === "back" || episodeOpenOf(run, seat, "lost");
           db.prepare("DELETE FROM member_activity WHERE run = ? AND member = ?").run(run, seat);
           db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ?").run(run, seat);
           db.prepare("DELETE FROM badge_episodes WHERE run = ? AND member = ? AND opened_at IS NULL").run(run, seat);
           db.prepare("UPDATE badge_episodes SET closed_at = ? WHERE run = ? AND member = ? AND closed_at IS NULL").run(Date.now(), run, seat);
           db.prepare("DELETE FROM member_links WHERE run = ? AND member = ?").run(run, seat);
-          // break-flow V-25 (D50, D72): a replacement (its seat's member ended, or lost) reads the seat's latest task at
-          // its join, whatever its predecessor posted after it
-          if (replacing) {
-            const task = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run, `${String(r.plan)}/${seat}`) as Row | undefined;
-            if (task?.seq != null) db.prepare("DELETE FROM deliveries WHERE participant = ? AND seq = ?").run(Number(existing.id), Number(task.seq));
-          }
           return Number(existing.id);
         }
         // a post that already names this seat (a task posted before the member joined) is still
@@ -2149,33 +2111,19 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const only = [...new Set((opts.for ?? []).map(seatOf).filter(Boolean))];
         const unknown = only.filter((s) => s === ORCHESTRATOR || (!db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s)));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
-        // G17: the tasks the orchestrator posted since the previous phase belong to this one; the text names those it does not cite
-        const since = Number((db.prepare("SELECT MAX(seq) AS s FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row).s ?? 0);
-        // board-split D50 (O-F1): only each member's current task (`post --task`), one per member, never a post that merely mentions it
-        const tasks = (
-          db
-            .prepare("SELECT MAX(seq) AS seq, task_for FROM messages WHERE run = ? AND seq > ? AND task_for IS NOT NULL GROUP BY task_for ORDER BY seq")
-            .all(fresh.run, since) as Row[]
-        )
-          .map((m) => ({ seq: Number(m.seq), seats: [String(m.task_for)] }))
-          // G43: a phase for some seats (--for) takes only the tasks of those seats
-          .filter((m) => !only.length || only.includes(seatOf(m.seats[0]!)))
-          .filter((m) => !new RegExp(`#${m.seq}(?![0-9])`).test(said));
-        // V-21: `#12 for w1`, so a phase text that already names the seat does not read `w1 … w1`
-        const told = tasks.length ? `${said}; tasks posted before it: ${tasks.map((m) => `#${m.seq} for ${m.seats.map(seatOf).join(" ")}`).join(", ")}` : said;
         // board-split D62 (V-6): who owed the phase this one replaces, read before it is replaced
         const before = runRow(fresh.run);
         const stillOwed = before.phase == null ? [] : (() => {
           const scope = phaseScopeOf(before, String(before.phase));
           return phaseMembersOf(fresh.run, String(before.phase)).filter((m) => owesPhase(m, scope)).map((m) => m.member);
         })();
-        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, told, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
+        db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         // D41: its all-done told once per opening
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return { ...insertMessage(fresh, `phase ${name}: ${told}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed };
+        return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed };
       });
     },
 
@@ -2647,18 +2595,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
-      if (opts.task) {
-        // board-split D50: a task is the orchestrator's, to one live member of its own run
-        if (fresh.seat !== ORCHESTRATOR) throw new Error(`post --task: only the orchestrator posts a task; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
-        const to = (m.mentions ?? []).filter((n) => n.startsWith(`${fresh.plan}/`) && n !== fresh.name);
-        // V-33: the refusal names what it found, so the orchestrator sees which name to drop
-        if (to.length !== 1 || (m.mentions ?? []).length !== 1)
-          throw new Error(
-            `post --task: a task mentions exactly one member of your run, the one it is for; this post mentions ${(m.mentions ?? []).join(", ") || "nobody"}: keep @ on that member alone and write every other name in backticks`,
-          );
-        const phase = runRow(fresh.run).phase;
-        db.prepare("UPDATE messages SET task_for = ?, task_phase = ? WHERE seq = ?").run(to[0], phase == null ? null : String(phase), m.seq);
-      }
       // posting is claiming (D7), on a kind with claims
       const facts = packOf(fresh)?.onPost?.(fresh, m, packCtxOf(fresh)) ?? null;
       return facts ? { ...m, ...facts } : m;
@@ -2880,13 +2816,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id: number): Row | undefined => runsById.get(id);
-      /** board-split D50: the latest task the orchestrator posted `member` (`post --task`) in the run, never a post
-       *  that merely mentions it. */
-      const latestTaskTo = (run: number, member: string): number | null => {
-        // D50 (amended, U-F8): the run's latest, whatever phase it came in and whether the member said done since
-        const m = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND task_for = ?").get(run, member) as Row | undefined;
-        return m?.seq == null ? null : Number(m.seq);
-      };
       const roster: SnapshotMember[] = people.map((r) => {
         const id = Number(r.id);
         const seat = String(r.seat);
@@ -2910,11 +2839,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           doing: String(r.doing),
           state,
           ...(fact ? { fact } : {}),
-          ...(() => {
-            if (core !== "working") return {};
-            const task = latestTaskTo(Number(r.run), `${r.plan}/${seat}`);
-            return owedPhase != null || task != null ? { owes: { phase: owedPhase, task } } : {};
-          })(),
           stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),

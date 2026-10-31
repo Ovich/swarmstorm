@@ -120,21 +120,6 @@ for (const how of ["close", "end --seat"] as const)
   });
 
 // break-flow T58 (judged #1782): V-25, V-4 (lock, unlock), V-29, V-30, V-27
-test("golden V-25: a replacement's join shows the seat's current task, already delivered to the member before it", async () => {
-  const s = await scene("orchestrator", "idle");
-  try {
-    const worker = s.other;
-    s.must("post", "@w1 do the thing", "--task", "--as", s.me);
-    s.must("deliver", "--as", worker);
-    s.must("end", "--seat", "w1", "--as", s.me);
-    const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "replacing", "--as", worker);
-    pin("gate.replacement.join", joined);
-    assert.ok(joined.text.includes("@w1 do the thing"), joined.text);
-  } finally {
-    s.stop();
-  }
-});
-
 test("golden V-4: lock and unlock after close answer the closed line first; after end, the ended line", async () => {
   const s = await scene("worker", "closed");
   try {

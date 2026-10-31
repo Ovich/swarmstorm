@@ -48,14 +48,13 @@ const isEnded = (p: { state: string }): boolean => p.state === "ended";
 /** Not running on the board now: away (finished, handed back or parked), lost, or ended. */
 const isOff = (p: { state: string }): boolean => p.state === "away" || p.state === "lost" || p.state === "ended";
 
-/** The state word, the board's alone: working (on #task), idle, away (parked until a phase), lost, ended; a pack's
+/** The state word, the board's alone: working, idle, away (parked until a phase), lost, ended; a pack's
  *  fact (merging) replaces working or idle. `className` is the word's state. */
 export function stateWordOf(p: MemberOnBoard & { parked?: boolean; fact?: string }): { text: string; className: string } {
   const state = p.state;
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
   if (state === "away") return { text: p.parkedUntil ? `away until ${p.parkedUntil}` : "away", className: "away" };
   if (p.fact) return { text: p.fact, className: p.fact };
-  if (state === "working") return { text: p.owes?.task != null ? `working on #${p.owes.task}` : "working", className: "working" };
   return { text: state, className: state };
 }
 

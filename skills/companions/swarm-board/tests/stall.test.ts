@@ -18,12 +18,11 @@ delete process.env.SWARM_STALL_FLOOR_MS;
 const T0 = 1_800_000_000_000;
 const MIN = 60_000;
 /** A member owing p1, its last sign of progress at T0. */
-const facts = (o: Partial<StallFacts> = {}): StallFacts => ({ owes: "p1", owesReport: false, progressAt: T0, stallMs: STALL_MS_DEFAULT, ...o });
+const facts = (o: Partial<StallFacts> = {}): StallFacts => ({ owes: "p1", progressAt: T0, stallMs: STALL_MS_DEFAULT, ...o });
 
 test("stalledOf: no sign of progress for the stall window, from the last sign", () => {
   assert.equal(stalledOf(facts(), T0 + STALL_MS_DEFAULT - 1), null);
   assert.deepEqual(stalledOf(facts(), T0 + STALL_MS_DEFAULT), { since: T0, fact: "not done p1, no activity" });
-  assert.deepEqual(stalledOf(facts({ owes: "task #4", owesReport: true }), T0 + STALL_MS_DEFAULT), { since: T0, fact: "task #4 delivered, no report, no activity" });
 });
 
 test("reasonOf: the shown state word, then the fact with its age", () => {
@@ -56,7 +55,7 @@ const owing = (): { run: number; a: Participant } => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
-  board.post(orch, "@a your part", { task: true });
+  board.post(orch, "@a your part");
   for (const p of [a, orch]) board.deliver(p);
   board.recordActivity(run.id, "a", act(), new Date());
   return { run: run.id, a };
@@ -125,7 +124,7 @@ test("gate G5: a run that stored the old 60 s stall_ms still waits the floor bef
   board.join({ run: run.id, seat: "a", doing: "x", files: [] });
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
-  board.post(orch, "@a your part", { task: true });
+  board.post(orch, "@a your part");
   for (const p of [board.participant("g/a")!, orch]) board.deliver(p);
   const base = Date.now();
   board.recordActivity(run.id, "a", act(), new Date(base));

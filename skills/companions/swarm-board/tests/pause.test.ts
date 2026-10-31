@@ -86,7 +86,7 @@ test("a paused run raises no stalled, quiet or stale alert; after resume the sil
   board.phase(orchestrator, "p1", "go");
   // board-split D54: each member owes from its own task, delivered
   for (const m of ["a", "b"]) {
-    board.post(orchestrator, `@${m} your part`, { task: true });
+    board.post(orchestrator, `@${m} your part`);
     board.deliver(board.participant(`${board.participant(orchestrator.name)!.plan}/${m}`)!);
   }
   const base = Date.now() - 120_000;

@@ -141,23 +141,6 @@ test("A1-2: parked after a lost was told: no lost in composition or progress", (
   pins("g/a", "away", null);
 });
 
-test("D50: a task is the orchestrator's post --task to one member, for the open phase; a mention alone never is", () => {
-  const { a, orch } = setup();
-  board.phase(orch, "p1", "go");
-  const owesOf = () => board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.owes;
-  assert.deepEqual(owesOf(), { phase: "p1", task: null });
-  const task = board.post(orch, "@a do T1", { task: true });
-  board.post(orch, "@a judged, go on");
-  assert.deepEqual(owesOf(), { phase: "p1", task: task.seq });
-  assert.throws(() => board.post(a, "@orchestrator mine", { task: true }), /only the orchestrator/);
-  assert.throws(() => board.post(orch, "nobody", { task: true }), /exactly one member/);
-  // D50 amended (U-F8): the run's latest task holds across phases; done with the open phase, it owes nothing
-  board.phase(orch, "p2", "next");
-  assert.deepEqual(owesOf(), { phase: "p2", task: task.seq });
-  board.done(a, "p2");
-  assert.equal(owesOf(), undefined);
-});
-
 test("D53: a member still calling the board, or a fresh seating, is never lost on its link alone", async () => {
   const { run, a, orch } = setup();
   board.phase(orch, "p1", "go");

@@ -50,9 +50,9 @@ const setup = (ids: string[], group = "g") => {
   return { run, m, orch };
 };
 
-/** board-split D54: `member`'s own task (`post --task`), delivered: its owing clock starts there. */
+/** `member`'s own task, a post, delivered. */
 const taskTo = (orch: Participant, member: Participant) => {
-  board.post(orch, `@${member.name.slice(member.name.indexOf("/") + 1)} your part`, { task: true });
+  board.post(orch, `@${member.name.slice(member.name.indexOf("/") + 1)} your part`);
   board.deliver(member);
 };
 /** board-split D49, D54: the open phase `p1`, owed by every member but `done`, each given its task; a stall counts from it. */
@@ -160,7 +160,7 @@ test("f: owing its task, a background listener returning then silence: stalled t
     stuckAt: lastSign,
     owe: (bd, o) => {
       bd.phase(o, "p1", "go");
-      bd.post(o, "@x your part", { task: true });
+      bd.post(o, "@x your part");
     },
     steps: [work(0), open(5, a, WAIT, { run_in_background: true }), startedInBackground(6, a, "w.out"), work(7, "listening"), notifiedAsPrompt(200, a), work(lastSign, "nothing for me")],
   });

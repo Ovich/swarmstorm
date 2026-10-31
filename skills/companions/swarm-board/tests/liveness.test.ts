@@ -83,10 +83,10 @@ const stallDueAt = (run: number, dueAt: number) => {
     db.close();
   }
 };
-/** board-split D54: each member's own task (`post --task`), delivered: the owing clock starts there. */
+/** Each member's own task, a post, delivered. */
 const taskTo = (orchestrator: Participant, ...members: Participant[]) => {
   for (const m of members) {
-    board.post(orchestrator, `@${m.name.slice(m.name.indexOf("/") + 1)} your part`, { task: true });
+    board.post(orchestrator, `@${m.name.slice(m.name.indexOf("/") + 1)} your part`);
     board.deliver(m);
   }
 };

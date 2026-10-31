@@ -82,9 +82,9 @@ export const WORDING = {
   mentionNotJoined: (name: string) => `@${name} has not joined yet: the post waits for it, read at its join`,
   // break-flow V-47: a post reaches a lost member's seat, recorded; the agent is not there to read it
   mentionLost: (member: string, move: string) => `${member} is lost: the post is recorded, but nothing reads it now; ${move}`,
-  /** simple-states: `post --task` to a member whose link is down, by its state */
-  taskToAway: (member: string) => `${member} is away: resume it by message so it reads this task`,
-  taskToLost: (member: string) => `${member} is lost: dispatch a fresh agent into its seat`,
+  /** simple-states: the orchestrator's post to a member whose link is down, by its state */
+  postToAway: (member: string) => `${member} is away: resume it by message so it reads this post`,
+  postToLost: (member: string) => `${member} is lost: dispatch a fresh agent into its seat`,
   mentionNobody: (name: string, guesses: string[]) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
 
   // ── agree ──
@@ -119,8 +119,7 @@ export const WORDING = {
     `run ${run} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
   // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
   backIt: (cli: Command, seq: number, as: string) => `back it: ${cli} endorse ${seq} --as ${as}`,
-  phaseDoneWhen: (name: string, tasks: string[], done: Command) =>
-    `when your part of ${name}${tasks.length ? ` (your task${tasks.length > 1 ? "s" : ""} ${tasks.join(", ")})` : ""} is posted: ${done}`,
+  phaseDoneWhen: (name: string, done: Command) => `when your part of ${name} is posted: ${done}`,
   pauseStop: (person: string | null, wait: Command) =>
     `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
@@ -166,8 +165,7 @@ export const WORDING = {
   badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
   /** simple-states: working, owing the phase or a task's report, no sign of progress for the stall window */
   stalledSilent: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
-  // V-24 (D64): with no phase open, the stalled member owes its task's report, never a phase
-  stalledAsk: (id: string, phase: string | undefined) => (phase ? `@${id} your part of ${phase}` : `@${id} your task: your report?`),
+  stalledAsk: (id: string, phase: string) => `@${id} your part of ${phase}`,
   stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
   /** several members stalled at one tick: each member's move after its name */

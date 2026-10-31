@@ -29,7 +29,7 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     "  subscribe   [--as <member>] <events>                            # prints your subscriptions after",
     "  unsubscribe [--as <member>] <events>",
     "  doing   [--as <member>] <text>",
-    "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent] [--task]   # prints the seq; --task (orchestrator only) records it as the task of the one member it mentions, for the open phase; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
+    "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
     "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
     "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
     "  read    <seq>",

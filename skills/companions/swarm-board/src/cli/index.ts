@@ -1043,16 +1043,14 @@ async function main(): Promise<void> {
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         // every --with counts, each a seat or a comma list of seats (S5)
         ...(args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}),
-        // board-split D50: the orchestrator's task to the one member it mentions
-        ...(args.verb === "post" && args.has("--task") ? { task: true } : {}),
       });
       const unmatched = await unmatchedLines(p, body);
       // break-flow V-47: the orchestrator told which member it named is lost, as phase tells it (V-35)
       const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => m.mentions!.includes(r.name)) : [];
-      // simple-states: a task to a member whose link is down says how it is reached; the lost line then says it alone
-      const taskTargets = args.verb === "post" && args.has("--task") ? rules.taskTargetLines(named) : [];
-      const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(taskTargets.length && r.state === "lost")).map((r) => r.name);
-      const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord(p.name)), ...taskTargets];
+      // simple-states: a post to a member whose link is down says how it is reached; the lost line then says it alone
+      const unreached = rules.unreachedMentionLines(named);
+      const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(unreached.length && r.state === "lost")).map((r) => r.name);
+      const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord(p.name)), ...unreached];
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(lostMentioned.length ? { lost: lostMentioned } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
       const human = [
         seqLine(m),

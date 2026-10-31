@@ -48,7 +48,7 @@ test("golden stalled (simple-states): a working member owing its task stalls onl
   const { run, a, b, orch } = setup();
   board.phase(orch, "p1", "go");
   board.done(b, "p1");
-  board.post(orch, "@a your part", { task: true });
+  board.post(orch, "@a your part");
   board.deliver(a);
   const base = Date.now();
   // its transcript grew 4 s ago: no stall
@@ -68,31 +68,6 @@ test("golden stalled (simple-states): a working member owing its task stalls onl
   // done ends the owing: no badge
   board.done(a, "p1");
   assert.equal(badgeIn(run.id, "a", at(base, 20 * 60 + 1)).badge, null);
-});
-
-test("golden owing (board-split D54): no stall until the task is delivered; a held wait is a board call under way, never stalled", async () => {
-  const { run, a, orch } = setup();
-  board.phase(orch, "p1", "go", { for: ["a"] });
-  board.deliver(a);
-  const base = Date.now();
-  // in a held wait, owing p1, no task yet: nothing past the window (25 s, the link not yet lost)
-  const first = board.wait(a, { mentionsOnly: true, timeoutMs: 200 });
-  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null, "no task delivered: owes nothing");
-  await first;
-  // out of a wait, no task: nothing either
-  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null);
-  // the task posted, not yet delivered: still nothing
-  board.post(orch, "@a your part", { task: true });
-  assert.equal(badgeIn(run.id, "a", at(base, 25)).badge, null, "posted, not delivered");
-  // delivered by its wait: the clock starts there
-  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 200 });
-  assert.equal((await held).full.length, 1);
-  const deliveredAt = Date.now();
-  const again = board.wait(a, { mentionsOnly: true, timeoutMs: 300 });
-  assert.equal(badgeIn(run.id, "a", new Date(deliveredAt + 6000)).badge, null, "in a held wait past the window");
-  await again;
-  const late = badgeIn(run.id, "a", new Date(Date.now() + 6000));
-  assert.deepEqual([late.badge?.name, late.owes], ["stalled", "p1"]);
 });
 
 test("golden lost: a member owing work whose link is down past LOST_MS is lost; a finished transcript is not lost; its link back clears it", () => {

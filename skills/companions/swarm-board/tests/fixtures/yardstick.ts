@@ -19,10 +19,10 @@ const REPO = "/repos/yardstick/.git";
 export const SESSION = "33333333-aaaa-bbbb-cccc-000000000003";
 export const PROJECT = "C--repos-yardstick";
 /** d1: a stuck episode ends at T0 + 30 min when nothing intervenes. */
-/** board-split D50, D54: open `phase` and post each seat its task (`post --task`), so it owes the phase from the task's delivery. */
+/** Open `phase` and post each seat its part: it owes the phase from its opening. */
 const phaseWithTasks = (bd: Board, o: Participant, phase: string, seats: string[]): void => {
   bd.phase(o, phase, "your part");
-  for (const seat of seats) bd.post(o, `@${seat} your part of ${phase}`, { task: true });
+  for (const seat of seats) bd.post(o, `@${seat} your part of ${phase}`);
 };
 export const EPISODE_MS = 30 * 60 * 1000;
 const ALERTS = new Set(["stalled", "lost"]);

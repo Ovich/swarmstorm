@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 const rosterOf = (group: string) =>
-  Object.fromEntries(board.snapshot(REPO).roster.filter((r) => r.plan === group).map((r) => [r.seat, { state: r.state, ...(r.owes ? { owes: r.owes } : {}) }]));
+  Object.fromEntries(board.snapshot(REPO).roster.filter((r) => r.plan === group).map((r) => [r.seat, { state: r.state }]));
 
 for (const kind of ["plan", "brainstorm"] as const) {
   test(`D36, D49 golden (${kind} run): working owes, idle owes nothing, parked is away, ended; seats read their member`, () => {
@@ -31,15 +31,12 @@ for (const kind of ["plan", "brainstorm"] as const) {
     const [a, b, c, d] = ["a", "b", "c", "d"].map((seat) => board.join({ run: run.id, seat, doing: "x", files: [] }).member);
     const orch = board.participant(`${group}/orchestrator`)!;
     board.phase(orch, "p1", "go");
-    const task = board.post(orch, `@${group}/a do the thing`, { task: true });
-    // D50: a post that only mentions a is never its task
-    board.post(orch, `@${group}/a judged`);
     board.done(b, "p1");
     board.park(orch, "c", "p2");
     board.end(d);
     assert.deepEqual(rosterOf(group), {
       orchestrator: { state: "working" },
-      a: { state: "working", owes: { phase: "p1", task: task.seq } },
+      a: { state: "working" },
       b: { state: "idle" },
       c: { state: "away" },
       d: { state: "ended" },

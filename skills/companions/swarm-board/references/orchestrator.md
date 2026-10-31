@@ -102,8 +102,7 @@ waits: in the foreground; a seat runs on the plugin's
     gives each member's move after its name. Told again when the set of
     stalled members changes, never on a timer: once per member per episode, cleared by the fact that ends it. A stall is never read from its `doing` or its
     own posts: one rule, `working, not done <phase>, no activity N min`: it is `working` (its link up, owing the open
-    phase or a task's report, from the moment its own task (`post --task`) was delivered to it; no task delivered: it
-    owes nothing) and for the run's stall window (default 10 min) nothing moved: no transcript growth, no board call
+    phase) and for the run's stall window (default 10 min) nothing moved: no transcript growth, no board call
     (a held wait is one), no tool call opened (a post, `doing` or endorsement is no sign of work). On the line after it,
     the move: **read that `next` line and make that move**: a mention reaches a member in a wait, a direct message one
     whose turn ended. A member owing work while it sits in its wait is never stalled: `idle` tells you when every

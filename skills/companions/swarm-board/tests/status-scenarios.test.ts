@@ -109,7 +109,7 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   const { run, b, orch } = setup();
   board.phase(orch, "p1", "go", { for: ["b"] });
   // board-split D54: the owing clock starts at b's own task, delivered
-  board.post(orch, "@b your part", { task: true });
+  board.post(orch, "@b your part");
   board.deliver(b);
   const held = waitOf(b, 3000);
   const now = Date.now();

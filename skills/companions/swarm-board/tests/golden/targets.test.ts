@@ -69,25 +69,6 @@ test("G16 target: a post while the listener runs prints no listener line", async
   }
 });
 
-// G17: a task posted before its phase opened is named in the phase-open wake, so the worker knows its task is that phase's
-test("G17 target: the phase-open wake names the worker's task posted before it", async () => {
-  const s = await scene("worker", "idle");
-  try {
-    s.must("post", "@w1 the task", "--task", "--as", O);
-    s.must("deliver", "--as", s.me);
-    s.must("phase", "build", "build the thing", "--as", O);
-    expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "5000"), [
-      REARM(s.me),
-      `#<seq> ${O} (event)  <ts>`,
-      "phase build: build the thing; tasks posted before it: #<seq> for w1",
-      // the worker's own task named on its done line: no line added (D2)
-      `when your part of build (your task #<seq>) is posted: node <cli> done build --as ${s.me}`,
-    ]);
-  } finally {
-    s.stop();
-  }
-});
-
 // G32: join with a phase open states the phase once: the owed line alone, no header line besides it
 test("G32 target: join in an open phase states it once", async () => {
   const s = await scene("worker", "owes-first");

@@ -40,9 +40,9 @@ export const owedLine = (s: Situation, opts: { thread?: boolean; brief?: boolean
  *  pause or the park first; null while it owes, and for the orchestrator. */
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
 
-/** simple-states: what `post --task` tells the orchestrator of its member whose link is down, by its board state. */
-export const taskTargetLines = (targets: { name: string; state: string }[]): string[] =>
-  targets.flatMap((t) => (t.state === "away" ? [W.taskToAway(t.name)] : t.state === "lost" ? [W.taskToLost(t.name)] : []));
+/** simple-states: what the orchestrator's post tells it of a member it mentions whose link is down, by its board state. */
+export const unreachedMentionLines = (targets: { name: string; state: string }[]): string[] =>
+  targets.flatMap((t) => (t.state === "away" ? [W.postToAway(t.name)] : t.state === "lost" ? [W.postToLost(t.name)] : []));
 
 /** The line that starts the member's listener: a seat waits in the foreground, a worker and the orchestrator listen in the
  *  background. `afterPhase`: it follows the owed line, so a seat waits only once its part is in. */
@@ -119,7 +119,7 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
     case "phase": {
       const name = meta && "phase" in meta ? meta.phase : null;
       if (!name || orchestrator || own) return null;
-      return W.phaseDoneWhen(name, tasksOf(m.body, me.seat), W.done(cli, shellWord(name), as));
+      return W.phaseDoneWhen(name, W.done(cli, shellWord(name), as));
     }
     case "pause": {
       if (orchestrator || own) return null;
@@ -168,15 +168,6 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
   }
 }
 
-/** G17: the member's own tasks posted before the phase, as its text names them (`tasks posted before it: #12 for w1, #13 for w2 w3`;
- *  a text stored before V-21 reads `its tasks posted before it: #12 w1`). */
-const tasksOf = (body: string, seat: string): string[] =>
-  (/; (?:its )?tasks posted before it: (.+)$/.exec(body)?.[1] ?? "")
-    .split(", ")
-    .map((t) => t.split(" ").filter((word) => word !== "for"))
-    .filter(([, ...seats]) => seats.includes(seat))
-    .map(([seq]) => seq);
-
 /** The move a `stalled` asks of the orchestrator, by its rule (simple-states: silent or lock); a stalled stored under
  *  an older rule gives the general move. */
 function stalledMove(m: Message, cli: string, as: string): string {
@@ -187,7 +178,7 @@ function stalledMove(m: Message, cli: string, as: string): string {
   const id = meta?.member ?? "<member>";
   switch (meta?.rule) {
     case "silent":
-      return W.stalledSilent(cli, shellWord(W.stalledAsk(id, meta.phase)), as);
+      return W.stalledSilent(cli, shellWord(W.stalledAsk(id, meta.phase ?? "<phase>")), as);
     case "lock":
       return W.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} …`), as);
     default:

@@ -1,5 +1,5 @@
 // T56 (break-fix 1): the stats line of a run that never merges carries no conflicts (V-19, D66); stats' last line runs
-// as printed (V-31, AGENTS rule 10); a refused `post --task` names the mentions it found and how to keep one (V-33).
+// as printed (V-31, AGENTS rule 10).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pin } from "./golden.ts";
@@ -34,16 +34,3 @@ test("V-31: stats ends on the --json command as this CLI runs, its home prefix a
   }
 });
 
-test("V-33: post --task mentioning others too is refused, naming every mention and how to keep one", () => {
-  const s = scratchRepo([{ id: "w1", blockers: [] }, { id: "w2", blockers: [] }]);
-  try {
-    openTask(s, "vt");
-    const refused = s.call("post", "@w1 do this; @w2 reviews it", "--task", "--as", "vt/orchestrator");
-    pin("stats-task-lines.task-many-mentions", refused);
-    assert.notEqual(refused.status, 0);
-    assert.match(refused.text, /vt\/w1, vt\/w2/);
-    assert.match(refused.text, /backticks/);
-  } finally {
-    s.done();
-  }
-});

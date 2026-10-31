@@ -30,7 +30,7 @@ test("D51: a lost alarm about a member is served from the board with its subject
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   // a task delivered and not reported: it owes work, so its link down is lost
-  board.post(orch, "@a go on", { task: true });
+  board.post(orch, "@a go on");
   board.deliver(a);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base }), new Date(base));

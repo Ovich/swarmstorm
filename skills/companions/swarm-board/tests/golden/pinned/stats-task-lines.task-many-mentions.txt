@@ -1,2 +1,0 @@
-exit 1
-swarm: post --task: a task mentions exactly one member of your run, the one it is for; this post mentions vt/w1, vt/w2: keep @ on that member alone and write every other name in backticks

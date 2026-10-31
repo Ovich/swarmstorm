@@ -46,7 +46,7 @@ const lostEvents = () => board.snapshot(REPO).events.filter((e) => e.event === "
 test("D55: an agent gone (no link, no call, no growth) LOST_MS after the server is up, owing a task, is lost, told once", () => {
   const run = setup();
   // it owes a task: a link down owing nothing is only away
-  board.post(board.participant("g/orchestrator")!, "@a do T1", { task: true });
+  board.post(board.participant("g/orchestrator")!, "@a do T1");
   board.deliver(board.participant("g/a")!);
   board.recordServerUp(Date.now() - LONG);
   quietMember(path.join(dir, "swarm.sqlite"), "a", LONG);

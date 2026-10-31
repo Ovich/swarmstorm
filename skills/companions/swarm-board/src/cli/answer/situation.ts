@@ -33,7 +33,7 @@ export type Situation = {
   owed: { name: string; text: string; word: string } | null;
   /** this verb showed the member its phase, and it was the first time in that phase; null when the verb shows none */
   phaseFirst: boolean | null;
-  /** simple-states: a member (never the orchestrator) whose board state is idle or away: no phase undone, no task unreported */
+  /** simple-states: a member (never the orchestrator) whose board state is idle or away: no phase undone */
   owesNothing: boolean;
 };
 

@@ -3,12 +3,10 @@
 
 /** The facts `stalledOf` reads, ms epoch throughout. */
 export type StallFacts = {
-  /** What it owes: the open phase's name, or `task #<seq>` owed a report with no phase open. */
+  /** The open phase it owes. */
   owes: string;
-  /** `owes` names a task owed a report rather than a phase owed its done. */
-  owesReport: boolean;
-  /** The newest sign of progress: transcript growth, a board call, an open call's start, never before the task's
-   *  delivery, the phase's opening or the run's resume. */
+  /** The newest sign of progress: transcript growth, a board call, an open call's start, never before the phase's
+   *  opening or the run's resume. */
   progressAt: number;
   /** The run's stall window. */
   stallMs: number;
@@ -20,7 +18,7 @@ export type Stall = { since: number; fact: string };
  *  state is the caller's to check; lost, parked and ended never reach here. */
 export function stalledOf(f: StallFacts, t: number): Stall | null {
   if (t - f.progressAt < f.stallMs) return null;
-  return { since: f.progressAt, fact: `${f.owesReport ? `${f.owes} delivered, no report` : `not done ${f.owes}`}, no activity` };
+  return { since: f.progressAt, fact: `not done ${f.owes}, no activity` };
 }
 
 /** The age as a reader reads it: seconds under two minutes, else minutes. */
