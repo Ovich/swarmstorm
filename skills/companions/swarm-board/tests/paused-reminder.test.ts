@@ -6,7 +6,7 @@ import type { Situation } from "../src/cli/answer/situation.ts";
 
 const base: Situation = {
   cli: "swarm", as: "idea/orchestrator", run: 88, seat: "orchestrator", ended: false, listenerRunning: true,
-  listens: "orchestrator", wholeThread: false, closed: false, parked: false, pause: null, phase: null, owed: null, phaseFirst: null,
+  listens: "orchestrator", wholeThread: false, closed: false, parked: false, pause: null, phase: null, owed: null, phaseFirst: null, owesNothing: false,
 };
 
 test("an orchestrator posting in its paused run reads the pause first, with the resume command", () => {

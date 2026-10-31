@@ -491,9 +491,9 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
 };
 
 /** A verb that heard from the member (D9): its result lines, then the step the answer rules give (D1). */
-const emitHeard = async (p: Participant, json: object, result: string | string[]): Promise<void> => {
+const emitHeard = async (p: Participant, json: object, result: string | string[], toOrchestrator = false): Promise<void> => {
   const lines = typeof result === "string" ? [result] : result;
-  const a = answer({ verb: "heard", lines }, await situation(p));
+  const a = answer({ verb: "heard", lines, toOrchestrator }, await situation(p));
   emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
@@ -1058,8 +1058,11 @@ async function main(): Promise<void> {
       });
       const unmatched = await unmatchedLines(p, body);
       // break-flow V-47: the orchestrator told which member it named is lost, as phase tells it (V-35)
-      const lostNamed = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.badge?.name === "lost" && m.mentions!.includes(r.name)).map((r) => r.name) : [];
-      const lostMentioned = lostMentionLines(lostNamed, self().join(" "), shellWord(p.name));
+      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => m.mentions!.includes(r.name)) : [];
+      // simple-states: a task to a member whose link is down says how it is reached; the lost line then says it alone
+      const taskTargets = args.verb === "post" && args.has("--task") ? rules.taskTargetLines(named) : [];
+      const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(taskTargets.length && r.state === "lost")).map((r) => r.name);
+      const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord(p.name)), ...taskTargets];
       const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(lostMentioned.length ? { lost: lostMentioned } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
       const human = [
         seqLine(m),
@@ -1070,7 +1073,8 @@ async function main(): Promise<void> {
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
-      await emitHeard(p, json, human);
+      const toOrchestrator = args.verb === "post" && p.seat !== "orchestrator" && (m.mentions ?? []).some((name) => name.endsWith("/orchestrator"));
+      await emitHeard(p, json, human, toOrchestrator);
       break;
     }
     case "endorse": {
@@ -1369,9 +1373,12 @@ async function main(): Promise<void> {
       // S32: the report's word on a resolved conflict was asked at merge-lock; here only a member still there is told
       const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
       // the worktree stays for the seat's next task; end, close and prune remove it
-      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}) }, () => {
+      // simple-states: merged and reported, a member owing nothing ends its turn
+      const endTurn = reported ? rules.owesNothingLine(await situation(p)) : null;
+      emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}), ...(endTurn ? { next: endTurn } : {}) }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
         for (const line of tell) console.log(line);
+        if (endTurn) console.log(endTurn);
       });
       break;
     }

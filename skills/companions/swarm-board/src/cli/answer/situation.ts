@@ -33,6 +33,8 @@ export type Situation = {
   owed: { name: string; text: string; word: string } | null;
   /** this verb showed the member its phase, and it was the first time in that phase; null when the verb shows none */
   phaseFirst: boolean | null;
+  /** simple-states: a member (never the orchestrator) whose board state is idle or away: no phase undone, no task unreported */
+  owesNothing: boolean;
 };
 
 /** Reads the member's situation. `show`: the verb shows the phase to the member (wait, deliver, read), which the board
@@ -44,6 +46,7 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
   const phase = shown ? shown.phase : await board.currentPhase(me.run);
   const owed = run ? await board.owedPhase(me) : null;
   const profile = profileOf(me.kind);
+  const own = run && me.seat !== "orchestrator" && !me.ended ? (await board.roster(me.repo)).find((r) => r.name === me.name) : undefined;
   return {
     cli: opts.cli,
     as: opts.word(me.name),
@@ -59,5 +62,6 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,
+    owesNothing: own?.state === "idle" || own?.state === "away",
   };
 }

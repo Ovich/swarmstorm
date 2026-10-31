@@ -73,6 +73,8 @@ export const WORDING = {
   noPostYet: (name: string | null) => (name === null ? "no post yet in this run" : `no post yet in phase ${name}`),
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
+  /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
+  owesNothingEndTurn: "you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task",
 
   // ── a post's @-names (D63) ──
   // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
@@ -80,6 +82,9 @@ export const WORDING = {
   mentionNotJoined: (name: string) => `@${name} has not joined yet: the post waits for it, read at its join`,
   // break-flow V-47: a post reaches a lost member's seat, recorded; the agent is not there to read it
   mentionLost: (member: string, move: string) => `${member} is lost: the post is recorded, but nothing reads it now; ${move}`,
+  /** simple-states: `post --task` to a member whose link is down, by its state */
+  taskToAway: (member: string) => `${member} is away: resume it by message so it reads this task`,
+  taskToLost: (member: string) => `${member} is lost: dispatch a fresh agent into its seat`,
   mentionNobody: (name: string, guesses: string[]) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
 
   // ── agree ──

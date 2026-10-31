@@ -138,7 +138,7 @@ test("V-10: status/roster show a pause, on the person or with its reason; a phas
 
 const situation = (listens: Situation["listens"]): Situation => ({
   cli: "swarm", as: "g/x", run: 1, seat: listens === "orchestrator" ? "orchestrator" : "a", ended: false, parked: false, listenerRunning: true, listens,
-  wholeThread: false, closed: false, pause: null, phase: null, owed: null, phaseFirst: null,
+  wholeThread: false, closed: false, pause: null, phase: null, owed: null, phaseFirst: null, owesNothing: false,
 });
 const woke = { verb: "wait" as const, outcome: "woke" as const, again: "swarm wait", foregroundAgain: "swarm wait", phaseEvent: false, mentionsOnly: true, shown: [], lines: ["#1 a post"] };
 

@@ -3,11 +3,11 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { heardStep, joinStep, nextStep, owedLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
+import { heardStep, joinStep, nextStep, owedLine, owesNothingLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
+export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";
@@ -29,7 +29,7 @@ export type VerbResult =
   | { verb: "done"; phase: string; none: true }
   | { verb: "done"; phase: string; none?: false; line: string; facts?: string[] }
   /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
-  | { verb: "heard"; lines: string[] }
+  | { verb: "heard"; lines: string[]; toOrchestrator?: boolean }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
    *  posts for the member, delivered at its join (S1), the phase's own event left out: the phase line states it */
   | { verb: "join"; head: string[]; shown: Shown[]; tail: string[] };
@@ -123,12 +123,14 @@ function answerOf(r: VerbResult, s: Situation): Answer {
     case "done": {
       if (r.none) return { lines: [W.doneNone], next: null, phase: null };
       // V-5: a done that leaves the member owing the open phase (a late one) gives that step, never the wait for the next
-      const next = owedLine(s, { brief: true }) ?? W.doneWaitNext(waitCommand(s, true));
+      // simple-states: a done that leaves it owing nothing ends its turn, never a wait for the next phase
+      const next = owedLine(s, { brief: true }) ?? owesNothingLine(s) ?? W.doneWaitNext(waitCommand(s, true));
       return { lines: [r.line, ...(r.facts ?? []), next], next, phase: null };
     }
     case "heard": {
       // D9: the result first, then the member's step: none while its listener runs
-      const next = heardStep(s);
+      // simple-states: a post to the orchestrator that leaves the member owing nothing ends its turn
+      const next = (r.toOrchestrator ? owesNothingLine(s) : null) ?? heardStep(s);
       return { lines: [...r.lines, ...(next ? [next] : [])], next, phase: null };
     }
     case "join": {

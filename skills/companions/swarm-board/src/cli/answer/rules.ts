@@ -36,6 +36,14 @@ export const owedLine = (s: Situation, opts: { thread?: boolean; brief?: boolean
   return opts.brief ? W.owedBrief(s.owed.name, read, done) : W.owedOpen(s.owed.name, s.owed.text, read, done);
 };
 
+/** simple-states: the step of a member that owes nothing (task merged and reported, phase done): end its turn; the
+ *  pause or the park first; null while it owes, and for the orchestrator. */
+export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
+
+/** simple-states: what `post --task` tells the orchestrator of its member whose link is down, by its board state. */
+export const taskTargetLines = (targets: { name: string; state: string }[]): string[] =>
+  targets.flatMap((t) => (t.state === "away" ? [W.taskToAway(t.name)] : t.state === "lost" ? [W.taskToLost(t.name)] : []));
+
 /** The line that starts the member's listener: a seat waits in the foreground, a worker and the orchestrator listen in the
  *  background. `afterPhase`: it follows the owed line, so a seat waits only once its part is in. */
 export const listenNow = (s: Situation, afterPhase = false): string =>

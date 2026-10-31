@@ -977,7 +977,7 @@ test("phase opens a phase: prints its seq, then the listener and the next phase 
   assert.doesNotMatch(help, /phase end /);
 });
 
-test("done: a member's done is counted, roster and status show n/m done, the last done tells the orchestrator every member is done; the answer says wait", () => {
+test("done: a member's done is counted, roster and status show n/m done, the last done tells the orchestrator every member is done; the answer says it owes nothing: end the turn", () => {
   const seats = path.join(toolRoot, "seats.json");
   fs.writeFileSync(seats, SEATS);
   const id = Number(run("open", "--kind", "brainstorm", "--group", "idea", "--title", "An idea", "--seats", seats).stdout.split("\n")[0]);
@@ -994,7 +994,7 @@ test("done: a member's done is counted, roster and status show n/m done, the las
   const first = run("done", "diverge", "--as", `idea/${a}`);
   assert.equal(first.status, 0, first.stderr);
   assert.match(first.stdout, /^done diverge: 1\/2 done$/m);
-  assert.match(first.stdout, /wait for the next phase.* wait --mentions --as idea\//);
+  assert.match(first.stdout, /you owe nothing now: end your turn with your report, without end/);
   assert.match(run("roster").stdout, new RegExp(`^run ${id} {2}An idea {2}phase diverge: every idea {2}1/2 done$`, "m"));
   assert.match(run("status").stdout, /phase diverge: every idea {2}1\/2 done/);
   const told = run("deliver", "--as", "idea/orchestrator").stdout;
