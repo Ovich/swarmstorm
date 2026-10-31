@@ -1008,10 +1008,20 @@ async function main(): Promise<void> {
       if (await refusedPaused(p, "claim")) break;
       await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
-      // every path given is claimed, each answered on its own line (G4)
+      // every path given is answered on its own line, one outcome each (G4): claimed, held, no such file, or a folder;
+      // a path that cannot be claimed never stops the rest of the list
       const answers: { rel: string; verdict: EditAllowed | EditHeld; also: string }[] = [];
+      const refused: string[] = [];
       for (const file of args.positional) {
-        const abs = resolveClaimPath(file);
+        const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
+        if (missing.length || (!args.has("--new") && !fs.existsSync(abs))) {
+          refused.push(CODE_WORDING.claimNoSuchFile(file));
+          continue;
+        }
+        if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+          refused.push(CODE_WORDING.claimFolderRefused(repoRelative(abs)));
+          continue;
+        }
         const verdict = (await packVerb(p, "check-edit", { file: abs, interface: args.has("--interface") })) as EditAllowed | EditHeld;
         // held (D41): exit 3, the member posts about the path and claims again
         if (!verdict.allowed) process.exitCode = 3;
@@ -1027,9 +1037,12 @@ async function main(): Promise<void> {
       const guidesNow = guidesLine(told);
       // a held claim's json carries the line it prints, as before its facts moved to the answer module (V-13)
       const verdictJson = (v: EditAllowed | EditHeld) => (v.allowed ? v : { ...v, refusal: claimHeldLine(p, self().join(" "), v) });
-      const json = answers.length === 1 ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })) };
+      // exit 3 only for a held path; a list where nothing could be claimed at all fails
+      if (refused.length && !answers.length) process.exitCode = 1;
+      const json = answers.length === 1 && !refused.length ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })), ...(refused.length ? { refused } : {}) };
       await emitHeard(p, told.length ? { ...json, guides: told } : json, [
         ...answers.map(({ rel, verdict, also }) => (!verdict.allowed ? claimHeldLine(p, self().join(" "), verdict) : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`)),
+        ...refused,
         ...(guidesNow ? [guidesNow] : []),
       ]);
       break;

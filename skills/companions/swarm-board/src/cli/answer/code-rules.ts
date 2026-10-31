@@ -19,9 +19,11 @@ export const pausedMergingStep = (s: Situation): string | null =>
 
 /** board-split V-13: the line under a held claim: who holds it, and the post to make, runnable as printed. */
 export function claimHeldLine(me: Participant, cli: string, held: { path: string; holders: { member: string; nick: string; doing: string }[] }): string {
-  const who = held.holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
-  const mentions = held.holders.map((h) => mentionFrom(me, h.member)).join(" ");
-  return CW.claimHeld(held.path, who, held.holders.length > 1, CW.claimHeldPost(cli, mentions, shellWord(held.path), shellWord(me.name)));
+  // a holder with several claim rows on the path is named once
+  const holders = held.holders.filter((h, i) => held.holders.findIndex((o) => o.member === h.member) === i);
+  const who = holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
+  const mentions = holders.map((h) => mentionFrom(me, h.member)).join(" ");
+  return CW.claimHeld(held.path, who, holders.length > 1, CW.claimHeldPost(cli, mentions, shellWord(held.path), shellWord(me.name)));
 }
 
 /** The merge lock's name in an `unlocked` event, as the code pack posts it (packs/code/events.ts MERGE_LOCK). */

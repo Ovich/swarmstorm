@@ -8587,6 +8587,10 @@ var CODE_WORDING = {
   // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
   /** V-13: a claim held by another member (D41): the post to make, runnable as printed, its mentions the caller's own */
   claimHeld: (path14, who, many, post) => `${path14} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
+  /** a claim names files, never a folder: each file is claimed on its own */
+  claimFolderRefused: (path14) => `${path14} is a folder: not claimed; claim the files in it you will change, each by its path`,
+  /** a path of a claim list that is not on disk (a deleted file, a typo): the rest of the list is claimed all the same */
+  claimNoSuchFile: (path14) => `no such file: ${path14}: not claimed; pass --new if you are creating it`,
   claimHeldPost: (cli, mentions2, about, as) => `${cli} post "${mentions2} <what you change>" --about ${about} --as ${as}`,
   /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
   pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
@@ -8800,9 +8804,10 @@ var mentionFrom = (me, member) => {
 };
 var pausedMergingStep = (s) => s.pause ? CODE_WORDING.pausedMerging(s.run, WORDING.pauseWhy(s.pause.person, s.pause.text), WORDING.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
 function claimHeldLine(me, cli, held) {
-  const who = held.holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
-  const mentions2 = held.holders.map((h) => mentionFrom(me, h.member)).join(" ");
-  return CODE_WORDING.claimHeld(held.path, who, held.holders.length > 1, CODE_WORDING.claimHeldPost(cli, mentions2, shellWord(held.path), shellWord(me.name)));
+  const holders = held.holders.filter((h, i) => held.holders.findIndex((o) => o.member === h.member) === i);
+  const who = holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
+  const mentions2 = holders.map((h) => mentionFrom(me, h.member)).join(" ");
+  return CODE_WORDING.claimHeld(held.path, who, holders.length > 1, CODE_WORDING.claimHeldPost(cli, mentions2, shellWord(held.path), shellWord(me.name)));
 }
 var MERGE_LOCK2 = "merge-lock";
 function codeEventStep(m, me, cli, event = eventOf(m)) {
@@ -9793,8 +9798,17 @@ ${verbHelp()}`);
       await madeWorktree(p, "claim");
       if (!args.positional.length) fail("claim: which path?");
       const answers = [];
+      const refused = [];
       for (const file of args.positional) {
-        const abs = resolveClaimPath(file);
+        const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
+        if (missing.length || !args.has("--new") && !fs13.existsSync(abs)) {
+          refused.push(CODE_WORDING.claimNoSuchFile(file));
+          continue;
+        }
+        if (fs13.existsSync(abs) && fs13.statSync(abs).isDirectory()) {
+          refused.push(CODE_WORDING.claimFolderRefused(repoRelative(abs)));
+          continue;
+        }
         const verdict = await packVerb(p, "check-edit", { file: abs, interface: args.has("--interface") });
         if (!verdict.allowed) process.exitCode = 3;
         const also = verdict.allowed && verdict.notice ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} \xB7 ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ") : "";
@@ -9803,9 +9817,11 @@ ${verbHelp()}`);
       const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
       const guidesNow = guidesLine(told);
       const verdictJson = (v) => v.allowed ? v : { ...v, refusal: claimHeldLine(p, self().join(" "), v) };
-      const json = answers.length === 1 ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })) };
+      if (refused.length && !answers.length) process.exitCode = 1;
+      const json = answers.length === 1 && !refused.length ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })), ...refused.length ? { refused } : {} };
       await emitHeard(p, told.length ? { ...json, guides: told } : json, [
         ...answers.map(({ rel, verdict, also }) => !verdict.allowed ? claimHeldLine(p, self().join(" "), verdict) : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`),
+        ...refused,
         ...guidesNow ? [guidesNow] : []
       ]);
       break;

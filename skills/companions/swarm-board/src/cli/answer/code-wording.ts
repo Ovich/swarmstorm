@@ -66,6 +66,10 @@ export const CODE_WORDING = {
   claimHeld: (path: string, who: string, many: boolean, post: Command) =>
     `${path} is also held by ${who}. You may share it, but first tell ${many ? "them" : "its holder"} what you change in it: ${post}; ` +
     `${many ? "they answer" : "its holder answers"} with an agreement on who changes what, and that agreement goes. Claim again once posted; do not wait for the agreement.`,
+  /** a claim names files, never a folder: each file is claimed on its own */
+  claimFolderRefused: (path: string) => `${path} is a folder: not claimed; claim the files in it you will change, each by its path`,
+  /** a path of a claim list that is not on disk (a deleted file, a typo): the rest of the list is claimed all the same */
+  claimNoSuchFile: (path: string) => `no such file: ${path}: not claimed; pass --new if you are creating it`,
   claimHeldPost: (cli: Command, mentions: string, about: string, as: string) => `${cli} post "${mentions} <what you change>" --about ${about} --as ${as}`,
   /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
   pausedMerging: (run: number, why: string, wait: Command) =>
