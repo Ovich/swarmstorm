@@ -17,15 +17,6 @@ export const mentionFrom = (me: Participant, member: string): string => {
 export const pausedMergingStep = (s: Situation): string | null =>
   s.pause ? CW.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), W.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
 
-/** board-split V-13: the line under a held claim: who holds it, and the post to make, runnable as printed. */
-export function claimHeldLine(me: Participant, cli: string, held: { path: string; holders: { member: string; nick: string; doing: string }[] }): string {
-  // a holder with several claim rows on the path is named once
-  const holders = held.holders.filter((h, i) => held.holders.findIndex((o) => o.member === h.member) === i);
-  const who = holders.map((h) => `${h.member} (${h.nick}: ${h.doing})`).join(", ");
-  const mentions = holders.map((h) => mentionFrom(me, h.member)).join(" ");
-  return CW.claimHeld(held.path, who, holders.length > 1, CW.claimHeldPost(cli, mentions, shellWord(held.path), shellWord(me.name)));
-}
-
 /** The merge lock's name in an `unlocked` event, as the code pack posts it (packs/code/events.ts MERGE_LOCK). */
 const MERGE_LOCK = "merge-lock";
 
@@ -44,10 +35,9 @@ export function codeEventStep(m: Message, me: Participant, cli: string, event: E
     return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CW.mergeLockFree(cli, shellWord(me.name)) : null;
   }
   if (event !== "flag") return undefined;
-  // a flag mentions the holder, then the writer (D10): each is told how to settle it
+  // spec §7: an overlap mentions the two members whose worktrees changed the path: each settles it with the other
   const [holder, writer] = m.mentions;
-  if (!m.about || !holder || !writer) return null;
-  if (me.name === holder) return CW.flagHolder(cli, shellWord(`@${writer} <who changes what>`), shellWord(m.about));
-  if (me.name === writer) return CW.flagWriter(cli, shellWord(`@${holder} <what you change>`), shellWord(m.about));
-  return null;
+  if (!m.about || !holder || !writer || (me.name !== holder && me.name !== writer)) return null;
+  const other = me.name === holder ? writer : holder;
+  return CW.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
 }

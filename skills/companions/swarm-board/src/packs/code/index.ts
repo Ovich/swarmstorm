@@ -1,6 +1,6 @@
 // The code pack's entry (board-split#D1, D18): claims, merges and worktrees, the verbs a worker of a code run has.
-// Its tables are the claims store (D20); its worktrees are made at the first claim or merge-lock, in the board
-// server, before any transaction opens (D19); its end refuses work not merged and removes the worktree after (D38).
+// Its tables are the claims store (D20), its claims the member's worktree changes (spec §7); its worktrees are made
+// at join, in the board server, before any transaction opens (D19); its end refuses work not merged and removes the worktree after (D38).
 import fs from "node:fs";
 import path from "node:path";
 import type { Conflicts, Participant } from "../../board/board.ts";
@@ -47,10 +47,8 @@ const optional = <T>(v: unknown): T | undefined => (v === null || v === undefine
 
 /** The claims verbs a member calls through `packCall` (board-split T11, D9): the core's transaction around each. */
 const CLAIM_WRITES: Record<string, PackWrite> = {
-  "check-edit": tableWrite("checkEdit", (c, m, i) => c.checkEdit(m, String(i.file), { interface: i.interface === true })),
-  release: tableWrite("release", (c, m, i) => c.release(m, String(i.file))),
-  // part of merge-lock and end, not a call of its own
-  reconcile: tableWrite(null, (c, m, i) => c.reconcileWrites(m, i.changed as string[], optional<string[]>(i.generated))),
+  // spec §7: the member's link's changed set, not a call of its own
+  changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[])),
   "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional<string>(i.onto), optional<number>(i.reflogMark), optional<string[]>(i.guides))),
   merged: tableWrite("merged", (c, m, i) => c.merged(m, String(i.sha), i.files as string[], optional<Conflicts>(i.conflicts)), true),
 };
@@ -58,7 +56,7 @@ const CLAIM_WRITES: Record<string, PackWrite> = {
 export const codePack: Pack = {
   name: "code",
   events: CODE_EVENTS,
-  verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
+  verbs: ["join", "merge-lock", "merged", "flag", "conflicts", "guides"].map((name) => ({ name })),
   // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
   alsoFor: (member, message, ctx) =>
     (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
@@ -91,7 +89,8 @@ export const codePack: Pack = {
       // where a joining seat's worktree goes, named and not made (G20)
       case "place":
         return ctx ? worktrees(ctx.repo).place(ctx.run, ctx.group, String(input.seat), String(input.cwd)) : null;
-      case "claim":
+      // spec §7: the worktree is made at join (§8: still by the pack, in the server)
+      case "join":
       case "merge-lock":
         return member && ctx ? makeWorktree(verb, member, input, ctx) : { made: false };
       // the merge lock the member holds, read for merged's replay (D33, D36); never counted
@@ -135,14 +134,8 @@ export const codePack: Pack = {
 
   onJoin(member, ctx, declared) {
     // a re-join starts the seat's record fresh: merged since this join only (D66)
-    tablesOf(ctx).seated(member, declared);
+    tablesOf(ctx).seated(member);
     return {};
-  },
-
-  onPost(member, message, ctx) {
-    // posting is claiming (D7)
-    const claimed = tablesOf(ctx).claimByPost(member, message);
-    return claimed ? { claimed } : null;
   },
 
   onEnded(member, ctx) {

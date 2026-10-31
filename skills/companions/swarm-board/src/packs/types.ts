@@ -16,8 +16,6 @@ export interface VerbSpec {
 
 /** What `onJoin` records for the member, for the answer module to word. */
 export type JoinFacts = Record<string, unknown>;
-/** What `onPost` made of a post (a claim taken by it, in the code pack). */
-export type PostFacts = Record<string, unknown>;
 /** Why `end` cannot go on, for the answer module to word: `left` says what the member still holds. */
 export type Refusal = { reason: string } & Record<string, unknown>;
 /** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event (null: none),
@@ -87,7 +85,6 @@ export interface Pack {
   writes?: Record<string, PackWrite>;
   /** At every join and re-join, after the member's row is written: `declared` the files its join declared. */
   onJoin?(member: Participant, ctx: PackCtx, declared: Declared[]): JoinFacts;
-  onPost?(member: Participant, message: Message, ctx: PackCtx): PostFacts | null;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
   busy?(member: Participant, ctx: PackCtx): boolean;

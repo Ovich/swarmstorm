@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
+import { changedSet } from "./changes.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -27,13 +28,15 @@ export type LinkTiming = {
   idleMs: number;
   /** between two looks at the transcript: a locate until found, then a read (D8) */
   watchEveryMs: number;
+  /** spec §7: how often the worktree's changed set is read */
+  changesEveryMs: number;
   /** the least time between two activity frames (D10) */
   activityGapMs: number;
   /** at start, how long to wait for the server's state file */
   stateFileWaitMs: number;
 };
 
-const DEFAULT_TIMING: LinkTiming = { reconnectGiveUpMs: 60_000, reconnectEveryMs: 500, idleMs: 2 * 60 * 60_000, stateFileWaitMs: 5_000, watchEveryMs: 1_000, activityGapMs: 3_000 };
+const DEFAULT_TIMING: LinkTiming = { reconnectGiveUpMs: 60_000, reconnectEveryMs: 500, idleMs: 2 * 60 * 60_000, stateFileWaitMs: 5_000, watchEveryMs: 1_000, activityGapMs: 3_000, changesEveryMs: 5_000 };
 
 /** D7: keyed by the data home. `\\.\pipe\swarm-<hash>-<run>-<member>` on Windows, a socket file in
  *  the OS temp folder elsewhere. Built in code: a pipe path passed through Git Bash loses its
@@ -172,6 +175,20 @@ export async function runLink(opts: {
     queuedActivity = null;
   };
 
+  /** spec §7: the member's worktree and target, from the welcome; the changed set last sent, as one key */
+  let worktree: { path: string; onto: string } | null = null;
+  let sentChanges: string | null = null;
+  /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing */
+  const watchChanges = () => {
+    if (exiting || !worktree || !welcomed) return;
+    const files = changedSet(worktree.path, worktree.onto);
+    if (!files) return;
+    const key = files.join("\0");
+    if (key === sentChanges) return;
+    sentChanges = key;
+    sendUp({ type: "changes", files });
+  };
+
   let transcript: string | null = null;
   let cursor: TranscriptCursor | null = null;
   let lastSeen: string | null = null;
@@ -210,6 +227,7 @@ export async function runLink(opts: {
     sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
     clearInterval(idleCheck);
     clearInterval(watch);
+    clearInterval(changes);
     clearInterval(heartbeat);
     pipeServer?.close();
     for (const p of pipes) p.end(); // a result just written still reaches its CLI
@@ -220,6 +238,10 @@ export async function runLink(opts: {
   const onDown = (f: Frame) => {
     if (f.type === "welcome") {
       welcomed = true;
+      // spec §7: the worktree whose changes this link sends; a new connection sends the set afresh
+      worktree = f.worktree ?? null;
+      sentChanges = null;
+      watchChanges();
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache
       flushActivity();
     } else if (f.type === "refused") {
@@ -367,6 +389,7 @@ export async function runLink(opts: {
   }, Math.min(60_000, Math.max(10, Math.floor(timing.idleMs / 4))));
 
   const watch = setInterval(watchTranscript, timing.watchEveryMs);
+  const changes = setInterval(watchChanges, timing.changesEveryMs);
   // board-split D55: a sign of life every HEARTBEAT_MS, whatever the agent does
   const heartbeat = setInterval(() => sendUp({ type: "beat" }), HEARTBEAT_MS);
   if (state.version !== bundleVersion()) exit({ why: "server of another version" }); // D28: a server of another version would refuse it

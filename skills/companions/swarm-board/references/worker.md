@@ -18,32 +18,28 @@ the foreground: an agent that ends its turn on a background task of its own is n
    roster shows you from the start:
    `$S join --run <run> --seat <your seat> --doing "waiting for a task" --as <group>/<seat>`. **The board names your
    worktree**, under the repository's git dir (`swarm/worktrees/<run>/<seat>`), never in its tree, on a branch of its own from `<target>`, and makes it
-   at your first `claim` or `merge-lock` (the install runs there after that), or gives you back the one your seat already has; its answer prints the path. **That path is where you work**:
+   at the join (the install runs there after that), or gives you back the one your seat already has; its answer prints the path. **That path is where you work**:
    every file by its absolute path under it, every git command as `git -C <path>`, the install
    run there; never `cd` into it (a shell parked in it keeps the folder from being removed), and
    every `$S` call carries `--as`. Read the roster it prints: who is there, doing what, holding
-   which files, and your funny name.
+   which files, and your funny name. **It lists the project's architecture guides once**: load each
+   skill whose files your task touches before you edit them.
 2. **Start your link, then your listener, as your first two background tasks.** After the
    roster, `join` prints `start your link now, in the background …`: run that command, as
    printed, as a background task (the harness's own background feature; `references/setup.md`
    says which harnesses have one). It carries your calls to the board while you work. `join`
    shows, in full, any post for you made before you joined. With such a task, it ends on `start
    your listener now, in the background …`: run it the same way and start the task; with
-   nothing for you, it ends on the foreground wait of step 3. `claim`, `post` and `doing` end on
+   nothing for you, it ends on the foreground wait of step 3. `post` and `doing` end on
    the listener line while no listener of yours is pending: start it then.
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it
    again (it holds 170 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
-4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **Before each edit,
-   `$S claim <path>`**, and before a command that writes a file (a generator, a formatter, a move):
-   `--interface` for a file the task marks interface, `--new` for one you create; paths
-   repository-relative. Read its answer and do what it says (*Claiming a file*). A task that
-   changes no file (research, a review, a draft) claims nothing.
-   A rename is two claims: the old path, and the new one with --new.
-   **A claim's answer may name guides** (`guides for this work: …`): the project's architecture
-   guides that file falls under, each named once. Load each skill it names before you edit.
+4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **You claim
+   nothing**: your link reads your worktree's changes from git every 5 s and the board holds
+   exactly those files, until `merged` releases them (*Sharing a file*).
 5. **A message for you arrives** (your listener's output, or a message the orchestrator sends you
    directly): act on it, answer on the thread if it asks (`$S post "@<them> …" --about <path>`; a
    message ending on `swarm agree …` is answered with that agreement, *Sharing a file*), then go
@@ -77,11 +73,10 @@ the foreground: an agent that ends its turn on a background task of its own is n
       Your worktree stays for your next task; `end` removes it once clean and merged.
 7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
    post after the merge; a task that merged nothing reports in one post to `@orchestrator`
-   (`post --file` for a long one). A fix task reports per finding id what changed. Then
-   `$S release <path>...` the files you no longer touch (`--all`: every claim you hold), and back to 3.
+   (`post --file` for a long one). A fix task reports per finding id what changed. Then back to 3.
 8. **The run closes** (the closed line): `$S end`, then return one line per task you did. `end`
    refuses while your worktree holds work not merged, naming it and the merge; once it ends, it
-   removes the worktree. It claims or flags what you wrote without a claim, releases your claims and the lock, and makes
+   removes the worktree. It releases your files and the lock, and makes
    your listener return empty: do not re-arm it. A task that stops on a finding posts it first:
    `$S post "@orchestrator <the finding>"`, then waits.
 
@@ -109,20 +104,9 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 - **No background notification in your harness**: a foreground `$S wait --mentions --timeout <ms>`
   between steps, and whenever you have nothing else to do.
 
-## Claiming a file
-
-**`$S claim <path>` before you edit a file, then do what its answer says.** Exit 0: the file is
-yours to edit, alone or shared. Exit 3: another worker holds it, and the answer gives the post to
-make before claiming again. Claims are the project's, across every run on it.
-
-Nothing stops an edit made without a claim; `end` claims or flags it on the thread, late.
-
 ## Sharing a file
 
-**A shared file is settled by one agreement, made by its holder.** A post about a file you hold,
-from a worker that did not hold it, reaches you ending on the `agree` line to run: run it, saying
-who changes which part, in what order. The agreement goes for you both, and corrects work already
+**A shared file is settled by one agreement.** When your changes and another worker's touch the
+same file, the board posts it once to you both (`overlap: …`), ending on the `agree` line to run:
+run it, saying who changes which part, in what order. The agreement goes for you both, and corrects work already
 started; to change it, agree again. With no `@<seat>` in it, `--with <seat>` names the other party, so its merge reaches them; an agreement with no other party is refused.
-
-**A flag** is a file you wrote without claiming it while another worker holds it, found by
-`merge-lock` or `end` and posted on the thread to you both. Claim before you edit and there is none.

@@ -18,7 +18,7 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 **Builds on**: what is merged that this needs; the tasks of this phase it shares a file with.
 **Contract**: the decisions it must hold, by id (`D3`); an interface it creates or changes, as code (below).
 **Guides**: the plan's *Guides* decisions within this task's scope, quoted word for word; none, left out.
-**Files**: `path` interface · `path` inside — every file it will edit, declared at its claim.
+**Files**: `path` interface · `path` inside — every file it will edit; an interface file is said so in words.
 **Done when**: a command that exits 0, or what is observed; the tests the mandate asks for, by case.
 **Not this**: what a reader would assume is included and is not; the boundary it must not cross.
 ```

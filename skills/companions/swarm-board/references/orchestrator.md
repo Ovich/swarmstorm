@@ -123,7 +123,7 @@ waits: in the foreground; a seat runs on the plugin's
 ## Interrupt
 
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
-stop and wait, claim and merge-lock are refused, and no `stopped` or `lost` alert fires.
+stop and wait, merge-lock is refused, and no `stopped` or `lost` alert fires.
 A paused run is silent for you too: only `urgent` wakes you; everything else (`lost`,
 `done`, `all-done`) is held.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
@@ -146,7 +146,7 @@ seat between its waits, one that reads `stopped`. Post it on the board too, so t
 ## A lost member
 
 **Its state decides, never a guess.** `stopped` is alive and not moving: *Interrupt*. `lost`:
-**`$S end --seat <seat> --as <group>/orchestrator`** frees its claims and the merge lock if it held
+**`$S end --seat <seat> --as <group>/orchestrator`** frees its files and the merge lock if it held
 it; dispatch a fresh worker, which joins the same seat; repost its open task.
 
 **An `away` member is resumed, never re-dispatched**: it finished and handed back. Post its next

@@ -92,21 +92,24 @@ export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
+/** spec §7: the paths its member's worktree changed since it left its target, sent when the set differs */
+export type Changes = { type: "changes"; files: string[] };
 /** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
 export type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
 /** a reader (aiview) asks to hear every commit as `changed` (swarm-relay D23) */
 export type Subscribe = { type: "subscribe" };
 // down: the server to a link or a CLI
-export type Welcome = { type: "welcome"; version: string };
+/** `worktree`: the member's worktree and the branch its work merges into, for its link's changes; absent for none */
+export type Welcome = { type: "welcome"; version: string; worktree?: { path: string; onto: string } };
 export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
 export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" };
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
 
-export type Frame = Hello | Call | Cancel | Activity | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
+export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
 
-const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
 
 /** One JSON text. */
 export function encode(f: Frame): string {

@@ -25,7 +25,7 @@ export type VerbResult =
   | { verb: "wait"; outcome: "woke"; again: string; foregroundAgain: string; phaseEvent: boolean; mentionsOnly: boolean; shown: Shown[] }
   | { verb: "done"; phase: string; none: true }
   | { verb: "done"; phase: string; none?: false; line: string; facts?: string[] }
-  /** a verb that heard from the member (post, agree, endorse, claim, release, doing): its result lines */
+  /** a verb that heard from the member (post, agree, endorse, doing): its result lines */
   | { verb: "heard"; lines: string[] }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
    *  posts for the member, delivered at its join (S1), the phase's own event left out: the phase line states it */

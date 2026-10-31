@@ -4,8 +4,8 @@ import { hiddenSpawnSync } from "../proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, projectFolderName, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
-import type { Flag, HeldMergeLock } from "../wire.ts";
+import { openBoard, progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
+import type { HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
@@ -15,13 +15,12 @@ import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
-import { unclaimedLines, type Rename } from "./unclaimed.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
 import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { claimHeldLine, pausedMergingStep } from "./answer/code-rules.ts";
+import { pausedMergingStep } from "./answer/code-rules.ts";
 import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
@@ -112,30 +111,6 @@ function branchChangedIn(worktree: string, onto: string): string[] {
   const committed = r.stdout.split("\0").filter(Boolean);
   return [...new Set([...committed, ...changedIn(worktree)])];
 }
-
-/** The renames git detects between `base` and the worktree, committed or not: a rename is two claims, the old path and the new. */
-function renamesIn(worktree: string, base: string): Rename[] {
-  const r = hiddenSpawnSync("git", ["diff", "--name-status", "-z", "-M", base], { cwd: worktree, encoding: "utf8" });
-  if (r.status !== 0) return [];
-  const parts = r.stdout.split("\0");
-  const out: Rename[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    if (/^[RC]\d*$/.test(parts[i])) {
-      if (parts[i].startsWith("R")) out.push([parts[i + 1], parts[i + 2]]);
-      i += 2;
-    } else if (/^[A-Z]$/.test(parts[i])) i += 1;
-  }
-  return out;
-}
-
-/** The reconcile's lines: one summary of the unclaimed writes, then each flag on the thread (D58, D59, F24). */
-const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] = []): void => {
-  const lines = unclaimedLines(unclaimed, renames);
-  for (const line of lines) console.log(line);
-  // F16: what the line means
-  if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
-  for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
-};
 
 /** The tool's folder (swarm.mjs's), the aiview skill beside it, whatever the entry: swarm.mjs, dist-cli/cli.mjs or src/cli/index.ts. */
 const toolRoot = (): string => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path.dirname(path.resolve(process.argv[1])));
@@ -420,11 +395,6 @@ const emitHeard = async (p: Participant, json: object, result: string | string[]
   });
 };
 
-/** G28: the build outputs among `files` (repository-relative): under a `dist` or `dist-*` folder, or marked
- *  `linguist-generated` in the repository's .gitattributes. */
-const generatedAmong = (worktree: string, files: string[]): string[] =>
-  files.filter((f) => /(^|\/)dist(-[^/]+)?\//.test(f.replace(/\\/g, "/")) || /: linguist-generated: (set|true)$/m.test(git(worktree, "check-attr", "linguist-generated", "--", f) ?? ""));
-
 /** A path as every answer prints it: forward slashes, on Windows too. */
 const slashed = (s: string): string => s.replace(/\\/g, "/");
 
@@ -434,14 +404,6 @@ const guidesHere = (p: Participant, onto?: string): Guide[] => {
   // with the branch merged into: its project guides too, the ones the rebase brings (G12)
   const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
-};
-
-/** The guides `files` fall under that `p` has not been told of; marked told. */
-const guidesToTell = async (p: Participant, files: string[]): Promise<Guide[]> => {
-  const matching = guidesFor(guidesHere(p), files);
-  if (!matching.length) return [];
-  const untold = new Set(await board.guidesUntold(p, matching.map((g) => g.name)));
-  return matching.filter((g) => untold.has(g.name));
 };
 
 /** The last line of a `wait --mentions` that delivered (F28). */
@@ -564,8 +526,7 @@ async function packVerb(p: Participant, verb: string, input: Record<string, unkn
   return isPackRefusal(fact) ? refusedCodeVerb(p, fact) : fact;
 }
 
-/** A code-pack member gets the board's worktree, its place named at join and made at its first claim or merge-lock
- *  (G20, D19), reused when there; a seat with no pack (a verifier, a brainswarm seat), an undeclared seat, or a caller
+/** A code-pack member gets the board's worktree, named and made at join (spec §7; G20, D19), reused when there; a seat with no pack (a verifier, a brainswarm seat), an undeclared seat, or a caller
  *  already in a worktree of its own (one it made, or its harness did) gets none. */
 async function memberWorktree(runId: number, seat: string): Promise<{ path: string; branch: string; base: string; reused: boolean } | null> {
   const run = await runOf(runId);
@@ -582,13 +543,12 @@ async function memberWorktree(runId: number, seat: string): Promise<{ path: stri
 
 /** The caller's board worktree, made by its pack in the board server when its join only named it (G20, D19): a
  *  member that never claims or merges gets none; a member with no pack is refused the verb. */
-async function madeWorktree(p: Participant, verb: "claim" | "merge-lock"): Promise<void> {
+async function madeWorktree(p: Participant, verb: "join" | "merge-lock"): Promise<void> {
   // there already: nothing for the pack to make, and the verb's own gate stands
   if (p.place && fs.existsSync(p.place)) return;
   // any checkout of the repository gives the base: the caller's, else the repository's own beside its git dir
   const cwd = worktreeOf(process.cwd()) && repoOf(process.cwd()) === p.repo ? process.cwd() : path.dirname(p.repo);
   const made = (await packVerb(p, verb, { cwd })) as { made: boolean } | null;
-  // claim and release resolve paths in it from now on (G19)
   if (made?.made) callerWorktree = p.place;
 }
 
@@ -838,13 +798,18 @@ async function main(): Promise<void> {
       if (joinAs !== undefined && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
         fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord(joinRun.group), shellWord(need("--doing")), shellWord(joinedSeat()))));
       const own = await memberWorktree(runArg(), joinedSeat());
-      const { member, roster, composition } = await board.join({
+      const joined = await board.join({
         run: runArg(),
         seat: joinedSeat(),
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
         place: own?.path ?? worktreeOf(process.cwd()) ?? undefined,
       });
+      const { member, roster, composition } = joined;
+      // spec §7: the worktree is made at join, so its link reads its changes from the start (§8: still by the pack)
+      if (own) await madeWorktree(member, "join");
+      // the project's guides, listed once at join; merge-lock names those the branch's changes fall under
+      const guidesAtJoin = own ? guidesLine(guidesHere(member)) : null;
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: member.name, run: member.run });
       // a kind without worktree: the checkout is shared, so every call names the member (D21, D36)
@@ -856,7 +821,7 @@ async function main(): Promise<void> {
         : shared
         ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
         : own
-          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : "; made at your first claim or merge-lock"}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
+          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
           : null;
       // board-split D59: a member re-joining a seat whose branch holds work not merged, without the merge lock (its last
       // member's was released when it went lost), is told so and how to take it again
@@ -873,7 +838,7 @@ async function main(): Promise<void> {
       // S20: the roster read after that delivery, so the member's own row counts none of it as unread
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
-      const tail = [...(as ? [as] : []), ...(lockNotHeldLine ? [lockNotHeldLine] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
+      const tail = [...(as ? [as] : []), ...(guidesAtJoin ? [guidesAtJoin] : []), ...(lockNotHeldLine ? [lockNotHeldLine] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
       const statedByJoin = new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
@@ -915,11 +880,10 @@ async function main(): Promise<void> {
       const unreached = rules.unreachedMentionLines(named);
       const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(unreached.length && r.state === "lost")).map((r) => r.name);
       const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord(p.name)), ...unreached];
-      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(lostMentioned.length ? { lost: lostMentioned } : {}), ...(m.claimed ? { claimed: m.claimed } : {}) };
+      const json = { seq: m.seq, mentions: m.mentions, run: m.run, ...(unmatched.length ? { unmatched } : {}), ...(lostMentioned.length ? { lost: lostMentioned } : {}) };
       const human = [
         seqLine(m),
         // posting is claiming (D7)
-        ...(m.claimed ? [`claimed ${m.claimed.path}, shared with ${m.claimed.sharedWith.join(", ")}`] : []),
         ...unmatched,
         ...lostMentioned,
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
@@ -1011,72 +975,6 @@ async function main(): Promise<void> {
       });
       break;
     }
-    case "claim": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      if (await refusedPaused(p, "claim")) break;
-      await madeWorktree(p, "claim");
-      if (!args.positional.length) fail("claim: which path?");
-      // every path given is answered on its own line, one outcome each (G4): claimed, held, no such file, or a folder;
-      // a path that cannot be claimed never stops the rest of the list
-      const answers: { rel: string; verdict: EditAllowed | EditHeld; also: string }[] = [];
-      const refused: string[] = [];
-      for (const file of args.positional) {
-        const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
-        if (missing.length || (!args.has("--new") && !fs.existsSync(abs))) {
-          // D6: the line names every place the path was looked for
-          refused.push(CODE_WORDING.claimNoSuchFile(missing.length ? missing.join(" nor ") : file));
-          continue;
-        }
-        if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
-          refused.push(CODE_WORDING.claimFolderRefused(repoRelative(abs)));
-          continue;
-        }
-        const verdict = (await packVerb(p, "check-edit", { file: abs, interface: args.has("--interface") })) as EditAllowed | EditHeld;
-        // held (D41): exit 3, the member posts about the path and claims again
-        if (!verdict.allowed) process.exitCode = 3;
-        // the other holders are named once per member and path, when the board says so (D40)
-        const also =
-          verdict.allowed && verdict.notice
-            ? (await Promise.all(verdict.sharedWith.map(async (o) => `${o.member} · ${(await board.participant(o.member))?.nick ?? "?"}: ${o.doing}`))).join("; ")
-            : "";
-        answers.push({ rel: repoRelative(abs), verdict, also });
-      }
-      // the guides these files fall under that the member has not been told of yet, each once per member
-      const told = await guidesToTell(p, answers.filter((a) => a.verdict.allowed).map((a) => a.rel));
-      const guidesNow = guidesLine(told);
-      // a held claim's json carries the line it prints, as before its facts moved to the answer module (V-13)
-      const verdictJson = (v: EditAllowed | EditHeld) => (v.allowed ? v : { ...v, refusal: claimHeldLine(p, self().join(" "), v) });
-      // exit 3 only for a held path; a list where nothing could be claimed at all fails
-      if (refused.length && !answers.length) process.exitCode = 1;
-      const json = answers.length === 1 && !refused.length ? verdictJson(answers[0].verdict) : { claims: answers.map((a) => ({ path: a.rel, ...verdictJson(a.verdict) })), ...(refused.length ? { refused } : {}) };
-      await emitHeard(p, told.length ? { ...json, guides: told } : json, [
-        ...answers.map(({ rel, verdict, also }) => (!verdict.allowed ? claimHeldLine(p, self().join(" "), verdict) : also ? `claimed ${rel}, also held by ${also}` : `claimed ${rel}`)),
-        ...refused,
-        ...(guidesNow ? [guidesNow] : []),
-      ]);
-      break;
-    }
-    case "release": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      refuseWithoutPack(p, "release");
-      const all = args.has("--all");
-      if (!all && !args.positional.length) fail("release: which path? (or --all, every claim you hold)");
-      // F15: every path given is released; F27: --all, every claim the caller holds
-      const released: string[] = [];
-      const targets = all ? (await board.heldBy(p)).map((f) => path.resolve(pathsRoot() ?? process.cwd(), f)) : args.positional.map((f) => resolveClaimPath(f));
-      if (all && !targets.length) {
-        emit({ member: p.name, released: [] }, `${p.name} holds no claim`);
-        break;
-      }
-      for (const abs of targets) {
-        await packVerb(p, "release", { file: abs });
-        released.push(repoRelative(abs));
-      }
-      emit({ member: p.name, released: released.length === 1 ? released[0] : released }, released.map((r) => `${p.name} released ${r}`).join("\n"));
-      break;
-    }
     case "merge-lock": {
       const p = await caller();
       if (await answeredGate(p)) break;
@@ -1094,24 +992,16 @@ async function main(): Promise<void> {
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
-      // what the branch wrote without a claim, committed or not, before the lock; a flag informs, never blocks
-      // V8: a base only on origin is read as origin's, as the worktree was made from it (G36)
+      // what the branch changed, committed or not: the guides it falls under (V8: a base only on origin is read as
+      // origin's, as the worktree was made from it, G36)
       const ontoRef = p.place && fs.existsSync(p.place) ? baseRef(p.place, onto) : onto;
-      const reconciled = p.place ? branchChangedIn(p.place, ontoRef) : [];
-      // what it held before the reconcile claims the rest: only those written without a claim are told
-      const held = new Set(await board.heldBy(p));
-      // G28: build outputs are claimed like any file, never exempted, and never flagged: whoever merges second rebuilds them
-      const generated = p.place ? generatedAmong(p.place, reconciled) : [];
-      const unclaimed = reconciled.filter((f) => !held.has(f) && !generated.includes(f));
-      const flags = reconciled.length ? ((await packVerb(p, "reconcile", { changed: reconciled, generated })) as Flag[]) : [];
-      const renames = p.place && unclaimed.length ? renamesIn(p.place, git(p.place, "merge-base", ontoRef, "HEAD") ?? "HEAD") : [];
+      const changed = p.place ? branchChangedIn(p.place, ontoRef) : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
-      const guides = guidesFor(guidesHere(p, ontoRef), reconciled);
+      const guides = guidesFor(guidesHere(p, ontoRef), changed);
       const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
-      emit({ member: p.name, ...r, reconciled, flags, ...(r.granted && guides.length ? { guides } : {}) }, () => {
-        printReconciled(unclaimed, flags, renames);
+      emit({ member: p.name, ...r, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
         console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, waitCommand(p.name, true)));
@@ -1229,13 +1119,6 @@ async function main(): Promise<void> {
           `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
         );
       }
-      // what the member wrote without claiming it, once, before its claims go (D58)
-      const reconciled = p.place ? changedIn(p.place) : [];
-      // what it held before the reconcile claims the rest: only those written without a claim are told
-      const held = new Set(await board.heldBy(p));
-      const unclaimed = reconciled.filter((f) => !held.has(f));
-      const flags = reconciled.length ? ((await packVerb(p, "reconcile", { changed: reconciled })) as Flag[]) : [];
-      const renames = p.place && unclaimed.length ? renamesIn(p.place, "HEAD") : [];
       // break-flow V-29: the orchestrator ending a seat is told the state its member was in, and what it is told now
       const before = endedSeat === undefined ? null : ((await board.roster(p.repo)).find((r) => r.name === p.name) ?? null);
       await board.end(p);
@@ -1245,8 +1128,7 @@ async function main(): Promise<void> {
       const after = ((await board.packCall(p, "afterEnd", {})) ?? {}) as { worktree?: string; removed?: boolean; why?: string | null };
       const mine = after.worktree ?? null;
       const removal = after.why ?? null;
-      emit({ member: p.name, ended: true, reconciled, flags, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
-        printReconciled(unclaimed, flags, renames);
+      emit({ member: p.name, ended: true, ...(mine ? { worktree: mine, removed: removal === null } : {}) }, () => {
         // V-41: a lost member's activity is from before its link died: its state is lost, with why
         const was = before?.badge?.name === "lost" ? WORDING.wasLost(before.badge.reason) : before ? stateLine(before) : "";
         console.log(before ? WORDING.seatEnded(p.name, was, WORDING.endedMember(p.run)) : `${p.name} ended`);

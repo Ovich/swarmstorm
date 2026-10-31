@@ -189,8 +189,6 @@ export interface Message {
   answer?: string;
   /** A merged event's recipients, or a phase event's name, as data (D11); null elsewhere and on rows from before. */
   meta?: MessageMeta | null;
-  /** On post only: the refused claim this post settled (D7). */
-  claimed?: { path: string; sharedWith: string[] };
 }
 
 /** What woke the member, in full (a whole-thread run: every unread post of the run with it). `superseded`: a newer
@@ -2048,10 +2046,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
-      const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
-      // posting is claiming (D7), on a kind with claims
-      const facts = packOf(fresh)?.onPost?.(fresh, m, packCtxOf(fresh)) ?? null;
-      return facts ? { ...m, ...facts } : m;
+      return insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
     },
 
     endorse(p, seq) {

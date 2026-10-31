@@ -2,7 +2,7 @@
 // registry, the second module that sees SQL. The Board's verbs of the same names delegate here after the
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
-import type { Conflicts, Declared, EditAllowed, EditHeld, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
+import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
 import type { Flag, MemberWorktree, MergedMeta } from "./types.ts";
 import type { EventName } from "../../board/events.ts";
 import { CODE_EVENTS } from "./events.ts";
@@ -25,24 +25,19 @@ export interface ClaimsDeps {
 }
 
 export interface Claims {
-  checkEdit(p: Participant, file: string, opts?: { interface?: boolean }): EditAllowed | EditHeld;
-  /** `generated`: build outputs among `changed`, claimed (shared when held) and never flagged: whoever merges second rebuilds them (G28). */
-  reconcileWrites(p: Participant, changed: string[], generated?: string[]): Flag[];
-  release(p: Participant, file: string): void;
+  /** spec §7: `p`'s holdings become `files`, its worktree's changed set as its link read it (new paths held, gone ones
+   *  released); each new path another member holds is posted once to both, unless they agreed on it. */
+  setHoldings(p: Participant, files: string[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
-  /** After a refused claim, `m` (by `p`, about the path, mentioning every holder, in it or before it) makes `p` a sharer, as the second claim would (D7). */
-  claimByPost(p: Participant, m: Message): PostClaim | null;
   /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */
   mergeLockQueuedBehind(p: Participant): string | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
   heldMergeLock(p: Participant): HeldMergeLock | null;
   /** `conflicts` absent: unknown. Known conflicts narrow the sharers to the conflicted paths (D5, D25). */
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
-  /** join's declared files, claimed where free */
-  claimDeclared(p: Participant, files: Declared[]): void;
-  /** At a join or re-join: its record of merging starts fresh (D66), its declared files claimed where free. */
-  seated(p: Participant, files: Declared[]): void;
+  /** At a join or re-join: its record of merging starts fresh (D66). */
+  seated(p: Participant): void;
   /** `p` called `merged` since it joined (D66). */
   mergedSinceJoin(participant: number): boolean;
   /** end, closeRun, seat done */
@@ -65,8 +60,6 @@ export interface Claims {
   seatWorktrees(run?: RunId): MemberWorktree[];
 }
 
-/** What a post settled: the claimed path and its other holders' names. */
-export type PostClaim = { path: string; sharedWith: string[] };
 /** `grantedAt` ISO; `onto` null for a lock taken without a branch; `reflogMark` the holder's HEAD reflog
  *  length at the grant, null when none was given (D36). */
 export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[] };
@@ -113,44 +106,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       bump(p.repo);
       return true;
     });
-  /** Claims `rel` for `p` unless another live member holds it: `held` is the other holders,
-   *  `taken` says whether the claim was made or widened here. */
-  const take = (p: Participant, rel: string, kind: "interface" | "inside"): { held: ClaimRow[]; taken: boolean } =>
-    transaction(() => {
-      const held = holdersOf(p.repo, rel).filter((c) => c.participant !== p.id);
-      if (held.length) return { held, taken: false };
-      return { held, taken: hold(p, rel, kind) };
-    });
-  /** Whether `p` has posted about `rel` mentioning every one of `holders` since that holder claimed it (D41),
-   *  in one post or several: the message's `about` is the path (or its tail), or its body names the path or its file name. */
-  const hasPostedAbout = (p: Participant, rel: string, holders: ClaimRow[]): boolean => {
-    const since = Math.min(...holders.map((h) => h.since));
-    const rows = db.prepare("SELECT seq, body, about, mentions FROM messages WHERE repo = ? AND author = ? AND seq > ? AND kind != 'event' AND by_board = 0").all(p.repo, p.id, since) as Row[];
-    const base = rel.split("/").pop()!;
-    const names = (r: Row): boolean => {
+  /** An agreement about `rel` between `a` and `b`, made by either and naming the other. */
+  const agreedOn = (a: Participant, b: Participant, rel: string): boolean =>
+    (db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND author IN (?, ?)").all(a.repo, a.id, b.id) as Row[]).some((r) => {
       const about = r.about == null ? "" : fold(slashes(String(r.about)));
-      const f = fold(rel);
-      if (about && (about === f || f.endsWith(`/${about}`))) return true;
-      const body = fold(String(r.body));
-      return body.includes(f) || body.includes(fold(base));
-    };
-    const told = rows.filter(names).map((r) => ({ seq: Number(r.seq), mentions: JSON.parse(String(r.mentions)) as string[] }));
-    return holders.every((h) => {
-      const o = participantById(h.participant);
-      return told.some((r) => r.seq > h.since && (r.mentions.includes(o.name) || r.mentions.includes(`${o.plan}/*`)));
+      const other = Number(r.author) === a.id ? b : a;
+      return about !== "" && (fold(rel) === about || fold(rel).endsWith(`/${about}`)) && (JSON.parse(String(r.mentions)) as string[]).includes(other.name);
     });
-  };
-  /** `me` was granted `rel` beside each of `people`, live holders of it: kept for the run's figures (D39). */
-  const recordShares = (me: Participant, rel: string, people: Participant[]): void => {
-    const share = db.prepare("INSERT OR IGNORE INTO shares (repo, path, participant, other, seq) VALUES (?, ?, ?, ?, ?)");
-    for (const o of people) share.run(me.repo, rel, me.id, o.id, lastSeq());
-  };
-  /** The other holders `me` is told of, once per member and path (D40). */
-  const noticeOf = (me: Participant, rel: string, people: Participant[]): string | null => {
-    const told = db.prepare("INSERT OR IGNORE INTO notices (repo, path, participant, other) VALUES (?, ?, ?, ?)");
-    const fresh = people.filter((o) => Number(told.run(me.repo, rel, me.id, o.id).changes) > 0);
-    return fresh.length ? fresh.map((o) => `${rel} is also held by ${o.name}: ${doingOf(o.id)}`).join("; ") : null;
-  };
   const releaseAll = (id: number): void => {
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
     const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
@@ -202,43 +164,12 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       return held ? takeLockWaiters(p.repo).filter((n) => n !== p.name) : [];
     },
 
-    claimByPost(me, m) {
-      if ((m.kind !== "msg" && m.kind !== "agreement") || !m.about) return null;
-      const about = fold(relPath(me.repo, m.about) ?? slashes(m.about));
-      return transaction((): PostClaim | null => {
-        const asked = (db.prepare("SELECT path, kind FROM claim_requests WHERE repo = ? AND participant = ?").all(me.repo, me.id) as Row[]).find((r) => {
-          const x = fold(String(r.path));
-          return x === about || x.endsWith(`/${about}`);
-        });
-        if (!asked) return null;
-        const rel = String(asked.path);
-        const others = holdersOf(me.repo, rel).filter((c) => c.participant !== me.id);
-        // the holder gone: the request stands for the next claim, which finds the path free
-        if (!others.length || !hasPostedAbout(me, rel, others)) return null;
-        hold(me, rel, String(asked.kind) === "interface" ? "interface" : "inside");
-        db.prepare("DELETE FROM claim_requests WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, rel, me.id);
-        const people = others.map((c) => participantById(c.participant));
-        recordShares(me, rel, people);
-        return { path: rel, sharedWith: people.map((o) => o.name) };
-      });
-    },
-
-    seated(p, files) {
+    seated(p) {
       db.prepare("UPDATE participants SET merged = 0 WHERE id = ?").run(p.id);
-      this.claimDeclared(p, files);
     },
 
     mergedSinceJoin(participant) {
       return (db.prepare("SELECT merged FROM participants WHERE id = ?").get(participant) as Row | undefined)?.merged === 1;
-    },
-
-    claimDeclared(p, files) {
-      transaction(() => {
-        for (const f of files) {
-          const rel = relPath(p.repo, f.path);
-          if (rel) take(p, rel, f.interface ? "interface" : "inside");
-        }
-      });
     },
 
     askedAbout(me, author, m) {
@@ -274,84 +205,31 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id, p.id) !== undefined;
     },
 
-    checkEdit(me, file, opts = {}) {
-      const kind = opts.interface ? "interface" : "inside";
-      const rel = relPath(me.repo, file);
-      if (!rel) return { allowed: true, sharedWith: [], notice: null }; // outside the repository: no claim
-      return transaction((): EditAllowed | EditHeld => {
-        const all = holdersOf(me.repo, rel);
-        const others = all.filter((c) => c.participant !== me.id);
-        if (!others.length) {
-          hold(me, rel, kind); // a free file: claimed, silently
-          return { allowed: true, sharedWith: [], notice: null };
-        }
-        const people = others.map((c) => participantById(c.participant));
-        if (!all.some((c) => c.participant === me.id)) {
-          // the first edit of a file another member holds: held until the member has said what it changes (D41)
-          if (!hasPostedAbout(me, rel, others)) {
-            // the refused request: a post that settles it claims it (D7)
-            db.prepare(
-              `INSERT INTO claim_requests (repo, path, participant, kind) VALUES (?, ?, ?, ?)
-               ON CONFLICT (repo, path, participant) DO UPDATE SET kind = CASE WHEN claim_requests.kind = 'interface' THEN 'interface' ELSE excluded.kind END`,
-            ).run(me.repo, rel, me.id, kind);
-            // board-split V-13: the facts only; the answer module words the line and the post to make (rule 13)
-            return { allowed: false, path: rel, holders: people.map((o) => ({ member: o.name, nick: o.nick, doing: doingOf(o.id) })) };
-          }
-        }
-        hold(me, rel, kind); // a new holder, or an `inside` claim widened to an interface
-        db.prepare("DELETE FROM claim_requests WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, rel, me.id);
-        recordShares(me, rel, people);
-        const sharedWith = people.map((o) => ({ member: o.name, doing: doingOf(o.id) }));
-        return { allowed: true, sharedWith, notice: noticeOf(me, rel, people) };
-      });
-    },
-
-    reconcileWrites(me, changed, generated = []) {
-      const built = new Set(generated.map((f) => relPath(me.repo, f)).filter((r): r is string => !!r));
-      const flags: Flag[] = [];
-      // one transaction: the page sees one change however many files
+    setHoldings(me, files) {
       return transaction(() => {
-        const flag = db.prepare("INSERT OR IGNORE INTO flags (repo, path, participant) VALUES (?, ?, ?)");
-        // one flag post per writer, path and holder, whichever of merge-lock or end finds it first (D8)
-        const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
-        for (const file of changed) {
-          const rel = relPath(me.repo, file);
-          if (!rel) continue;
-          // a file the writer shares with others is its own: nothing to flag (D40)
-          if (holdersOf(me.repo, rel).some((c) => c.participant === me.id)) {
-            take(me, rel, "inside");
-            continue;
-          }
-          const { held: others, taken } = take(me, rel, "inside");
-          if (built.has(rel)) continue;
-          // written outside the writer's claim: free and claimed now, or held by another (D39)
-          if (taken || others.length) flag.run(me.repo, rel, me.id);
-          if (!others.length) continue;
-          const holder = participantById(others[0].participant);
-          if (Number(posted.run(me.repo, rel, me.id, holder.id).changes) === 0) continue;
-          // a board event, so the page shows it as one (D10); mentions: the holder, then the writer
-          const m = insertMessage(
-            me,
-            `@${holder.name} @${me.name} flag: ${me.name} wrote ${rel} outside its claim; ${holder.name} holds it. Settle it here.`,
-            rel,
-            "event",
-            [holder.name, me.name],
-            { event: CODE_EVENTS.flag.name },
-          );
-          flags.push({ path: rel, holder: holder.name, seq: m.seq });
+        const now = new Set(files.map((f) => relPath(me.repo, f) ?? slashes(f)));
+        const had = new Set((db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(me.repo, me.id) as Row[]).map((r) => String(r.path)));
+        const gone = [...had].filter((x) => !now.has(x));
+        const fresh = [...now].filter((x) => !had.has(x));
+        for (const x of gone) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
+        for (const x of fresh) hold(me, x, "inside");
+        if (gone.length) {
+          clearFlags();
+          bump(me.repo);
         }
-        return flags;
-      });
-    },
-
-    release(me, file) {
-      const rel = relPath(me.repo, file);
-      if (!rel) return;
-      transaction(() => {
-        const r = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, rel, me.id);
-        if (Number(r.changes) === 0) return;
-        clearFlags();
-        bump(me.repo);
+        // once per path and pair (flag_posts); the post mentions the other holder, then the member (the flag's order, D10)
+        const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
+        const overlaps: Flag[] = [];
+        for (const rel of fresh)
+          for (const c of holdersOf(me.repo, rel).filter((c) => c.participant !== me.id)) {
+            const other = participantById(c.participant);
+            if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
+            const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
+              event: CODE_EVENTS.flag.name,
+            });
+            overlaps.push({ path: rel, holder: other.name, seq: m.seq });
+          }
+        return overlaps;
       });
     },
 

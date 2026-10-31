@@ -309,7 +309,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
         }
         welcomed = true;
         speakers.add(s);
-        return send(s, { type: "welcome", version });
+        // spec §7: a member's link reads its worktree's changes against the branch its run merges into
+        const seat = f.member ? board.participant(f.member.name) : null;
+        const onto = seat ? board.runs().find((r) => r.id === seat.run)?.base : null;
+        return send(s, { type: "welcome", version, ...(seat?.place && onto ? { worktree: { path: seat.place, onto } } : {}) });
       }
       if (f.type === "call") run(s, f);
       else if (f.type === "cancel") dropWait(f.id);
@@ -320,6 +323,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       else if (f.type === "activity" && s.member) {
         const m = s.member;
         logged("activity", () => board.recordActivity(m.run, memberOf(m.name), f.activity, now()));
+      } else if (f.type === "changes" && s.member) {
+        // spec §7: the member's holdings become its worktree's changed set; an overlap is posted to both
+        const seat = board.participant(s.member.name);
+        if (seat) logged("changes", () => board.packCall(seat, "changes", { files: f.files }));
       } else if (f.type === "subscribe") s.subscribed = true;
     });
     socket.on("close", () => {

@@ -1,7 +1,7 @@
 // The code pack's member verbs as typed calls over the one way in, `board.packCall` (board-split T11, D9): the CLI's
 // and a test's way to claims and the merge lock, on the board itself or on its remote client alike. A refusal fact
 // (D12) is thrown, its fact on the error, so a caller that did not gate the verb up front still stops.
-import type { Conflicts, EditAllowed, EditHeld, Participant, RunId, Sharer } from "../../board/board.ts";
+import type { Conflicts, Participant, RunId, Sharer } from "../../board/board.ts";
 import type { Flag, MemberWorktree } from "./types.ts";
 import type { PackRefusal, PackVerbInput } from "../types.ts";
 import type { HeldMergeLock } from "./claims.ts";
@@ -30,11 +30,8 @@ export function codeVerbs<B extends PackCaller>(board: B) {
     return (fact instanceof Promise ? fact.then(unlessRefused) : unlessRefused(fact)) as Answer<B, T>;
   };
   return {
-    /** A claim before an edit of `file` (absolute, or repository-relative), `swarm claim` (D58, D40, D41). */
-    checkEdit: (p: Participant, file: string, opts: { interface?: boolean } = {}) => call<EditAllowed | EditHeld>(p, "check-edit", { file, interface: opts.interface === true }),
-    release: (p: Participant, file: string) => call<null | undefined>(p, "release", { file }),
-    /** Paths written outside the claim: a free one claimed, a held one flagged on the thread; `generated` never flagged (G28). */
-    reconcileWrites: (p: Participant, changed: string[], generated?: string[]) => call<Flag[]>(p, "reconcile", { changed, generated }),
+    /** spec §7: `p`'s holdings set to its worktree's changed set, as its link sends it; the overlaps posted. */
+    changes: (p: Participant, files: string[]) => call<Flag[]>(p, "changes", { files }),
     lockMerge: (p: Participant, onto?: string, reflogMark?: number, guides?: string[]) =>
       call<{ granted: true } | { granted: false; holder: string }>(p, "lock-merge", { onto, reflogMark, guides }),
     merged: (p: Participant, sha: string, files: string[], conflicts?: Conflicts) => call<Sharer[]>(p, "merged", { sha, files, conflicts }),
