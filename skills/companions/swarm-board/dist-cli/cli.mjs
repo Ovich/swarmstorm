@@ -3554,7 +3554,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const check = () => {
           if (settled) return;
           try {
-            if (participantById(p.id).ended) return finish({ full: [] });
+            if (participantById(p.id).ended) return finish({ full: [], ended: true });
             const d = transaction(() => current() ? deliverTo(p, true) : null);
             if (!d) return finish({ full: [], superseded: true });
             if (d.full.length) finish(d);
@@ -9624,6 +9624,10 @@ ${verbHelp()}`);
       if (timeout !== void 0 && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
       const delivered = await board.wait(p, { timeoutMs: timeout, mentionsOnly });
+      if (delivered.ended) {
+        emit(delivered, WORDING.ended(p.run));
+        break;
+      }
       const d = withNext(p, delivered, await pausedMergingLine(p));
       if (await answeredGate(p, true)) break;
       if (d.superseded) {

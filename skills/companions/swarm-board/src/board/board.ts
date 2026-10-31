@@ -193,7 +193,9 @@ export interface Message {
 
 /** What woke the member, in full (a whole-thread run: every unread post of the run with it). `superseded`: a newer
  *  `wait` of the same member started, so this one returned empty (D64). */
-export type Delivery = { full: Message[]; superseded?: true };
+/** `ended`: the wait returned because its member was ended (release-prep: the CLI then answers with no further call,
+ *  its link being stopped by the end). */
+export type Delivery = { full: Message[]; superseded?: true; ended?: true };
 
 /** What the page draws (D39). */
 export type RunSummary = {
@@ -2134,7 +2136,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           if (settled) return;
           try {
             // `end`, from this process or another, releases a pending wait of that member
-            if (participantById(p.id).ended) return finish({ full: [] });
+            if (participantById(p.id).ended) return finish({ full: [], ended: true });
             // the look and the superseded test in one transaction: a superseded wait takes nothing
             const d = transaction(() => (current() ? deliverTo(p, true) : null));
             if (!d) return finish({ full: [], superseded: true });

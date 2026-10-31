@@ -910,6 +910,11 @@ async function main(): Promise<void> {
       if (timeout !== undefined && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
       const delivered = await board.wait(p, { timeoutMs: timeout, mentionsOnly });
+      // release-prep: ended, its link about to be stopped by the end: the ended line at once, with no call more (G26)
+      if (delivered.ended) {
+        emit(delivered, WORDING.ended(p.run));
+        break;
+      }
       const d = withNext(p, delivered, await pausedMergingLine(p));
       // the run closed while this wait was pending: the close ended the member
       if (await answeredGate(p, true)) break;
