@@ -31,7 +31,7 @@ export type Situation = {
   owed: { name: string; text: string; word: string } | null;
   /** this verb showed the member its phase, and it was the first time in that phase; null when the verb shows none */
   phaseFirst: boolean | null;
-  /** simple-states: a member (never the orchestrator) owing no phase */
+  /** simple-states: a member (never the orchestrator) owing no phase and holding nothing of its pack's (the merge lock) */
   owesNothing: boolean;
 };
 
@@ -44,6 +44,8 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
   const phase = shown ? shown.phase : await board.currentPhase(me.run);
   const owed = run ? await board.owedPhase(me) : null;
   const profile = profileOf(me.kind);
+  // fix2: a member its pack calls busy (holding the merge lock: merging) owes it, phase or none
+  const own = run && me.seat !== "orchestrator" && !me.ended ? (await board.roster(me.repo)).find((r) => r.name === me.name) : undefined;
   return {
     cli: opts.cli,
     as: opts.word(me.name),
@@ -58,6 +60,6 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,
-    owesNothing: owed == null,
+    owesNothing: owed == null && own?.fact == null,
   };
 }

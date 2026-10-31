@@ -99,32 +99,19 @@ test("the orchestrator always owes: it reads working", () => {
   pins("g/orchestrator", "working", null);
 });
 
-test("D53: a member still calling the board, or a fresh seating, is never lost on its link alone", async () => {
+test("D53, fix2: a link down past LOST_MS reads lost owing the phase, its board calls notwithstanding; a fresh seating is never lost", async () => {
   const { run, a, orch } = setup();
   board.phase(orch, "p1", "go");
   const base = Date.now();
   const linkGone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m));
-  // its link long lost, yet it calls the board: not lost
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
+  // its link long lost: lost, whatever it calls (the state reads the link's own fact, as its age does)
   board.setDoing(a, "still here");
   tick2(board, run.id, new Date(base), linkGone);
-  pins("g/a", "working", null);
-  // silent long after: lost
-  quietMember(path.join(dir, "swarm.sqlite"), "a");
-  tick2(board, run.id, new Date(base), linkGone);
   pins("g/a", "lost", "lost");
-  // a new agent seated in it (a rejoin): the old link's loss is not its own, and it is calling
+  // a new agent seated in it (a rejoin): the old link's loss is not its own
   board.join({ run: run.id, seat: "a", doing: "fresh", files: [] });
   tick2(board, run.id, new Date(base), linkGone);
-  pins("g/a", "working", null);
-});
-
-test("D53, D55: a link-less member whose transcript still grows, as its link last sent it, is not lost", () => {
-  const { run, orch } = setup();
-  board.phase(orch, "p1", "go");
-  quietMember(path.join(dir, "swarm.sqlite"), "a");
-  const base = Date.now();
-  board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
-  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", null);
 });
 

@@ -2830,7 +2830,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), Date.parse(seatedAtOf(p)));
   };
   const stallWindowOf = (run2) => Math.max(Number(run2.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
-  const owesOf = (p, run2) => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run2) != null;
+  const owesOf = (p, run2) => {
+    if (String(p.seat) === ORCHESTRATOR || owedNameOf(p, run2) != null) return true;
+    const m = participantById(Number(p.id));
+    return packOf(m)?.memberFact?.(m, packCtxOf(m)) != null;
+  };
   const seatedAtOf = (p) => String(p.seated_at ?? p.joined_at);
   const progressAtOf = (p, run2, a) => Math.max(
     a?.grew_at == null ? 0 : Number(a.grew_at),
@@ -2872,13 +2876,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const q = unansweredOf(run2, orch);
     return q ? `; unanswered @orchestrator #${q.seq} from ${orch.plan}/${q.from}` : "";
   };
-  const signAtOf = (p, run2, link, t) => {
-    if (heldWaits.has(Number(p.id))) return t;
-    const a = activityOf(Number(run2.id), String(p.seat));
-    const ms = (iso) => iso == null ? 0 : Date.parse(String(iso));
-    const num = (v) => v == null ? 0 : Number(v);
-    return Math.max(ms(p.last_call), ms(p.board_call_at), num(link.seenAt), num(link.lostAt), num(a?.grew_at), a?.open_tool == null ? 0 : num(a.open_since));
-  };
   const serverUpAt = () => {
     const r = db.prepare("SELECT value FROM server_facts WHERE name = 'server_up_at'").get();
     return r == null ? null : Number(r.value);
@@ -2891,9 +2888,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const up = serverUpAt();
     const seatedAt = Date.parse(seatedAtOf(p));
     const linkSeenAt = Math.max(link.seenAt ?? 0, link.lostAt ?? 0) || null;
-    const signAt = signAtOf(p, run2, link, t);
-    if (!old(linkSeenAt) || !old(signAt || null) || !old(up) || !old(seatedAt)) return null;
-    const since = Math.max(signAt, seatedAt, up ?? 0) + LOST_MS;
+    if (!old(linkSeenAt) || !old(up) || !old(seatedAt)) return null;
+    const since = Math.max(linkSeenAt ?? 0, seatedAt, up ?? 0) + LOST_MS;
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
   };
@@ -8920,6 +8916,7 @@ async function readSituation(board2, me, opts) {
   const phase = shown ? shown.phase : await board2.currentPhase(me.run);
   const owed = run2 ? await board2.owedPhase(me) : null;
   const profile = profileOf(me.kind);
+  const own = run2 && me.seat !== "orchestrator" && !me.ended ? (await board2.roster(me.repo)).find((r) => r.name === me.name) : void 0;
   return {
     cli: opts.cli,
     as: opts.word(me.name),
@@ -8934,7 +8931,7 @@ async function readSituation(board2, me, opts) {
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,
-    owesNothing: owed == null
+    owesNothing: owed == null && own?.fact == null
   };
 }
 
@@ -9801,7 +9798,7 @@ ${verbHelp()}`);
       for (const file of args.positional) {
         const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
         if (missing.length || !args.has("--new") && !fs13.existsSync(abs)) {
-          refused.push(CODE_WORDING.claimNoSuchFile(file));
+          refused.push(CODE_WORDING.claimNoSuchFile(missing.length ? missing.join(" nor ") : file));
           continue;
         }
         if (fs13.existsSync(abs) && fs13.statSync(abs).isDirectory()) {

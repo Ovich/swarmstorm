@@ -1,4 +1,4 @@
 exit 1
 --- stderr
-open: failed (<seats>\no-id.json: a seat without an id
-e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]); no run was left open: open again
+<seats>\no-id.json: a seat without an id
+e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]

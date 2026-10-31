@@ -1166,8 +1166,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
   /** The run's stall window, never under the floor (gate G5). */
   const stallWindowOf = (run: Row): number => Math.max(Number(run.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
-  /** Whether a member owes work: the orchestrator always; a member the open phase undone, else a task not reported. */
-  const owesOf = (p: Row, run: Row): boolean => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null;
+  /** Whether a member owes work: the orchestrator always; a member the open phase undone, or what its pack says it is
+   *  doing (fix2: the code pack's merging, the merge lock held). */
+  const owesOf = (p: Row, run: Row): boolean => {
+    if (String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null) return true;
+    const m = participantById(Number(p.id));
+    return packOf(m)?.memberFact?.(m, packCtxOf(m)) != null;
+  };
   /** A participant row's state at `t`: gone, waiting (its open call is the board wait), busy, working, else quiet. */
   /** S22: when the seat's current member joined (a re-join included), ISO. */
   const seatedAtOf = (p: Row): string => String(p.seated_at ?? p.joined_at);
@@ -1233,22 +1238,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const q = unansweredOf(run, orch);
     return q ? `; unanswered @orchestrator #${q.seq} from ${orch.plan}/${q.from}` : "";
   };
-  /** board-split D55: the newest sign of life of a member: a board call, a held wait (now, for its whole hold), its link's
-   *  heartbeat or drop, transcript growth its link sent, an open call's start; ms epoch, 0 with none. */
-  const signAtOf = (p: Row, run: Row, link: LinkFact, t: number): number => {
-    if (heldWaits.has(Number(p.id))) return t;
-    const a = activityOf(Number(run.id), String(p.seat));
-    const ms = (iso: unknown): number => (iso == null ? 0 : Date.parse(String(iso)));
-    const num = (v: unknown): number => (v == null ? 0 : Number(v));
-    return Math.max(ms(p.last_call), ms(p.board_call_at), num(link.seenAt), num(link.lostAt), num(a?.grew_at), a?.open_tool == null ? 0 : num(a.open_since));
-  };
   /** board-split D55: when the board server came up, ms epoch; null when none recorded it (a board opened alone). */
   const serverUpAt = (): number | null => {
     const r = db.prepare("SELECT value FROM server_facts WHERE name = 'server_up_at'").get() as Row | undefined;
     return r == null ? null : Number(r.value);
   };
-  /** board-split D55: lost iff not ended, link unseen >= LOST_MS, sign older than LOST_MS, no held wait, server
-   *  up >= LOST_MS, seated >= LOST_MS. A restart, a reconnect or a join never raises it. */
+  /** board-split D55: the link is down iff not ended, no held wait, and the link unseen, the server up and the seating
+   *  all >= LOST_MS: a restart, a reconnect or a join never reads down. fix2: the link's own fact alone, never the
+   *  member's board calls or growth, so the state and the link age read the same (a link down never reads stopped). */
   const lostOf = (p: Row, run: Row, t: number): Badge | null => {
     if (p.ended_at != null || heldWaits.has(Number(p.id))) return null;
     const link = (presenceOf.get(Number(run.id)) ?? noPresence)(String(p.seat));
@@ -1257,9 +1254,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const up = serverUpAt();
     const seatedAt = Date.parse(seatedAtOf(p));
     const linkSeenAt = Math.max(link.seenAt ?? 0, link.lostAt ?? 0) || null;
-    const signAt = signAtOf(p, run, link, t);
-    if (!old(linkSeenAt) || !old(signAt || null) || !old(up) || !old(seatedAt)) return null;
-    const since = Math.max(signAt, seatedAt, up ?? 0) + LOST_MS;
+    if (!old(linkSeenAt) || !old(up) || !old(seatedAt)) return null;
+    const since = Math.max(linkSeenAt ?? 0, seatedAt, up ?? 0) + LOST_MS;
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
   };

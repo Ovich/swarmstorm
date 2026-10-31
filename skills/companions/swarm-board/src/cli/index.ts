@@ -1024,7 +1024,8 @@ async function main(): Promise<void> {
       for (const file of args.positional) {
         const { abs, missing } = resolveIn(pathsRoot(), file, { create: args.has("--new") });
         if (missing.length || (!args.has("--new") && !fs.existsSync(abs))) {
-          refused.push(CODE_WORDING.claimNoSuchFile(file));
+          // D6: the line names every place the path was looked for
+          refused.push(CODE_WORDING.claimNoSuchFile(missing.length ? missing.join(" nor ") : file));
           continue;
         }
         if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {

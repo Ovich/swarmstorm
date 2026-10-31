@@ -55,6 +55,22 @@ test("golden V-2 (D59): the lost holder's merge lock is released at once, its wa
   assert.equal(board.packCall(again, "held-merge-lock", {}), null);
 });
 
+test("fix2: the merge lock's holder owes it, no phase owed: its link down past LOST_MS reads lost, the lock freed, the queued member told", () => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
+  assert.deepEqual(codeVerbs(board).lockMerge(w2), { granted: true });
+  assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: false, holder: "g/w2" });
+  const base = Date.now();
+  quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
+  tick2(board, run.id, new Date(base), (m) => (m === "w2" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null }));
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/w2")!.state, "lost");
+  const freed = freedLines();
+  assert.equal(freed.length, 1);
+  assert.ok(freed[0].mentions?.includes("g/w1"), "the queued member is told");
+  assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: true });
+});
+
 test("a lost member holding no merge lock: no lock line", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: [{ id: "w1", blockers: [] }] });
   const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;

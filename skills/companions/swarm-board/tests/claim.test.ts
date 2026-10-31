@@ -334,8 +334,10 @@ test("a path that exists from neither folder exits 1 naming both tries; --new cl
   const sub = path.join(wtA, "src");
   const r = swarm(sub, "claim", "src/ghost.ts");
   assert.equal(r.status, 1);
-  assert.ok(r.stderr.includes(path.join(sub, "src", "ghost.ts")) && r.stderr.includes(path.join(wtA, "src", "ghost.ts")), r.stderr);
-  assert.match(r.stderr, /--new/);
+  // the per-path no-such-file line names both tries (G4 answers each path on its own line)
+  const said = r.stdout + r.stderr;
+  assert.ok(said.includes(path.join(sub, "src", "ghost.ts")) && said.includes(path.join(wtA, "src", "ghost.ts")), said);
+  assert.match(said, /--new/);
   assert.equal(answer(cli(sub, "claim", "ghost.ts", "--new")), "claimed src/ghost.ts\n");
   assert.equal(swarm(wtA, "release", "src/nope.ts").status, 1, "release resolves the same way");
   assert.equal(swarm(sub, "post", "x", "--about", "src/nope.ts").status, 1, "so does --about");
