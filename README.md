@@ -31,7 +31,7 @@ Swarmstorm is an open-source (MIT) set of agent skills for Claude Code, Codex an
 
 Agents write faster than people can review, and when several of them work the same codebase they don't know about each other. Each one finishes its own piece, and the pieces meet for the first time in review: overlapping edits, a function renamed under another agent's feet, two takes on the same interface. Studies of agent pull requests find the same pattern: work from two different agents conflicts about twice as often as work from one ([Xu et al., 2026](https://arxiv.org/abs/2607.04697)). The cost lands on the person reviewing.
 
-**Swarmstorm makes the agents work it out between themselves, before it reaches you.** Inside a swarm, agents settle a shared file the moment two of them need it. We call it Peer-to-Peer Lock Negotiation: agents negotiate file locks on a shared board. Between swarms working on the same project, agreements travel to every swarm they concern, so one swarm's change to an interface reaches the others before they build on the old one. We call that Distributed Conflict Resolution. What comes back to you is one branch, already reconciled, instead of a pile of pull requests to untangle.
+**Swarmstorm makes the agents work it out between themselves, before it reaches you.** Inside a swarm, agents settle a shared file the moment two of them change it. We call it Peer-to-Peer Lock Negotiation: the board sees which files each agent's worktree changes, puts two agents changing the same file in touch to agree how they share it, and lets one merge in at a time. Between swarms working on the same project, agreements travel to every swarm they concern, so one swarm's change to an interface reaches the others before they build on the old one. We call that Distributed Conflict Resolution. What comes back to you is one branch, already reconciled, instead of a pile of pull requests to untangle.
 
 ![The claims on the board: every file an agent holds, and the files two agents share](assets/board-claims.png)
 
@@ -100,6 +100,8 @@ A protocol sets the seats, their roles, and the phases a run goes through. Swarm
 
 If you happen to build a protocol that serves its purpose across many use cases, open a pull request. We're excited to see how you use swarms.
 
+### Example: how this README was written
+
 **This README was written by a brainswarm.** Everything above this section came from one editorial run, with the seats working from a list of goals and the codebase. I reviewed at the checkpoints the protocol sets and never edited the text.
 
 | phase | what happens |
@@ -122,11 +124,17 @@ If you happen to build a protocol that serves its purpose across many use cases,
 | style | enforced the voice rules |
 | seo-reader, dev-reader, team-reader | read each version as a new visitor and gave a verdict |
 
-Cost was not the goal. Fourteen Opus seats is far more than a README needs. The run had two aims: a high-quality document, and a test of more complex coordination between agents.
+Cost was not the goal. Fourteen Opus seats is far more than a README needs; I think three seats, a researcher, a writer and a skeptic, would reach a similar result. The run had two aims: a high-quality document, and a test of more complex coordination between agents.
 
 It met both. The README meets its goals, every claim is backed by the code, and the writer, given a persona and a list of Claude's usual writing patterns to avoid, no longer sounds like Claude.
 
 The full run is available for reference: [the dossier](docs/readme-run/dossier.md) and [the record](docs/readme-run/record.md).
+
+### Example: build-verify
+
+Workers build the code, then verifiers test the merged result in the running app and report what fails. Their findings become the next build's tasks, and the loop repeats. Verification is work a person still does in most setups, after every change. Handing it to agents is what makes the biggest difference to the accuracy and quality of the outcome.
+
+The loop repeats by design, so it needs a way to end: either a cap on the number of iterations, or a reachable stop goal. With 3 workers and 1 verifier it stays low cost, depending on the model and effort you choose for each.
 
 ## Install in Claude Code, Codex or Cursor
 
@@ -272,7 +280,7 @@ By group, in the order work usually happens. The folder under `skills/` is the g
 | Skill | Use case | Example ask |
 |---|---|---|
 | [aiview](skills/companions/aiview/SKILL.md) | A viewer at `localhost:4321` and an index, driven by the agent from a CLI. Called by the other skills; directly, to show a document or query the index | *"Open docs/notes/cache-idea.md in aiview, tagged payments."* |
-| [swarm-board](skills/companions/swarm-board/SKILL.md) | The board agents running together share, for a plan, a task swarm or a brainswarm: who is there, what each holds, their thread, drawn by aiview a tab per run. Its core verbs serve every run; the claim and merge verbs are the code pack's, a worker's alone (`--help code`). A member never ends itself while its run is open; the orchestrator parks a seat it alone needs (`park`, `unpark`). Called by the orchestrators and their members; directly, to read how the runs went | *"How did the swarm runs go this week?"* |
+| [swarm-board](skills/companions/swarm-board/SKILL.md) | The board agents running together share, for a plan, a task swarm or a brainswarm: who is there, whether each is working (its tokens moving) or not, what files each changes, their posts, drawn by aiview a tab per run. Phases, posts and two notifications (the swarm stopped, a member lost) are the core; the automatic claims, agreements and merge lock are the code pack's, a worker's alone (`--help code`). A member ends its turn once it owes nothing, and the orchestrator resumes it by message | *"How did the swarm runs go this week?"* |
 
 `write-diagrams`, `interview`, `orchestrate`, the tracker protocol in `write-plan` and the companion tools are the shared layer the others delegate to. `roadmap` sits above the loop: it names the next slot, and a board, a plan or a run finishing tells it to redraw. House rules in `AGENTS.md` win over general principles wherever the two disagree.
 
