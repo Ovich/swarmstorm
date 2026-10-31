@@ -5,7 +5,7 @@ import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
 import type { Message, Participant } from "./board.ts";
 
-export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "lost" | "block" | "unblock" | "unlocked" | "breach" | "composition" | "all-joined";
+export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "stopped" | "lost" | "block" | "unblock" | "unlocked" | "breach" | "composition" | "all-joined";
 export type EventName = CoreEventName | PackEventName;
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
@@ -18,7 +18,7 @@ export interface EventDef<N extends string = EventName> {
   always?: boolean;
   /** the event rides on every member's next wake, never waking and never due by itself (composition, D4) */
   ambient?: true;
-  /** posted by the board in a member's name, it reaches that member too (stalled, lost) */
+  /** posted by the board in a member's name, it reaches that member too (stopped, lost) */
   toAuthor?: boolean;
 }
 
@@ -32,8 +32,6 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   endorsement: { name: "endorsement" },
   joined: { name: "joined" },
   ended: { name: "ended" },
-  // an orchestrator stalled (silent STALE_MS) calls again (D15); its silence and a run's are `stalled` (board-split D36)
-  back: { name: "back" },
   // when a run opens: its kind, group and title (D69)
   opened: { name: "opened" },
   closed: { name: "closed" },
@@ -54,18 +52,15 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   done: { name: "done" },
   // every member of the run is done with the current phase: one event to the orchestrator
   "all-done": { name: "all-done" },
-  // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
-  idle: { name: "idle", toAuthor: true },
-  // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, once per
-  // episode, never again on a timer (swarm-relay D11, board-split D54); no other member is woken. board-split D36: also an orchestrator
-  // silent STALE_MS (once, in its run) and a run whose every member is silent (once, to its orchestrator)
-  stalled: { name: "stalled", toAuthor: true },
+  // simple-states: `stopped <group>`: no member's tokens moved for the run's stall window; to the orchestrator alone,
+  // once per still spell, never while paused
+  stopped: { name: "stopped", toAuthor: true },
   // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
   block: { name: "block" },
   unblock: { name: "unblock" },
-  // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
+  // the merge lock freed from a lost holder (D59); mentions each waiter
   unlocked: { name: "unlocked", toAuthor: true },
-  // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
+  // idea 4: a member killed by name, pattern or port; to the orchestrator alone
   breach: { name: "breach", toAuthor: true },
   // a member whose agent finished without end, or whose link is lost (D12, board-split D36); to the orchestrator alone
   lost: { name: "lost", toAuthor: true },
@@ -81,7 +76,7 @@ const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...regis
 export const isEvent = (s: string): s is EventName => Object.hasOwn(allEvents(), s);
 /** board-split D36: the events renamed or folded into a badge's event, old name to new; a subscription or a stored
  *  message under an old name reads as the new one (the CLI says so once, from the answer module). */
-export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost", stale: "stalled", quiet: "stalled" };
+export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };
 /** The name as the board knows it now: an old name renamed, else itself. */
 export const currentEventName = (s: string): string => RENAMED_EVENTS[s] ?? s;
 /** The old names in a subscription spec, each with its new one. */
@@ -127,7 +122,7 @@ export function mentions(m: Message, me: Participant): boolean {
 
 /** The alarms about one member's liveness, whose body names their subject (`stalled <member>: …`, or one line
  *  naming several). */
-const MEMBER_ALARMS = new Set<string>(["stalled", "lost"]);
+const MEMBER_ALARMS = new Set<string>(["lost"]);
 
 /** u1 #1349: an alarm about `me` never reaches `me` through a subscription: its own stalled ending its wait would make
  *  it recover, re-arm and stall again. Alarms go to the orchestrator and to subscribers other than their subject. */

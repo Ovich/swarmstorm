@@ -82,13 +82,11 @@ export const readTranscript: TranscriptReader = (file, from) => {
   return null;
 };
 
-/** Every member but the orchestrator `waiting`: an `idle` to the orchestrator at once, then again after each IDLE_MS while it holds (swarm-relay D34). */
-export const IDLE_MS = 15 * 60 * 1000;
 /** A member whose link has sent no activity this long after its join has no transcript: a card note, never an alarm (board-split D55). */
 // SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
 export const NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1000;
-/** The default stall window of a run (simple-states: 10 min): a working member with no sign of progress this long
- *  reads stalled; a long test run with no transcript growth stays under it. */
+/** The default stall window of a run (simple-states: 10 min): a member whose tokens did not move this long reads
+ *  stopped, and a swarm none of whose members moved is told stopped. */
 export const STALL_MS_DEFAULT = 10 * 60 * 1000;
 /** The stall window is never shorter, whatever a run stored (runs opened before keep an older default) or `open
  *  --stall-ms` asked. SWARM_STALL_FLOOR_MS: a scaled test scene lowers it; read at each use. */
@@ -108,23 +106,21 @@ export const LOST_MS = 60 * 1000;
 export const HEARTBEAT_MS = 5 * 1000;
 /** A carried message pending this long (from its post, or from the resume) is due: it wakes its member by itself (idea 2). */
 export const CARRY_MAX_MS = 5 * 60 * 1000;
-/** A named lock others wait on, held this long since its first waiter queued, is `stalled · lock` to both orchestrators (idea 4). */
-export const LOCK_HELD_MS = 10 * 60 * 1000;
 
-/** A member's one state, from two facts: is its link up, and does it owe work (the open phase undone, a task not
- *  reported; the orchestrator always, while its run is open). Link up: `working` owing, `idle` not. Link down: `lost`
- *  owing (needs action), `away` not (finished or handed back, resumable; a parked member too). `ended`: it left, or its
- *  run closed. What it is on (a call, a lock wait, a merge) is its `doing`, never a state. */
-export type CoreMemberState = "working" | "idle" | "away" | "lost" | "ended";
+/** A member's one state (simple-states), from three facts: is its link up, are its tokens moving, did it owe the open
+ *  phase when its link dropped (the orchestrator always owes). Link up: `working` moving, `stopped` not. Link down:
+ *  `lost` owing at the drop (needs action), `away` not (handed back, resumable; a parked member too). `ended`: it left,
+ *  or its run closed. What it is on (a call, a merge) is its `doing`, never a state. */
+export type CoreMemberState = "working" | "stopped" | "away" | "lost" | "ended";
 
-export type CoreStateFacts = { runOpen: boolean; ended: boolean; parked: boolean; linkDown: boolean; owes: boolean };
+export type CoreStateFacts = { runOpen: boolean; ended: boolean; parked: boolean; linkDown: boolean; owedAtDrop: boolean; moving: boolean };
 
 /** The one derivation of a member's state, read by snapshot, roster, status, seats and reader alike. */
 export function coreStateOf(m: CoreStateFacts): CoreMemberState {
   if (!m.runOpen || m.ended) return "ended";
   if (m.parked) return "away";
-  if (m.linkDown) return m.owes ? "lost" : "away";
-  return m.owes ? "working" : "idle";
+  if (m.linkDown) return m.owedAtDrop ? "lost" : "away";
+  return m.moving ? "working" : "stopped";
 }
 
 /** A seat's state: its member's, or `empty` while nobody has sat in it. */

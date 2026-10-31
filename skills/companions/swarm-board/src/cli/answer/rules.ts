@@ -134,19 +134,10 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       return m.mentions.includes(me.name) ? W.parkedStop : null;
     case "all-done":
       return orchestrator ? W.openNextPhase(cli, as, m.run) : null;
-    case "idle":
-      return orchestrator ? W.swarmQuiet(cli, as) : null;
+    case "stopped":
+      return orchestrator ? W.swarmStopped(cli, as) : null;
     case "all-joined":
       return orchestrator ? W.allJoined(cli, as) : null;
-    case "stalled":
-      return orchestrator ? stalledMove(m, cli, as) : null;
-    case "unlocked": {
-      // board-split V-22: a lock of a pack's (freed from a lost holder) is the pack's answer rules' to word
-      const packStep = codeEventStep(m, me, cli, event);
-      if (packStep !== undefined) return packStep;
-      const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      return name && m.mentions.includes(me.name) ? W.lockFree(cli, shellWord(name), as) : null;
-    }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
       if (!member || !orchestrator) return null;
@@ -168,20 +159,3 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
   }
 }
 
-/** The move a `stalled` asks of the orchestrator, by its rule (simple-states: silent or lock); a stalled stored under
- *  an older rule gives the general move. */
-function stalledMove(m: Message, cli: string, as: string): string {
-  const meta = m.meta && "rule" in m.meta ? m.meta : null;
-  // several members stalled at one tick: one line, each member's move after its name
-  if (meta?.members && meta.members.length > 1)
-    return W.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
-  const id = meta?.member ?? "<member>";
-  switch (meta?.rule) {
-    case "silent":
-      return W.stalledSilent(cli, shellWord(W.stalledAsk(id, meta.phase ?? "<phase>")), as);
-    case "lock":
-      return W.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} …`), as);
-    default:
-      return W.stalledAny(cli, as);
-  }
-}

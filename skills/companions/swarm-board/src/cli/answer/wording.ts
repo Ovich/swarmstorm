@@ -106,8 +106,6 @@ export const WORDING = {
     `every member of run ${run} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
   resumed: (run: number, held: number, cli: Command, as: string) =>
     `run ${run} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
-  lockHeldNext: (cli: Command, name: string, as: string, wait: Command) =>
-    `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
 
   // ── the run ──
   // the orchestrator's own run is paused: said first at each of its verbs until the resume, so a pause is never forgotten
@@ -135,11 +133,10 @@ export const WORDING = {
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
-  swarmQuiet: (cli: Command, as: string) => `every member waits: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
+  swarmStopped: (cli: Command, as: string) => `no member is moving: read the thread, then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
-  lockFree: (cli: Command, name: string, as: string) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
-  breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
-  breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
+  breachOwn: "stop only the PIDs you started: machine.md",
+  breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
   lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D44: block and unblock, to the seat they name */
@@ -160,16 +157,9 @@ export const WORDING = {
   authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
   optionRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
   eventRenamed: (renamed: { old: string; now: string }[]) =>
-    `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
+    `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
-  /** simple-states: working, owing the phase or a task's report, no sign of progress for the stall window */
-  stalledSilent: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
-  stalledAsk: (id: string, phase: string) => `@${id} your part of ${phase}`,
-  stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
-  stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
-  /** several members stalled at one tick: each member's move after its name */
-  stalledEach: (moves: { member: string; move: string }[]) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
 
   // ── the seat's commands at its join (D21, D36) ──
   /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
@@ -186,8 +176,6 @@ export const WORDING = {
     `${cli} endorse <seq> --as ${as}`,
     `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
   ],
-  // ── a lock granted, and status's forgotten run ──
-  unlockWhenDone: (cli: Command, name: string, as: string) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli: Command, seat: string, as: string) =>
     `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,

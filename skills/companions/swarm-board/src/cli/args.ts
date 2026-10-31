@@ -26,7 +26,6 @@ const VALUE_FLAGS = new Set([
   "--since",
   "--watch",
   "--person",
-  "--note",
   "--report",
   "--report-file",
   "--unlocked",

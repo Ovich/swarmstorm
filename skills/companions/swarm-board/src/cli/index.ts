@@ -52,8 +52,6 @@ const EXAMPLES: Record<string, (as: string) => string> = {
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
-  lock: (as) => `lock port:4399 --as ${as}`,
-  unlock: (as) => `unlock port:4399 --as ${as}`,
   config: () => "config retention 30",
   worktree: () => "worktree prune",
   close: () => "close --run 3",
@@ -333,67 +331,6 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
 /** `--protocol none`: a run phaseless on purpose. */
 const PHASELESS = "none";
 
-// ── locks (idea 4): a shared resource of the machine, honoured; for a port, what listens on it read from the OS ──
-const LOCK_PORT = /^port:(\d{1,5})$/;
-/** The PIDs listening on a TCP port now, from the OS on demand: `netstat -ano` on Windows, `lsof` elsewhere; [] when none or unreadable. */
-function listenersOn(port: number): number[] {
-  const found = new Set<number>();
-  if (process.platform === "win32") {
-    const out = hiddenSpawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const cols = line.trim().split(/\s+/);
-      // Proto  Local  Foreign  State  PID
-      if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
-    }
-  } else {
-    const out = hiddenSpawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
-  }
-  return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
-}
-/** When each of these processes started (ms epoch), from the OS; a PID it cannot read is left out. About 1 s on Windows, so read only when listeners exist. */
-function processStarts(pids: number[]): Map<number, number> {
-  const starts = new Map<number, number>();
-  if (!pids.length) return starts;
-  if (process.platform === "win32") {
-    const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
-    const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
-    const out = hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const [pid, at] = line.trim().split(/\s+/);
-      if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
-    }
-  } else {
-    const out = hiddenSpawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const m = /^\s*(\d+)\s+(.+)$/.exec(line);
-      if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
-    }
-  }
-  return starts;
-}
-/** F12: a port grant's listeners, told apart by the name's last release. Left running by that release (started before it):
- *  stop it only if it is yours. Started after it, or with no release at all: by someone without the lock, ask first. */
-function grantListeners(port: number, pids: number[], released: { at: string; by: string } | undefined): { lines: string[]; stoppable: number[] } {
-  const starts = processStarts(pids);
-  const releasedAt = released ? Date.parse(released.at) : NaN;
-  const left = pids.filter((pid) => Number.isFinite(releasedAt) && (starts.get(pid) ?? -Infinity) < releasedAt);
-  const without = pids.filter((pid) => !left.includes(pid));
-  const lines = [
-    ...(left.length ? [`listening on ${port} now: ${left.join(", ")}, left running by ${released!.by}'s release: stop it only if it is yours to stop`] : []),
-    ...(without.length ? [`listening on ${port} now: ${without.join(", ")}, started by someone without the lock: ask on the board before you stop it`] : []),
-  ];
-  return { lines, stoppable: left };
-}
-/** The line that stops exactly these PIDs, per platform: by PID, never by name. */
-const stopLine = (pids: number[]): string =>
-  process.platform === "win32" ? pids.map((pid) => `taskkill /PID ${pid} /T /F`).join("; ") : `kill ${pids.join(" ")}`;
-/** For a `port:<n>` lock, the port and what listens on it now; null for any other name. */
-const portListeners = (name: string): { port: number; pids: number[] } | null => {
-  const m = LOCK_PORT.exec(name);
-  return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
-};
-/** One held lock as a line: name, holder, since, waiters, and for a port what listens on it. */
 /** board-split D52 (U-F18): the merge lock of each project with an open run, its holder and since; none held: empty. */
 const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string; waiters: string[] }[]> => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
@@ -408,9 +345,6 @@ const mergeLocksHeld = async (): Promise<{ project: string; holder: string; sinc
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []));
 };
-const lockLine = (l: { name: string; member: string; run: number; since: string; note: string | null; waiters: string[] }, listening: number[] | null): string =>
-  `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
-
 /** The orchestrator's step after `open` of a task or plan run (idea 3): open the protocol's first phase before any
  *  task, or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm).
  *  The reading pointer sits before the colon, the command last (F6). */
@@ -1155,17 +1089,13 @@ async function main(): Promise<void> {
       // each run's title and phase above its members
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)] as const)));
-      // the locks this repository's members hold or wait on (idea 4)
-      const names = new Set(roster.map((r) => r.name));
-      const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
       // board-split D52 (U-F18): the merge lock is in the same listing, a lock named `merge` held by its member
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: m.waiters }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)] as const)));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: mergeHeld, mergeLocks: merge }, () => {
         const projectName = projectNameOf();
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
-        for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(projectName(repo)));
         let shown: number | null = null;
         for (const r of roster) {
@@ -1421,61 +1351,6 @@ async function main(): Promise<void> {
       });
       break;
     }
-    case "lock": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      if (await refusedPaused(p, "lock")) break;
-      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>\n${verbHelp()}`);
-      const r = await board.lock(p, name, args.flag("--note"));
-      const cli = self().join(" ");
-      const who = shellWord(p.name);
-      if (!r.granted) {
-        // held: who holds it, then how to wait for its unlocked event (exit 3, as a held claim)
-        process.exitCode = 3;
-        const h = r.holder;
-        const held = `held by ${h.nick} (${h.code}·${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
-        const next = WORDING.lockHeldNext(cli, shellWord(name), who, waitCommand(p.name, true));
-        emit({ name, granted: false, holder: h, next }, () => {
-          console.log(held);
-          console.log(next);
-        });
-        break;
-      }
-      // a port lock makes what listens on it yours to stop: its PIDs now, and the line that stops exactly them
-      const port = portListeners(name);
-      // F12: no listener reads plain; one left by the last release, or started without the lock, reads as such
-      const told = port && port.pids.length ? grantListeners(port.port, port.pids, r.released) : null;
-      const next =
-        told && told.stoppable.length
-          ? `next: to restart what listens on ${port!.port}, stop exactly these: ${stopLine(told.stoppable)}`
-          : WORDING.unlockWhenDone(cli, shellWord(name), who);
-      emit({ name, granted: true, ...(port ? { port: port.port, listening: port.pids } : {}), ...(r.released ? { released: r.released } : {}), next }, () => {
-        console.log(`granted ${name}`);
-        for (const line of told?.lines ?? []) console.log(line);
-        console.log(next);
-      });
-      break;
-    }
-    case "unlock": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      const name = args.positional[0] ?? fail(`unlock: which resource?\n${verbHelp()}`);
-      const r = await board.unlock(p, name);
-      emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
-      break;
-    }
-    case "locks": {
-      const held = await board.locks();
-      const merge = await mergeLocksHeld();
-      const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
-      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
-        if (!held.length && !merge.length) console.log("no lock held");
-        const projectName = projectNameOf();
-        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters));
-        for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
-      });
-      break;
-    }
     case "status": {
       const runs = await board.runs();
       // each member's worktree, null for a seat or an orchestrator (D64)
@@ -1489,17 +1364,14 @@ async function main(): Promise<void> {
           return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
-      // the machine's held locks (idea 4): store-wide, so listed once above the runs
-      const held = await board.locks();
       const merge = await mergeLocksHeld();
       // each open run not yet seated on its project's orchestrators board, with the command registering it
       const orchestrators = orchestratorsLines(runs, cli, writeOrchestratorSeats);
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, orchestrators }, () => {
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), mergeLocks: merge, orchestrators }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         const projectName = projectNameOf();
         for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
-        for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${projectName(r.repo)}`);

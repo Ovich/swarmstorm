@@ -9,7 +9,7 @@ export type { HeldMergeLock } from "./packs/code/claims.ts";
 export type { Flag } from "./packs/code/types.ts";
 
 /** The Board methods a verb calls over the wire: all but onChange, close, livenessTick, recordActivity,
- *  memberStates, upkeepIfDue, prune and markStaleRuns, which only the server's own process runs. */
+ *  memberStates, upkeepIfDue and prune, which only the server's own process runs. */
 export const RPC_METHODS = [
   "openRun",
   "addSeat",
@@ -17,9 +17,6 @@ export const RPC_METHODS = [
   "phase",
   "currentPhase",
   "showPhase",
-  "lock",
-  "unlock",
-  "locks",
   "pause",
   "resume",
   "pausedOf",
@@ -62,7 +59,7 @@ export const RPC_METHODS = [
 export type RpcMethod = (typeof RPC_METHODS)[number];
 
 /** The Board methods kept off the wire; with RPC_METHODS, every method of Board (checked below). */
-type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "markStaleRuns" | "recordLink" | "savedLinks" | "recordServerUp";
+type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "recordLink" | "savedLinks" | "recordServerUp";
 // a Board method added later must be put on one side or the other: this fails to compile until it is
 type Unlisted = Exclude<keyof Board, RpcMethod | ServerOnly>;
 const everyMethodPlaced: [Unlisted] extends [never] ? true : Unlisted = true;
