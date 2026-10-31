@@ -9278,21 +9278,19 @@ var init_home2 = __esm({
 });
 
 // ../swarm-board/src/board/liveness.ts
-var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
+var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
 var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
     IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 5 * 60 * 1e3;
+    STALL_MS_DEFAULT = 10 * 60 * 1e3;
     BADGE_CONFIRM_MS = 10 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
-    BUSY_MAX_MS = 15 * 60 * 1e3;
     LOST_MS = 60 * 1e3;
     HEARTBEAT_MS = 5 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
     LOCK_HELD_MS = 10 * 60 * 1e3;
-    SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
   }
 });
 
