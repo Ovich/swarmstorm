@@ -1084,11 +1084,11 @@ test("on a plan run too: the current phase heads wait, follows the roster at joi
   assert.equal(woken.stdout.split("the first wave").length - 1, 1, woken.stdout);
   assert.match(woken.stdout, /phase build: the first wave/);
 
-  const posted = run("post", "@S3 go", "--as", "review-tool/orchestrator");
-  // B15 (idea 2): after a member's first return in a phase, the header is short and names where its text is
-  const short = /^phase build \(unchanged; its text: .* status\)$/;
-  const delivered = run("wait", "--mentions", "--timeout", "200", "--as", s3).stdout.split("\n");
-  assert.ok(delivered.some((l) => short.test(l)), delivered.join("\n"));
+  run("post", "@S3 go", "--as", "review-tool/orchestrator");
+  // G10: a wake later in the phase repeats nothing of it
+  const later = run("wait", "--mentions", "--timeout", "200", "--as", s3).stdout;
+  assert.match(later, /@S3 go/);
+  assert.doesNotMatch(later, /the first wave/);
 
   const joined = run("join", "--run", String(id), "--seat", "S5", "--doing", "skill").stdout.split("\n");
   // G32: S5 owes the phase, so its text is stated once, on the owed line, with no header line besides it
@@ -1133,7 +1133,8 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.doesNotMatch(after.stdout, /is open and asks/);
   // a seat that listens in the foreground is told to wait by the join and the wake, not after each post (D9)
   assert.match(after.stdout.trimEnd(), /^#\d+$/);
-  assert.equal(JSON.parse(run("wait", "--mentions", "--timeout", "200", "--as", "idea/skeptic", "--json").stdout).next, undefined);
+  // its empty wait owes nothing: no owed step, only the wait
+  assert.doesNotMatch(JSON.parse(run("wait", "--mentions", "--timeout", "200", "--as", "idea/skeptic", "--json").stdout).next ?? "", /you owe|is open and asks/);
   // the orchestrator never owes a phase
   assert.doesNotMatch(run("wait", "--mentions", "--timeout", "200", "--as", "idea/orchestrator").stdout, /is open and asks/);
 });
