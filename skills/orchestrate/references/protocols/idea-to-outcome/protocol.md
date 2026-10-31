@@ -82,7 +82,7 @@ small ideas on disjoint files may share one build and one verify**, each judged 
 - **Ordered merges name the next merger**: a task that merges after another says so, and each
   merger's report mentions the next one, so no builder waits unwoken.
 - **Verifiers split by minutes, not by checks**: a timed scenario counts its minutes. A verifier
-  found stalled or gone hands its steps to another.
+  found stopped or lost hands its steps to another.
 - **The shared machine** is the swarm-board skill's `references/machine.md`: own ports, own temp
   data home, stop only your own PIDs, never the person's running servers.
 - **The person's decisions are asked in one message**: the verdict and every choice the note left

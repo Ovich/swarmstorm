@@ -13,10 +13,10 @@ for a task swarm; a plan's run keeps `--kind plan` and adds `--protocol build-ve
 | Seat | Who | Does |
 |---|---|---|
 | `w1` … `w<n>` | builders, the plugin's `swarm-worker` agent, each in its own worktree | build: the task posted to it, merged onto the run's branch; verify: on call, `done verify` at once |
-| `v1` … `v<m>` | verifiers, the plugin's `verifier` agent, no worktree of their own beyond the detached one they check out | build: idle, `done build` at once; verify: the steps its own message gives it, on **its own instance** (its port range, data copy and browser profile, locked first per the swarm-board skill's `references/machine.md`), started by it on the merged sha and stopped by its PID before it posts; one findings table each |
+| `v1` … `v<m>` | verifiers, the plugin's `verifier` agent, no worktree of their own beyond the detached one they check out | build: idle, `done build` at once; verify: the steps its own message gives it, on **its own instance** (its port range, data copy and browser profile, per the swarm-board skill's `references/machine.md`), started by it on the merged sha and stopped by its PID before it posts; one findings table each |
 
 **One instance only** (the charter says the product cannot run twice): the verifiers still get
-disjoint steps, and one `app:<name>` lock serializes their walks on the one instance.
+disjoint steps, and you open their walks on the one instance one at a time (`phase verify --for <vN>`).
 
 A verifier judges **from a project skill or from instructions**: the charter names, per verifier,
 its focus and its source: a `verify-<app>-<focus>` skill in the project's local skills, or
@@ -77,7 +77,7 @@ the goal (with its cap), N iterations, or unbounded.
 - **One verify message per verifier**, its steps disjoint from the others' and split by
   estimated minutes, not by count, its port range named; open the phase with `phase verify …
   --watch v1,v2,…` so each table wakes you.
-- **A verifier `stalled · call` or `gone`**: post its unwalked steps to another verifier, or
+- **A verifier `stopped` or `lost`**: post its unwalked steps to another verifier, or
   dispatch a fresh one into its seat; judge the tables in hand, the phase does not wait on it.
 - **The judged table**: the verifiers' tables merged into one (ids kept, prefixed when several
   verifiers), judged as the `orchestrate` skill's `references/findings.md` says, ending on the

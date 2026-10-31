@@ -29,17 +29,16 @@ You judge what was delivered, from one of two sources, the one your brief names:
 - **Join first**: load the `swarmstorm:swarm-board` skill and read its `references/worker.md`, join as your brief says, and
   start your link as the answer prints.
 - **You own your instance of the product**: on the ports your brief or message gives you, with
-  your own data copy and browser profile. **Lock first** (`app:<your id>`, each `port:<n>`,
-  `browser:<your id>`, as the swarm-board skill's `references/machine.md` says), start it on the
+  your own data copy and browser profile (the swarm-board skill's `references/machine.md`), start it on the
   phase's sha, and stop it by its PID before you post. When the charter says `one instance only`,
-  you lock the one `app:<name>` the message names and wait your turn for it.
+  you walk the one instance only in the turn your phase message gives you.
 - **Dormant until your phase.** A phase whose text gives you no part: mark it done (`done
   <phase>`) and end your turn, without `end`: you read away, and the orchestrator resumes you by
   message at your phase.
 - **Everything you run, you run in the foreground**: a build, a test suite, a CLI walk. A server
   you start is the one background task you may have, and you stop it (by its pid) before you post.
   Before you start, stop or sign in to anything, read the swarm-board skill's
-  `references/machine.md`: its rules and its locks bind you.
+  `references/machine.md`: its rules bind you.
   **Never end your turn while you owe the phase**, not even on a background task of your own: the
   board marks you lost.
 - **Your phase**: the message names the branch, the sha and the scope (or your steps). Check that

@@ -283,21 +283,10 @@ export const TIPS = {
   closed: "Closed: the run is over; its conversation is in the archive (☰).",
   joined: "Joined: a member arrived on the board and took its seat.",
   ended: "Ended: the member left the board and its claims were released.",
-  stalled: "Idle: no member's token counter has moved for this long. The orchestrator is told: it opens the next phase or asks the member who owes a move. The row keeps only the latest count and leaves once anything happens.",
-  stalledMember: "Stalled: this member is working (link up, owing work) but has made no progress, or holds a lock others wait on too long; the orchestrator is told the move that reaches it.",
+  stalled: "Stopped: no member's tokens have moved for the run's window. The orchestrator is told: it posts the next task, opens the next phase or resumes the members. The row keeps only the latest and leaves once anything happens.",
   gone: "Lost: this member's link is down while it still owes work (a member owing nothing whose link is down is away, resumable); the orchestrator dispatches a fresh agent into its seat or ends it.",
 } as const;
 
-/** What a stall says, by its rule (idea 1, rule 6): the word on the row. */
-const STALL_WORDS: Record<string, string> = {
-  silent: "no progress",
-  lock: "lock held too long",
-};
-
-/** The stall rule a `stalled` event stores in its data, null for one written before the rules. */
-const stallRuleOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.rule : null);
-/** The member a rule-bearing `stalled` names, null for one written before the rules. */
-const stalledMemberOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.member : null);
 
 /** A board event's tip, by its word or its stored name. */
 const EVENT_TIPS: Record<string, string> = {
@@ -391,14 +380,6 @@ function heldFileOf(snap: BoardSnapshot, e: SnapshotEvent, ctx: MentionCtx): { p
 
 const QUESTION = /^@orchestrator new question:/;
 
-/** The board server's liveness line as the audience reads it: `idle 35s · last active recruiter · phase polish 3/6 done`. */
-function idleText(body: string): string {
-  const secs = /^stalled (\d+)s/.exec(body)?.[1];
-  const who = /last active (?:[\w.-]+\/)?([\w.-]+)/.exec(body)?.[1];
-  const phase = /(phase .+ done|no phase open)\s*$/.exec(body)?.[1];
-  return [secs ? `idle ${secs}s` : "idle", who ? `last active ${who}` : null, phase].filter(Boolean).join(" · ");
-}
-
 /** One event as an item: its tier, word, tip and state, read from the thread (D8, D9, D16). */
 function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: MentionCtx): Item {
   const base = { seq: e.seq, at: e.at, run: run.run, from: e.from, about: e.about ?? null };
@@ -422,14 +403,8 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   // board-split#D51: an alarm's header names the member it tells of, never its author's card
   const told = memberEventMember(e, run);
   const who = told ? `${splitMember(told).seat} ` : "";
-  if (e.kind === "event" && e.event === "stalled") {
-    const rule = stallRuleOf(e);
-    if (rule) return said("stalled", "act", `◷ ${who}stalled · ${STALL_WORDS[rule] ?? rule}`, TIPS.stalledMember, rule);
-    // D51: the board's alarm about the whole run (`stalled run <n> (<group>): every member silent; …`)
-    const runSilent = /^stalled run \d+ \([^)]*\): ([^;]+)/.exec(e.body)?.[1];
-    if (runSilent) return said("stalled", "act", `◷ run stalled · ${runSilent}`, TIPS.stalled);
-    return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
-  }
+  // simple-states: `stopped`, no member's tokens moved for the run's window (an older board's `stalled` and `idle` read alike)
+  if (e.kind === "event" && ["stopped", "stalled", "idle"].includes(e.event as string)) return said("stalled", "act", "◷ swarm stopped", TIPS.stalled);
   // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
   if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${who}${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
@@ -471,9 +446,7 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   // the board's stored mentions (a flag's holder and writer) or the body's
   const namesPicked = (e: SnapshotEvent): boolean => !!picked && [...(e.mentions ?? []), ...targets(e, ctx)].some((t) => members.has(t) || t === `${picked.group}/*`);
   const items: Item[] = [];
-  /** A rule-bearing stall's seq, to the member it names. */
-  const stalledMembers = new Map<number, string>();
-  /** A member event's seq (stalled, lost), to the member `<group>/<id>` it tells of. */
+  /** A member event's seq (lost), to the member `<group>/<id>` it tells of. */
   const toldOf = new Map<number, string>();
   for (const e of [...snap.events].sort((a, b) => a.seq - b.seq)) {
     const run = runOf(snap, e);
@@ -485,39 +458,21 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
       if (run.run !== picked.run && !namesPicked(e)) continue;
     } else if (!run.open) continue;
     const item = itemOf(snap, e, run, ctx);
-    const stalledMember = item.kind === "stalled" ? stalledMemberOf(e) : null;
-    if (stalledMember) stalledMembers.set(e.seq, stalledMember);
     const told = memberEventMember(e, run);
     if (told) toldOf.set(e.seq, told);
     const prev = items[items.length - 1];
     const joins = item.kind === "message" && prev?.kind === "message" && prev.from === item.from;
     items.push(joins ? { ...item, joined: true } : item);
   }
-  // a stall is the orchestrator's alarm, not the conversation: only the live one shows, as one row, the
-  // latest; a stall anything came after has passed and leaves the thread clean
-  // a member's stall under a rule is its own alarm: the latest per member stays, until anything that member says
+  // a swarm stopped is the orchestrator's alarm, not the conversation: only the live one shows, the latest
   const last = items[items.length - 1];
-  // (the stall stores the member's id, `<id>`, in its run; a post is that member's when its run and id match)
-  const memberKey = (run: RunId, member: string): string => `${run}\u0000${member}`;
-  const latestStallOf = new Map<string, number>();
-  for (const i of items) {
-    const member = i.kind === "stalled" ? stalledMembers.get(i.seq) : undefined;
-    if (member) latestStallOf.set(memberKey(i.run, member), i.seq);
-  }
-  const saidSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.run === i.run && splitMember(x.from).seat === member);
-  // V4, plan D55: a stall has passed once the board's badge for the member is no longer stalled; aiview derives none
-  const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
   const badgeOf = new Map(snap.roster.map((r) => [r.member, r.badge ?? null]));
-  const stallPassed = (i: Item, member: string): boolean => badgeOf.get(`${groupOf.get(i.run)}/${member}`)?.name !== "stalled";
   // a lost row stays while the board's badge for the member says lost
   const lostHolds = (member: string): boolean => badgeOf.get(member)?.name === "lost";
   return items.filter((i) => {
     const member = toldOf.get(i.seq);
     if (i.kind === "gone" && member) return lostHolds(member);
-    if (i.kind !== "stalled") return true;
-    const stalled = stalledMembers.get(i.seq);
-    if (!stalled) return i === last;
-    return latestStallOf.get(memberKey(i.run, stalled)) === i.seq && !saidSince(i, stalled) && !stallPassed(i, stalled);
+    return i.kind !== "stalled" || i === last;
   });
 }
 
@@ -534,15 +489,14 @@ export function pauseChip(run: RunSummary): PauseChip | null {
   return { label: pause.person ? "On you" : "Paused", reason: pause.text || null };
 }
 
-/** The board's events that tell of one member (stalled, lost, an older board's gone): its member in the event's data or
- *  at the head of its body (`gone <group>/<id>: …`), so following that member keeps them (V5). */
-const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "lost", "gone"]);
+/** The board's events that tell of one member (lost, an older board's gone): its member at the head of its body
+ *  (`lost <group>/<id>: …`), so following that member keeps them (V5). */
+const MEMBER_EVENTS: ReadonlySet<string> = new Set(["lost", "gone"]);
 /** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
 function memberEventMember(e: SnapshotEvent, run: RunSummary): string | null {
   if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;
   // board-split#D51: the board names it (an alarm served as the board's carries its subject)
   if (e.subject) return e.subject;
-  if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}`;
   return new RegExp(`^${e.event} (\\S+?):? `).exec(e.body)?.[1] ?? null;
 }
 const isAboutMember = (e: SnapshotEvent, run: RunSummary, member: string): boolean => memberEventMember(e, run) === member;

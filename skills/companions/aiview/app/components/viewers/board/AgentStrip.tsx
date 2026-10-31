@@ -1,7 +1,7 @@
 // A picked run's members, a closed run's as they ended, a column left of the conversation, the orchestrator first (D7, D20):
 // each card its member (code, then nick), its state word, the seat, what it does. A card clicked
 // follows the member and narrows the conversation; clicked again, released. Two layers (board-split#D35): the state
-// word is the board's alone; what the agent runs now is the activity line (D32); trouble (stalled, lost, blocked) is a
+// word is the board's alone; what the agent runs now is the activity line (D32); trouble (lost, blocked) is a
 // badge with its reason on hover, never the word.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
 import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
@@ -48,8 +48,8 @@ const isEnded = (p: { state: string }): boolean => p.state === "ended";
 /** Not running on the board now: away (finished, handed back or parked), lost, or ended. */
 const isOff = (p: { state: string }): boolean => p.state === "away" || p.state === "lost" || p.state === "ended";
 
-/** The state word, the board's alone: working, idle, away (parked until a phase), lost, ended; a pack's
- *  fact (merging) replaces working or idle. `className` is the word's state. */
+/** The state word, the board's alone: working, stopped, away (parked until a phase), lost, ended; a pack's
+ *  fact (merging) replaces working or stopped. `className` is the word's state. */
 export function stateWordOf(p: MemberOnBoard & { parked?: boolean; fact?: string }): { text: string; className: string } {
   const state = p.state;
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
@@ -211,7 +211,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       <UnreadCount p={p} />
       {/* the doing line, never the word (D49); a parked seat's is the park itself */}
-      {p.state === "idle" && !!p.doing && <span className="doing">{p.doing}</span>}
+      {p.state === "stopped" && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
       <ActivityLine line={line} state={activity?.state ?? p.state} />
     </button>
@@ -225,7 +225,7 @@ export const CARDS_UP_TO = 12;
 const BUCKETS = [
   { id: "attention", label: "Needs attention" },
   { id: "active", label: "Working" },
-  { id: "idle", label: "Idle or away" },
+  { id: "idle", label: "Stopped or away" },
   { id: "ended", label: "Ended" },
 ] as const;
 type Bucket = (typeof BUCKETS)[number]["id"];
@@ -314,7 +314,7 @@ export function AgentStrip({
   const q = query.trim().toLowerCase();
   const byBucket = new Map<Bucket, SnapshotMember[]>(BUCKETS.map((b) => [b.id, []]));
   for (const p of rest) byBucket.get(bucketOf(p))!.push(p);
-  // under Needs attention, the stalled and blocked before the lost: they can still be steered
+  // under Needs attention, the blocked before the lost: they can still be steered
   const lost = (p: SnapshotMember) => Number(troubleOf(p)?.kind === "lost");
   byBucket.get("attention")!.sort((a, b) => lost(a) - lost(b));
   const shown = (b: Bucket): SnapshotMember[] => (only && only !== b ? [] : byBucket.get(b)!.filter((p) => matches(p, nicks.get(p.member), q)));
@@ -431,7 +431,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       <UnreadCount p={p} />
-      {p.state === "idle" && p.doing && <span className="doing">{p.doing}</span>}
+      {p.state === "stopped" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
       <ActivityLine line={line} state={activity?.state ?? p.state} />
     </div>

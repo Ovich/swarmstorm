@@ -45,7 +45,7 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
    (`subagent_type: "swarmstorm:verifier"`), no `isolation`:
 
    ```markdown
-   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: lock `app:<name>`>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <vN> --doing "joining" --as <topic>/<vN>`; each verify phase's message scopes your pass.
+   You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: walk it in your phase's turn>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <vN> --doing "joining" --as <topic>/<vN>`; each verify phase's message scopes your pass.
    ```
 
 ## Giving work

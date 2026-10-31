@@ -69,15 +69,16 @@ verbs and their answers are the worker side's, `references/worker.md`.
 **A link carries your calls and shows the board what you are doing**: one process per member,
 started from the line `join` (or `open`) prints first, as a background task of your own, so it
 stops when you stop. It finds your session's record itself; you pass it nothing. The board reads
-from it your state, `working`, `waiting`, `parked` or `ended`, and beside it what you are doing:
+from it your state, `working` (your tokens moved within the run's window), `stopped` (link up, tokens
+still), `away` (link down owing nothing, or parked), `lost` (link down while you owed the phase) or
+`ended`, and beside it what you are doing:
 `busy` (a tool call open, or a background task you started whose output still moves, a board
 `wait` over it included: `busy <N> min · background <command>`) or in the board's own `wait`
 with nothing of your own running (any other tool, a browser's wait included, is work). **Trouble
-is a badge beside the state, never a state**, its reason on hover: `stalled` (owing work, no
-progress past the stall time: no transcript growth, board call or call opened), `lost` (your agent finished without `end`, or your link
-lost 30 s while your record stopped growing), `blocked` (you wait on the person). A parked member
-carries none. `status` and `roster` show both. What a badge means for the run (`stalled`, `lost`,
-`idle`) is told to the orchestrator alone.
+is a badge beside the state, never a state**, its reason on hover: `lost` (your link dropped while
+you owed the phase), `blocked` (you wait on the person). A parked member carries none. `status` and
+`roster` show both. A `lost` member, and a swarm none of whose members moved (`stopped`), is told
+to the orchestrator alone.
 
 **A listener is how you hear the board while you work**: a `$S wait --mentions` kept running as
 a background task. It ends on a message that mentions you or an urgent post, your harness tells
@@ -114,4 +115,4 @@ installed.
   for dispatch.
 - **Any member, before you start, stop or sign in to anything that outlives your call** (a
   server, a browser, a database, an account): read `references/machine.md`, the shared machine's
-  rules and its locks.
+  rules.

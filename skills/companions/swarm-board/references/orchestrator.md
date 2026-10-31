@@ -26,10 +26,10 @@ except `open`, `seat`, `close` and `status`.
 
    - **`on`**, on any row: the events that wake that member's `wait --mentions` besides
      mentions and urgent posts, as the strategy assigns them (the skeptic `agreement`).
-     `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events (an old name, `gone`, `stale` or `quiet`, is read as `lost` or `stalled`, and the answer says so). A row without `on`
-     gets its kind's defaults: none for a member; for you, waking on `ended, stalled` and
-     carrying `done, joined, idle` on a code run, waking on `agreement, endorsement,
-     ended, stalled` on a brainstorm (*Watching the thread* says what carried means). An explicit
+     `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events (an old name, `gone`, `stale`, `quiet`, `stalled` or `idle`, is read as `lost` or `stopped`, and the answer says so). A row without `on`
+     gets its kind's defaults: none for a member; for you, waking on `ended, stopped` and
+     carrying `done, joined` on a code run, waking on `agreement, endorsement,
+     ended, stopped` on a brainstorm (*Watching the thread* says what carried means). An explicit
      `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
      its row's list; `subscribe` / `unsubscribe` change it later.
 
@@ -50,8 +50,8 @@ except `open`, `seat`, `close` and `status`.
    watches the run there, and run the line as it says.
 3. **You register nothing for liveness.** Each member's link finds its transcript in the
    session and reports its activity; the board derives each member's state from it (`SKILL.md`
-   names them). `--stall-ms <ms>` sets how long a member may go without progress before it carries the `stalled` badge and you are told,
-   default and floor 10 min.
+   names them). `--stall-ms <ms>` sets the run's window: a member whose tokens did not move this long reads `stopped`, and when
+   none of them moved you are told `stopped`; default and floor 10 min.
 
 ## Dispatch
 
@@ -81,39 +81,29 @@ waits: in the foreground; a seat runs on the plugin's
   started with the harness's background-task feature; you are not a subagent, its end reaches
   you. The answers of `phase` and of your `wait` print this step: read them. The harness's
   task-end notice repeats the wait's answer: one event, already delivered, its last line says so. **These wake it**:
-  every mention of you, `all-done`, `stalled`, `lost`, `urgent`, your
-  waking subscriptions (`ended`, `stalled`), a repeated `idle`, and a member's `done` in five cases,
+  every mention of you, `all-done`, `stopped`, `lost`, `urgent`, your
+  waking subscriptions (`ended`, `stopped`), and a member's `done` in five cases,
   its case named in the body: the member is in the phase's `--watch`, it is done without a post
   since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
   done for a phase that is not current (`late done`). **These are carried**: any other
-  `done`, `joined`, a first `idle` after `all-done`. A carried line does not end your wait; it
+  `done`, `joined`. A carried line does not end your wait; it
   comes with the next wake, one line each, and wakes you itself after 5 min if nothing else did.
   To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
   the phase with `--watch <ids>`. When it ends, read its output, act, and start it again at once, in the
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of
   your own, which the board cannot end and which leaves you deaf. Empty, start it again. `close`
   makes it return.
-- **Three events reach you alone**, each the news of a badge or of the swarm; no member is woken
-  by them, and `stalled` and `idle` never fire while the run is paused. Each ends on the step it asks for.
-  - **`stalled <member>`**: that member carries the `stalled` badge: it owes a move it is not making; never carried.
-    The same event names your own silence of 10 min (`stalled <group>/orchestrator: no call for N min`,
-    `back` when you call again) and a run whose every member is silent (`stalled run <id>`). Members
-    stalled at one tick come in one line, `stalled <group>: N members: …`, and the `next` line
-    gives each member's move after its name. Told again when the set of
-    stalled members changes, never on a timer: once per member per episode, cleared by the fact that ends it. A stall is never read from its `doing` or its
-    own posts: one rule, `working, not done <phase>, no activity N min`: it is `working` (its link up, owing the open
-    phase) and for the run's stall window (default 10 min) nothing moved: no transcript growth, no board call
-    (a held wait is one), no tool call opened (a post, `doing` or endorsement is no sign of work). On the line after it,
-    the move: **read that `next` line and make that move**: a mention reaches a member in a wait, a direct message one
-    whose turn ended. A member owing work while it sits in its wait is never stalled: `idle` tells you when every
-    member waits.
-  - **`lost <member>`**: its link is down while it owes work (an open task, the phase undone); once. A
-    member whose link drops owing nothing reads `away` and raises nothing: it handed back, as it should. It is not running: dispatch a fresh agent into its seat, or
+- **Two events reach you alone**; no member is woken by them, and neither fires while the run is
+  paused. Each ends on the step it asks for.
+  - **`stopped <group>`**: no member's tokens moved for the run's window (default 10 min); once,
+    again only after one moved. The swarm waits on you, or every member is stuck: read the thread,
+    then post the next task, open the next phase, or resume the members by message (`SendMessage`).
+    A member's own card reads `stopped` the same way, its link up and its tokens still: a long call
+    with no line written (a hung command, a prompt it cannot answer) reads so too.
+  - **`lost <member>`**: its link dropped while it owed the open phase; once. Owing is judged at the
+    drop: a member whose link drops owing nothing reads `away` and stays away, whatever phase you
+    open after, until its link is back. It is not running: dispatch a fresh agent into its seat, or
     close the seat (*A lost member*).
-  - **`idle`**: every member is `waiting` in a board wait; once when it begins, then again
-    only if something changed on the board since (a post, a member leaving its wait), at most
-    every 15 min. The swarm waits on you: open the next phase if all are done, else
-    answer whoever waits on you, else wait again.
 - **A merge report is a task to check**: the worker's `@orchestrator merged <sha>: <report>`,
   posted by `merged --report`, is the one wake of a merge; the `merged` event itself no longer
   reaches you (`subscribe merged` to hear it). Re-run the done-when at the sha it names, not at
@@ -141,12 +131,12 @@ waits: in the foreground; a seat runs on the plugin's
   for it: each wake costs its tokens.
 - **`$S roster`** (and `status`) shows each run's title, current phase and its `<n>/<m> done`,
   then each member's state with its open or last tool, its badge and reason in brackets
-  (`[stalled: turn ended …]`), its doing and its files.
+  (`[lost: its link was lost]`), its doing and its files.
 
 ## Interrupt
 
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
-stop and wait, claim and merge-lock are refused, and no `stalled` or `lost` alert fires.
+stop and wait, claim and merge-lock are refused, and no `stopped` or `lost` alert fires.
 A paused run is silent for you too: only `urgent` wakes you; everything else (`lost`,
 `done`, `all-done`) is held, and the 5 min carry does not run.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
@@ -160,7 +150,7 @@ opens with it. Resume with their answer. One seat alone waiting on the person: `
 **A mention reaches a `waiting` member at once**, and one with a listener when its listener ends;
 the roster's `unread` shows what it has not read yet. **You may always message a member
 directly** (`SendMessage`), whenever you judge it faster: a member busy in a long run of work, a
-seat between its waits, one with the `stalled` badge. Post it on the board too, so the thread has it:
+seat between its waits, one that reads `stopped`. Post it on the board too, so the thread has it:
 
 1. **`$S post --as <group>/orchestrator "@<seat> <the message>"`**.
 2. **`SendMessage` to the member with the same message**; when it does not take it mid-call,
@@ -168,7 +158,7 @@ seat between its waits, one with the `stalled` badge. Post it on the board too, 
 
 ## A lost member
 
-**Its badge decides, never a guess.** `stalled` is alive and owes a move: *Interrupt*. `lost`:
+**Its state decides, never a guess.** `stopped` is alive and not moving: *Interrupt*. `lost`:
 **`$S end --seat <seat> --as <group>/orchestrator`** frees its claims and the merge lock if it held
 it; dispatch a fresh worker, which joins the same seat; repost its open task.
 
@@ -176,12 +166,12 @@ it; dispatch a fresh worker, which joins the same seat; repost its open task.
 task, then resume it (`SendMessage`) so it reads it; where the harness has no resume, dispatch a
 fresh agent that joins the same seat.
 
-**An idle member stays; you decide whether to park it.** An idle member is only told to wait
-again. On `idle`, a member its peers may need (one holding files, a debate seat) keeps waiting;
+**A member with nothing to do stays; you decide whether to park it.** It is only told to wait
+again. On `stopped`, a member its peers may need (one holding files, a debate seat) keeps waiting;
 one only you need (a worker between tasks with nothing held, a verifier until its phase) you
 park: `$S park <seat> [--until <phase>] --as <group>/orchestrator`. It is told to end its turn
-without `end`; its card reads `parked until <phase>`; it carries no badge and raises no `idle`,
-`stalled` or `lost`, its unread kept for its return, and all-done does not wait for it. Only you lift
+without `end`; its card reads `parked until <phase>`; it carries no badge and raises no
+`stopped` or `lost`, its unread kept for its return, and all-done does not wait for it. Only you lift
 the park, its own calls never do: `$S unpark <seat>`, then resume it (`SendMessage`) with its next task, or, where the harness has no
 resume, dispatch a fresh agent that joins the same seat.
 

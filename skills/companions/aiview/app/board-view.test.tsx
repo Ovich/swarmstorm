@@ -285,8 +285,8 @@ const activityOfCard = (card: HTMLElement) => card.querySelector('[data-componen
 // board-split#D35: the state word is the board's alone; trouble is a badge, its reason on hover
 test.each([
   ["working", {}, WORKING_WORD],
-  ["merging", { state: "idle", fact: "merging" }, "merging"],
-  ["idle", { state: "idle" }, "idle"],
+  ["merging", { state: "stopped", fact: "merging" }, "merging"],
+  ["stopped", { state: "stopped" }, "stopped"],
   ["away", { state: "away" }, "away"],
   ["lost", { state: "lost" }, "lost"],
   ["parked until a phase", { state: "away", parked: true, parkedUntil: "P5" }, "away until P5"],
@@ -323,7 +323,6 @@ test.each([
 
 // board-split#D36: the board's own badge, its reason on hover, beside the word; none on a parked or ended member
 test.each([
-  ["stalled", "no progress for 16 min"],
   ["lost", "its agent finished without end"],
   ["blocked", "waits on the person: the API key"],
 ] as const)("the board's %s badge reads beside the word, its reason on hover, the member under Needs attention", (name, reason) => {
@@ -409,8 +408,8 @@ test("a card without the two ages renders without them", () => {
   expect(agesOf(activeCard())).toBeNull();
 });
 
-test("an idle card keeps its doing line on its face", () => {
-  show([APP], 1, [withMember({ state: "idle" })]);
+test("a stopped card keeps its doing line on its face", () => {
+  show([APP], 1, [withMember({ state: "stopped" })]);
   expect(activeCard().querySelector(".doing")).toBeTruthy();
 });
 
