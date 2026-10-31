@@ -141,13 +141,13 @@ const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] =
 const toolRoot = (): string => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path.dirname(path.resolve(process.argv[1])));
 
 /** After a failed open: the run it began for `group` on `repo`, if the store kept it, closed again over a fresh
- *  connection (the failure may have been the old one closing); the refusal line to print either way. */
-const undoOpen = async (repo: string, group: string, why: string): Promise<string> => {
+ *  connection (the failure may have been the old one closing); the refusal line to print, null when no run was kept. */
+const undoOpen = async (repo: string, group: string, why: string): Promise<string | null> => {
   try {
     board.close();
     board = await connectBoard({ dataRoot: DATA_ROOT });
     const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
-    if (!begun) return WORDING.openFailedNone(why);
+    if (!begun) return null;
     await board.closeRun(begun.id);
     return WORDING.openFailedUndone(why, begun.id);
   } catch {
@@ -632,19 +632,28 @@ async function main(): Promise<void> {
       const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
       if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
       // a failed open leaves no run: the run it began (stored before the connection dropped) is closed again
+      // its flags and seats file read first: their errors print as they always did, outside the wrapper
+      const title = need("--title");
+      const seats = readSeats(seatsFile);
+      let began = false;
       try {
         await openAndAnswer();
       } catch (err) {
-        fail(await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err)));
+        if (!began) throw err;
+        const undone = await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err));
+        // no run kept: the board refused the open itself, and its refusal prints as before
+        if (undone === null) throw err;
+        fail(undone);
       }
       async function openAndAnswer(): Promise<void> {
+        began = true;
         const run = await board.openRun({
           repo: openRepo,
           kind,
           group,
-          title: need("--title"),
+          title,
           link: args.flag("--link") ?? null,
-          seats: readSeats(seatsFile),
+          seats,
           ...(stallMs !== undefined ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {}),
           ...(protocol !== undefined ? { protocol } : {}),
           authority,

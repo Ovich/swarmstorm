@@ -2641,10 +2641,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (fresh.ended) throw new Error(`member ${p.name} has ended`);
     return fresh;
   };
-  const requesterAbout = (p, about) => {
-    const row = db.prepare("SELECT author FROM messages WHERE run = ? AND about = ? AND kind = 'msg' AND author != ? AND mentions LIKE ? ORDER BY seq DESC LIMIT 1").get(p.run, about, p.id, `%"${p.name}"%`);
-    return row ? participantById(Number(row.author)).name : null;
-  };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
   const fold2 = (s) => CASELESS2 ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
@@ -2721,7 +2717,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return rows.map((r) => {
         const m = toMessage(r);
         const rel = r.by_board || m.kind !== "msg" || !m.about || !named(m) ? null : packTables.askedAbout(me, Number(r.author), m);
-        return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel}` } : m;
+        return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel} --with ${m.from}` } : m;
       });
     });
     return { full: messages };
@@ -3534,10 +3530,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
         const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
-        const unnamed = !parsed.length && !given.length && opts.about != null;
-        const asker = unnamed ? requesterAbout(fresh, opts.about) : null;
-        const holders = unnamed && !asker ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
-        named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...asker ? [asker] : [], ...holders])].filter((n) => n !== fresh.name);
+        const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
+        named = [.../* @__PURE__ */ new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
       const m = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
@@ -8781,8 +8775,6 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
   /** An open that failed after the board began the run: the run closed again, so none is left half-opened. */
   openFailedUndone: (why, run2) => `open: failed (${why}); run ${run2} it began is closed again, no run is left: open again`,
-  /** An open that failed before the board kept a run. */
-  openFailedNone: (why) => `open: failed (${why}); no run was left open: open again`,
   /** An open that failed and whose run could not be closed again: how to close it by hand. */
   openFailedLeft: (why, group, cli) => `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run>), then open again`,
   groupAlreadyOpen: (group, run2, cli) => `open: refused: group ${group} already has run ${run2} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run2}), or open under another --group`,
@@ -9163,7 +9155,7 @@ var undoOpen = async (repo, group, why) => {
     board.close();
     board = await connectBoard({ dataRoot: DATA_ROOT });
     const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
-    if (!begun) return WORDING.openFailedNone(why);
+    if (!begun) return null;
     await board.closeRun(begun.id);
     return WORDING.openFailedUndone(why, begun.id);
   } catch {
@@ -9487,19 +9479,26 @@ ${verbHelp()}`);
       const openRepo = repoOf2(process.cwd());
       const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
       if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
+      const title = need("--title");
+      const seats = readSeats(seatsFile);
+      let began = false;
       try {
         await openAndAnswer();
       } catch (err) {
-        fail(await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err)));
+        if (!began) throw err;
+        const undone = await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err));
+        if (undone === null) throw err;
+        fail(undone);
       }
       async function openAndAnswer() {
+        began = true;
         const run2 = await board.openRun({
           repo: openRepo,
           kind,
           group,
-          title: need("--title"),
+          title,
           link: args.flag("--link") ?? null,
-          seats: readSeats(seatsFile),
+          seats,
           ...stallMs !== void 0 ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {},
           ...protocol !== void 0 ? { protocol } : {},
           authority,

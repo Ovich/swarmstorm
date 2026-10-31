@@ -46,10 +46,14 @@ test("F25: with no mention and no --with, the other holders of the --about file 
   assert.deepEqual(m.mentions, ["g/w1"]);
 });
 
-test("an agreement with no party named answers the last post about the file that asked the agreer, not the file's holders", () => {
-  const [, w2, w3] = setup({ w1: ["src/a.ts"], w2: [], w3: ["src/a.ts"] });
+test("the agree line a holder is given names the asker by --with, so the agreement's party is who asked", () => {
+  const [, w2, w3] = setup({ w1: [], w2: [], w3: ["src/a.ts"] });
+  codeVerbs(board).checkEdit(w2, "src/a.ts");
   board.post(w2, "@w3 I resolved src/a.ts: both cases removed", { about: "src/a.ts" });
-  const m = board.post(w3, "agreed: your resolution stands", { kind: "agreement", about: "src/a.ts" });
+  const all = board.deliverMentions(w3).full;
+  const heard = all.find((m) => m.about === "src/a.ts") as { answer?: string } | undefined;
+  assert.match(heard?.answer ?? "", /--about src\/a\.ts --with g\/w2$/);
+  const m = board.post(w3, "agreed: your resolution stands", { kind: "agreement", about: "src/a.ts", with: ["g/w2"] });
   assert.deepEqual(m.mentions, ["g/w2"]);
 });
 

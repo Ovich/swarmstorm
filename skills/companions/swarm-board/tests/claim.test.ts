@@ -134,7 +134,7 @@ test("the claimer's post reaches the holder ending on the agreement to answer wi
   running();
   swarm(wtB, "claim", "src/a.ts");
   cli(wtB, "post", "@S3 I add isExpired() at the end", "--about", "src/a.ts");
-  const AGREE = 'answer with an agreement on who changes what: swarm agree "<who changes what in src/a.ts>" --about src/a.ts';
+  const AGREE = 'answer with an agreement on who changes what: swarm agree "<who changes what in src/a.ts>" --about src/a.ts --with review-tool/S5';
   const heard = cli(wtA, "wait", "--mentions", "--timeout", "200");
   assert.ok(heard.includes(`I add isExpired() at the end\n${AGREE}\n`), heard);
   // the holder's answer, and a post once the claimer holds the file, carry no such line
@@ -295,7 +295,7 @@ test("across runs: the answer line the holder gets carries no --main, and its ag
     assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, false);
     board.post(mine, "@swarm/S3 I add a helper to src/x.ts", { about: "src/x.ts" }); // settles the claim (D7)
     const heard = board.deliverMentions(theirs).full[0] as { answer?: string };
-    assert.equal(heard.answer, 'answer with an agreement on who changes what: swarm agree "<who changes what in src/x.ts>" --about src/x.ts');
+    assert.equal(heard.answer, 'answer with an agreement on who changes what: swarm agree "<who changes what in src/x.ts>" --about src/x.ts --with review-tool/S3');
     const agreed = board.post(theirs, "review-tool/S3 adds the helper at the end", { about: "src/x.ts", kind: "agreement" });
     assert.deepEqual(board.deliverMentions(mine).full.map((m) => m.seq), [agreed.seq]);
   } finally {

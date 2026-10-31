@@ -205,8 +205,6 @@ export const WORDING = {
   /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
   /** An open that failed after the board began the run: the run closed again, so none is left half-opened. */
   openFailedUndone: (why: string, run: number) => `open: failed (${why}); run ${run} it began is closed again, no run is left: open again`,
-  /** An open that failed before the board kept a run. */
-  openFailedNone: (why: string) => `open: failed (${why}); no run was left open: open again`,
   /** An open that failed and whose run could not be closed again: how to close it by hand. */
   openFailedLeft: (why: string, group: string, cli: Command) =>
     `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run>), then open again`,

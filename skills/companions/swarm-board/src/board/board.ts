@@ -903,15 +903,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return fresh;
   };
 
-  /** The member whose last post about `about` mentioned `p` (not an agreement or event of its own): the request an
-   *  agreement with no party named answers; null when none asked. */
-  const requesterAbout = (p: Participant, about: string): string | null => {
-    const row = db
-      .prepare("SELECT author FROM messages WHERE run = ? AND about = ? AND kind = 'msg' AND author != ? AND mentions LIKE ? ORDER BY seq DESC LIMIT 1")
-      .get(p.run, about, p.id, `%"${p.name}"%`) as Row | undefined;
-    return row ? participantById(Number(row.author)).name : null;
-  };
-
   const isLive = (id: number): boolean =>
     db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== undefined;
 
@@ -1026,7 +1017,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return rows.map((r) => {
         const m = toMessage(r);
         const rel = r.by_board || m.kind !== "msg" || !m.about || !named(m) ? null : packTables.askedAbout(me, Number(r.author), m);
-        return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel}` } : m;
+        // the asker named by --with (`<group>/<seat>`, so across runs too): the agreement's party is the member that asked
+        return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel} --with ${m.from}` } : m;
       });
     });
     return { full: messages };
@@ -2051,15 +2043,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const fresh = live(p);
       let named: string[] | undefined;
       if (opts.kind === "agreement") {
-        // an agreement's parties (F25): its mentions, then --with, else the author of the last post about the file that
-        // asked the agreer (the request it answers), else the other holders of the file it is about
+        // an agreement's parties (F25): its mentions, then --with, else the other holders of the file it is about
         const parsed = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
         const extra = (opts.with ?? []).map((w) => w.trim().replace(/^@/, "")).filter(Boolean);
         const given = extra.length ? parseMentions(extra.map((w) => `@${w}`).join(" "), fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo)) : [];
-        const unnamed = !parsed.length && !given.length && opts.about != null;
-        const asker = unnamed ? requesterAbout(fresh, opts.about!) : null;
-        const holders = unnamed && !asker ? (packOf(fresh)?.defaultParties?.(opts.about!, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
-        named = [...new Set([...parsed, ...given, ...(asker ? [asker] : []), ...holders])].filter((n) => n !== fresh.name);
+        const holders = !parsed.length && !given.length && opts.about ? (packOf(fresh)?.defaultParties?.(opts.about, packCtxOf(fresh)) ?? []).filter((n) => n !== fresh.name) : [];
+        named = [...new Set([...parsed, ...given, ...holders])].filter((n) => n !== fresh.name);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
