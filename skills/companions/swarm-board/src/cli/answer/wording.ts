@@ -135,6 +135,7 @@ export const WORDING = {
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
   swarmStopped: (cli: Command, as: string) => `no member is moving: read the thread, then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
+  allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachOwn: "stop only the PIDs you started: machine.md",
   breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
   /** break-flow V-17: the end verb as it runs, never "close its seat" */

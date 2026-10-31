@@ -282,7 +282,9 @@ export type LinkDownMeta = { linkDown: string; linkDowns?: string[] };
 /** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
 export type PauseMeta = { person: boolean; text: string };
 /** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
-export type MessageMeta = PackMessageMeta | PhaseMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta;
+/** An all-joined event's data: whether a post had already been made to one of the run's seats. */
+export type AllJoinedMeta = { tasked: boolean };
+export type MessageMeta = PackMessageMeta | PhaseMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta | AllJoinedMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -1819,7 +1821,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         const seated = Number((db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run, ORCHESTRATOR) as Row).n);
         const phased = db.prepare("SELECT 1 FROM messages WHERE run = ? AND event = ?").get(run, EVENTS.phase.name) !== undefined;
         if (!phased && declared > 0 && seated >= declared && (db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run) === undefined)) {
-          insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", undefined, { event: EVENTS["all-joined"].name });
+          // a post already made to a seat (before its join) is a task given: the orchestrator is not told to post them again
+          const tasked = db
+            .prepare("SELECT 1 FROM messages m JOIN seats s ON s.run = m.run WHERE m.run = ? AND m.kind != 'event' AND m.mentions LIKE '%\"' || ? || '/' || s.id || '\"%'")
+            .get(run, String(member.plan)) !== undefined;
+          const allJoined: AllJoinedMeta = { tasked };
+          insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", undefined, { event: EVENTS["all-joined"].name, meta: allJoined });
         }
       }
       return { member, roster: board.roster(member.repo), composition: compositionOf(run) };

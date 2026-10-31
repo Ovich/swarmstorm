@@ -137,7 +137,8 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
     case "stopped":
       return orchestrator ? W.swarmStopped(cli, as) : null;
     case "all-joined":
-      return orchestrator ? W.allJoined(cli, as) : null;
+      if (!orchestrator) return null;
+      return meta && "tasked" in meta && meta.tasked ? W.allJoinedTasked(cli, as) : W.allJoined(cli, as);
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
       if (!member || !orchestrator) return null;
