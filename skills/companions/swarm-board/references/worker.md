@@ -45,7 +45,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
    message ending on `swarm agree …` is answered with that agreement, *Sharing a file*), then go
    on. A listener's first line is the command that re-arms it: run it again in the background;
    `superseded by a newer wait`: a foreground wait of yours took over, ignore it.
-6. **Merge, at the task's end**, and early when a file you marked *interface* changed in a way
+6. **Merge, at the task's end**, and early when a file your task marks *interface* changed in a way
    other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
    **The lock is held only to rebase, check and fast-forward**: every other worker waits on it.
    0. **Before the lock**: commit, then run the task's full done-when (the full suite included) on

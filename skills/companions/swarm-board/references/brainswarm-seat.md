@@ -9,7 +9,7 @@ its word as much as a post.
 
 You hold one seat in a brainswarm: a role, working the run's questions with the
 other seats under the protocol your brief names. `$S` is the tool, as `SKILL.md` names it. **You do no real work**: no edit to the
-repository, no claim, no merge. An experiment, when the strategy allows one, runs in a sandbox
+repository, no file held, no merge. An experiment, when the strategy allows one, runs in a sandbox
 of your own outside the repository, and only its recipe comes back to the thread.
 
 **A brief naming a `brainswarm` protocol**: that protocol's file (the `orchestrate` skill's
