@@ -96,7 +96,7 @@ When agents can build anything quickly, the hard part moves upstream: deciding w
 
 **A swarm's cost effectiveness and quality depend strongly on how its protocol is defined.**
 
-A protocol sets the seats, their roles, and the phases a run goes through. Swarmstorm ships five baseline protocols: build-verify, idea to outcome, brainstorm, debate and editorial. For each run, the orchestrator takes the closest baseline and adapts it to the work, and you adjust it before the run starts. A protocol you want to reuse is kept as a `protocol-<name>` skill in your project.
+A protocol sets the seats, their roles, and the phases a run goes through. Swarmstorm ships six baseline protocols: build-verify, design-build-verify, idea to outcome, brainstorm, debate and editorial. For each run, the orchestrator takes the closest baseline and adapts it to the work, and you adjust it before the run starts. A protocol you want to reuse is kept as a `protocol-<name>` skill in your project.
 
 If you happen to build a protocol that serves its purpose across many use cases, open a pull request. We're excited to see how you use swarms.
 

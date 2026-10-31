@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: "Use when an agent orchestrates other agents on a piece of work, of any kind (a plan, a task swarm, a brainswarm): proposing a run tuned to the work, built on the closest protocol (build-verify, idea-to-outcome, brainstorm, debate, editorial, a project's own), settling it with the person, dispatching each member with its brief and role, watching them, judging their findings and steering a drift. Not for the duties one kind adds (orchestrate-plan for a plan, swarm for a task swarm, brainswarm for a seat swarm), and not for the board they talk on (swarm-board)."
+description: "Use when an agent orchestrates other agents on a piece of work, of any kind (a plan, a task swarm, a brainswarm): proposing a run tuned to the work, built on the closest protocol (build-verify, design-build-verify, idea-to-outcome, brainstorm, debate, editorial, a project's own), settling it with the person, dispatching each member with its brief and role, watching them, judging their findings and steering a drift. Not for the duties one kind adds (orchestrate-plan for a plan, swarm for a task swarm, brainswarm for a seat swarm), and not for the board they talk on (swarm-board)."
 ---
 
 # Orchestrate
@@ -17,6 +17,7 @@ one run tuned to it, built on the closest example**.
 | Example | When it fits | Kinds | File |
 |---|---|---|---|
 | build-verify | code changed, then judged in the running product, until it holds | task swarm, plan | `references/protocols/build-verify/protocol.md` |
+| design-build-verify | designed on the board first (deep modules, pseudo-code, decisions), then built and judged until it holds | task swarm | `references/protocols/design-build-verify/protocol.md` |
 | idea-to-outcome | a list of ideas, each framed, built, proven live and accepted by the person in turn | task swarm | `references/protocols/idea-to-outcome/protocol.md` |
 | brainstorm | options, many and varied, before choosing | brainswarm | `references/protocols/brainstorm/protocol.md` |
 | debate | known questions to decide, with sources | brainswarm | `references/protocols/debate/protocol.md` |
