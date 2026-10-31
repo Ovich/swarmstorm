@@ -225,65 +225,6 @@ var init_git = __esm({
   }
 });
 
-// src/board/liveness.ts
-function coreStateOf(m) {
-  if (!m.runOpen || m.ended) return "ended";
-  if (m.parked) return "away";
-  if (m.linkDown) return m.owes ? "lost" : "away";
-  return m.owes ? "working" : "idle";
-}
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, BUSY_MAX_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS, SILENT_MS;
-var init_liveness = __esm({
-  "src/board/liveness.ts"() {
-    "use strict";
-    claudeCodeJsonl = {
-      name: "claude-code-jsonl",
-      read(chunk, from) {
-        const end = chunk.lastIndexOf(10);
-        if (end < 0) return from;
-        let tokens = from.tokens;
-        let parsed = 0;
-        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
-          const text = line.trim();
-          if (!text) continue;
-          let obj;
-          try {
-            obj = JSON.parse(text);
-          } catch {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          parsed++;
-          const usage = obj.message?.usage;
-          if (!usage) continue;
-          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-            const n = usage[k];
-            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
-          }
-        }
-        return { offset: from.offset + end + 1, tokens };
-      }
-    };
-    IDLE_MS = 15 * 60 * 1e3;
-    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 5 * 60 * 1e3;
-    BADGE_CONFIRM_MS = 10 * 1e3;
-    badgeConfirmMs = () => Number(process.env.SWARM_BADGE_CONFIRM_MS) || BADGE_CONFIRM_MS;
-    stallMsFloor = () => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    BUSY_MAX_MS = 15 * 60 * 1e3;
-    LOST_MS = 60 * 1e3;
-    HEARTBEAT_MS = 5 * 1e3;
-    CARRY_MAX_MS = 5 * 60 * 1e3;
-    LOCK_HELD_MS = 10 * 60 * 1e3;
-    SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1e3;
-  }
-});
-
 // src/packs/code/events.ts
 var CODE_EVENTS, MERGE_LOCK;
 var init_events = __esm({
@@ -1190,6 +1131,63 @@ var init_stats = __esm({
   }
 });
 
+// src/board/liveness.ts
+function coreStateOf(m) {
+  if (!m.runOpen || m.ended) return "ended";
+  if (m.parked) return "away";
+  if (m.linkDown) return m.owes ? "lost" : "away";
+  return m.owes ? "working" : "idle";
+}
+var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var init_liveness = __esm({
+  "src/board/liveness.ts"() {
+    "use strict";
+    claudeCodeJsonl = {
+      name: "claude-code-jsonl",
+      read(chunk, from) {
+        const end = chunk.lastIndexOf(10);
+        if (end < 0) return from;
+        let tokens = from.tokens;
+        let parsed = 0;
+        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+          const text = line.trim();
+          if (!text) continue;
+          let obj;
+          try {
+            obj = JSON.parse(text);
+          } catch {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+            if (parsed === 0 && from.offset === 0) return null;
+            continue;
+          }
+          parsed++;
+          const usage = obj.message?.usage;
+          if (!usage) continue;
+          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+            const n = usage[k];
+            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
+          }
+        }
+        return { offset: from.offset + end + 1, tokens };
+      }
+    };
+    IDLE_MS = 15 * 60 * 1e3;
+    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
+    STALL_MS_DEFAULT = 10 * 60 * 1e3;
+    BADGE_CONFIRM_MS = 10 * 1e3;
+    badgeConfirmMs = () => Number(process.env.SWARM_BADGE_CONFIRM_MS) || BADGE_CONFIRM_MS;
+    stallMsFloor = () => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
+    READINGS_KEPT_MS = 10 * 60 * 1e3;
+    LOST_MS = 60 * 1e3;
+    HEARTBEAT_MS = 5 * 1e3;
+    CARRY_MAX_MS = 5 * 60 * 1e3;
+    LOCK_HELD_MS = 10 * 60 * 1e3;
+  }
+});
+
 // src/wire.ts
 import crypto from "node:crypto";
 import fs2 from "node:fs";
@@ -1584,9 +1582,8 @@ function observe(transcript, from, binding) {
           const escapes = toolEscapesBackslash(name);
           const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
           const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
-          const shell = typeof command === "string";
           const words = callWordsOf(part.input);
-          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...shell ? { shell } : {}, ...words });
+          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...words });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
           const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
@@ -2294,7 +2291,6 @@ var init_code = __esm({
   "src/packs/code/index.ts"() {
     "use strict";
     init_git();
-    init_liveness();
     init_claims();
     init_snapshot();
     init_schema();
@@ -2334,16 +2330,11 @@ var init_code = __esm({
       busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
       // holding the merge lock, the member is merging (D36), whatever its core state says
       memberFact: (member, ctx) => tablesOf(ctx).heldMergeLock(member) ? "merging" : null,
-      // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
-      // board-split V-26: a member refused the lock and waiting for it is queued, never stalled, as a named lock's waiter
-      memberStall: (member, ctx, t) => {
-        const lock = tablesOf(ctx).heldMergeLock(member);
-        if (!lock) {
-          const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
-          return holder ? { queuedBehind: holder, lock: "merge" } : null;
-        }
-        const since = Date.parse(lock.grantedAt);
-        return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
+      // board-split V-26: a member refused the merge lock and waiting for it is queued, as a named lock's waiter
+      lockQueue: (member, ctx) => {
+        if (tablesOf(ctx).heldMergeLock(member)) return null;
+        const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
+        return holder ? { queuedBehind: holder, lock: "merge" } : null;
       },
       // the code tables' DDL and an older store's upkeep, then the store over them (D20)
       openTables: (deps) => {
@@ -2915,16 +2906,12 @@ var init_events2 = __esm({
       // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
       block: { name: "block" },
       unblock: { name: "unblock" },
-      // a member told lost reads present again (idea 1, rule 4): once, to the orchestrator alone
-      recovered: { name: "recovered", toAuthor: true },
       // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
       unlocked: { name: "unlocked", toAuthor: true },
       // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
       breach: { name: "breach", toAuthor: true },
       // a member whose agent finished without end, or whose link is lost (D12, board-split D36); to the orchestrator alone
       lost: { name: "lost", toAuthor: true },
-      // a member's transcript cannot be read, or its link is lost while it grows: mentions the orchestrator
-      liveness: { name: "liveness", toAuthor: true },
       // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 lost`, `+ w2 back`; carried to every member, waking none
       composition: { name: "composition", ambient: true },
       // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
@@ -2937,7 +2924,7 @@ var init_events2 = __esm({
     currentEventName = (s) => RENAMED_EVENTS[s] ?? s;
     eventNames = () => Object.keys(allEvents());
     eventDef = (name) => allEvents()[name];
-    MEMBER_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "recovered", "liveness"]);
+    MEMBER_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost"]);
     isCompositionLine = (e) => e === "joined" || e === "ended";
   }
 });
@@ -3052,27 +3039,8 @@ var init_call_label = __esm({
 
 // src/board/stall.ts
 function stalledOf(f, t) {
-  if (f.lockStall) return { rule: "lock", since: f.lockStall.since, fact: f.lockStall.fact };
-  if (f.owes == null || f.taskDeliveredAt == null) return null;
-  const floor = Math.max(f.clockFloorAt, f.taskDeliveredAt);
-  const owed = f.owesReport ? `${f.owes} delivered, no report` : `not done ${f.owes}`;
-  if (f.inHeldWait && f.background == null) {
-    const from = Math.max(floor, f.waitSpellSince ?? floor);
-    return t - from >= f.stallMs ? { rule: "owing", since: from, fact: `${owed}, in a wait` } : null;
-  }
-  const opened = f.openCallSince ?? f.background?.since ?? null;
-  if (opened != null) {
-    const grewAt = Math.max(floor, opened, f.transcriptGrewAt ?? 0, f.background?.grewAt ?? 0);
-    const what = f.openCallSince != null ? "a call open" : "a background task";
-    return t - grewAt >= f.busyMaxMs ? { rule: "call", since: grewAt, fact: `${owed}, ${what}, no growth` } : null;
-  }
-  const sign = Math.max(floor, f.signAt, f.transcriptGrewAt ?? 0);
-  return t - sign >= f.silentMs ? { rule: "silent", since: sign, fact: `${owed}, no activity` } : null;
-}
-function nextWaitSpell(prev, waitOpenedAt, t) {
-  if (waitOpenedAt == null) return prev;
-  const goesOn = prev != null && Math.min(t, waitOpenedAt) - prev.inAt < WAIT_SPELL_BREAK_MS;
-  return { since: goesOn ? prev.since : waitOpenedAt, inAt: t };
+  if (t - f.progressAt < f.stallMs) return null;
+  return { since: f.progressAt, fact: `${f.owesReport ? `${f.owes} delivered, no report` : `not done ${f.owes}`}, no activity` };
 }
 function ageText(ageMs) {
   const s = Math.max(0, Math.round(ageMs / 1e3));
@@ -3081,11 +3049,9 @@ function ageText(ageMs) {
 function reasonOf(state, fact, ageMs) {
   return `${state}, ${fact} ${ageText(ageMs)}`;
 }
-var WAIT_SPELL_BREAK_MS;
 var init_stall = __esm({
   "src/board/stall.ts"() {
     "use strict";
-    WAIT_SPELL_BREAK_MS = 1e4;
   }
 });
 
@@ -3289,14 +3255,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "subs", "subs TEXT NOT NULL DEFAULT '[]'");
   upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
   upkeep("seats", "on_events", "on_events TEXT");
-  upkeep("seats", "busy_max", "busy_max INTEGER");
-  upkeep("member_activity", "open_shell", "open_shell INTEGER NOT NULL DEFAULT 0");
   upkeep("runs", "phase", "phase TEXT");
   upkeep("runs", "phase_text", "phase_text TEXT");
   upkeep("runs", "paused", "paused TEXT");
   upkeep("runs", "resumed_at", "resumed_at TEXT");
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
-  upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
   upkeep("runs", "authority", "authority TEXT");
   upkeep("runs", "base", "base TEXT");
@@ -3409,8 +3372,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       ...s.area == null ? {} : { area: String(s.area) },
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)),
-      state: seatStateOf(r, String(s.id), s.stood_for != null),
-      ...s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }
+      state: seatStateOf(r, String(s.id), s.stood_for != null)
     }))
   });
   const nickOf = (r) => r.nick == null ? String(r.seat) : String(r.nick);
@@ -3622,8 +3584,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const readVersions = () => new Map(db.prepare("SELECT repo, version FROM changes").all().map((r) => [String(r.repo), Number(r.version)]));
   const insertSeat = (run3, s, ord) => {
     if (s.on) parseSubscriptions(s.on);
-    if (s.busyMax != null && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) throw new Error(`seat ${s.id}: busyMax is a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
-    db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
       run3,
       s.id,
       s.role ?? null,
@@ -3631,8 +3592,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       JSON.stringify(s.blockers ?? []),
       s.link ?? null,
       ord,
-      s.on ? JSON.stringify(s.on) : null,
-      s.busyMax ?? null
+      s.on ? JSON.stringify(s.on) : null
     );
   };
   const compositionOf = (run3) => {
@@ -3690,20 +3650,18 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
   const heldWaits = /* @__PURE__ */ new Map();
-  const waitSpells = /* @__PURE__ */ new Map();
   const badgesShown = /* @__PURE__ */ new Map();
   const orchestratorIn = (run3) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR2).id));
   const activityOf = (run3, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run3, member);
-  const packLockWaitOf = (p, t) => {
+  const packLockWaitOf = (p) => {
     if (String(p.seat) === ORCHESTRATOR2 || p.ended_at != null) return null;
     const m = participantById(Number(p.id));
-    const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-    return s && "queuedBehind" in s ? s : null;
+    return packOf(m)?.lockQueue?.(m, packCtxOf(m)) ?? null;
   };
   const inHeldWaitOf = (p) => {
     if (!heldWaits.has(Number(p.id))) return false;
     const a = activityOf(Number(p.run), String(p.seat));
-    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p, Date.now()) != null;
+    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p) != null;
   };
   const memberStateOf = (p, run3, t = Date.now()) => coreStateOf({ runOpen: run3?.state === "open", ended: p.ended_at != null, parked: Number(p.parked) === 1, linkDown: run3 != null && lostOf(p, run3, t) != null, owes: run3 != null && owesOf(p, run3) });
   const owesOf = (p, run3) => String(p.seat) === ORCHESTRATOR2 || owedNameOf(p, run3) != null || run3.phase == null && taskOwedReportOf(p, run3) != null;
@@ -3714,10 +3672,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     Date.parse(seatedAtOf(p)),
     run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at))
   );
-  const seatBusyMaxOf = (run3, seat) => {
-    const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run3, seat);
-    return s?.busy_max == null ? null : Number(s.busy_max);
-  };
   const activityShown = (run3, seat) => {
     const a = activityOf(run3, seat);
     if (!a) return {};
@@ -3772,13 +3726,13 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (open && heldSince != null && Number(a.open_wait) === 1) {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
-      const packWait = withHolder ? packLockWaitOf(p, t) : null;
+      const packWait = withHolder ? packLockWaitOf(p) : null;
       if (packWait) return { member, state: "waiting", doing: `lock ${packWait.lock}, held by ${packWait.queuedBehind}`, since: Number(a.open_since) };
       if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min \xB7 background ${String(a.bg_target)}`, since: Number(a.bg_since) };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
     if (open) return { member, state: "busy", doing: open, since: Number(a.open_since) };
-    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+    if (a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
     return { member, state: "working", doing: null, since: progressAtOf(p, run3, a) };
   };
   const taskDeliveredAtOf = (p, run3) => {
@@ -3826,44 +3780,19 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
   };
-  const stalledBadgeOf = (p, run3, t, shownState = "waiting") => {
-    const member = String(p.seat);
-    const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const seatedAt = Date.parse(seatedAtOf(p));
-    const m = participantById(Number(p.id));
-    const packStall = String(p.seat) === ORCHESTRATOR2 ? null : packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-    const lockWaited = !!lockWaitOf(Number(p.id), t) || packLockWaitOf(p, t) != null;
-    const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
-    const a = activityOf(Number(run3.id), member);
+  const stalledBadgeOf = (p, run3, t, state) => {
+    if (state !== "working") return null;
     const owedReport = run3.phase == null ? taskOwedReportOf(p, run3) : null;
     const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run3);
-    const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
-    const inHeldWait = heldSince != null && !lockWaited && (a == null || Number(a.open_wait) === 1);
-    const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
-    if (spell) waitSpells.set(Number(p.id), spell);
-    const stall = stalledOf(
-      {
-        shownState,
-        owes,
-        owesReport: owedReport != null,
-        taskDeliveredAt: owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run3),
-        clockFloorAt: Math.max(run3.resumed_at == null ? 0 : Date.parse(String(run3.resumed_at)), run3.phase_at == null ? 0 : Date.parse(String(run3.phase_at))),
-        inHeldWait,
-        waitSpellSince: inHeldWait ? spell.since : null,
-        openCallSince: ownCallOpen ? Number(a.open_since) : null,
-        background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
-        transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
-        signAt: Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt),
-        stallMs: Math.max(Number(run3.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor()),
-        silentMs: Number(run3.silent_ms ?? SILENT_MS),
-        busyMaxMs: seatBusyMaxOf(Number(run3.id), member) ?? BUSY_MAX_MS,
-        lockStall
-      },
-      t
-    );
-    if (!stall || heldSince != null && lockWaited && stall.rule !== "lock") return null;
-    const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
-    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {} };
+    const deliveredAt = owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run3);
+    if (owes == null || deliveredAt == null) return null;
+    const a = activityOf(Number(run3.id), String(p.seat));
+    const ms2 = (iso2) => iso2 == null ? 0 : Date.parse(String(iso2));
+    const progressAt = heldWaits.has(Number(p.id)) ? t : Math.max(deliveredAt, ms2(run3.resumed_at), ms2(run3.phase_at), ms2(p.board_call_at), ms2(seatedAtOf(p)), a?.grew_at == null ? 0 : Number(a.grew_at), a?.open_tool == null ? 0 : Number(a.open_since));
+    const stallMs = Math.max(Number(run3.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
+    const stall = stalledOf({ owes, owesReport: owedReport != null, progressAt, stallMs }, t);
+    if (!stall) return null;
+    return { badge: stalledBadge(reasonOf(state, stall.fact, t - stall.since), stall.since), ...owedReport == null ? { owes } : {} };
   };
   const episodeOpenOf = (run3, member, badge) => db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run3, member, badge) != null;
   const episodeStep = (run3, member, badge, on, t, silent = false) => {
@@ -3916,7 +3845,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (lost) return { ...activity, badge: owesOf(p, run3) && shows("lost") ? lost : null };
     const stalledRaw = stalledBadgeOf(p, run3, t, memberStateOf(p, run3, t));
     const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
-    return { ...activity, badge: stalled?.badge ?? null, ...stalled?.rule ? { rule: stalled.rule } : {}, ...stalled?.owes ? { owes: stalled.owes } : {} };
+    return { ...activity, badge: stalled?.badge ?? null, ...stalled?.owes ? { owes: stalled.owes } : {} };
   };
   const stalledBadge = (reason, since) => ({ name: "stalled", reason, since });
   const minutes = (ms2) => Math.round(ms2 / 6e4);
@@ -4542,7 +4471,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
            ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
              open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`
         ).run(run3, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
-        db.prepare("UPDATE member_activity SET open_shell = ? WHERE run = ? AND member = ?").run(o?.shell ? 1 : 0, run3, member);
         const bg = act.background ?? null;
         db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(
           act.inTurn == null ? null : act.inTurn ? 1 : 0,
@@ -4621,29 +4549,21 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             }
             moved = true;
           } else if (lostStep === "closed") {
-            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
             postComposition(orch, st.member, "+", "back");
             moved = true;
           }
           if (r.paused != null) continue;
           const step = episodeStep(run3, st.member, "stalled", st.badge?.name === "stalled", t, st.badge?.name === "lost");
-          if (step === "opened") {
-            const meta = st.rule ? { rule: st.rule, member: st.member, ...st.owes ? { phase: st.owes } : {} } : void 0;
-            stalledNow.push({ st, meta });
-          } else if (step === "closed") {
-            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
-            moved = true;
-          }
+          if (step === "opened") stalledNow.push({ st, meta: { rule: "silent", member: st.member, ...st.owes ? { phase: st.owes } : {} } });
+          else if (step === "closed") moved = true;
         }
         closeEpisodesOutside(run3, others.map((st) => st.member), t);
         if (stalledNow.length === 1) {
           const [{ st, meta }] = stalledNow;
-          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run3, orch)}`, event: EVENTS.stalled.name, ...meta ? { meta } : {} });
+          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run3, orch)}`, event: EVENTS.stalled.name, meta });
         } else if (stalledNow.length > 1) {
-          const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
-          const ruled = stalledNow.find((x) => x.meta)?.meta;
-          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run3, orch)}`;
-          raiseAlert(run3, { body, event: EVENTS.stalled.name, ...ruled ? { meta: { ...ruled, members: metas } } : {} });
+          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run3, orch)}`;
+          raiseAlert(run3, { body, event: EVENTS.stalled.name, meta: { ...stalledNow[0].meta, members: stalledNow.map((x) => x.meta) } });
         }
         flushAlerts(run3, t, orch);
         if (r.paused == null) {
@@ -4755,7 +4675,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         activity: Number(r.parked) === 1 ? null : stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
-        busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
         ...factEntry(toParticipant(r))
       }));
     },
@@ -5176,7 +5095,7 @@ var init_board = __esm({
         return [];
       }
     };
-    BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
+    BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone"]);
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
@@ -9522,7 +9441,6 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--watch",
   "--person",
   "--note",
-  "--busy-max",
   "--report",
   "--report-file",
   "--unlocked"
@@ -10041,17 +9959,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
-  restartLink: (member, cli, run3, as) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run3} --as ${as}`,
-  /** a stall's move, by the rule that badged its member stalled (idea 1, rule 6) */
-  stalledEnded: "a post does not wake it: SendMessage it, or dispatch it again",
-  stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
-  stalledBackground: (cli, post, as) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,
-  stalledCall: "SendMessage it to stop the call",
-  /** board-split D49: owing the phase out of a wait, no board call for the stall time */
+  /** simple-states: working, owing the phase or a task's report, no sign of progress for the stall window */
   stalledSilent: (cli, post, as) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
   // V-24 (D64): with no phase open, the stalled member owes its task's report, never a phase
   stalledAsk: (id, phase) => phase ? `@${id} your part of ${phase}` : `@${id} your task: your report?`,
-  stalledOwing: (cli, post, as) => `${cli} post ${post} --as ${as}: its wait returns on it`,
   stalledLock: (holder, lock, cli, post, as) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli, as) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
   /** several members stalled at one tick: each member's move after its name */
@@ -10254,12 +10165,6 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       return m.mentions.includes(me.name) ? WORDING.blockedWait : null;
     case "unblock":
       return m.mentions.includes(me.name) ? WORDING.unblockedGoOn : null;
-    case "liveness": {
-      const member = meta && "linkDown" in meta ? meta.linkDown : null;
-      if (!member || !orchestrator) return null;
-      const all2 = meta && "linkDowns" in meta && meta.linkDowns ? meta.linkDowns : [member];
-      return all2.map((one) => WORDING.restartLink(one, cli, m.run, shellWord(one))).join("; ");
-    }
     default:
       return codeEventStep(m, me, cli, event) ?? null;
   }
@@ -10271,18 +10176,8 @@ function stalledMove(m, cli, as) {
     return WORDING.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
   const id = meta?.member ?? "<member>";
   switch (meta?.rule) {
-    case "ended":
-      return WORDING.stalledEnded;
-    case "in-turn":
-      return WORDING.stalledInTurn;
-    case "background":
-      return WORDING.stalledBackground(cli, shellWord(`@${id} \u2026`), as);
-    case "call":
-      return WORDING.stalledCall;
     case "silent":
       return WORDING.stalledSilent(cli, shellWord(WORDING.stalledAsk(id, meta.phase)), as);
-    case "owing":
-      return WORDING.stalledOwing(cli, shellWord(WORDING.stalledAsk(id, meta.phase)), as);
     case "lock":
       return WORDING.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} \u2026`), as);
     default:
@@ -10360,10 +10255,10 @@ var coreUsage = (cli, events) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
   CODE_IN_CORE_HELP.ontoLine,
-  `          # --stall-ms: no counter moved this long posts stalled, default and floor ${STALL_MS_DEFAULT}; ends on the command that starts your link`,
+  `          # --stall-ms: a working member with no sign of progress this long posts stalled, default and floor ${STALL_MS_DEFAULT} ms; ends on the command that starts your link`,
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  `          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026], "busyMax"?: <ms, its bound on a non-shell call; a verifier's 300000>}]`,
-  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>] [--busy-max <ms>]   # adds a seat mid-run (orchestrator); --busy-max: its bound on a non-shell call (a verifier's 300000)",
+  '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>", "on"?: ["agreement", \u2026]}]',
+  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--on <events>]   # adds a seat mid-run (orchestrator)",
   "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
   `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person every member carries the blocked badge, the text its reason (orchestrator)`,
@@ -10653,9 +10548,8 @@ var rosterLine = (r, roster, ages = false) => {
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
-  const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1e3)} s (non-shell calls)` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}${bound}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}`;
 };
 var situation = async (p, show = false) => {
   const s = await readSituation(board, p, { cli: self().join(" "), word: shellWord2, show });
@@ -10843,7 +10737,7 @@ var declaredPath = (file) => {
   return missing.length && root ? path13.resolve(root, file) : abs;
 };
 var seatsFail = (what) => fail(`${what}
-e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]`);
+e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]`);
 function readSeats(file) {
   let raw;
   try {
@@ -10857,9 +10751,7 @@ function readSeats(file) {
     if (typeof s.id !== "string") seatsFail(`${file}: a seat without an id`);
     if ("title" in s) seatsFail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
     if ("transcript" in s) seatsFail(`${file}: unknown field transcript in ${s.id}`);
-    if (s.busyMax !== void 0 && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) seatsFail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
-      ...s.busyMax !== void 0 ? { busyMax: s.busyMax } : {},
       id: String(s.id),
       ...typeof s.role === "string" && s.role ? { role: s.role } : {},
       ...typeof s.area === "string" && s.area ? { area: s.area } : {},
@@ -11017,14 +10909,10 @@ ${verbHelp()}`);
         if (on !== void 0) subscriptionsArg(on);
         const role = args.flag("--role");
         const area = args.flag("--area");
-        const rawBusyMax = args.flag("--busy-max");
-        const busyMax = rawBusyMax === void 0 ? void 0 : Number(rawBusyMax);
-        if (busyMax !== void 0 && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
         const added = await board.addSeat(run3, {
           id: id2,
           ...role ? { role } : {},
           ...area ? { area } : {},
-          ...busyMax !== void 0 ? { busyMax } : {},
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
           ...on !== void 0 ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}
