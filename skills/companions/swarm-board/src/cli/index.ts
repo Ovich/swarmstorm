@@ -141,6 +141,21 @@ const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] =
 /** The tool's folder (swarm.mjs's), the aiview skill beside it, whatever the entry: swarm.mjs, dist-cli/cli.mjs or src/cli/index.ts. */
 const toolRoot = (): string => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path.dirname(path.resolve(process.argv[1])));
 
+/** After a failed open: the run it began for `group` on `repo`, if the store kept it, closed again over a fresh
+ *  connection (the failure may have been the old one closing); the refusal line to print either way. */
+const undoOpen = async (repo: string, group: string, why: string): Promise<string> => {
+  try {
+    board.close();
+    board = await connectBoard({ dataRoot: DATA_ROOT });
+    const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
+    if (!begun) return WORDING.openFailedNone(why);
+    await board.closeRun(begun.id);
+    return WORDING.openFailedUndone(why, begun.id);
+  } catch {
+    return WORDING.openFailedLeft(why, group, self().join(" "));
+  }
+};
+
 /** The nearest folder at or above `from` holding swarm.mjs; `from` itself when none does. */
 const swarmBoardFolderAbove = (from: string): string => {
   for (let dir = from; ; dir = path.dirname(dir)) {
@@ -650,42 +665,50 @@ async function main(): Promise<void> {
       // board-split#D58: one open run per group on a project, said before anything opens
       const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
       if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
-      const run = await board.openRun({
-        repo: openRepo,
-        kind,
-        group,
-        title: need("--title"),
-        link: args.flag("--link") ?? null,
-        seats: readSeats(seatsFile),
-        ...(stallMs !== undefined ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {}),
-        ...(protocol !== undefined ? { protocol } : {}),
-        authority,
-        // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
-        base: args.flag("--onto") ?? baseAt(process.cwd()),
-      });
-      // the orchestrator's link, from now on how its verbs reach the board (D29), started by its agent (D32)
-      const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
-      // the person watches the project's board on aiview's /board page
-      const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
-      // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
-      const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
-      // every orchestrator registers on the project's orchestrators board, whatever its roles
-      const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run.id);
-      // V-16 (AGENTS rule 10): how each declared seat joins, runnable as printed
-      const seatIds = run.seats.map((s) => s.id);
-      const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run.id, shellWord(run.group), shellWord("waiting for a task"))) : null;
-      // board-split#D66 (V-20): a run of workers whose target branch is checked out: every fast-forward into it would be refused
-      const holding = profileOf(run.kind).member === "worker" && run.base ? worktreeHolding(process.cwd(), run.base) : null;
-      const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run.base!, holding, CODE_WORDING.detach(shellWord(holding))) : null;
-      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, seatsJoin, detachLine, ...orchestrators, next].filter((l): l is string => l !== null).join("\n");
-      if (!doc.registered) {
-        // the run is open all the same; swarm has no page of its own (companions-merge D13)
-        console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, orchestrators, ...(next ? { next } : {}) }, lines(null));
-        break;
+      // a failed open leaves no run: the run it began (stored before the connection dropped) is closed again
+      try {
+        await openAndAnswer();
+      } catch (err) {
+        fail(await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err)));
       }
-      const runUrl = WORDING.runBoardUrl(doc.url, run.id);
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, orchestrators, ...(next ? { next } : {}) }, lines(runUrl));
+      async function openAndAnswer(): Promise<void> {
+        const run = await board.openRun({
+          repo: openRepo,
+          kind,
+          group,
+          title: need("--title"),
+          link: args.flag("--link") ?? null,
+          seats: readSeats(seatsFile),
+          ...(stallMs !== undefined ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {}),
+          ...(protocol !== undefined ? { protocol } : {}),
+          authority,
+          // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
+          base: args.flag("--onto") ?? baseAt(process.cwd()),
+        });
+        // the orchestrator's link, from now on how its verbs reach the board (D29), started by its agent (D32)
+        const link = startLinkLine({ name: `${run.group}/orchestrator`, run: run.id });
+        // the person watches the project's board on aiview's /board page
+        const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
+        // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
+        const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
+        // every orchestrator registers on the project's orchestrators board, whatever its roles
+        const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run.id);
+        // V-16 (AGENTS rule 10): how each declared seat joins, runnable as printed
+        const seatIds = run.seats.map((s) => s.id);
+        const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run.id, shellWord(run.group), shellWord("waiting for a task"))) : null;
+        // board-split#D66 (V-20): a run of workers whose target branch is checked out: every fast-forward into it would be refused
+        const holding = profileOf(run.kind).member === "worker" && run.base ? worktreeHolding(process.cwd(), run.base) : null;
+        const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run.base!, holding, CODE_WORDING.detach(shellWord(holding))) : null;
+        const lines = (url: string | null) => [String(run.id), stallClamped, url, link, seatsJoin, detachLine, ...orchestrators, next].filter((l): l is string => l !== null).join("\n");
+        if (!doc.registered) {
+          // the run is open all the same; swarm has no page of its own (companions-merge D13)
+          console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
+          emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, orchestrators, ...(next ? { next } : {}) }, lines(null));
+          return;
+        }
+        const runUrl = WORDING.runBoardUrl(doc.url, run.id);
+        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, orchestrators, ...(next ? { next } : {}) }, lines(runUrl));
+      }
       break;
     }
     case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
