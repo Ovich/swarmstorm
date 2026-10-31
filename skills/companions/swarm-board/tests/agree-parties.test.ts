@@ -46,6 +46,13 @@ test("F25: with no mention and no --with, the other holders of the --about file 
   assert.deepEqual(m.mentions, ["g/w1"]);
 });
 
+test("an agreement with no party named answers the last post about the file that asked the agreer, not the file's holders", () => {
+  const [, w2, w3] = setup({ w1: ["src/a.ts"], w2: [], w3: ["src/a.ts"] });
+  board.post(w2, "@w3 I resolved src/a.ts: both cases removed", { about: "src/a.ts" });
+  const m = board.post(w3, "agreed: your resolution stands", { kind: "agreement", about: "src/a.ts" });
+  assert.deepEqual(m.mentions, ["g/w2"]);
+});
+
 test("F25: an agreement with no other party is refused, nothing recorded", () => {
   const [w1] = setup({ w1: [], w2: [] });
   assert.throws(() => board.post(w1, "agreed", { kind: "agreement", about: "docs/x.md" }), /agree needs another party: @<seat> or --with <seat>; to inform, use post/);
