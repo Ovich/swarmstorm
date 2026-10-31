@@ -491,9 +491,9 @@ const unmatchedLines = async (p: Participant, body: string): Promise<string[]> =
 };
 
 /** A verb that heard from the member (D9): its result lines, then the step the answer rules give (D1). */
-const emitHeard = async (p: Participant, json: object, result: string | string[], toOrchestrator = false): Promise<void> => {
+const emitHeard = async (p: Participant, json: object, result: string | string[]): Promise<void> => {
   const lines = typeof result === "string" ? [result] : result;
-  const a = answer({ verb: "heard", lines, toOrchestrator }, await situation(p));
+  const a = answer({ verb: "heard", lines }, await situation(p));
   emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
@@ -1073,8 +1073,7 @@ async function main(): Promise<void> {
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
-      const toOrchestrator = args.verb === "post" && p.seat !== "orchestrator" && (m.mentions ?? []).some((name) => name.endsWith("/orchestrator"));
-      await emitHeard(p, json, human, toOrchestrator);
+      await emitHeard(p, json, human);
       break;
     }
     case "endorse": {

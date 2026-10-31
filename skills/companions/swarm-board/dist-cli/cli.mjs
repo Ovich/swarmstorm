@@ -10422,7 +10422,10 @@ function answerOf(r, s) {
       if (r.outcome === "superseded") return { lines: [WORDING.superseded], next: null, phase: null };
       if (r.outcome === "ended") return { lines: [WORDING.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
-        const next2 = s.parked ? pausedLine(s) : r.idle ? WORDING.idle(r.foregroundAgain) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
+        const next2 = s.parked ? pausedLine(s) : r.idle ? (
+          // simple-states: an idle wait of a member owing nothing ends its turn; one owing waits again
+          owesNothingLine(s) ?? WORDING.idle(r.foregroundAgain)
+        ) : pausedLine(s) ?? (s.seat === "orchestrator" ? WORDING.nothingYetOrchestrator(r.again) : WORDING.nothingYet(r.foregroundAgain));
         return { lines: [next2], next: next2, phase: null };
       }
       const headers = phaseHeaders(s, !pausedLine(s));
@@ -10467,7 +10470,7 @@ ${owes}` : rearm;
       return { lines: [r.line, ...r.facts ?? [], next], next, phase: null };
     }
     case "heard": {
-      const next = (r.toOrchestrator ? owesNothingLine(s) : null) ?? heardStep(s);
+      const next = heardStep(s);
       return { lines: [...r.lines, ...next ? [next] : []], next, phase: null };
     }
     case "join": {
@@ -10790,9 +10793,9 @@ var unmatchedLines = async (p, body) => {
     return WORDING.mentionNobody(name, closest.map((c) => nickOf.has(c) ? `@${c} or @${nickOf.get(c)}` : `@${c}`));
   });
 };
-var emitHeard = async (p, json, result, toOrchestrator = false) => {
+var emitHeard = async (p, json, result) => {
   const lines = typeof result === "string" ? [result] : result;
-  const a = answer({ verb: "heard", lines, toOrchestrator }, await situation(p));
+  const a = answer({ verb: "heard", lines }, await situation(p));
   emit({ ...json, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
     for (const l of lines) console.log(l);
     if (linkToStart && !linkTold(linkToStart)) {
@@ -11243,8 +11246,7 @@ ${verbHelp()}`);
         ...lostMentioned,
         ...args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []
       ];
-      const toOrchestrator = args.verb === "post" && p.seat !== "orchestrator" && (m.mentions ?? []).some((name) => name.endsWith("/orchestrator"));
-      await emitHeard(p, json, human, toOrchestrator);
+      await emitHeard(p, json, human);
       break;
     }
     case "endorse": {

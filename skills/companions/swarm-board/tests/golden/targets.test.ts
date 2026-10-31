@@ -46,13 +46,13 @@ test("G10 target: a wake in an unchanged phase carries no phase line", async () 
   }
 });
 
-// G14, S26 (board-split D30): the idle answer says the seat stays, and only to wait again: never to end
-test("G14, S26 target: the idle answer says the seat stays, then waits again, never end", async () => {
+// G14, S26 (board-split D30), simple-states: an idle member owing nothing ends its turn, never with end; the orchestrator resumes it
+test("G14, S26 target: the idle answer of a member owing nothing says end the turn, never end", async () => {
   const s = await scene("worker", "idle");
   try {
     s.call("wait", "--mentions", "--as", s.me, "--timeout", "200");
     expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "200"), [
-      `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND}): ${WAIT(s.me)}`,
+      "you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task",
     ]);
   } finally {
     s.stop();

@@ -29,7 +29,7 @@ export type VerbResult =
   | { verb: "done"; phase: string; none: true }
   | { verb: "done"; phase: string; none?: false; line: string; facts?: string[] }
   /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
-  | { verb: "heard"; lines: string[]; toOrchestrator?: boolean }
+  | { verb: "heard"; lines: string[] }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
    *  posts for the member, delivered at its join (S1), the phase's own event left out: the phase line states it */
   | { verb: "join"; head: string[]; shown: Shown[]; tail: string[] };
@@ -65,7 +65,8 @@ function answerOf(r: VerbResult, s: Situation): Answer {
         const next = s.parked
           ? pausedLine(s)!
           : r.idle
-            ? W.idle(r.foregroundAgain)
+            ? // simple-states: an idle wait of a member owing nothing ends its turn; one owing waits again
+              (owesNothingLine(s) ?? W.idle(r.foregroundAgain))
             : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
         return { lines: [next], next, phase: null };
       }
@@ -129,8 +130,8 @@ function answerOf(r: VerbResult, s: Situation): Answer {
     }
     case "heard": {
       // D9: the result first, then the member's step: none while its listener runs
-      // simple-states: a post to the orchestrator that leaves the member owing nothing ends its turn
-      const next = (r.toOrchestrator ? owesNothingLine(s) : null) ?? heardStep(s);
+      // simple-states: a post is often a question, so it never ends the member's turn; done and merged do
+      const next = heardStep(s);
       return { lines: [...r.lines, ...(next ? [next] : [])], next, phase: null };
     }
     case "join": {
