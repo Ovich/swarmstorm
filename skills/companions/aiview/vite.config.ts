@@ -9,6 +9,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: { outDir: "../dist", emptyOutDir: true },
   server: {
+    // Vite's default deny list holds **/.git/**, which denies every file of a board worktree
+    // (under .git/swarm/worktrees/): the rest of the default kept, that one dropped.
+    fs: { deny: [".env", ".env.*", "*.{crt,pem}"] },
     proxy: {
       "/api": "http://localhost:4321",
       "/events": "http://localhost:4321",
