@@ -877,9 +877,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const nickOf = (r: Row): string => (r.nick == null ? String(r.seat) : String(r.nick));
 
   /** A subscription stored scoped `main` (before plan D1) reads as `any`. */
-  /** A funny name no active member of the project carries (D43, plan D17), kept for the run. */
-  const unusedNick = (repo: string): string => {
-    const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL`).all(repo) as Row[];
+  /** A funny name no active member of the project carries (D43, plan D17), kept for the run; nor any member of `run`,
+   *  ended included, so one name in a run's record always means one seat. */
+  const unusedNick = (repo: string, run?: RunId): string => {
+    const rows = db
+      .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND ((r.state = 'open' AND p.ended_at IS NULL) OR p.run = ?)`)
+      .all(repo, run ?? -1) as Row[];
     return funnyName(rows.map(nickOf));
   };
 
@@ -1770,7 +1773,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         // U-F29: a rejoin keeps the subscriptions the seat's row holds (the member's own `subscribe`), unless --on replaces them
         const kept = existing?.subs == null ? [] : (JSON.parse(String(existing.subs)) as Subscription[]);
         const subs = on != null ? JSON.stringify(on) : kept.length > 0 ? String(existing!.subs) : JSON.stringify(seatOn ?? profile.defaults.member);
-        const fresh = (): string => unusedNick(String(r.repo));
+        const fresh = (): string => unusedNick(String(r.repo), run);
         if (existing) {
           entry = existing.ended_at == null ? "again" : "back";
           // S24: a re-join is the member's call, so its row reads fresh in the roster, never stale from the seat's last member
