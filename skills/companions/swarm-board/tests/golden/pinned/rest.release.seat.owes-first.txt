@@ -1,3 +1,0 @@
-exit 1
---- stderr
-swarm: release: refused: release is a worker's verb, and a seat holds no files; your verbs are in --help

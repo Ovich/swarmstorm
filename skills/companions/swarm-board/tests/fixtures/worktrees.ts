@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopServerOf } from "./server.ts";
+import { openRawStore } from "./raw-store.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(HERE, "..", "..", "src", "cli", "index.ts");
@@ -125,7 +126,22 @@ export function openTwoRunners(r: Repo, plan = "review-tool", title = "T"): numb
   r.cli(r.wtB, "join", "--run", String(id), "--seat", "S5", "--doing", "the skill");
   r.cli(r.wtA, "wait", "--mentions", "--timeout", "200");
   r.cli(r.wtB, "wait", "--mentions", "--timeout", "200");
+  // spec §7: S3 holds src/a.ts as its link would set it from its worktree's changes; written after S3's link spoke,
+  // so its first (empty) set does not undo it
+  holdAs(r.store, plan, "S3", "src/a.ts");
   return id;
+}
+
+/** `seat` of `plan` holds `rel`, as a changes frame from its link would make it (a scene with no edit of its own). */
+function holdAs(store: string, plan: string, seat: string, rel: string): void {
+  const db = openRawStore(store);
+  try {
+    const p = db.prepare("SELECT p.id, r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE r.plan = ? AND p.seat = ? AND p.ended_at IS NULL").get(plan, seat) as { id: number; repo: string };
+    db.prepare("INSERT OR IGNORE INTO claims (repo, path, participant, kind, since_seq) VALUES (?, ?, ?, 'inside', 0)").run(p.repo, rel, p.id);
+    db.prepare("INSERT OR IGNORE INTO claim_log (repo, path, participant, kind) VALUES (?, ?, ?, 'inside')").run(p.repo, rel, p.id);
+  } finally {
+    db.close();
+  }
 }
 
 /** The tell lines `merged` prints, one per holder of a conflicted file (D5, D63). */

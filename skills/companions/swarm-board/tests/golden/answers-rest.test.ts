@@ -20,8 +20,6 @@ for (const role of ROLES_REST) {
         pin(at("post"), posted);
         pin(at("agree"), s.call("agree", "I change a.ts first", "--with", s.other.split("/")[1], "--as", s.me));
         pin(at("endorse"), s.call("endorse", "1", "--as", s.me));
-        pin(at("claim"), s.call("claim", "a.ts", "--as", s.me));
-        pin(at("release"), s.call("release", "a.ts", "--as", s.me));
         pin(at("merge-lock.no-onto"), s.call("merge-lock", "--as", s.me));
         pin(at("merged.unknown"), s.call("merged", "0000000", "--files", "a.ts", "--report", "-", "--as", s.me));
         if (role === "orchestrator") {

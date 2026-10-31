@@ -19,7 +19,7 @@ test("V-48: flag, conflicts, unclaimed and guides are no verbs: one line naming 
       assert.doesNotMatch(r.text, /^usage:/m, "the line, not the whole usage");
     }
     // a code verb keeps its D12 refusal
-    assert.match(s.call("claim", "a.ts", "--as", "bs/s1").text, /claim is a worker's verb/);
+    assert.match(s.call("merge-lock", "--as", "bs/s1").text, /merge-lock is a worker's verb/);
   } finally {
     s.done();
   }

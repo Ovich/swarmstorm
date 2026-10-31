@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { changedSet } from "../src/link/changes.ts";
+import { changedSet } from "../src/packs/code/changes.ts";
 import { openBoard, type Board, type Message } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import { codeEventStep } from "../src/cli/answer/code-rules.ts";

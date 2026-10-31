@@ -1,2 +1,0 @@
-exit 0
-g/w1 released a.ts

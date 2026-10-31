@@ -102,8 +102,7 @@ test("a conflicted file nobody else held prints no tell line (D5)", () => {
 test("an old git: `merged` succeeds with today's tell line per shared file (US4, D13, D41)", () => {
   const r = fresh();
   openTwoRunners(r);
-  // S3 holds src/a.ts from its join and src/c.ts by a claim; src/old.ts only S5 touches
-  r.cli(r.wtA, "claim", "src/c.ts");
+  // S3 declared src/a.ts at its join; src/c.ts and src/old.ts only S5 touches
   fs.writeFileSync(path.join(r.wtB, "src", "a.ts"), "export const b = 1;\n");
   fs.writeFileSync(path.join(r.wtB, "src", "c.ts"), "export const b = 1;\n");
   r.commitFile(r.wtB, "src/old.ts", edit(0, "export const one = 'b';"));
@@ -112,7 +111,7 @@ test("an old git: `merged` succeeds with today's tell line per shared file (US4,
   const sha = r.git(r.wtB, "rev-parse", "HEAD").trim();
   const merged = r.swarm(r.wtB, ["merged", "--report", "-", sha, "--files", "src/a.ts", "src/c.ts", "src/old.ts"], { oldGit: true });
   assert.equal(merged.status, 0, merged.stderr);
-  assert.deepEqual(tellLines(merged.stdout), [TELL_S3("src/a.ts"), TELL_S3("src/c.ts")]);
+  assert.deepEqual(tellLines(merged.stdout), [TELL_S3("src/a.ts")]);
 });
 
 test("a merger with no worktree merges, no tell line (D33)", () => {

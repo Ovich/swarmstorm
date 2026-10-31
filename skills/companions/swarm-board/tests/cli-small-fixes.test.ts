@@ -1,4 +1,4 @@
-// D13: F14 (--about a new file takes --new), F15 (release several paths), F16 (the unclaimed line explained), F20 (done with no phase).
+// D13: F14 (--about a new file takes --new), F20 (done with no phase).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -51,69 +51,6 @@ test("F14: post and agree --about a path not on disk are refused naming --new, a
     if (verb === "agree") assert.match(ok.stderr, /agree needs another party/);
     else assert.equal(ok.status, 0, ok.stderr);
   }
-});
-
-test("F15: release takes several paths and releases each", () => {
-  assert.equal(run("claim", "src/a.ts").status, 0);
-  assert.equal(run("claim", "src/b.ts").status, 0);
-  const r = run("release", "src/a.ts", "src/b.ts");
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /released src\/a\.ts/);
-  assert.match(r.stdout, /released src\/b\.ts/);
-  const again = run("claim", "src/b.ts");
-  assert.equal(again.status, 0, "b was released, claimable");
-  assert.equal(run("release").status, 1);
-});
-
-test("F16: the 'written without a claim' lines are followed by what they mean", () => {
-  fs.writeFileSync(path.join(repo, "src", "a.ts"), "export const a = 1;\n");
-  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
-  assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /reconciled 1 written without a claim: src\/a\.ts\n\(not a flag: a write without a claim is allowed, and was claimed for you/);
-});
-
-const commitAll = (msg: string): void => {
-  git("add", "-A");
-  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", msg);
-};
-
-test("F24: many unclaimed writes print one summary line: count, first few, …", () => {
-  for (const f of ["c", "d", "e", "f"]) fs.writeFileSync(path.join(repo, "src", `${f}.ts`), "x\n");
-  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
-  assert.equal(out.status, 0, out.stderr);
-  const lines = out.stdout.split("\n").filter((l) => l.startsWith("reconciled "));
-  assert.deepEqual(lines, ["reconciled 4 written without a claim: src/c.ts, src/d.ts, src/e.ts, …"]);
-});
-
-test("rename: unclaimed, one old → new entry; both sides claimed, nothing told", () => {
-  git("mv", "src/a.ts", "src/a2.ts");
-  const out = run("end", "--seat", "S3", "--as", "p/orchestrator");
-  assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /reconciled 1 written without a claim: src\/a\.ts → src\/a2\.ts/);
-});
-
-test("rename with both sides claimed passes merge-lock", () => {
-  git("branch", "-M", "main");
-  git("checkout", "-q", "-b", "work");
-  assert.equal(run("claim", "src/a.ts").status, 0);
-  assert.equal(run("claim", "src/a2.ts", "--new").status, 0);
-  git("mv", "src/a.ts", "src/a2.ts");
-  commitAll("mv");
-  const out = run("merge-lock", "--onto", "main");
-  assert.equal(out.status, 0, out.stderr);
-  assert.ok(!out.stdout.includes("written without a claim"), out.stdout);
-});
-
-test("F27: release --all releases every claim; roster and status show held files, truncated", () => {
-  for (const f of ["c", "d", "e"]) fs.writeFileSync(path.join(repo, "src", `${f}.ts`), "x\n");
-  for (const f of ["a", "b", "c", "d", "e"]) assert.equal(run("claim", `src/${f}.ts`).status, 0);
-  assert.match(run("roster").stdout, /files: src\/a\.ts, src\/b\.ts, src\/c\.ts \+2 more \(5\)/);
-  assert.match(run("status").stdout, /files: src\/a\.ts, src\/b\.ts, src\/c\.ts \+2 more \(5\)/);
-  const r = run("release", "--all");
-  assert.equal(r.status, 0, r.stderr);
-  assert.equal((r.stdout.match(/released /g) ?? []).length, 5);
-  assert.doesNotMatch(run("roster").stdout, /files:/);
-  assert.match(run("release", "--all").stdout, /holds no claim/);
 });
 
 test("F20: done with no phase open exits 0 saying so", () => {

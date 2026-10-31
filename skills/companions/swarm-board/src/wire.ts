@@ -100,8 +100,8 @@ export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle
 /** a reader (aiview) asks to hear every commit as `changed` (swarm-relay D23) */
 export type Subscribe = { type: "subscribe" };
 // down: the server to a link or a CLI
-/** `worktree`: the member's worktree and the branch its work merges into, for its link's changes; absent for none */
-export type Welcome = { type: "welcome"; version: string; worktree?: { path: string; onto: string } };
+/** `watched`: the member's folder and the branch it is read against, for its link's changes (spec §7); absent for none */
+export type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
 export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
 export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" };
 /** to a reader that called subscribe, after each commit */

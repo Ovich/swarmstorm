@@ -1,6 +1,6 @@
 // Inside a harness session a verb waits for the agent's own link and never spawns one (swarm-relay D39): one link
 // runs, the agent's; none answering, the verb goes straight to the server and ends on the line that starts it; outside
-// a session the detached fallback stays (D32); a member whose only link is killed reads gone, never stalled (D12, D36).
+// a session the detached fallback stays (D32); a member whose only link is killed reads lost, however it still calls (D12, D36, fix2).
 // Real server, real links, under a temporary data home.
 import { test, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
@@ -143,7 +143,7 @@ test("outside a harness session, a verb finding no link spawns one detached, as 
   assert.equal(spawned.length, 1, "one detached link");
 });
 
-test("a member owing the phase whose only link is killed reads gone within 66 s and draws no stalled (D12, D36, D39, board-split D55)", { timeout: 100000 }, async () => {
+test("a member owing the phase whose only link is killed reads lost within 66 s of the link's loss, its board calls notwithstanding (D12, D36, D39, board-split D55, fix2)", { timeout: 100000 }, async () => {
   const h = joinedInHarness();
   const link = startAgentLink(h);
   const exited = new Promise((resolve) => link.on("exit", resolve));
@@ -164,8 +164,15 @@ test("a member owing the phase whose only link is killed reads gone within 66 s 
   let state = "";
   let aliveAt: number | null = null;
   try {
-    const repo = (await reader.participant(h.member.name))!.repo;
+    const me = (await reader.participant(h.member.name))!;
+    const repo = me.repo;
+    // fix2: the member still calls the board (a doing every 5 s, through no link of its own): the link's own fact decides
+    let calledAt = 0;
     for (const end = Date.now() + 80_000; !gone && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
+      if (Date.now() - calledAt >= 5_000) {
+        await reader.setDoing(me, "still calling, its link dead");
+        calledAt = Date.now();
+      }
       gone = (await reader.snapshot(repo)).events.find((e) => e.event === "lost" && e.body.startsWith("lost harness-plan/S3"));
     }
     const entry = (await reader.roster(repo)).find((e) => e.name === h.member.name);
@@ -186,5 +193,4 @@ test("a member owing the phase whose only link is killed reads gone within 66 s 
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
   const told = h.r.cli(h.r.repo, "wait", "--mentions", "--timeout", "200", "--as", "harness-plan/orchestrator");
   assert.match(told, /lost harness-plan\/S3/);
-  assert.doesNotMatch(told, /stalled/);
 });

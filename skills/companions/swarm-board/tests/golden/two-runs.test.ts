@@ -67,7 +67,6 @@ test("two runs on one server answer each its own members: no plain post, claim o
     must("post", "beta plain talk", "--as", B_ORCH);
     must("post", "@w1 a-task-only: do it", "--as", A_ORCH);
     must("post", "@s1 an idea for b, please", "--as", B_ORCH);
-    must("claim", "a.ts", "--as", A_WORKER);
 
     pinOwn("two-runs.a-worker.wait", call("wait", "--mentions", "--as", A_WORKER, "--timeout", "2000"), B_ONLY);
     pinOwn("two-runs.b-seat.wait", call("wait", "--mentions", "--as", B_SEAT, "--timeout", "2000"), A_ONLY);

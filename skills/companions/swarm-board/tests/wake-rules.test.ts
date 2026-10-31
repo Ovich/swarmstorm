@@ -82,7 +82,7 @@ test("D8: a member waiting when the pause is posted wakes on it", async () => {
 
 test("G27: an agreement about a file the member holds, not replying to its own post, still wakes it", () => {
   const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
-  codeVerbs(board).checkEdit(w3, "src/y.ts");
+  codeVerbs(board).changes(w3, ["src/y.ts"]);
   const agreed = board.post(w1, "@g/w3 w1 the top, w3 the rest", { kind: "agreement", about: "src/y.ts" });
   assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [agreed.seq]);
 });

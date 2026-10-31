@@ -311,8 +311,8 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
         speakers.add(s);
         // spec §7: a member's link reads its worktree's changes against the branch its run merges into
         const seat = f.member ? board.participant(f.member.name) : null;
-        const onto = seat ? board.runs().find((r) => r.id === seat.run)?.base : null;
-        return send(s, { type: "welcome", version, ...(seat?.place && onto ? { worktree: { path: seat.place, onto } } : {}) });
+        const against = seat ? board.runs().find((r) => r.id === seat.run)?.base : null;
+        return send(s, { type: "welcome", version, ...(seat?.place && against ? { watched: { dir: seat.place, against } } : {}) });
       }
       if (f.type === "call") run(s, f);
       else if (f.type === "cancel") dropWait(f.id);

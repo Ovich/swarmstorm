@@ -23,7 +23,9 @@ afterEach(() => {
 const setup = (files: Record<string, string[]>) => {
   const ids = Object.keys(files);
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "G", seats: ids.map((id) => ({ id, blockers: [] })) });
-  const members = ids.map((id) => board.join({ run: run.id, seat: id, doing: "x", files: files[id].map((p) => ({ path: p, interface: false })) }).member);
+  const members = ids.map((id) => board.join({ run: run.id, seat: id, doing: "x", files: [] }).member);
+  // spec §7: what each member's worktree changed, as its link sends it
+  members.forEach((m, i) => codeVerbs(board).changes(m, files[ids[i]]));
   for (const m of members) board.deliverMentions(m);
   return members;
 };
@@ -48,7 +50,6 @@ test("F25: with no mention and no --with, the other holders of the --about file 
 
 test("the agree line a holder is given names the asker by --with, so the agreement's party is who asked", () => {
   const [, w2, w3] = setup({ w1: [], w2: [], w3: ["src/a.ts"] });
-  codeVerbs(board).checkEdit(w2, "src/a.ts");
   board.post(w2, "@w3 I resolved src/a.ts: both cases removed", { about: "src/a.ts" });
   const all = board.deliverMentions(w3).full;
   const heard = all.find((m) => m.about === "src/a.ts") as { answer?: string } | undefined;

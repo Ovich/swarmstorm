@@ -87,15 +87,6 @@ afterEach(() => {
 
 const guidesLineOf = (out: string): string | undefined => out.split("\n").find((l) => l.startsWith("guides for this work: "));
 
-test("the first claim names every matching guide, globals included; later claims only new ones, once per member", () => {
-  assert.equal(guidesLineOf(cli(wtA, "claim", "src/a.ts")), "guides for this work: all (guide-all); load each before editing");
-  assert.equal(guidesLineOf(cli(wtA, "claim", "src/a.ts")), undefined);
-  assert.equal(guidesLineOf(cli(wtA, "claim", "src/ui/page.ts")), "guides for this work: ui (guide-ui); load each before editing");
-  assert.equal(guidesLineOf(cli(wtA, "claim", "src/ui/page.ts")), undefined);
-  // another member is told for itself
-  assert.match(guidesLineOf(cli(wtB, "claim", "src/ui/new.ts", "--new")) ?? "", /all \(guide-all\), ui \(guide-ui\)/);
-});
-
 test("merge-lock lists the branch's guides; merged refuses until every one is settled, then records them", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 1;\n");
   commit(wtA, "page");
@@ -177,15 +168,6 @@ test("merge-lock names a guide the target gained since the branch left it", () =
   assert.match(cli(wtA, "merge-lock", "--onto", "main"), /guides of this merge: all \(guide-all\), lib \(guide-lib\)/);
 });
 
-test("claim takes several paths, and resolves them in the member's worktree whatever the shell's folder", () => {
-  const out = cli(home, "claim", "src/a.ts", "src/ui/page.ts", "--as", "g/S1");
-  assert.match(out, /^claimed src\/a\.ts$/m);
-  assert.match(out, /^claimed src\/ui\/page\.ts$/m);
-  // the other member is held on both
-  const held = swarm(wtB, "claim", "src/a.ts");
-  assert.equal(held.status, 3);
-});
-
 test("G41: a brace glob matches any of its alternatives; the shipped guides apply to source files", () => {
   assert.ok(globRegex("**/*.{ts,tsx}").test("src/a.ts"));
   assert.ok(globRegex("**/*.{ts,tsx}").test("a.tsx"));
@@ -232,23 +214,6 @@ test("golden V-32 (D69): merged --report naming an existing file is refused with
   assert.ok(refused.stderr.includes(`merged: --report takes the report's text, and ${file} is a file: pass it as --report-file ${file}`), refused.stderr);
 });
 
-test("G28: a build output another member holds is claimed at merge-lock without a flag; a source file still flags", () => {
-  fs.mkdirSync(path.join(repo, "dist-cli"), { recursive: true });
-  cli(wtB, "claim", "--new", "dist-cli/cli.mjs");
-  cli(wtB, "claim", "src/a.ts");
-  fs.mkdirSync(path.join(wtA, "dist-cli"), { recursive: true });
-  fs.writeFileSync(path.join(wtA, "dist-cli", "cli.mjs"), "built\n");
-  fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 4;\n");
-  commit(wtA, "build");
-  const lock = cli(wtA, "merge-lock", "--onto", "main");
-  assert.doesNotMatch(lock, /dist-cli\/cli\.mjs.*flag|flag.*dist-cli\/cli\.mjs/);
-  assert.match(cli(wtA, "roster"), /dist-cli\/cli\.mjs/);
-  assert.match(lock, /flagged: you wrote src\/a\.ts outside your claim/);
-  assert.doesNotMatch(lock, /dist-cli/);
-});
-
-// S4 targets (D3): merge-lock prints the exact --guides form merged takes; merged takes a guide by its name or its
-// skill's; a bad separator or a token that is no <name>:<verdict> is refused naming it, with usage and one corrected form
 test("S4 target: merge-lock prints the --guides form merged takes; either name form is accepted", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 3;\n");
   commit(wtA, "page");

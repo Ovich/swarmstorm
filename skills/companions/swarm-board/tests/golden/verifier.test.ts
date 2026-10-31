@@ -22,7 +22,6 @@ for (const role of MEMBERS) {
         pin(at("wait.mention"), s.call("wait", "--mentions", "--as", s.me, "--timeout", "1000"));
         pin(at("done"), s.call("done", "build", "--as", s.me));
         pin(at("roster"), s.call("roster", "--as", s.me));
-        pin(at("claim"), s.call("claim", "a.ts", "--as", s.me));
       } finally {
         s.stop();
       }

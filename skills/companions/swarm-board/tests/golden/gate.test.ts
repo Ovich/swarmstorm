@@ -16,7 +16,7 @@ import { openRawStore } from "../fixtures/raw-store.ts";
 test("golden V-4, V-17: after close, every member verb answers the closed line first, code verbs included", async () => {
   const s = await scene("worker", "closed");
   try {
-    for (const verb of [["merge-lock"], ["claim", "a.ts"], ["release", "a.ts"], ["merged", "abc", "--report", "-"], ["doing", "x"]]) {
+    for (const verb of [["merge-lock"], ["merged", "abc", "--report", "-"], ["doing", "x"]]) {
       const a = s.call(...verb, "--as", s.me);
       pin(`gate.closed.${verb[0]}`, a);
       assert.equal(a.status, 0, `${verb[0]}: ${a.text}`);
@@ -32,7 +32,7 @@ test("golden V-4, V-17: an ended member's verbs answer the ended line, ending on
   try {
     const worker = s.other;
     s.must("end", "--seat", worker.split("/")[1], "--as", s.me);
-    for (const verb of [["merge-lock"], ["claim", "a.ts"], ["doing", "x"], ["post", "hi"], ["wait", "--mentions", "--timeout", "500"]]) {
+    for (const verb of [["merge-lock"], ["doing", "x"], ["post", "hi"], ["wait", "--mentions", "--timeout", "500"]]) {
       const a = s.call(...verb, "--as", worker);
       pin(`gate.ended.${verb[0]}`, a);
       assert.equal(a.status, 0, `${verb[0]}: ${a.text}`);

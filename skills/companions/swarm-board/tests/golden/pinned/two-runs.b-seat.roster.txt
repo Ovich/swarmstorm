@@ -1,7 +1,7 @@
 exit 0
 run 1  Alpha  phase build: build alpha  0/1 done
 ga/orchestrator  run 1  <state>  progress <age> ago, link <age> ago  <n> unread  doing: -
-<nick:ga/w1> · ga/w1  run 1  <state>  progress <age> ago, link <age> ago  doing: x  files: a.ts
+<nick:ga/w1> · ga/w1  run 1  <state>  progress <age> ago, link <age> ago  doing: x
   seat orchestrator <nick:ga/orchestrator>: working
   seat w1 <nick:ga/w1>: working
 run 2  Beta  phase ideas: ideas for beta  0/1 done

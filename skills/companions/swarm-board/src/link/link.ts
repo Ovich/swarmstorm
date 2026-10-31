@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
-import { changedSet } from "./changes.ts";
+import { changedSet } from "../packs/code/changes.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -177,14 +177,14 @@ export async function runLink(opts: {
     queuedActivity = null;
   };
 
-  /** spec §7: the member's worktree and target, from the welcome; the changed set last sent, as one key */
-  let worktree: { path: string; onto: string } | null = null;
+  /** spec §7: the member's folder and the branch it is read against, from the welcome; the set last sent, as one key */
+  let watched: { dir: string; against: string } | null = null;
   let sentChanges: string | null = null;
   /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing.
    *  git runs synchronously, so a tick never starts while the previous look runs: a slow look delays the next. */
   const watchChanges = () => {
-    if (exiting || !worktree || !welcomed) return;
-    const files = changedSet(worktree.path, worktree.onto);
+    if (exiting || !watched || !welcomed) return;
+    const files = changedSet(watched.dir, watched.against);
     if (!files) return;
     const key = files.join("\0");
     if (key === sentChanges) return;
@@ -242,7 +242,7 @@ export async function runLink(opts: {
     if (f.type === "welcome") {
       welcomed = true;
       // spec §7: the worktree whose changes this link sends; a new connection sends the set afresh
-      worktree = f.worktree ?? null;
+      watched = f.watched ?? null;
       sentChanges = null;
       watchChanges();
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache

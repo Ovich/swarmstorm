@@ -1,6 +1,6 @@
 // simple-states (spec §7): the paths a member's worktree changed since it left its target, read by its link from
 // git and sent as a `changes` frame; the server sets the member's holdings to them. The board runs no git for it.
-import { gitAnswer } from "../git.ts";
+import { gitAnswer } from "../../git.ts";
 
 /** Every path `worktree` changed against `onto`, repository-relative with forward slashes: what git status shows
  *  (staged, unstaged, untracked, a conflict; a rename's both paths) and what its branch committed since the merge-base

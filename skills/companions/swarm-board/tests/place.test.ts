@@ -53,16 +53,15 @@ test("D5, G19: resolveIn reads a member's path in its worktree first when the sh
   assert.equal(relativeIn(wt, path.join(wt, "src", "a.ts")), "src/a.ts");
 });
 
-test("G42: a directory claimed by one member holds every file under it for another", async () => {
+test("G42 (spec §7): a member holding a file under a directory: another's sibling sharing the prefix is not an overlap", async () => {
   const board: Board = await openBoard(path.join(dir, "swarm.sqlite"));
   try {
     const run = board.openRun({ repo: "/r/.git", kind: "task", group: "g", title: "T", seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
     const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
     const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
-    assert.equal(codeVerbs(board).checkEdit(a, "src/dir").allowed, true);
-    const held = codeVerbs(board).checkEdit(b, "src/dir/f.ts");
-    assert.equal(held.allowed, false, "the file under a's directory is held");
-    assert.equal(codeVerbs(board).checkEdit(b, "src/dirt.ts").allowed, true, "a sibling sharing the prefix is free");
+    codeVerbs(board).changes(a, ["src/dir/f.ts"]);
+    assert.equal(codeVerbs(board).changes(b, ["src/dir/f.ts"]).length, 1, "the same file: an overlap");
+    assert.equal(codeVerbs(board).changes(b, ["src/dirt.ts"]).length, 0, "a sibling sharing the prefix is no overlap");
   } finally {
     board.close();
   }

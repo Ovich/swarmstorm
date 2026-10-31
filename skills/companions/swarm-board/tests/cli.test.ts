@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBoard } from "../src/board/board.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 /** A message's body as stored, null when no message has that seq (the read verb is gone). */
@@ -95,7 +96,8 @@ test("open then join prints the roster", () => {
   const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
-  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}working {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
+  // spec §7: declared files are no claims; the member holds what its worktree changes, read by its link
+  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}working {2}doing: the page\n/);
   assert.match(r.stdout, /review-tool\/orchestrator/);
 });
 
@@ -256,7 +258,6 @@ test("--json on every verb parses", () => {
     ["doing", ...as, "still x"],
     ["post", ...as, "@S5 hello"],
     ["agree", ...as, "@S5 I go first", "--about", "src/a.ts"],
-    ["claim", ...as, "src/b.ts"],
     ["wait", "--mentions", "--timeout", "200", "--as", "review-tool/S5"],
     ["wait", "--as", "review-tool/S5", "--timeout", "50"],
     ["roster"],
@@ -369,15 +370,24 @@ test("D52 (U-F18): status and roster name the merge lock's holder and since", ()
   assert.match(run("roster").stdout, /^lock merge lock of .+  held by review-tool\/S3 since /m);
 });
 
-test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", () => {
+test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", async () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S3", "--doing", "x");
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const s3 = ["--as", "review-tool/S3"];
   const s5 = ["--as", "review-tool/S5"];
-  for (const f of ["src/held.ts", "src/holds.ts"]) assert.equal(run("claim", ...s3, f).status, 0);
-  assert.equal(run("release", ...s3, "src/held.ts").status, 0);
-  assert.equal(run("claim", ...s5, "src/mine.ts").status, 0);
+  // spec §7: the holdings as each link would send its worktree's changes: S3 held src/held.ts, then only src/holds.ts
+  const holdings = await openBoard(path.join(toolRoot, "swarm.sqlite"));
+  try {
+    const member = (name: string) => holdings.participant(name)!;
+    codeVerbs(holdings).changes(member("review-tool/S3"), ["src/held.ts", "src/holds.ts"]);
+    codeVerbs(holdings).changes(member("review-tool/S3"), ["src/holds.ts"]);
+    codeVerbs(holdings).changes(member("review-tool/S5"), ["src/mine.ts"]);
+  } finally {
+    holdings.close();
+  }
+  void s3;
+  void s5;
 
   const TELL = (f: string): string =>
     `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/${f === "src/mine.ts" ? "S5" : "S3"} I resolved ${f}: <how>" --about ${f}`;
@@ -436,11 +446,11 @@ test("merged on a code run is refused without the merge lock, naming merge-lock;
   assert.match(bodies, /merged abc123 without the merge lock: the lock holder died mid-merge/);
 });
 
-test("claim, post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
+test("post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const as = ["--as", "review-tool/S5"];
-  const unheard = [run("claim", ...as, "src/a.ts"), run("post", ...as, "hello"), run("doing", ...as, "the page")];
+  const unheard = [run("post", ...as, "hello"), run("doing", ...as, "the page")];
   for (const r of unheard) {
     assert.equal(r.status, 0, r.stderr);
     const lines = r.stdout.trimEnd().split("\n");
@@ -453,8 +463,6 @@ test("claim, post and doing end on the listener line while no listener is pendin
   const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
   try {
     await new Promise((r) => setTimeout(r, 1500)); // the child is up and listening
-    const claimed = run("claim", ...as, "src/b.ts");
-    assert.equal(claimed.stdout, "claimed src/b.ts\n");
     const posted = run("post", ...as, "hello again");
     assert.match(posted.stdout, /^#\d+\n$/);
     assert.equal(JSON.parse(run("post", ...as, "once more", "--json").stdout).next, undefined);
@@ -532,7 +540,7 @@ test("end releases a member's pending wait in another process", async () => {
   assert.equal(ended.status, 0, ended.stderr + ended.stdout);
   const t0 = Date.now();
   assert.equal(await exited, 0);
-  assert.ok(Date.now() - t0 < 5000, "end did not release the wait");
+  assert.ok(Date.now() - t0 < 5000, `end did not release the wait: ${Date.now() - t0} ms after; end said ${ended.stdout}; the wait said ${out}`);
   // G26: an ended member's listener says why it stopped, never an empty answer
   assert.match(out, /you have ended in run [0-9]+: this listener stops; nothing to re-arm/);
 });
@@ -801,7 +809,7 @@ test("a seat's wait that receives an agreement prints the back-it line; a plan m
 test("board-split D12: the code verbs, called by a seat with no code pack, exit 1 on one line naming the verb and the seat kind", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
-  for (const argv of [["claim", "src/x.ts"], ["release", "src/x.ts"], ["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
+  for (const argv of [["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
     const r = run(...argv, "--as", "idea/architect");
     assert.equal(r.status, 1, argv.join(" "));
     assert.equal(r.stderr, `swarm: ${argv[0]}: refused: ${argv[0]} is a worker's verb, and a seat holds no files; your verbs are in --help
@@ -809,15 +817,15 @@ test("board-split D12: the code verbs, called by a seat with no code pack, exit 
   }
 });
 
-test("--help prints the core verbs, --help code the claim and merge verbs; no verb the core usage", () => {
+test("--help prints the core verbs, --help code the merge verbs; no verb the core usage", () => {
   const core = run("--help");
   assert.equal(core.status, 0);
   for (const v of ["open", "join", "post", "agree", "endorse", "wait"]) assert.match(core.stdout, new RegExp(`^  ${v} `, "m"));
-  for (const v of ["claim", "release", "merge-lock", "merged"]) assert.doesNotMatch(core.stdout, new RegExp(`^  ${v} `, "m"));
+  for (const v of ["merge-lock", "merged"]) assert.doesNotMatch(core.stdout, new RegExp(`^  ${v} `, "m"));
   assert.match(core.stdout.trimEnd().split("\n").at(-1)!, /^a member is <group>\/<seat>, the orchestrator <group>\/orchestrator/);
   const code = run("--help", "code");
   assert.equal(code.status, 0);
-  for (const v of ["claim", "release", "merge-lock", "merged"]) assert.match(code.stdout, new RegExp(`^  ${v} `, "m"));
+  for (const v of ["merge-lock", "merged"]) assert.match(code.stdout, new RegExp(`^  ${v} `, "m"));
   const none = run();
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^  endorse /m);
@@ -1351,13 +1359,13 @@ test("the listener line follows the link's report of the member's listener, not 
     }
   };
   const ends = (r: { stdout: string }): boolean => r.stdout.trimEnd().split("\n").at(-1) === LISTEN("review-tool/S5");
-  // running: no line after post, claim or agree
+  // running: no line after post or agree
   await report({ running: true, endedAt: null });
-  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/a.ts"), run("agree", ...as, "S5 edits all of it", "--about", "src/a.ts", "--with", "S3")])
+  for (const r of [run("post", ...as, "hello"), run("agree", ...as, "S5 edits all of it", "--about", "src/a.ts", "--with", "S3")])
     assert.equal(r.status === 0 && !ends(r), true, r.stdout + r.stderr);
   // none: the line
   await report({ running: false, endedAt: null });
-  for (const r of [run("post", ...as, "hello"), run("claim", ...as, "src/b.ts")]) assert.equal(ends(r), true, r.stdout);
+  for (const r of [run("post", ...as, "hello"), run("doing", ...as, "b")]) assert.equal(ends(r), true, r.stdout);
   // V3: a listener whose task ended without a re-arm is no listener, however lately: the line
   await report({ running: false, endedAt: Date.now() - 5_000 });
   assert.equal(ends(run("post", ...as, "again")), true);

@@ -48,7 +48,6 @@ test("S25: an agreement of an earlier run's member of the same name wakes no one
     const runB = must("open", "--kind", "task", "--group", "g", "--title", "B", "--seats", seats, "--onto", "main").split("\n")[0].trim();
     must("join", "--run", runB, "--seat", "w1", "--doing", "x", "--as", "g/w1");
     must("join", "--run", runB, "--seat", "w3", "--doing", "x", "--as", "g/w3");
-    must("claim", "a.ts", "--as", "g/w1");
     must("merge-lock", "--onto", "main", "--as", "g/w1");
     const listed = git(repo, "worktree", "list", "--porcelain");
     const wt = listed.split("\n").find((l) => l.startsWith("worktree ") && l.replace(/\\/g, "/").endsWith(`/${runB}/w1`))!.slice("worktree ".length);

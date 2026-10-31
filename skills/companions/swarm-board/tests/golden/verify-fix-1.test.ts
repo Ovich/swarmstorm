@@ -36,10 +36,10 @@ test("F4: a verifier's join names one way to listen", async () => {
 test("F7: a verifier's code verb and seat --state refuse in plain words, commands carrying --as", async () => {
   const s = await scene("verifier", "idle");
   try {
-    const claim = s.call("claim", "a.ts", "--as", s.me);
-    assert.notEqual(claim.status, 0);
-    assert.match(claim.text, /claim: refused: claim is a worker's verb, and a verifier holds no files; your verbs are in --help/);
-    assert.doesNotMatch(claim.text, /code pack|\(D\d+\)/);
+    const refused = s.call("merge-lock", "--as", s.me);
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.text, /merge-lock: refused: merge-lock is a worker's verb, and a verifier holds no files; your verbs are in --help/);
+    assert.doesNotMatch(refused.text, /code pack|\(D\d+\)/);
     const state = s.call("seat", "v1", "--state", "done", "--as", O);
     assert.doesNotMatch(state.text, /\(D\d+\)/);
     assert.match(state.text, /end --seat v1 --as g\/orchestrator/);
@@ -48,15 +48,3 @@ test("F7: a verifier's code verb and seat --state refuse in plain words, command
   }
 });
 
-// F8 (S21): the owed phase is said whole at the wake or join; a claim after it asks only for the listener
-test("F8: a worker's claim does not repeat the owed phase line", async () => {
-  const s = await scene("worker", "owes-first");
-  try {
-    const claim = s.call("claim", "a.ts", "--as", s.me);
-    assert.equal(claim.status, 0, claim.text);
-    assert.doesNotMatch(claim.text, /phase build is yours|Do your part now, then:/);
-    assert.match(claim.text, /start your listener now, in the background/);
-  } finally {
-    s.stop();
-  }
-});

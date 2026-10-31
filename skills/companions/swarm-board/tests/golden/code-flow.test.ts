@@ -63,13 +63,8 @@ test("golden code flow: two workers, one run onto main", async () => {
     learnNicks();
     pin("code.join.files", { status: joinW1.status, text: withoutShas(normalise(joinW1.stdout, home, nicks)) });
 
-    // claims: free, held by the other, shared once the post about it claimed it
-    pin("code.claim.free", call("claim", "a.ts", "--as", W1));
-    pin("code.claim.held", call("claim", "a.ts", "--as", W2));
-    must("post", "@w1 I need a.ts for one line", "--about", "a.ts", "--as", W2);
-    pin("code.claim.shared", call("claim", "a.ts", "--as", W2));
-    // no --with: the parties default to the file's other holders
-    pin("code.agree.default-parties", call("agree", "w1 changes a.ts first, w2 after", "--about", "a.ts", "--as", W1));
+    // the two settle a.ts between them (spec §7: their links would post the overlap; no link runs here)
+    pin("code.agree", call("agree", "w1 changes a.ts first, w2 after", "--with", "w2", "--about", "a.ts", "--as", W1));
 
     const worktreeOf = (member: string): string => {
       const listed = git(repo, "worktree", "list", "--porcelain");
@@ -99,7 +94,6 @@ test("golden code flow: two workers, one run onto main", async () => {
     // D30, D38: a worker's own end is refused while the run is open; the orchestrator ends the seat
     pin("code.end.own-refused", call("end", "--as", W1));
     pin("code.end.claims-held", call("end", "--seat", "w1", "--as", ORCHESTRATOR));
-    must("claim", "b.ts", "--as", W2);
     git(wt2, "rebase", "-q", "main");
     fs.writeFileSync(path.join(wt2, "b.ts"), "export const b = 2;\n");
     git(wt2, "commit", "-q", "-am", "w2 b");
@@ -116,7 +110,6 @@ test("golden code flow: two workers, one run onto main", async () => {
     // w3 leaves a commit not merged: close keeps its worktree and says why
     must("join", "--run", runId, "--seat", "w3", "--doing", "x", "--as", W3);
     learnNicks();
-    must("claim", "c.ts", "--new", "--as", W3);
     const wt3 = worktreeOf(W3);
     fs.writeFileSync(path.join(wt3, "c.ts"), "export const c = 1;\n");
     git(wt3, "add", "c.ts");
