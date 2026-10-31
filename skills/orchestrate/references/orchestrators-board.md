@@ -11,7 +11,7 @@ stays the swarm board's word; the orchestrators board is one run on it.
 - **Never closed**: nobody closes it; `close` refuses it without `--force`, kept for the
   person's explicit ask. **Leaving**: `end` your seat when your run closes; the next run of
   your group takes the same seat back with `join`.
-- **Subscribe** to `agreement` and mentions on it; it wakes you beside your own run.
+- **A message to you there wakes your `wait`**, beside your own run.
 - **Decisions flow down**: a team decides within the register. **Disagreements go up**: a
   question that touches another swarm goes to the orchestrators board; still split after one
   exchange round, each holder asks its own person, the thread linked. Nobody overrules sideways.
