@@ -138,8 +138,16 @@ const printReconciled = (unclaimed: string[], flags: Flag[], renames: Rename[] =
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
 
-/** The tool's folder (swarm.mjs's), the aiview skill beside it. */
-const toolRoot = (): string => process.env.SWARM_ROOT ?? path.dirname(path.resolve(process.argv[1]));
+/** The tool's folder (swarm.mjs's), the aiview skill beside it, whatever the entry: swarm.mjs, dist-cli/cli.mjs or src/cli/index.ts. */
+const toolRoot = (): string => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path.dirname(path.resolve(process.argv[1])));
+
+/** The nearest folder at or above `from` holding swarm.mjs; `from` itself when none does. */
+const swarmBoardFolderAbove = (from: string): string => {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "swarm.mjs"))) return dir;
+    if (path.dirname(dir) === dir) return from;
+  }
+};
 
 /** board-split D47: `--project <path>`, the old `--repo` read as it with one line saying so. */
 const projectFlag = (): string | undefined => {
