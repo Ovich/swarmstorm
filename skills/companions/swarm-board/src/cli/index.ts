@@ -22,7 +22,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { claimHeldLine, pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, CODE_WORDING, coreUsage, decisionsLines, eventStep, lostMentionLines, type WriteDecisionsSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -189,12 +189,12 @@ const projectRepo = (): string => {
   const repo = covered.filter((p) => fs.existsSync(p)).map((p) => repoOf(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
 };
-/** board-split D28 (verify-decisions F18): the decisions run's seats file, written in the data home per project, so the
- *  printed `open … --seats <path>` runs as printed (AGENTS rule 10). */
-const writeDecisionsSeats: WriteDecisionsSeats = (repo, seats) => {
+/** The orchestrators board's seats file, written in the data home per project, so the printed
+ *  `open … --seats <path>` runs as printed (AGENTS rule 10). */
+const writeOrchestratorSeats: WriteOrchestratorSeats = (repo, seats) => {
   // one file per project: its checkout's folder name, then a short hash of its git dir
   const project = path.basename(path.dirname(repo)).replace(/[^\w.-]/g, "_");
-  const file = path.join(DATA_ROOT, "decisions", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  const file = path.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(seats, null, 2)}\n`);
   // forward slashes: the path is one shell word on every platform, printed unquoted
@@ -242,8 +242,8 @@ const ago = (at: number | null): string => {
 };
 /** A member's state (swarm-relay D9) and the tool it is in or last ran: `busy (Bash npm test)`; with `ages`, its two
  *  ages after it (D38): `busy (Bash npm test)  progress 12s ago, link 0s ago`. */
-const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt" | "parkedUntil">, ages = false): string =>
-  `${r.state === "parked" && r.parkedUntil ? WORDING.parkedUntil(r.parkedUntil) : r.state}${r.activity ? ` (${r.activity})` : ""}` +
+const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt" | "parked" | "parkedUntil">, ages = false): string =>
+  `${r.parked && r.parkedUntil ? WORDING.parkedUntil(r.parkedUntil) : r.state}${r.activity ? ` (${r.activity})` : ""}` +
   (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 
 /** F27: a member's held files, the first few and how many more. */
@@ -760,23 +760,23 @@ async function main(): Promise<void> {
       const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
       // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
       const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
-      // board-split D28: this run and another open one on the project hold decision authority: the decisions run's line
-      const decisions = decisionsLines(await board.runs(), self().join(" "), writeDecisionsSeats, run.id);
+      // every orchestrator registers on the project's orchestrators board, whatever its roles
+      const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run.id);
       // V-16 (AGENTS rule 10): how each declared seat joins, runnable as printed
       const seatIds = run.seats.map((s) => s.id);
       const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run.id, shellWord(run.group), shellWord("waiting for a task"))) : null;
       // board-split#D66 (V-20): a run of workers whose target branch is checked out: every fast-forward into it would be refused
       const holding = profileOf(run.kind).member === "worker" && run.base ? worktreeHolding(process.cwd(), run.base) : null;
       const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run.base!, holding, CODE_WORDING.detach(shellWord(holding))) : null;
-      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, seatsJoin, detachLine, ...decisions, next].filter((l): l is string => l !== null).join("\n");
+      const lines = (url: string | null) => [String(run.id), stallClamped, url, link, seatsJoin, detachLine, ...orchestrators, next].filter((l): l is string => l !== null).join("\n");
       if (!doc.registered) {
         // the run is open all the same; swarm has no page of its own (companions-merge D13)
         console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, decisions, ...(next ? { next } : {}) }, lines(null));
+        emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: null, link, orchestrators, ...(next ? { next } : {}) }, lines(null));
         break;
       }
       const runUrl = WORDING.runBoardUrl(doc.url, run.id);
-      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, decisions, ...(next ? { next } : {}) }, lines(runUrl));
+      emit({ run: run.id, repo: run.repo, kind: run.kind, group: run.group, plan: run.plan, url: runUrl, link, orchestrators, ...(next ? { next } : {}) }, lines(runUrl));
       break;
     }
     case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
@@ -813,6 +813,8 @@ async function main(): Promise<void> {
       const run = runArg();
       // V-45: a member of the run holding the merge lock is named: its merge did not land
       const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
+      // the orchestrators board is permanent: closed only on purpose
+      if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run));
       const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
@@ -855,7 +857,7 @@ async function main(): Promise<void> {
       // V-34 (D70): a member parked until this phase, or named in its --for, stays parked: named with its unpark; no auto-unpark
       const seatOf = (member: string): string => member.slice(member.lastIndexOf("/") + 1);
       const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
-      const parkedFor = runRepo === undefined ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.state === "parked" && (r.parkedUntil === name || only.includes(r.seat)));
+      const parkedFor = runRepo === undefined ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.parked === true && (r.parkedUntil === name || only.includes(r.seat)));
       const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, cli, shellWord(r.seat), shellWord(p.name)));
       // V-35: a member owing it whose agent is lost is named with the move it needs
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord(seatOf(member)), shellWord(p.name))));
@@ -1434,7 +1436,7 @@ async function main(): Promise<void> {
         printReconciled(unclaimed, flags, renames);
         // V-41: a lost member's activity is from before its link died: its state is lost, with why
         const was = before?.badge?.name === "lost" ? WORDING.wasLost(before.badge.reason) : before ? stateLine(before) : "";
-        console.log(before ? WORDING.seatEnded(p.name, was, before.state === "waiting" ? WORDING.ended(p.run) : WORDING.endedMember(p.run)) : `${p.name} ended`);
+        console.log(before ? WORDING.seatEnded(p.name, was, WORDING.endedMember(p.run)) : `${p.name} ended`);
         if (mine) console.log(removal === null ? `worktree ${mine} removed (branch kept)` : `worktree ${mine} kept: ${removal}; the orchestrator's close sweeps it`);
         if (unmergedKept) console.log(CODE_WORDING.endedSeatUnmerged(p.name, CODE_WORDING.unmergedFact(unmergedKept.branch, unmergedKept.left)));
       });
@@ -1546,17 +1548,17 @@ async function main(): Promise<void> {
       const open = await Promise.all(
         runs.map(async (r) => {
           const lastActivity = await board.lastActivity(r.id);
-          // a run with no activity for a day is likely forgotten: its orchestrator ended without close
-          const idleMs = Date.now() - Date.parse(lastActivity);
+          // a run with no activity for a day is likely forgotten: its orchestrator ended without close; the orchestrators board is never closed
+          const idleMs = r.group === ORCHESTRATORS_GROUP ? 0 : Date.now() - Date.parse(lastActivity);
           return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         }),
       );
       // the machine's held locks (idea 4): store-wide, so listed once above the runs
       const held = await board.locks();
       const merge = await mergeLocksHeld();
-      // board-split D28: each project where two open runs hold decision authority, with the decisions run's command
-      const decisions = decisionsLines(runs, cli, writeDecisionsSeats);
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, decisions }, () => {
+      // each open run not yet seated on its project's orchestrators board, with the command registering it
+      const orchestrators = orchestratorsLines(runs, cli, writeOrchestratorSeats);
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, orchestrators }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         const projectName = projectNameOf();
@@ -1574,7 +1576,7 @@ async function main(): Promise<void> {
           if (idle >= FORGOTTEN_MS)
             console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id));
         }
-        for (const line of decisions) console.log(line);
+        for (const line of orchestrators) console.log(line);
       });
       break;
     }

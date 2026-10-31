@@ -84,7 +84,7 @@ test("open then join prints the roster", () => {
   const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
-  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}working {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
+  assert.match(r.stdout, /review-tool\/S3 {2}run \d+ {2}idle {2}doing: the page {2}files: src\/page\.ts \(interface\), src\/a\.ts/);
   assert.match(r.stdout, /review-tool\/orchestrator/);
 });
 
@@ -186,10 +186,10 @@ test("open without aiview opens the run and exits 0, printing no URL and saying 
   const slices = path.join(toolRoot, "s.json");
   const text = runIn(repo, "open", "--plan", "other", "--title", "T", "--seats", slices);
   assert.equal(text.status, 0, text.stderr);
-  // idea 3, F10: the run id, the link line, how each seat joins (V-16), the checked-out target's detach (V-20), then the next step, last
+  // idea 3, F10: the run id, the link line, how each seat joins (V-16), the checked-out target's detach (V-20), then the orchestrators board's registration, then the next step, last
   assert.match(
     text.stdout,
-    /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\neach seat joins [^\n]*\n[^\n]* is checked out at [^\n]*switch --detach\nnext: no protocol[^\n]*\n$/,
+    /^\d+\nstart your link now, [^\n]* link --run \d+ --as other\/orchestrator\neach seat joins [^\n]*\n[^\n]* is checked out at [^\n]*switch --detach\nregister on the project's orchestrators board[^\n]*\nnext: no protocol[^\n]*\n$/,
     "the run id, the link line, the seats' join, the detach, the next step",
   );
   const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
@@ -228,7 +228,7 @@ test("status --json lists each open run with its kind; the text names the kind (
   assert.equal(s.runs, 1);
   const nick = s.open[0]?.members[0]?.nick as string;
   assert.match(nick, /^[A-Z][a-z]+ [A-Z][a-z]+$/, "the orchestrator's funny name, given at open (D17)");
-  assert.deepEqual(s.open, [{ run: id, kind: "plan", protocol: null, authority: [], group: "review-tool", title: "A plan", phase: null, progress: null, members: [{ name: "review-tool/orchestrator", nick, worktree: null, state: "waiting", activity: null, progressAt: s.open[0].members[0].progressAt, aliveAt: null, files: [] }], lastActivity: s.open[0].lastActivity, forgotten: false }]);
+  assert.deepEqual(s.open, [{ run: id, kind: "plan", protocol: null, authority: [], group: "review-tool", title: "A plan", phase: null, progress: null, members: [{ name: "review-tool/orchestrator", nick, worktree: null, state: "working", activity: null, progressAt: s.open[0].members[0].progressAt, aliveAt: null, files: [] }], lastActivity: s.open[0].lastActivity, forgotten: false }]);
   assert.match(run("status").stdout, new RegExp(`run ${id}  plan  review-tool  A plan`));
 });
 
@@ -236,7 +236,7 @@ test("--json on every verb parses", () => {
   const slices = path.join(toolRoot, "s.json");
   fs.writeFileSync(slices, SLICES);
   const opened = JSON.parse(run("open", "--plan", "review-tool", "--title", "T", "--seats", slices, "--json").stdout);
-  assert.deepEqual(Object.keys(opened).sort(), ["decisions", "group", "kind", "link", "next", "plan", "repo", "run", "url"]);
+  assert.deepEqual(Object.keys(opened).sort(), ["group", "kind", "link", "next", "orchestrators", "plan", "repo", "run", "url"]);
   const id = String(opened.run);
   const as = ["--as", "review-tool/S3"];
   const verbs: string[][] = [
@@ -603,10 +603,10 @@ test("--help lists no serve: the board server is a hidden verb", () => {
 test("status has no server: the data home, the store and the open runs", () => {
   const empty = run("status", "--json");
   assert.equal(empty.status, 0, empty.stderr);
-  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["decisions", "home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(JSON.parse(empty.stdout)).sort(), ["home", "locks", "mergeLocks", "open", "orchestrators", "runs", "sqlite"]);
   const id = openRun();
   const s = JSON.parse(run("status", "--json").stdout);
-  assert.deepEqual(Object.keys(s).sort(), ["decisions", "home", "locks", "mergeLocks", "open", "runs", "sqlite"]);
+  assert.deepEqual(Object.keys(s).sort(), ["home", "locks", "mergeLocks", "open", "orchestrators", "runs", "sqlite"]);
   assert.equal(s.home, toolRoot);
   assert.equal(s.runs, 1);
   const text = run("status").stdout;
@@ -1117,15 +1117,15 @@ test("status and roster print each member's state, what it is doing, and its two
   const id = openRun();
   const before = Date.now();
   assert.equal(run("join", "--run", String(id), "--seat", "S3", "--doing", "page").status, 0);
-  // no activity yet from its link: no evidence of work, so working with no badge, nothing open (swarm-relay D33); never linked: link never
-  assert.match(run("roster").stdout, /review-tool\/S3  run \d+  working  progress \d+s ago, link never  doing: page/);
+  // no activity yet from its link: no evidence of work, and owing nothing: idle, no badge, nothing open (swarm-relay D33); never linked: link never
+  assert.match(run("roster").stdout, /review-tool\/S3  run \d+  idle  progress \d+s ago, link never  doing: page/);
   const roster = JSON.parse(run("roster", "--json").stdout).roster.find((r: { name: string }) => r.name === "review-tool/S3");
-  assert.deepEqual([roster.state, roster.activity, roster.aliveAt], ["working", null, null]);
+  assert.deepEqual([roster.state, roster.activity, roster.aliveAt], ["idle", null, null]);
   assert.ok(roster.progressAt >= before - 1000 && roster.progressAt <= Date.now(), "progress counts from the join");
-  assert.match(run("status").stdout, /^  review-tool\/S3  working  progress \d+s ago, link never$/m);
+  assert.match(run("status").stdout, /^  review-tool\/S3  idle  progress \d+s ago, link never$/m);
   const status = JSON.parse(run("status", "--json").stdout).open.find((r: { run: number }) => r.run === id);
   const s3 = status.members.find((m: { name: string }) => m.name === "review-tool/S3");
-  assert.deepEqual([s3.state, s3.progressAt, s3.aliveAt], ["working", roster.progressAt, null]);
+  assert.deepEqual([s3.state, s3.progressAt, s3.aliveAt], ["idle", roster.progressAt, null]);
 });
 
 test("on a plan run too: the current phase heads wait, deliver and read, follows the roster at join, and sits beside the title in roster and status", () => {
@@ -1386,7 +1386,7 @@ test("join prints the run's composition after the you-are line, --json carries i
   const j = joinSeat(id, "architect");
   const lines = j.stdout.split("\n");
   assert.match(lines[0], /^you are idea\/architect/);
-  assert.ok(lines.some((l) => /^skeptic[^\n]*not joined/.test(l)), j.stdout);
+  assert.ok(lines.some((l) => /^skeptic[^\n]*: empty$/.test(l)), j.stdout);
   const json = JSON.parse(joinSeat(id, "skeptic", "--json").stdout);
   assert.ok(Array.isArray(json.composition.entries) && json.composition.entries.length === 3, JSON.stringify(json.composition));
   const roster = run("roster").stdout;

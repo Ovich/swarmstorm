@@ -33,6 +33,8 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const run = twoSeats();
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   board.join({ run: run.id, seat: "b", doing: "x", files: [] });
+  // both owe the open phase: a link down owing nothing is only away
+  board.phase(board.participant("idea/orchestrator")!, "p", "go");
   // D53: both silent on the board since long before, as members whose agents finished
   for (const seat of ["a", "b"]) quietMember(path.join(dir, "swarm.sqlite"), seat);
   const t = Date.now() + 60_000;

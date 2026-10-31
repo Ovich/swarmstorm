@@ -114,28 +114,24 @@ export const CARRY_MAX_MS = 5 * 60 * 1000;
 /** A named lock others wait on, held this long since its first waiter queued, is `stalled · lock` to both orchestrators (idea 4). */
 export const LOCK_HELD_MS = 10 * 60 * 1000;
 
-/** board-split D36, D49: a member's one state, for every kind of run. `working`: on the board, out of any wait it
- *  holds; `waiting`: in a board wait the server holds (the orchestrator always); `parked`: parked by the orchestrator
- *  until it unparks; `ended`: it left, or its run closed. A pack's own fact (the code pack's `merging`) and the badges
- *  (stalled, lost, blocked) sit beside it, never in it. */
-export type CoreMemberState = "working" | "waiting" | "parked" | "ended";
+/** A member's one state, from two facts: is its link up, and does it owe work (the open phase undone, a task not
+ *  reported; the orchestrator always, while its run is open). Link up: `working` owing, `idle` not. Link down: `lost`
+ *  owing (needs action), `away` not (finished or handed back, resumable; a parked member too). `ended`: it left, or its
+ *  run closed. What it is on (a call, a lock wait, a merge) is its `doing`, never a state. */
+export type CoreMemberState = "working" | "idle" | "away" | "lost" | "ended";
 
-/** board-split D49: the board-held facts a member's state is derived from, and nothing else: no phase owing, no
- *  `doing`, no transcript. `inHeldWait`: a board wait of its own the server holds as its open call. */
-export type CoreStateFacts = { orchestrator: boolean; runOpen: boolean; ended: boolean; parked: boolean; inHeldWait: boolean };
+export type CoreStateFacts = { runOpen: boolean; ended: boolean; parked: boolean; linkDown: boolean; owes: boolean };
 
-/** board-split D49: the one derivation of a member's state, read by snapshot, roster, status and reader alike:
- *  ended > parked > (the pack's fact, applied by the caller) > waiting > working. */
+/** The one derivation of a member's state, read by snapshot, roster, status, seats and reader alike. */
 export function coreStateOf(m: CoreStateFacts): CoreMemberState {
   if (!m.runOpen || m.ended) return "ended";
-  if (m.parked) return "parked";
-  if (m.orchestrator) return "waiting";
-  return m.inHeldWait ? "waiting" : "working";
+  if (m.parked) return "away";
+  if (m.linkDown) return m.owes ? "lost" : "away";
+  return m.owes ? "working" : "idle";
 }
 
-/** board-split D36: a seat's state, derived from its member, never set: `ready` none has sat in it, `running` its
- *  member is on the board, `done` its member left; a parked seat is `ready` again, waiting for its dispatch. */
-export type SeatState = "ready" | "running" | "done";
+/** A seat's state: its member's, or `empty` while nobody has sat in it. */
+export type SeatState = CoreMemberState | "empty";
 /** board-split D54 (amended): out of any wait, a member owing the open phase reads stalled only when its transcript has
  *  not grown and no tool call of its own is open for this long; board-call silence alone is never a stall. */
 export const SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1000;

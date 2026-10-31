@@ -68,13 +68,13 @@ test("V-20: a brainswarm opens with no detach line; its seats' join line still s
   }
 });
 
-test("V-16: a decisions seat standing for a run that closed reads ended in status and in its composition (V-29: one word)", () => {
+test("V-16: an orchestrators-board seat standing for a run that closed reads ended in status and in its composition (V-29: one word)", () => {
   const s = scene([]);
   try {
     openTask(s, "alpha", "--authority", "architect");
-    const seats = path.join(s.home, "decisions.json");
+    const seats = path.join(s.home, "orchestrators.json");
     fs.writeFileSync(seats, JSON.stringify([{ id: "alpha", role: "architect", blockers: [] }]));
-    s.must("open", "--kind", "brainstorm", "--group", "decisions", "--title", "Decisions", "--seats", seats);
+    s.must("open", "--kind", "brainstorm", "--group", "orchestrators", "--title", "Orchestrators", "--seats", seats);
     s.must("close", "--run", "1");
     const status = s.must("status");
     const seat = status.split("\n").filter((l) => /^\s+alpha /.test(l));

@@ -285,11 +285,11 @@ const activityOfCard = (card: HTMLElement) => card.querySelector('[data-componen
 // board-split#D35: the state word is the board's alone; trouble is a badge, its reason on hover
 test.each([
   ["working", {}, WORKING_WORD],
-  ["merging", { state: "merging" }, "merging"],
-  ["waiting", { state: "waiting" }, "waiting on the board"],
-  ["an older board's watching", { state: "watching" }, "waiting on the board"],
-  ["parked", { state: "parked" }, "parked"],
-  ["parked until a phase", { state: "parked", parkedUntil: "P5" }, "parked until P5"],
+  ["merging", { state: "idle", fact: "merging" }, "merging"],
+  ["idle", { state: "idle" }, "idle"],
+  ["away", { state: "away" }, "away"],
+  ["lost", { state: "lost" }, "lost"],
+  ["parked until a phase", { state: "away", parked: true, parkedUntil: "P5" }, "away until P5"],
   ["working on a posted task", { state: "working", owes: { phase: "P3", task: 917 }, doing: "reading the plan" }, "working on #917"],
   ["working with no task posted", { state: "working", owes: { phase: null, task: null }, doing: "reading the plan" }, "working"],
   ["ended", { state: "ended", ended: "2026-10-29T14:09:00.000Z" }, /^ended \d\d:\d\d$/],
@@ -342,8 +342,8 @@ test("the board's badge wins over the liveness words: a null badge on a quiet li
   expect(badgeOf(activeCard())).toBeNull();
 });
 
-test("a parked member carries no badge, whatever the board sends (D30)", () => {
-  show([APP], 1, [withMember({ state: "parked", badge: { name: "lost", reason: "x", since: null } })]);
+test("an away member carries no badge, whatever the board sends (D30)", () => {
+  show([APP], 1, [withMember({ state: "away", badge: { name: "lost", reason: "x", since: null } })]);
   expect(badgeOf(activeCard())).toBeNull();
 });
 
@@ -411,8 +411,8 @@ test("a card without the two ages renders without them", () => {
   expect(agesOf(activeCard())).toBeNull();
 });
 
-test("a waiting card keeps its doing line on its face", () => {
-  show([APP], 1, [withMember({ state: "waiting" })]);
+test("an idle card keeps its doing line on its face", () => {
+  show([APP], 1, [withMember({ state: "idle" })]);
   expect(activeCard().querySelector(".doing")).toBeTruthy();
 });
 
@@ -599,7 +599,7 @@ test("a working member's doing never reaches the word, and no card says dormant"
 });
 
 test("a parked seat's unread reads quiet, kept for its return: no alarm, no attention bucket, no rail dot", () => {
-  show([APP], 1, [withMember({ state: "parked", parkedUntil: "P5", unread: 4, doing: "parked until P5", badge: null })]);
+  show([APP], 1, [withMember({ state: "away", parked: true, parkedUntil: "P5", unread: 4, doing: "parked until P5", badge: null })]);
   const card = activeCard();
   const unread = card.querySelector('[data-component="UnreadCount"]')!;
   expect(unread.textContent).toBe("4 unread");
@@ -616,7 +616,7 @@ test("a parked seat's unread reads quiet, kept for its return: no alarm, no atte
 // U-F13 (D49): a parked card shows no activity line, even when the snapshot still carries a background call from before
 test("a parked card draws no activity line from a stale background call", () => {
   const stale = { open: null, background: { target: "for i in 1 2 3", since: minutesAgo(28), outputGrewAt: null, label: null, command: "for i in 1 2 3; do sleep 1; done" } };
-  show([APP], 1, [withMember({ state: "parked", parkedUntil: "P5", activity: stale })]);
+  show([APP], 1, [withMember({ state: "away", parked: true, parkedUntil: "P5", activity: stale })]);
   expect(activityOfCard(activeCard())).toBeNull();
   cleanup();
   show([APP], 1, [withMember({ state: "working", activity: stale })]);

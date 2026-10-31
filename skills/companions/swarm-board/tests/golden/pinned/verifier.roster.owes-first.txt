@@ -1,6 +1,6 @@
 exit 0
 run 1  T  phase build: build the thing  1/1 done
-g/orchestrator  run 1  waiting  progress <age> ago, link <age> ago  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
-<nick:v1> · g/v1  run 1  working  progress <age> ago, link <age> ago  doing: done build  busy max: 300 s (non-shell calls)
-  seat orchestrator <nick:orchestrator>: joined
-  seat v1 <nick:v1>: joined
+g/orchestrator  run 1  working  progress <age> ago, link <age> ago  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
+<nick:v1> · g/v1  run 1  idle  progress <age> ago, link <age> ago  doing: done build  busy max: 300 s (non-shell calls)
+  seat orchestrator <nick:orchestrator>: working
+  seat v1 <nick:v1>: idle

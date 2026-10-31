@@ -1,0 +1,2 @@
+exit 0
+register on the project's orchestrators board, run 2, which every orchestrator joins and nobody closes: node <cli> seat add beta --run 2 --role architect,tech-lead ; node <cli> join --run 2 --seat beta --doing orchestrating --as orchestrators/beta

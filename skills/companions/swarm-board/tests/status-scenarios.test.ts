@@ -53,7 +53,7 @@ const shown = (run: number, member: string): { state: string; badge: string | nu
   }
   const ticked = board.memberStates(run, new Date()).find((s) => s.member === member.slice(member.indexOf("/") + 1));
   // the tick's states hold the live members; a parked one's badge is never raised by it (D30)
-  if (ticked && card.state !== "parked") assert.equal(ticked.badge?.name ?? null, fromCard.badge, `${member}: the tick's badge and the card agree`);
+  if (ticked && !card.parked) assert.equal(ticked.badge?.name ?? null, fromCard.badge, `${member}: the tick's badge and the card agree`);
   return fromCard;
 };
 
@@ -74,25 +74,35 @@ test("1: park, then the member's agent ends: still parked, no badge, its unread 
   agentEnds(run.id, "b");
   board.post(orch, "@b for later");
   tick(run.id);
-  assert.deepEqual(shown(run.id, "g/b"), { state: "parked", badge: null });
+  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
   assert.ok(board.roster(REPO).find((r) => r.name === "g/b")!.unread > 0, "the post waits for it");
   assert.deepEqual([...events("lost"), ...events("stalled")].filter((e) => e.body.includes("g/b")), []);
 });
 
-test("2: the agent ends mid-wait, not parked: lost once its link is lost past LOST_MS, its state not forced by it", async () => {
-  const { run, b } = setup();
-  const held = waitOf(b, 200);
-  await held;
-  const before = shown(run.id, "g/b").state;
-  // its link went just now: not yet lost
+test("2: the agent ends owing nothing (done, or no task): away once its link is lost past LOST_MS, nothing raised", async () => {
+  const { run, b, orch } = setup();
+  board.phase(orch, "p1", "go", { for: ["b"] });
+  board.done(b, "p1");
+  // its link went just now: still idle
   agentEnds(run.id, "b", 1000);
   tick(run.id);
-  assert.deepEqual(shown(run.id, "g/b"), { state: before, badge: null });
-  // past LOST_MS
+  assert.deepEqual(shown(run.id, "g/b"), { state: "idle", badge: null });
+  // past LOST_MS: away, no lost line
   agentEnds(run.id, "b");
   tick(run.id);
-  assert.deepEqual(shown(run.id, "g/b"), { state: before, badge: "lost" });
+  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
+  assert.equal(events("lost").length, 0);
+  assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "b")!.state, "away");
+});
+
+test("2b: the agent ends owing the open phase: lost past LOST_MS, told once", () => {
+  const { run, orch } = setup();
+  board.phase(orch, "p1", "go", { for: ["b"] });
+  agentEnds(run.id, "b");
+  tick(run.id);
+  assert.deepEqual(shown(run.id, "g/b"), { state: "lost", badge: "lost" });
   assert.equal(events("lost").length, 1);
+  assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "b")!.state, "lost");
 });
 
 test("3: a background task of its own while in a board wait: busy activity, no badge; owing the open phase past the stall time, never held-wait stalled; stalled only past BUSY_MAX with no growth (D55 amended, O-F3)", async () => {
@@ -123,18 +133,18 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   await held;
 });
 
-test("4: unpark: back to its wait's state, its badges from board facts again", async () => {
+test("4: unpark: idle again, its badges from board facts again", async () => {
   const { run, b, orch } = setup();
   board.park(orch, "b");
-  assert.equal(shown(run.id, "g/b").state, "parked");
+  assert.equal(shown(run.id, "g/b").state, "away");
   board.unpark(orch, "b");
   const out = shown(run.id, "g/b");
-  assert.notEqual(out.state, "parked");
+  assert.equal(out.state, "idle");
   assert.equal(out.badge, null);
   // the unpark is for it: read, then its wait is held
   board.deliver(b);
   const held = waitOf(b, 400);
-  assert.equal(shown(run.id, "g/b").state, "waiting");
+  assert.equal(shown(run.id, "g/b").state, "idle");
   await held;
 });
 
@@ -151,10 +161,10 @@ test("6: a parked member's own wait leaves it parked: only unpark lifts a park",
   const { run, b, orch } = setup();
   board.park(orch, "b");
   const held = waitOf(b, 200);
-  assert.deepEqual(shown(run.id, "g/b"), { state: "parked", badge: null });
+  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
   await held;
   board.setDoing(b, "back");
-  assert.deepEqual(shown(run.id, "g/b"), { state: "parked", badge: null });
+  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
 });
 
 test("U-F2: a park leaves the member's doing its own; a doing an older server wrote for a park or an unpark is cleared at open (board-split D48)", async () => {

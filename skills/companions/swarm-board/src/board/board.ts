@@ -33,7 +33,7 @@ export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, Fi
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
 export type Seat = SeatSpec & { state: SeatState };
 /** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
-export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: "joined" | "not joined" | "ended" | "lost" | "parked" };
+export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: SeatState };
 /** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
 export type Declared = { path: string; interface: boolean }; // repository-relative
@@ -168,8 +168,10 @@ export interface RosterEntry {
   badge: Badge | null;
   subscriptions: Subscription[];
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
-  /** board-split D49: its one state (ended, parked, waiting in a held board wait, else working); what it does is `activity`. */
+  /** Its one state (working, idle, away, lost, ended); what it does is `activity`. */
   state: SnapshotMemberState;
+  /** Parked by the orchestrator (its state reads away); absent when not. */
+  parked?: true;
   /** D34 (T36): the phase a parked member sleeps until, when its park named one. */
   parkedUntil?: string;
   /** What its pack says of it now (D36); absent when nothing. */
@@ -230,9 +232,8 @@ export type RunSummary = {
   paused?: { text: string; person: boolean } | null;
 };
 export type RepoSummary = { repo: string; name: string; runs: RunSummary[] };
-/** board-split D36: the core state; a pack widens it with its own fact (T16). */
-/** The core's state (D36), or the fact the member's pack says instead of working or waiting. */
-export type SnapshotMemberState = CoreMemberState | MemberFact;
+/** A member's one state (liveness.ts); a pack's fact (merging) is its `fact`, never its state. */
+export type SnapshotMemberState = CoreMemberState;
 export type SnapshotMember = {
   /** The run the member sat in: a group can hold several runs, its members are told apart by this; absent from a reader before it. */
   run?: number;
@@ -244,6 +245,8 @@ export type SnapshotMember = {
   area?: string;
   doing: string;
   state: SnapshotMemberState;
+  /** What its pack says of it now (merging); absent when nothing. */
+  fact?: MemberFact;
   /** board-split D36: what a working member owes: the open phase (null with none open) and the seq of the latest
    *  orchestrator post naming it (null when none); absent unless working. */
   owes?: { phase: string | null; task: number | null };
@@ -258,6 +261,8 @@ export type SnapshotMember = {
   calls: number;
   /** A background `wait --mentions` is pending: the member hears the board while it works (D49). */
   listening: boolean;
+  /** Parked by the orchestrator (its state reads away); absent when not. */
+  parked?: true;
   /** board-split D34: the phase a parked seat sleeps until (`park --until`); absent when parked with none, or not parked. */
   parkedUntil?: string;
   /** board-split D31, D32: what the member runs now, from its link: its oldest open call and its awaited background
@@ -890,6 +895,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const phaseOf = (r: Row): Phase | null => (r.phase == null ? null : { name: String(r.phase), text: String(r.phase_text ?? "") });
 
+  /** A seat's state: its member's (liveness.ts), `empty` while nobody sat in it; `ended` when it stands for a closed run (V-16). */
+  const seatStateOf = (run: Row, seat: string, standsForClosed: boolean): SeatState => {
+    if (standsForClosed) return "ended";
+    const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(Number(run.id), seat) as Row | undefined;
+    return p ? memberStateOf(p, run) : "empty";
+  };
   const toRun = (r: Row): Run => ({
     phase: phaseOf(r),
     paused: r.paused == null ? null : String(r.paused),
@@ -912,7 +923,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       ...(s.area == null ? {} : { area: String(s.area) }),
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
-      state: (s.stood_for != null ? "done" : String(s.derived)) as SeatState,
+      state: seatStateOf(r, String(s.id), s.stood_for != null),
       ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
@@ -1253,8 +1264,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const compositionOf = (run: RunId): Composition => {
     const seats = db.prepare(`SELECT s.*, ${SEAT_STOOD_FOR_CLOSED_SQL} AS stood_for FROM seats s WHERE s.run = ? ORDER BY s.ord`).all(run) as Row[];
     const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run = ?`).all(run) as Row[];
-    const goneSet = new Set((db.prepare("SELECT member FROM badge_episodes WHERE run = ? AND badge = 'lost' AND opened_at IS NOT NULL AND closed_at IS NULL").all(run) as Row[]).map((x) => String(x.member)));
-    const plan = String(runRow(run).plan);
+    const r = runRow(run);
+    const plan = String(r.plan);
     const showRole = new Set(seats.map((s) => (s.role == null ? "" : String(s.role)))).size > 1;
     const entry = (seat: string, s?: Row): CompositionEntry => {
       const p = people.find((x) => String(x.seat) === seat);
@@ -1266,8 +1277,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         nick: p ? nickOf(p) : null,
         ...(s?.role == null ? {} : { role: String(s.role) }),
         ...(s?.area == null ? {} : { area: String(s.area) }),
-        // board-split D49 (A1-2): a parked member reads no lost, whatever a warned row left from before its park
-        state: standsForClosed || p?.ended_at != null ? "ended" : !p ? "not joined" : Number(p.parked) === 1 ? "parked" : goneSet.has(seat) ? "lost" : "joined",
+        state: standsForClosed ? "ended" : p ? memberStateOf(p, r) : "empty",
       };
     };
     const entries = [entry(ORCHESTRATOR), ...seats.map((s) => entry(String(s.id), s))];
@@ -1345,9 +1355,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // V-46: a member queued on a pack's lock, its wait held, is waiting on that lock, whatever else it runs
     return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p, Date.now()) != null;
   };
-  /** board-split D49: a participant row's one state, the same for snapshot, roster, status and reader. */
-  const memberStateOf = (p: Row, runOpen: boolean): CoreMemberState =>
-    coreStateOf({ orchestrator: String(p.seat) === ORCHESTRATOR, runOpen, ended: p.ended_at != null, parked: Number(p.parked) === 1, inHeldWait: inHeldWaitOf(p) });
+  /** A participant row's one state (liveness.ts), the same for snapshot, roster, status, seats and reader. */
+  const memberStateOf = (p: Row, run: Row | undefined, t = Date.now()): CoreMemberState =>
+    coreStateOf({ runOpen: run?.state === "open", ended: p.ended_at != null, parked: Number(p.parked) === 1, linkDown: run != null && lostOf(p, run, t) != null, owes: run != null && owesOf(p, run) });
+  /** Whether a member owes work: the orchestrator always; a member the open phase undone, else a task not reported. */
+  const owesOf = (p: Row, run: Row): boolean => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null || (run.phase == null && taskOwedReportOf(p, run) != null);
   /** A participant row's state at `t`: gone, waiting (its open call is the board wait), busy, working, else quiet. */
   /** S22: when the seat's current member joined (a re-join included), ISO. */
   const seatedAtOf = (p: Row): string => String(p.seated_at ?? p.joined_at);
@@ -1466,7 +1478,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .get(Number(p.id), Number(run.id), `${String(run.plan)}/${String(p.seat)}`) as Row | undefined;
     if (task?.at == null) return null;
     const reported = db
-      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND mentions LIKE ? LIMIT 1")
+      // its own post or urgent only: a board notice in its name (a lock freed from it) is never its report
+      .prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind IN ('msg', 'urgent') AND mentions LIKE ? LIMIT 1")
       .get(Number(run.id), Number(p.id), Number(task.seq), `%${JSON.stringify(`${String(run.plan)}/${ORCHESTRATOR}`)}%`);
     return reported ? null : { seq: Number(task.seq), deliveredAt: Date.parse(String(task.at)) };
   };
@@ -1622,10 +1635,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (blocked) return { ...activity, badge: blocked };
     // board-split D55: lost and stalled show only once their episode opened (two ticks); `predicate`: the tick's raw read
     const shows = (name: string): boolean => opts.predicate === true || episodeOpenOf(Number(run.id), String(p.seat), name);
+    // a link down raises lost only on a member owing work; one owing none is away, with nothing to tell
     const lost = lostOf(p, run, t);
-    if (lost) return { ...activity, badge: shows("lost") ? lost : null };
-    // U-F28: the reason opens on the state word the card shows (D49's one state), never the activity's own word
-    const stalledRaw = stalledBadgeOf(p, run, t, memberStateOf(p, run.state === "open"));
+    if (lost) return { ...activity, badge: owesOf(p, run) && shows("lost") ? lost : null };
+    const stalledRaw = stalledBadgeOf(p, run, t, memberStateOf(p, run, t));
     const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
     return { ...activity, badge: stalled?.badge ?? null, ...(stalled?.rule ? { rule: stalled.rule } : {}), ...(stalled?.owes ? { owes: stalled.owes } : {}) };
   };
@@ -1683,7 +1696,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const h = memberRowOf(Number(lock.participant));
     const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run)) as Row;
     const st = memberView(h, run, t, { withHolder: false });
-    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run.state === "open"), badge: st.badge?.name ?? null, doing: st.doing };
+    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run, t), badge: st.badge?.name ?? null, doing: st.doing };
   };
   /** The lock participant `id` waits on, as its state's `doing`: `lock <name>, held by <Name> (<state>)`; null when it waits on none. */
   const lockWaitOf = (id: number, t: number): string | null => {
@@ -2550,7 +2563,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             const holderSince = statesOf(h.run, t).get(h.member.slice(h.member.lastIndexOf("/") + 1))?.since ?? null;
             const heldLong = t - Date.parse(String(w.first)) >= LOCK_HELD_MS;
             // board-split D52: the holder stuck LOCK_HELD_MS (D55's reason), never the run's stall window
-            const holderStuck = (h.state === "waiting" || h.badge === "stalled") && holderSince != null && t - holderSince >= LOCK_HELD_MS;
+            const holderStuck = (h.state === "idle" || h.badge === "stalled") && holderSince != null && t - holderSince >= LOCK_HELD_MS;
             if (!heldLong && !holderStuck) continue;
             const holderSlice = h.member.slice(h.member.lastIndexOf("/") + 1);
             const handle = `${h.code}·${holderSlice}`;
@@ -2665,7 +2678,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
-        state: factEntry(toParticipant(r)).fact ?? memberStateOf(r, true),
+        state: memberStateOf(r, db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(r.run)) as Row | undefined, t),
+        ...(Number(r.parked) === 1 ? { parked: true as const } : {}),
         ...(Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {}),
         activity: Number(r.parked) === 1 ? null : (stateIn(Number(r.run), String(r.seat))?.doing ?? null),
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
@@ -2906,7 +2920,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const marks = runIds.map(() => "?").join(", ");
 
 
-      const sliceRows = db.prepare(`SELECT s.*, ${SEAT_STATE_SQL} AS derived FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds) as Row[];
+      const sliceRows = db.prepare(`SELECT s.* FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds) as Row[];
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds) as Row[];
       const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
@@ -2937,10 +2951,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const ended = r.ended_at != null;
         const runR = runById(Number(r.run));
         const owedPhase = runR ? owedNameOf(r, runR) : null;
-        const core = memberStateOf(r, runOpen.get(Number(r.run)) === true);
-        // the pack's fact reads instead of working or waiting (D36, D18), never over parked or ended
-        const fact = core === "working" || core === "waiting" ? packPart.factOf(id) : null;
-        const state: SnapshotMemberState = fact ?? core;
+        const core = memberStateOf(r, runR ?? undefined, t);
+        const state: SnapshotMemberState = core;
+        // what its pack says of it (merging), beside its state, on a live member only
+        const fact = core === "working" || core === "idle" ? packPart.factOf(id) : null;
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -2951,6 +2965,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           ...(orchestrator || s?.area == null ? {} : { area: String(s.area) }),
           doing: String(r.doing),
           state,
+          ...(fact ? { fact } : {}),
           ...(() => {
             if (core !== "working") return {};
             const task = latestTaskTo(Number(r.run), `${r.plan}/${seat}`);
@@ -2967,6 +2982,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
           badge: ended ? null : (livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null),
           unread: ended ? 0 : unreadOf(id),
+          ...(Number(r.parked) === 1 ? { parked: true as const } : {}),
           ...(Number(r.parked) === 1 && r.parked_until != null ? { parkedUntil: String(r.parked_until) } : {}),
           // U-F13: a parked or ended seat runs nothing the card should show; its last calls are stale
           ...(ended || Number(r.parked) === 1 ? {} : activityShown(Number(r.run), seat)),
@@ -3006,7 +3022,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             ...(s.role == null ? {} : { role: String(s.role) }),
             ...(s.area == null ? {} : { area: String(s.area) }),
             link: s.link == null ? null : String(s.link),
-            state: String(s.derived),
+            state: seatStateOf(run, String(s.id), false),
             blockers: JSON.parse(String(s.blockers)) as string[],
             member: nameOf.get(`${run.id}/${s.id}`) ?? null,
           }));

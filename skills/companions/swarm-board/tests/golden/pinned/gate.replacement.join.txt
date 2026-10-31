@@ -1,8 +1,8 @@
 exit 0
 you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you
-orchestrator <nick:orchestrator>: joined
-w1 <nick:w1>: joined
-g/orchestrator  run 1  waiting  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
+orchestrator <nick:orchestrator>: working
+w1 <nick:w1>: idle
+g/orchestrator  run 1  working  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
 <nick:w1> · g/w1  run 1  working  doing: replacing
 #<seq> g/orchestrator  <ts>
 @w1 do the thing

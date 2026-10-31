@@ -43,7 +43,9 @@ test("golden V-25 (D72): after end --seat, the replacement is shown the task tho
 });
 
 test("golden V-25 (D72): a replacement joining a lost member's seat is shown the task too", () => {
-  const { run, task } = taskedAndAsked();
+  const { run, orch, task } = taskedAndAsked();
+  // its question counts as its report: it owes the open phase instead, so its link down is lost, not away
+  board.phase(orch, "p", "go");
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w1", 120_000);
   tick2(board, run, new Date(base), () => ({ connected: false, lostAt: base - 61_000 }));

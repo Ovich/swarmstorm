@@ -73,7 +73,7 @@ test("V-9: no phase open, a delivered task with no report reads stalled in a hel
   board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
   const stalled = events("stalled").map((e) => e.body);
   assert.equal(stalled.length, 1);
-  assert.match(stalled[0], new RegExp(`^stalled g/a: waiting, task #${taskSeq} delivered, no report, in a wait \\d+ min; no phase open$`));
+  assert.match(stalled[0], new RegExp(`^stalled g/a: working, task #${taskSeq} delivered, no report, in a wait \\d+ min; no phase open$`));
   board.livenessTick(run, new Date(due + 60_000), linked);
   assert.equal(events("stalled").length, 1, "one alarm per episode");
   await release();
@@ -154,6 +154,9 @@ test("V-23: the board's lock-freed notice for a lost holder is never taken for a
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
   codeVerbs(board).lockMerge(w2);
   codeVerbs(board).lockMerge(w1);
+  // w2 owes the open phase: a link down owing nothing is only away
+  board.phase(board.participant("g/orchestrator")!, "p", "go", { for: ["g/w2"] });
+  board.deliver(w2);
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
   const presence: Presence = (m) => (m === "w2" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });

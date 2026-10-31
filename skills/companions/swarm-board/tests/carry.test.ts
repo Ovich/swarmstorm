@@ -206,10 +206,9 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   board.pause(orch, "the person decides");
   board.deliver(orch);
   const base = Date.now();
-  // during the pause: a joiner, both dones (all-done), a member gone
+  // during the pause: a joiner, dones, a member gone that still owes the phase
   board.done(arrive(run.id, "aaa111"), "p");
   board.done(m.w1, "p");
-  board.done(m.w2, "p");
   board.recordActivity(run.id, "w2", act({ grewAt: base }), new Date(base));
   links.set("w2", { connected: false, lostAt: base });
   for (const s of [31, 600, 1800]) tick2(board, run.id, new Date(base + s * 1000), presence);
@@ -219,8 +218,8 @@ test("B11 and d3's guards: a paused run is silent but urgent; resume gives every
   assert.ok(woke(await urgent), "urgent still wakes");
   const resumed = board.resume(orch, "go on");
   const held = resumed.held.join("\n");
-  for (const said of [/joined: aaa111/, /all done p/, /lost g\/w2/]) assert.match(held, said);
-  for (const said of ["joined: aaa111", "all done p", "lost g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
+  for (const said of [/joined: aaa111/, /done p \(2\/3\)/, /lost g\/w2/]) assert.match(held, said);
+  for (const said of ["joined: aaa111", "done p (2/3)", "lost g/w2"]) assert.equal(held.split(said).length - 1, 1, `${said} once: ${held}`);
   // g1: still lost after the resume, told once
   assert.equal(board.memberStates(run.id, new Date(base + 1801_000)).find((s) => s.member === "w2")!.badge?.name, "lost");
   tick2(board, run.id, new Date(base + 1802_000), presence);

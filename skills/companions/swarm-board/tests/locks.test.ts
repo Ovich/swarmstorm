@@ -80,7 +80,10 @@ test("D2: unlock wakes the waiter in another repository with unlocked <name>, an
 });
 
 test("D3: a lock is released by end, by gone and by close, each telling its waiters unlocked", async () => {
-  const { runA, a1, a2, b1 } = setup();
+  const { runA, a1, a2, b1, oA } = setup();
+  // a2 owes a task, so its link lost is lost (one owing nothing is only away)
+  board.post(oA, "@a2 do T1", { task: true });
+  board.deliver(a2);
   for (const [name, release] of [
     ["app:one", () => board.end(a1)],
     ["app:two", () => {
@@ -161,7 +164,7 @@ test("G2: the orchestrator's own breach is never told to SendMessage itself", ()
   assert.match(next, /stop only the PIDs you started/);
 });
 
-test("D8: a holder waiting past LOCK_HELD_MS with another run's member queued: stalled · lock to both orchestrators, once per hold; held 10 min by a holder at work: told too", async () => {
+test("D8: a holder idle past LOCK_HELD_MS with another run's member queued: stalled · lock to both orchestrators, once per hold; held 10 min by a holder at work: told too", async () => {
   const { runA, runB, a1, b1, oA, oB } = setup();
   board.lock(a1, "port:4413");
   board.lock(b1, "port:4413");
@@ -179,7 +182,7 @@ test("D8: a holder waiting past LOCK_HELD_MS with another run's member queued: s
   const toA = bodies(oA).filter((b) => /· lock port:4413/.test(b));
   assert.equal(toB.length, 1, toB.join("\n"));
   assert.equal(toA.length, 1, toA.join("\n"));
-  assert.match(toB[0], /^stalled ga\/a1 · lock port:4413: its holder waiting \d+ s; .*1 waiting$/);
+  assert.match(toB[0], /^stalled ga\/a1 · lock port:4413: its holder idle \d+ s; .*1 waiting$/);
   await held;
   // a holder at work, the lock held 10 min since its first waiter
   board.unlock(a1, "port:4413");

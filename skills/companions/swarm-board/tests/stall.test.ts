@@ -241,7 +241,7 @@ test("O-F3 (D55 amended): a held wait over its own open background task is busy,
   assert.equal(stalledOf({ ...f, background: { since: T0, grewAt: T0 + 10 * MIN } }, T0 + BUSY_MAX_MS), null);
 });
 
-test("U-F28 + O-F3: a held wait over a background task reads waiting, and stalls only on the busy bound", async () => {
+test("U-F28 + O-F3: a held wait over a background task, owing p1, reads working, and stalls only on the busy bound", async () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
@@ -257,11 +257,11 @@ test("U-F28 + O-F3: a held wait over a background task reads waiting, and stalls
   board.livenessTick(run.id, new Date(past + BADGE_CONFIRM_MS), linked);
   assert.ok(!badgeAt(run.id, past + BADGE_CONFIRM_MS));
   const card = board.snapshot(REPO).roster.find((m) => m.member === "g/a")!;
-  assert.equal(card.state, "waiting");
+  assert.equal(card.state, "working");
   const hung = base + BUSY_MAX_MS + 1000;
   board.livenessTick(run.id, new Date(hung), linked);
   board.livenessTick(run.id, new Date(hung + BADGE_CONFIRM_MS), linked);
-  assert.match(badgeAt(run.id, hung + BADGE_CONFIRM_MS)!.reason, /^waiting, not done p1, a background task, no growth /);
+  assert.match(badgeAt(run.id, hung + BADGE_CONFIRM_MS)!.reason, /^working, not done p1, a background task, no growth /);
   stop.abort();
   await held;
 });

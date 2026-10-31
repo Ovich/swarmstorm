@@ -27,14 +27,14 @@ test("D3: join returns every declared seat, joined or not, with role and area", 
   const run = open([{ id: "w1", role: "worker", area: "the app" }, { id: "v1", role: "verifier" }]);
   const j = join(run.id, "w1");
   assert.deepEqual(j.composition.entries.map((e) => [e.seat, e.state, e.role, e.area]), [
-    ["orchestrator", "joined", undefined, undefined],
-    ["w1", "joined", "worker", "the app"],
-    ["v1", "not joined", "verifier", undefined],
+    ["orchestrator", "working", undefined, undefined],
+    ["w1", "idle", "worker", "the app"],
+    ["v1", "empty", "verifier", undefined],
   ]);
   assert.equal(j.composition.showRole, true);
   assert.equal(j.composition.lines.length, 3);
-  assert.match(j.composition.lines[1], /^w1 [A-Z][a-z]+ [A-Z][a-z]+ worker \(the app\): joined$/);
-  assert.equal(j.composition.lines[2], "v1 verifier: not joined");
+  assert.match(j.composition.lines[1], /^w1 [A-Z][a-z]+ [A-Z][a-z]+ worker \(the app\): idle$/);
+  assert.equal(j.composition.lines[2], "v1 verifier: empty");
   const v1 = join(run.id, "v1");
   assert.deepEqual(board.composition(run.id), v1.composition);
 });

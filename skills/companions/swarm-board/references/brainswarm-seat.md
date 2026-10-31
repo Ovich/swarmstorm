@@ -1,8 +1,9 @@
 # The seat's side
 
-**The first rule: you never end your turn while the run is open, and every wait runs in the
-foreground.** Your link is your one background task; a wait is never one. A seat that ends its
-turn is stuck: nothing wakes it, and the run stalls on it. How to wait is the line the CLI
+**The first rule: you end your turn only when you owe nothing (the open phase done), and every
+wait runs in the foreground.** Your link is your one background task; a wait is never one. Ended
+owing nothing, you read `away` and the orchestrator resumes you by message; ended owing the
+phase, you read `lost` and the run stalls on you. How to wait is the line the CLI
 prints; read it and run it, in the foreground. A message the orchestrator sends you directly is
 its word as much as a post.
 

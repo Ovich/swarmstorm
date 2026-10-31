@@ -49,16 +49,16 @@ test("opens a run and lists its slices", () => {
   assert.deepEqual(
     run.seats.map((s) => [s.id, s.state, s.blockers]),
     [
-      ["S1", "ready", []],
-      ["S3", "ready", ["S1"]],
-      ["S5", "ready", []],
+      ["S1", "empty", []],
+      ["S3", "empty", ["S1"]],
+      ["S5", "empty", []],
     ],
   );
   // board-split D36: a seat's state follows its member, never set
   const s1 = board.join({ run: run.id, seat: "S1", doing: "x", files: [] }).member;
-  assert.equal(board.runs()[0].seats[0].state, "running");
+  assert.equal(board.runs()[0].seats[0].state, "idle");
   board.end(s1);
-  assert.equal(board.runs()[0].seats[0].state, "done");
+  assert.equal(board.runs()[0].seats[0].state, "ended");
 });
 
 test("join returns every participant of the repository, both plans", () => {
@@ -222,14 +222,14 @@ test("a superseded wait leaves the newer one's state: listening while a mentions
   const listener = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   const foreground = watcher.wait(watcher.participant(s5.name)!, { timeoutMs: 400 });
   assert.equal((await listener).superseded, true);
-  assert.deepEqual([s5Of().state, s5Of().listening], ["waiting", false]);
+  assert.deepEqual([s5Of().state, s5Of().listening], ["idle", false]);
   await foreground;
-  assert.deepEqual([s5Of().state, s5Of().listening], ["working", false]);
+  assert.deepEqual([s5Of().state, s5Of().listening], ["idle", false]);
   const first = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   const second = watcher.wait(watcher.participant(s5.name)!, { timeoutMs: 400, mentionsOnly: true });
   assert.equal((await first).superseded, true);
   // D49: a held wait with no link to say it is a background listener reads waiting
-  assert.deepEqual([s5Of().state, s5Of().listening], ["waiting", true]);
+  assert.deepEqual([s5Of().state, s5Of().listening], ["idle", true]);
   await second;
   assert.equal(s5Of().listening, false);
 });
@@ -610,20 +610,20 @@ test("a snapshot shows two plans on one repository", () => {
   assert.deepEqual(
     snap.queues["review-tool"].map((q) => [q.seat, q.role, q.state, q.blockers, q.member]),
     [
-      ["S1", "the board", "ready", [], null],
-      ["S3", "the page", "running", ["S1"], "review-tool/S3"],
-      ["S5", "the skill", "running", [], "review-tool/S5"],
+      ["S1", "the board", "empty", [], null],
+      ["S3", "the page", "idle", ["S1"], "review-tool/S3"],
+      ["S5", "the skill", "idle", [], "review-tool/S5"],
     ],
   );
   const by = Object.fromEntries(snap.roster.map((r) => [r.member, r]));
   assert.deepEqual(Object.keys(by).sort(), ["review-tool/S3", "review-tool/S5", "review-tool/orchestrator", "swarm/S1", "swarm/orchestrator"]);
-  assert.equal(by["review-tool/orchestrator"].state, "waiting"); // board-split D36: watching is waiting
-  assert.equal(by["review-tool/S3"].state, "working");
+  assert.equal(by["review-tool/orchestrator"].state, "working"); // the orchestrator owes its run
+  assert.equal(by["review-tool/S3"].state, "idle");
   assert.equal(by["review-tool/S3"].role, "the page");
   assert.equal(by["review-tool/S3"].doing, "the page");
   assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", interface: false, shared: false }]);
-  // board-split D36: the lock is the code pack's fact (T16), never a core state: its holder reads merging
-  assert.equal(by["swarm/S1"].state, "merging");
+  // the lock is the code pack's fact, beside the state: its holder reads merging
+  assert.deepEqual([by["swarm/S1"].state, by["swarm/S1"].fact], ["idle", "merging"]);
   assert.deepEqual(by["swarm/S1"].files, [{ path: "src/api.ts", interface: true, shared: false }]);
   assert.deepEqual(snap.lock && snap.lock.holder, "swarm/S1");
   const last = snap.events.at(-1)!;
@@ -633,17 +633,17 @@ test("a snapshot shows two plans on one repository", () => {
   assert.throws(() => board.snapshot("/repos/none/.git"), /no project \/repos\/none\/\.git/);
 });
 
-test("a member's state: ended, waiting", async () => {
+test("a member's state: ended, idle", async () => {
   const { run, s3, s5 } = claimed();
   const waiting = board.wait(s5, { timeoutMs: 400 });
   // board-split D49: waiting is the held wait, read where it is held
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "waiting");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === s5.name)!.state, "idle");
   await waiting;
   board.end(s5);
   const by = Object.fromEntries(board.snapshot(REPO).roster.map((r) => [r.member, r.state]));
   assert.equal(by[s5.name], "ended");
-  assert.equal(by[s3.name], "working");
-  assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "S5")!.state, "done");
+  assert.equal(by[s3.name], "idle");
+  assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "S5")!.state, "ended");
 });
 
 test("a pending mentions-only wait is listening; working while its open call is another (D49), a plain wait is waiting", async () => {
@@ -653,14 +653,14 @@ test("a pending mentions-only wait is listening; working while its open call is 
   const listening = board.wait(s5, { timeoutMs: 300, mentionsOnly: true });
   const t = Date.now();
   board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "npm test", since: t, boardWait: false, shell: true }, lastTool: null, finished: false }, new Date(t));
-  assert.deepEqual([s5Of().state, s5Of().listening], ["working", true]);
+  assert.deepEqual([s5Of().state, s5Of().listening], ["idle", true]);
   await listening;
   assert.equal(s5Of().listening, false);
   board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: t, boardWait: true, shell: true }, lastTool: null, finished: false }, new Date(t));
   const waiting = board.wait(s5, { timeoutMs: 300 });
-  assert.deepEqual([s5Of().state, s5Of().listening], ["waiting", false]);
+  assert.deepEqual([s5Of().state, s5Of().listening], ["idle", false]);
   await waiting;
-  assert.equal(s5Of().state, "working");
+  assert.equal(s5Of().state, "idle");
 });
 
 test("a closed run stays in repos() within the retention, however many closed after it (D46)", () => {
@@ -1093,7 +1093,7 @@ test("an agreement in another run does not wake a run-scoped seat; any:agreement
 test("addSeat adds after the last, ready; refuses a duplicate, an unknown blocker, a closed run; the snapshot lists it", () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: SLICES });
   const s = board.addSeat(run.id, { id: "S7", blockers: ["S1"] });
-  assert.deepEqual([s.id, s.state, s.blockers], ["S7", "ready", ["S1"]]);
+  assert.deepEqual([s.id, s.state, s.blockers], ["S7", "empty", ["S1"]]);
   assert.deepEqual(board.runs()[0].seats.map((x) => x.id), ["S1", "S3", "S5", "S7"]);
   assert.ok(board.snapshot(REPO).queues["review-tool"].some((q) => q.seat === "S7"));
   assert.ok(board.snapshot(REPO).events.some((e) => /^\+ S7 added$/.test(e.body)));

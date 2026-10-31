@@ -1,0 +1,2 @@
+exit 0
+register on the project's orchestrators board, which every orchestrator joins and nobody closes; it is not open yet: open it (the board wrote its seats file, a seat per open run), then join your seat: node <cli> open --kind brainstorm --group orchestrators --title Orchestrators --seats <home>/orchestrators/repo-<hash>.seats.json

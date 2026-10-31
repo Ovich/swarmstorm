@@ -1,6 +1,6 @@
 ---
 name: swarm-worker
-description: "Takes tasks from the swarm board, in any run that builds code (a task swarm, a plan run, a build-verify run): joins, the board making its worktree, does each task the orchestrator posts to it, shaping the code around it and naming it well, merges what it changed, reports, and waits for the next until the run closes. Use for every builder an orchestrator dispatches."
+description: "Takes tasks from the swarm board, in any run that builds code (a task swarm, a plan run, a build-verify run): joins, the board making its worktree, does each task the orchestrator posts to it, shaping the code around it and naming it well, merges what it changed, reports, and hands back, the orchestrator resuming it with the next. Use for every builder an orchestrator dispatches."
 model: opus
 effort: medium
 ---
@@ -37,6 +37,6 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop
 the product the verifiers walk (each verifier owns its own instance), or edit the plan, unless your brief says so in those words. **One
-command per shell call**, never chained with `&&` or `;`. **Never end your turn while the run is
-open**: between tasks, wait in the foreground; never run `end` while it is open (it is refused).
-Only a park line from the orchestrator ends your turn, without `end`.
+command per shell call**, never chained with `&&` or `;`. **End your turn only once your task is
+merged and reported**, with your report, without `end` (refused while the run is open): you read
+away, and the orchestrator resumes you by message with the next task.

@@ -93,17 +93,17 @@ const named = (hm: string, from: string, event: NonNullable<SnapshotEvent["event
 });
 
 const RT_SLICES: [string, string, string, string[]][] = [
-  ["S1", "Sessions table gains a token column", "done", []],
-  ["S2", "The token store", "done", []],
-  ["S3", "The Session interface carries the refresh token", "running", []],
-  ["S4", "The refresh endpoint", "running", []],
-  ["S5", "The client retries once on 401", "running", []],
+  ["S1", "Sessions table gains a token column", "ended", []],
+  ["S2", "The token store", "ended", []],
+  ["S3", "The Session interface carries the refresh token", "idle", []],
+  ["S4", "The refresh endpoint", "idle", []],
+  ["S5", "The client retries once on 401", "idle", []],
   ["S6", "Settings lists signed-in devices", "blocked", ["S3", "S5"]],
   ["S7", "A session survives expiry, end to end", "blocked", ["S4", "S5"]],
 ];
 const AL_SLICES: [string, string, string, string[]][] = [
-  ["S1", "The audit table and its writer", "running", []],
-  ["S2", "Every auth route writes an audit entry", "running", []],
+  ["S1", "The audit table and its writer", "idle", []],
+  ["S2", "Every auth route writes an audit entry", "idle", []],
   ["S3", "The audit page", "blocked", ["S1"]],
 ];
 /** The audit-log plan and its first slice carry their documents' links (D44); the rest none. */
@@ -116,7 +116,7 @@ const queue = (plan: string, seats: [string, string, string, string[]][]) =>
     link: plan === AL && seat === "S1" ? AL_S1_LINK : null,
     state,
     blockers,
-    member: state === "running" ? `${plan}/${seat}` : null,
+    member: state !== "empty" ? `${plan}/${seat}` : null,
   }));
 
 export const RUNS: RunSummary[] = [
@@ -141,8 +141,8 @@ export const LIVE: BoardSnapshot = {
   lockHistory: [],
   roster: [
     member(`${RT}/S3`, "The Session interface carries the refresh token", "Adding refreshToken to Session, then its two readers", "working", [["src/auth/session.ts", true], ["src/auth/session.test.ts"]], "14:02", 31),
-    member(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "waiting", [], "14:00", 0),
-    member(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "waiting", [], "14:05", 0),
+    member(`${RT}/orchestrator`, "", "7 slices prepared, 5 dispatched; S6 and S7 wait for their blockers", "working", [], "14:00", 0),
+    member(`${AL}/orchestrator`, "", "3 slices prepared, 2 dispatched; S3 waits for S1", "working", [], "14:05", 0),
     member(`${RT}/S4`, "The refresh endpoint", "Writing POST /auth/refresh against the token store", "working", [["src/routes/auth.ts"], ["src/routes/refresh.test.ts"]], "14:02", 24),
     member(`${RT}/S5`, "The client retries once on 401", "Running the client tests", "working", [["web/http/client.ts"], ["web/http/client.test.ts"]], "14:10", 12),
     member(`${AL}/S1`, "The audit table and its writer", "Writing the migration for audit_entries", "working", [["src/audit/audit.ts", true], ["migrations/0042_audit.sql"]], "14:06", 15),

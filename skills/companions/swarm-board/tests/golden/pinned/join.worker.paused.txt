@@ -1,8 +1,8 @@
 exit 0
 you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you
-orchestrator <nick:orchestrator>: joined
-w1 <nick:w1>: joined
-g/orchestrator  run 1  waiting  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
+orchestrator <nick:orchestrator>: working
+w1 <nick:w1>: working
+g/orchestrator  run 1  working  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
 <nick:w1> · g/w1  run 1  working  <n> unread  doing: x
 phase build: build the thing  PAUSED: hold on
 your worktree: <home>/repo/.git/swarm/worktrees/1/w1 (branch swarm/1-g/w1 from main; made at your first claim or merge-lock). Work there by absolute paths and git -C <home>/repo/.git/swarm/worktrees/1/w1, never cd into it; pass --as g/w1 on every call

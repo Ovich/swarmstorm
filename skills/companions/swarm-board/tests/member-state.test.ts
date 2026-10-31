@@ -1,6 +1,6 @@
-// board-split D48, D49 (a1's audit #909, its truth table rows 1–17): one derivation of a member's state, from board
-// facts only, read the same by the snapshot, the roster and `status` (which prints the roster); a park holds until
-// the orchestrator's unpark, and a parked member reads no lost anywhere.
+// A member's one state (liveness.ts coreStateOf), from two facts, link up and owes work: working, idle, lost, away,
+// ended; read the same by the snapshot, the roster and `status` (which prints the roster). A park reads away until the
+// orchestrator's unpark, and a parked member reads no lost anywhere.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -28,7 +28,6 @@ afterEach(() => {
 
 const linked: Presence = () => ({ connected: true, lostAt: null });
 const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null, tokens: 0, context: null, openTool: null, lastTool: null, finished: false, ...o });
-const boardWaitCall = (since: number) => ({ name: "Bash", target: "swarm wait --mentions", since, boardWait: true, shell: true });
 
 const setup = () => {
   const run = board.openRun({ repo: REPO, kind: "plan", group: "g", title: "T", seats: [{ id: "a", blockers: [] }] });
@@ -61,86 +60,70 @@ test("rows 1, 2: a closed run or an ended member reads ended, no badge", () => {
   void orch;
 });
 
-test("rows 3, 4, 16: parked holds over a lost link, an ended agent and a block; no badge", () => {
+test("parked reads away, over a lost link, an ended agent and a block; no badge", () => {
   const { run, orch } = setup();
+  board.phase(orch, "p1", "go");
   board.park(orch, "a", "p2");
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000, finished: true }), new Date(base));
   tick2(board, run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
-  pins("g/a", "parked", null);
+  pins("g/a", "away", null);
   board.block(orch, "a", "the person picks");
-  pins("g/a", "parked", null);
+  pins("g/a", "away", null);
 });
 
-test("row 5 (A1-1): a parked member's own wait, doing and post leave it parked; only unpark lifts it", async () => {
+test("A1-1: a parked member's own wait, doing and post leave it away; only unpark lifts it", async () => {
   const { a, orch } = setup();
+  board.phase(orch, "p1", "go");
   board.park(orch, "a");
   const held = heldWait(a);
   board.setDoing(a, "back");
   board.post(a, "@orchestrator here");
   await held;
   board.deliver(a);
-  pins("g/a", "parked", null);
+  pins("g/a", "away", null);
   board.unpark(orch, "a");
   pins("g/a", "working", null);
 });
 
-test("row 6: the merge lock's holder reads merging, in or out of a wait", async () => {
-  const { a } = setup();
-  codeVerbs(board).lockMerge(a);
-  pins("g/a", "merging", null);
-  const held = heldWait(a);
-  pins("g/a", "merging", null);
-  await held;
-});
-
-test("rows 7, 8: in a held board wait, its open call, waiting; a background task of its own is activity, not a state", async () => {
-  const { run, a } = setup();
-  const base = Date.now();
-  const held = heldWait(a);
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: boardWaitCall(base) }), new Date(base));
-  pins("g/a", "waiting", null);
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: boardWaitCall(base), background: { target: "npm test", since: base, outputGrewAt: base } }), new Date(base));
-  pins("g/a", "waiting", null);
-  await held;
-});
-
-test("rows 9, 10, 11 (A1-3, A1-5): a background listener alone, out of any wait, or a wait returned: working", async () => {
-  const { run, a, orch } = setup();
+test("link up: working while it owes the open phase, idle once done or with none open; a held wait changes nothing", async () => {
+  const { a, orch } = setup();
+  pins("g/a", "idle", null);
   board.phase(orch, "p1", "go");
-  board.done(a, "p1");
-  const base = Date.now();
-  // a listener held while its agent runs another call (owing nothing: still working, never from the phase)
+  pins("g/a", "working", null);
   const held = heldWait(a);
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base, boardWait: false, shell: true } }), new Date(base));
   pins("g/a", "working", null);
   await held;
-  // the wait returned: no stale column keeps it waiting
-  board.recordActivity(run.id, "a", act({ grewAt: base }), new Date(base));
-  pins("g/a", "working", null);
+  board.done(a, "p1");
+  pins("g/a", "idle", null);
 });
 
-test("rows 12, 13: link lost or agent gone, not parked: its state, badge lost", () => {
-  const { run } = setup();
+test("link down: lost with its badge while it owes work, away with none while it owes nothing", () => {
+  const { run, orch } = setup();
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
-  pins("g/a", "working", "lost");
+  const down: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m));
+  tick2(board, run.id, new Date(base), down);
+  pins("g/a", "away", null);
+  board.phase(orch, "p1", "go");
+  quietMember(path.join(dir, "swarm.sqlite"), "a");
+  tick2(board, run.id, new Date(base), down);
+  pins("g/a", "lost", "lost");
 });
 
-test("rows 14, 15: blocked by the orchestrator or a pause on the person: its state, badge blocked", () => {
+test("blocked by the orchestrator or a pause on the person: its state, badge blocked", () => {
   const { orch } = setup();
   board.block(orch, "a", "the person picks");
-  pins("g/a", "working", "blocked");
+  pins("g/a", "idle", "blocked");
   board.unblock(orch, "a");
   board.pause(orch, "the person decides", { person: true });
-  pins("g/a", "working", "blocked");
+  pins("g/a", "idle", "blocked");
 });
 
-test("row 17: the orchestrator reads waiting", () => {
+test("the orchestrator always owes: it reads working", () => {
   setup();
-  pins("g/orchestrator", "waiting", null);
+  pins("g/orchestrator", "working", null);
 });
 
 test("A1-2: parked after a lost was told: no lost in composition or progress", () => {
@@ -152,11 +135,11 @@ test("A1-2: parked after a lost was told: no lost in composition or progress", (
   tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "lost");
   board.park(orch, "a");
-  // U-F4: the join answer's head lines (the composition) say parked, as the roster does
-  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "parked");
-  assert.ok(board.composition(run.id).lines.some((l) => l.startsWith("a ") && l.endsWith(": parked")));
+  // U-F4: the join answer's head lines (the composition) say away, as the roster does
+  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "away");
+  assert.ok(board.composition(run.id).lines.some((l) => l.startsWith("a ") && l.endsWith(": away")));
   assert.deepEqual(board.phaseProgress(run.id)!.gone, []);
-  pins("g/a", "parked", null);
+  pins("g/a", "away", null);
 });
 
 test("D50: a task is the orchestrator's post --task to one member, for the open phase; a mention alone never is", () => {
@@ -169,17 +152,16 @@ test("D50: a task is the orchestrator's post --task to one member, for the open 
   assert.deepEqual(owesOf(), { phase: "p1", task: task.seq });
   assert.throws(() => board.post(a, "@orchestrator mine", { task: true }), /only the orchestrator/);
   assert.throws(() => board.post(orch, "nobody", { task: true }), /exactly one member/);
-  // D50 amended (U-F8): the run's latest task holds across phases, and after its done; a newer one replaces it
+  // D50 amended (U-F8): the run's latest task holds across phases; done with the open phase, it owes nothing
   board.phase(orch, "p2", "next");
   assert.deepEqual(owesOf(), { phase: "p2", task: task.seq });
   board.done(a, "p2");
-  assert.deepEqual(owesOf(), { phase: null, task: task.seq });
-  const next = board.post(orch, "@a do T2", { task: true });
-  assert.deepEqual(owesOf(), { phase: null, task: next.seq });
+  assert.equal(owesOf(), undefined);
 });
 
 test("D53: a member still calling the board, or a fresh seating, is never lost on its link alone", async () => {
   const { run, a, orch } = setup();
+  board.phase(orch, "p1", "go");
   const base = Date.now();
   const linkGone: Presence = (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m));
   // its link long lost, yet it calls the board: not lost
@@ -189,16 +171,16 @@ test("D53: a member still calling the board, or a fresh seating, is never lost o
   // silent long after: lost
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   tick2(board, run.id, new Date(base), linkGone);
-  pins("g/a", "working", "lost");
+  pins("g/a", "lost", "lost");
   // a new agent seated in it (a rejoin): the old link's loss is not its own, and it is calling
   board.join({ run: run.id, seat: "a", doing: "fresh", files: [] });
   tick2(board, run.id, new Date(base), linkGone);
   pins("g/a", "working", null);
-  void orch;
 });
 
 test("D53, D55: a link-less member whose transcript still grows, as its link last sent it, is not lost", () => {
-  const { run } = setup();
+  const { run, orch } = setup();
+  board.phase(orch, "p1", "go");
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   const base = Date.now();
   board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
@@ -209,7 +191,8 @@ test("D53, D55: a link-less member whose transcript still grows, as its link las
 test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'merging, holds the merge lock N min'", () => {
   const { run, a } = setup();
   codeVerbs(board).lockMerge(a);
-  pins("g/a", "merging", null);
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.fact, "merging");
+  pins("g/a", "idle", null);
   const raw = openRawStore(path.join(dir, "swarm.sqlite"));
   try {
     raw.prepare("UPDATE merge_locks SET at = ?").run(new Date(Date.now() - 11 * 60_000).toISOString());
@@ -217,7 +200,7 @@ test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'mergin
     raw.close();
   }
   tick2(board, run.id, new Date(), linked);
-  pins("g/a", "merging", "stalled");
+  pins("g/a", "idle", "stalled");
   assert.match(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge!.reason, /^merging, holds the merge lock 11 min$/);
 });
 
@@ -228,7 +211,8 @@ test("roster: a parked member carries the phase it is parked until", () => {
 });
 
 test("U-F20: a badge that comes with time alone is a change the readers redraw on, so the card and the roster read the same", () => {
-  const { run } = setup();
+  const { run, orch } = setup();
+  board.phase(orch, "p1", "go");
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   const version = (): number => {
     const raw = openRawStore(path.join(dir, "swarm.sqlite"), { readOnly: true });
@@ -246,5 +230,5 @@ test("U-F20: a badge that comes with time alone is a change the readers redraw o
   // the badge comes with time alone: the version moves
   tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.ok(version() > before);
-  pins("g/a", "working", "lost");
+  pins("g/a", "lost", "lost");
 });

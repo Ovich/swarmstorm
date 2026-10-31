@@ -54,7 +54,7 @@ export type Scenario = {
   companion?: "works" | "waits";
   /** What the orchestrator does at second 1, delivered to x before any later wait (S11's owe rules). */
   owe?: (board: Board, orch: Participant) => void;
-  /** The second `owe` runs at, 1 when not given (idea 3's C6: a phase opened late). */
+  /** The second `owe` runs at, 1 when not given (idea 3's C6: a phase opened late); 0: at the setup, before the first second. */
   oweAt?: number;
   /** The server's stat of a lost link's transcript: "mtime" (the note's rule 4), or "none" (A7b: not a file). */
   transcriptStat?: "mtime" | "none";
@@ -76,6 +76,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     const w = sc.companion ? board.join({ run: run.id, seat: "w", doing: "work", files: [] }).member : null;
     if (w) board.deliver(w);
     const orch = board.participant("yard/orchestrator")!;
+    // oweAt 0: owed from the start, delivered before the clock's base, so its delivery is no later sign of life
+    if (sc.oweAt === 0 && sc.owe) sc.owe(board, orch);
     board.deliver(x);
     board.deliver(orch);
     // simulated second 5, where the scenarios first wait, is the wall clock now: a board wait's start is the
@@ -107,7 +109,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     };
     for (let s = 0; s <= length; s++) {
       const at = new Date(base + s * 1000);
-      if (s === (sc.oweAt ?? 1) && sc.owe) {
+      if (sc.oweAt !== 0 && s === (sc.oweAt ?? 1) && sc.owe) {
         sc.owe(board, orch);
         board.deliver(x);
         if (w) board.deliver(w);
@@ -263,9 +265,10 @@ export const SCENARIOS: Scenario[] = (() => {
     { id: "S3b", what: "hung non-Bash call (MCP), link alive", length: STUCK_LEN, stuckAt: 5, steps: ((a) => [work(0), mcp(5, a)])(t()) },
     // A5
     { id: "S4", what: "A5 turn ended owing a move, link alive", length: STUCK_LEN, stuckAt: 5, steps: [work(0), work(5, "I will report once the build is green")] },
-    { id: "S5a", what: "crash, link down with it", length: STUCK_LEN, stuckAt: 5, steps: [work(0), work(5), { s: 5, link: "down" }] },
+    // a link down is lost only on a member owing work: S5a, A8 and A7b owe the phase
+    { id: "S5a", what: "crash, link down with it", length: STUCK_LEN, stuckAt: 5, oweAt: 0, owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x"]), steps: [work(0), work(5), { s: 5, link: "down" }] },
     // A8: S5a, then back
-    { id: "A8", what: "gone, then the link and the transcript come back", length: 10 * MIN, stuckAt: 5, steps: [work(0), work(5), { s: 5, link: "down" }, { s: 120, link: "up" }, ...steady(120, 10 * MIN)] },
+    { id: "A8", what: "gone, then the link and the transcript come back", length: 10 * MIN, stuckAt: 5, oweAt: 0, owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x"]), steps: [work(0), work(5), { s: 5, link: "down" }, { s: 120, link: "up" }, ...steady(120, 10 * MIN)] },
     { id: "S5b", what: "crash, link alive, turn ended", length: STUCK_LEN, stuckAt: 5, steps: [work(0), work(5)] },
     // A13: crash mid-turn, last line a tool result
     { id: "A13", what: "crash mid-turn, link alive, last line a tool result", length: STUCK_LEN, stuckAt: 6, steps: ((a) => [work(0), open(5, a, "ls"), result(6, a)])(t()) },
@@ -293,7 +296,7 @@ export const SCENARIOS: Scenario[] = (() => {
     { id: "A3b", what: "A3 through PowerShell with \\ paths", length: STUCK_LEN, stuckAt: 8, steps: ((a, b) => [work(0), open(5, a, PS_LINK, { run_in_background: true }, "PowerShell"), startedInBackground(6, a, "l.out"), open(6, b, PS_WAIT, { run_in_background: true }, "PowerShell"), startedInBackground(7, b, "w.out"), work(8), ...outputs("l.out", 9, STUCK_LEN, 30)])(t(), t()) },
     // A7: the link lost 90 s while the transcript grows; A7b: the server cannot stat it
     { id: "S13", what: "A7 link lost 90 s, agent alive and working", length: 10 * MIN, stuckAt: null, transcriptStat: "mtime", steps: [...Array.from({ length: 30 }, (_, i) => work(i * 20)), { s: 60, link: "down" }, { s: 150, link: "up" }] },
-    { id: "A7b", what: "link lost 90 s, transcript not a file to the server", length: 10 * MIN, stuckAt: null, transcriptStat: "none", steps: [...Array.from({ length: 30 }, (_, i) => work(i * 20)), { s: 60, link: "down" }, { s: 150, link: "up" }] },
+    { id: "A7b", what: "link lost 90 s, transcript not a file to the server", length: 10 * MIN, stuckAt: null, transcriptStat: "none", oweAt: 0, owe: (bd, o) => phaseWithTasks(bd, o, "p1", ["x"]), steps: [...Array.from({ length: 30 }, (_, i) => work(i * 20)), { s: 60, link: "down" }, { s: 150, link: "up" }] },
     // A12: a dev server with growing output, started in an earlier turn (a service), or in the last turn (awaited, capped)
     { id: "A12a", what: "dev server from an earlier turn, turn ended owing", length: STUCK_LEN, stuckAt: 25, steps: ((a, b) => [work(0), open(5, a, "npm run dev", { run_in_background: true }), startedInBackground(6, a, "d.out"), work(10, "server up"), { s: 20, line: (bs: number, tt: number) => ({ type: "user", timestamp: iso(bs, tt), message: { role: "user", content: "next: check the page" } }) }, open(21, b, "curl localhost"), result(22, b), work(25, "page checked"), ...outputs("d.out", 7, STUCK_LEN, 10)])(t(), t()) },
     { id: "A12b", what: "dev server started in the last turn, turn ended owing", length: STUCK_LEN, stuckAt: 7, steps: ((a) => [work(0), open(5, a, "npm run dev", { run_in_background: true }), startedInBackground(6, a, "d.out"), work(7, "server up"), ...outputs("d.out", 8, STUCK_LEN, 10)])(t()) },

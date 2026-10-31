@@ -29,7 +29,9 @@ test("D51: a lost alarm about a member is served from the board with its subject
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "g", title: "T", stallMs: 5000, seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  board.post(orch, "@a go on");
+  // a task delivered and not reported: it owes work, so its link down is lost
+  board.post(orch, "@a go on", { task: true });
+  board.deliver(a);
   const base = Date.now();
   board.recordActivity(run.id, "a", act({ grewAt: base }), new Date(base));
   const lostLink: Presence = (m) => (m === "a" ? { connected: false, lostAt: base } : { connected: true, lostAt: null });
@@ -40,7 +42,6 @@ test("D51: a lost alarm about a member is served from the board with its subject
   for (const e of alarms) assert.deepEqual([e.from, e.subject], [BOARD_AUTHOR, "g/a"]);
   const said = events.find((e) => e.body === "@a go on")!;
   assert.deepEqual([said.from, said.subject], ["g/orchestrator", undefined]);
-  void a;
 });
 
 test("U-F13: a parked seat's card carries no activity, a background call from before the park included", () => {

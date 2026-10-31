@@ -32,6 +32,9 @@ test("golden V-2 (D59): the lost holder's merge lock is released at once, its wa
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
   assert.deepEqual(codeVerbs(board).lockMerge(w2), { granted: true });
   assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: false, holder: "g/w2" });
+  // w2 owes a task: a link down owing nothing is only away, and keeps its lock
+  board.post(board.participant("g/orchestrator")!, "@w2 do T1", { task: true });
+  board.deliver(w2);
 
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
@@ -54,7 +57,9 @@ test("golden V-2 (D59): the lost holder's merge lock is released at once, its wa
 
 test("a lost member holding no merge lock: no lock line", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: [{ id: "w1", blockers: [] }] });
-  board.join({ run: run.id, seat: "w1", doing: "x", files: [] });
+  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  board.post(board.participant("g/orchestrator")!, "@w1 do T1", { task: true });
+  board.deliver(w1);
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w1", 120_000);
   tick2(board, run.id, new Date(base), () => ({ connected: false, lostAt: base - 61_000 }));
@@ -80,7 +85,7 @@ test("golden V-26: a member refused the merge lock, in its wait for the merged e
   await held;
 });
 
-test("golden V-46: a member queued on the merge lock, its wait held, reads waiting on lock merge held by its holder; the lock names its waiters", async () => {
+test("golden V-46: a member queued on the merge lock, its wait held, reads idle, its tick waiting on lock merge held by its holder; the lock names its waiters", async () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
   const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
@@ -91,9 +96,9 @@ test("golden V-46: a member queued on the merge lock, its wait held, reads waiti
   const held = board.wait(w1, { mentionsOnly: true, timeoutMs: 400 });
   const now = Date.now();
   board.recordActivity(run.id, "w1", { grewAt: now, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: now, boardWait: true }, lastTool: null, finished: false }, new Date(now));
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/w1")!.state, "waiting");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/w1")!.state, "idle");
   const st = board.memberStates(run.id, new Date(now)).find((s) => s.member === "w1")!;
-  assert.equal(st.state, "waiting");
+  assert.equal(st.state, "waiting"); // the tick's activity word, not the member's state
   assert.equal(st.doing, "lock merge, held by g/w2");
   await held;
 });

@@ -100,7 +100,7 @@ Take seat `<seat id>` in run `<run id>`, protocol `<protocol>` of the `orchestra
 
 **Posts**: write each to `<folder>/<seat>-<n>.md`, then `$S post --file <that path> --as <group>/<seat id>`; those are the only files you write. A post failing twice goes to `@orchestrator` at once.
 
-One command per shell call. Never end your turn while the run is open; when the board says it is closed, run the end command it gives and return a short summary.
+One command per shell call. End your turn only when you owe nothing (the phase done): the orchestrator resumes you by message; when the board says the run is closed, run the end command it gives and return a short summary.
 ```
 
 ## During the run

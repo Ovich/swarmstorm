@@ -63,7 +63,7 @@
 .board .state { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted-foreground); }
 .board .state i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .board .state.working i { animation: board-pulse 1.6s ease-in-out infinite; }
-.board .state.waiting i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+.board .state.idle i, .board .state.away i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
 .board .state.merging i { background: var(--foreground); }
 .board .state.ended i { background: var(--border); }
 .board .state.stale { color: var(--faint-foreground); }
@@ -75,9 +75,9 @@
 .board .file { font-size: 10.5px; line-height: 1.6; background: var(--surface-2); border-radius: 4px; padding: 0 5px; color: var(--muted-foreground); }
 .board .file.iface { color: var(--foreground); box-shadow: inset 0 -1.5px 0 var(--accent); }
 .board .file .shared { font-family: var(--font-sans); color: var(--faint-foreground); }
-.board .card.ended, .board .card.parked, .board .card.lost { box-shadow: none; background: var(--surface); }
-.board .card.ended .seat, .board .card.parked .seat, .board .card.lost .seat { color: var(--muted-foreground); }
-.board .card.waiting { background: var(--surface); }
+.board .card.ended, .board .card.away, .board .card.lost { box-shadow: none; background: var(--surface); }
+.board .card.ended .seat, .board .card.away .seat, .board .card.lost .seat { color: var(--muted-foreground); }
+.board .card.idle { background: var(--surface); }
 @keyframes board-rise { from { transform: translateY(4px); opacity: 0; } }
 
 .board .panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); overflow: hidden; min-width: 0; }
@@ -231,7 +231,7 @@
 .board .agent-strip .row:hover { background: var(--surface-2); }
 .board .agent-strip .row .rseat { font-size: 12px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board .agent-strip .row .state { margin-left: 0; white-space: nowrap; }
-.board .agent-strip .row.ended, .board .agent-strip .row.parked, .board .agent-strip .row.lost { opacity: .55; }
+.board .agent-strip .row.ended, .board .agent-strip .row.away, .board .agent-strip .row.lost { opacity: .55; }
 .board .agent-strip.following .row { opacity: .45; }
 /* messages for the member not yet delivered (swarm-relay D43): the hook hands them at its next tool call */
 .board .agent-strip .unread { display: inline-block; margin-right: 6px; font-size: 10.5px; font-weight: 600; color: var(--amber); }
@@ -242,14 +242,12 @@
   .board .agent-strip { max-height: 40vh; }
 }
 .board .agent-strip.following .card[aria-pressed="false"] { opacity: .45; }
-.board .agent-strip .card.ended, .board .agent-strip .card.parked, .board .agent-strip .card.lost { opacity: .55; }
+.board .agent-strip .card.ended, .board .agent-strip .card.away, .board .agent-strip .card.lost { opacity: .55; }
 .board .agent-strip .doing { min-height: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* the member's token counter: flat at the run's stall threshold marked amber, unreadable faint */
 .board .state.quiet { color: var(--amber); }
 .board .state.quiet i { background: var(--amber); }
 /* the member's activity (swarm-relay#D9): busy a solid dot, gone faded and struck but kept, the open or last tool beneath */
-.board .state.busy { color: var(--foreground); }
-.board .state.busy i { background: var(--foreground); }
 .board .agent-strip .card.lost { opacity: .55; box-shadow: none; background: var(--surface); }
 .board .agent-strip .card:has(.activity) .doing { -webkit-line-clamp: 1; }
 .board .state.stalled { color: var(--amber); font-weight: 600; }
@@ -257,8 +255,7 @@
 .board .card .ages { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: nowrap; }
 .board .card .activity { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 /* board-split#D35: the state word's own classes; trouble a badge beside it, its reason on hover */
-.board .state.parked { color: var(--muted-foreground); }
-.board .state.parked i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--muted-foreground); }
+.board .state.away, .board .state.lost { color: var(--muted-foreground); }
 .board .badge { flex: none; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10.5px; font-weight: 600; line-height: 16px; cursor: help; }
 .board .badge.stalled, .board .badge.blocked { color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
 .board .badge.lost { color: var(--faint-foreground); box-shadow: inset 0 0 0 1px var(--faint-foreground); }
@@ -507,7 +504,7 @@
 .board .card { background: var(--card); box-shadow: none; }
 .board .card:hover { box-shadow: 0 0 0 1px var(--border); }
 .board .card[aria-pressed="true"] { background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
-.board .card.ended, .board .card.parked, .board .card.lost, .board .card.waiting { background: var(--surface); }
+.board .card.ended, .board .card.away, .board .card.lost, .board .card.idle { background: var(--surface); }
 .board .runs, .board .run-tabs { background: var(--card); }
 .board .runs .lockwrap { background: linear-gradient(to right, transparent, var(--card) 20px); }
 .board .run[aria-pressed="true"] { border-bottom-color: var(--accent); font-weight: 500; }
@@ -575,7 +572,7 @@
 .board .side .card::before { inset: 8px auto 8px 2px; border-radius: 2px; }
 .board .side .card:hover { background: var(--background); box-shadow: none; }
 .board .side .card[aria-pressed="true"] { background: var(--accent-soft); box-shadow: none; }
-.board .side .card.ended, .board .side .card.parked, .board .side .card.lost { background: transparent; }
+.board .side .card.ended, .board .side .card.away, .board .side .card.lost { background: transparent; }
 .board .side .card .seat { font-weight: 500; }
 .board .side .cards { gap: 2px; }
 .board .side .claims-row { border-top: 0; padding: 6px 0 0; max-height: none; overflow: visible; }
@@ -744,7 +741,7 @@
 .board .agent-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .board .rail-agent { position: relative; border: 0; background: transparent; padding: 4px; border-radius: var(--radius-sm); cursor: pointer; }
 .board .rail-agent:hover, .board .rail-agent[aria-pressed="true"] { background: var(--accent-soft); }
-.board .rail-agent.ended, .board .rail-agent.parked, .board .rail-agent.lost { opacity: .55; }
+.board .rail-agent.ended, .board .rail-agent.away, .board .rail-agent.lost { opacity: .55; }
 .board .rail-agent .state { position: absolute; right: 1px; bottom: 1px; }
 .board .rail-agent .state i { display: block; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 2px var(--card); }
 .board .rail-agent .unread-dot { position: absolute; top: 1px; right: 1px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }

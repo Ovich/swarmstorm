@@ -44,27 +44,23 @@ type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
   };
 };
 
-/** The board's state, an older board's words read as D36's: done is ended, the orchestrator's watching is waiting. */
-export function boardStateOf(p: { state: string }): "working" | "waiting" | "parked" | "ended" | "merging" | string {
-  if (p.state === "done") return "ended";
-  if (p.state === "watching") return "waiting";
-  return p.state;
-}
-const isEnded = (p: { state: string }): boolean => boardStateOf(p) === "ended";
+const isEnded = (p: { state: string }): boolean => p.state === "ended";
+/** Not running on the board now: away (finished, handed back or parked), lost, or ended. */
+const isOff = (p: { state: string }): boolean => p.state === "away" || p.state === "lost" || p.state === "ended";
 
-/** The state word, the board's alone (D35, D36, D49): working (on the task posted to it), merging, waiting on the board,
- *  parked (until a phase), ended; the member's `doing` never in it. `className` is the board's state. */
-export function stateWordOf(p: MemberOnBoard): { text: string; className: string } {
-  const state = boardStateOf(p);
+/** The state word, the board's alone: working (on #task), idle, away (parked until a phase), lost, ended; a pack's
+ *  fact (merging) replaces working or idle. `className` is the word's state. */
+export function stateWordOf(p: MemberOnBoard & { parked?: boolean; fact?: string }): { text: string; className: string } {
+  const state = p.state;
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
-  if (state === "parked") return { text: p.parkedUntil ? `parked until ${p.parkedUntil}` : "parked", className: "parked" };
-  if (state === "waiting") return { text: "waiting on the board", className: "waiting" };
+  if (state === "away") return { text: p.parkedUntil ? `away until ${p.parkedUntil}` : "away", className: "away" };
+  if (p.fact) return { text: p.fact, className: p.fact };
   if (state === "working") return { text: p.owes?.task != null ? `working on #${p.owes.task}` : "working", className: "working" };
   return { text: state, className: state };
 }
 
 /** Unread on a parked seat is kept for its return, never an alarm (D48, D49). */
-const unreadKept = (p: { state: string }): boolean => boardStateOf(p) === "parked";
+const unreadKept = (p: { state: string }): boolean => p.state === "away";
 
 /** The unread count beside the seat: `N unread`; on a parked seat drawn quiet, kept for its return ("held" is the files' word, rule 12). */
 function UnreadCount({ p }: { p: SnapshotMember }) {
@@ -79,8 +75,7 @@ function UnreadCount({ p }: { p: SnapshotMember }) {
 /** The member's badge, the board's alone (plan D55): its name, and on hover the board's reason (state word, the fact
  *  and its age, as the board's formatter writes it). Null when the snapshot carries none: aiview derives no badge. */
 export function troubleOf(p: MemberOnBoard): { kind: BadgeName; reason: string } | null {
-  const state = boardStateOf(p);
-  if (state === "ended" || state === "parked") return null;
+  if (isOff(p) && p.state !== "lost") return null;
   return p.badge ? { kind: p.badge.name, reason: p.badge.reason ? `${p.badge.name}: ${p.badge.reason}` : p.badge.name } : null;
 }
 
@@ -129,8 +124,7 @@ const minutesShort = (since: number, now: number): string => `${Math.max(0, Math
  *  foreground or background, since when, and the last call. */
 export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
   // U-F13 (D49): a parked or ended seat has no activity line, whatever an older snapshot still carries
-  const state = boardStateOf(p);
-  if (state === "parked" || state === "ended") return null;
+  if (isOff(p)) return null;
   const open = p.activity?.open && !p.activity.open.boardWait ? p.activity.open : null;
   const background = p.activity?.background ?? null;
   const last = activity?.doing ? `last call: ${activity.doing}` : null;
@@ -200,7 +194,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
   return (
     <button
       title={hoverTitle || undefined}
-      className={["card", orch && "orch", boardStateOf(p), trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
+      className={["card", orch && "orch", p.state, trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
       style={{ "--h": hue, "--s": 60 } as CSSProperties}
       aria-pressed={followed}
       onClick={onFollow}
@@ -218,9 +212,9 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       <UnreadCount p={p} />
       {/* the doing line, never the word (D49); a parked seat's is the park itself */}
-      {boardStateOf(p) !== "working" && boardStateOf(p) !== "parked" && !isEnded(p) && !!p.doing && <span className="doing">{p.doing}</span>}
+      {p.state === "idle" && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
+      <ActivityLine line={line} state={activity?.state ?? p.state} />
     </button>
   );
 }
@@ -232,16 +226,16 @@ export const CARDS_UP_TO = 12;
 const BUCKETS = [
   { id: "attention", label: "Needs attention" },
   { id: "active", label: "Working" },
-  { id: "waiting", label: "Waiting" },
+  { id: "idle", label: "Idle or away" },
   { id: "ended", label: "Ended" },
 ] as const;
 type Bucket = (typeof BUCKETS)[number]["id"];
 
-/** The member's section: the ended by the board's word, the attention by its badge (D35), waiting by the board's word. */
+/** The member's section, by its state; lost or a badge needs attention. */
 function bucketOf(p: SnapshotMember): Bucket {
   if (isEnded(p)) return "ended";
-  if (troubleOf(p)) return "attention";
-  return boardStateOf(p) === "waiting" ? "waiting" : "active";
+  if (p.state === "lost" || troubleOf(p)) return "attention";
+  return p.state === "working" ? "active" : "idle";
 }
 
 /** One member on one line: its stripe, name, seat and state; clicked, followed and drawn as its card. */
@@ -251,7 +245,7 @@ function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; o
   const trouble = troubleOf(p);
   return (
     <button
-      className={["row", boardStateOf(p), trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
+      className={["row", p.state, trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
       style={{ "--h": hue, "--s": 60 } as CSSProperties}
       aria-pressed={false}
       onClick={onFollow}
@@ -392,7 +386,7 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
         return (
           <button
             key={p.member}
-            className={["rail-agent", boardStateOf(p), trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
+            className={["rail-agent", p.state, trouble?.kind === "lost" && "lost"].filter(Boolean).join(" ")}
             style={{ "--h": hue, "--s": 60 } as CSSProperties}
             aria-pressed={follow === p.member}
             aria-label={`${p.member}: ${status.text}${trouble ? ` · ${trouble.kind}` : ""}`}
@@ -422,7 +416,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
   const line = ended ? null : activityLine(p, activity, now);
   return (
     <div
-      className={["hovercard", "card", orch && "orch", boardStateOf(p)].filter(Boolean).join(" ")}
+      className={["hovercard", "card", orch && "orch", p.state].filter(Boolean).join(" ")}
       role="tooltip"
       data-component="AgentHoverCard"
       style={{ "--h": hue, "--s": 60, top: Math.min(top, window.innerHeight - 220), left } as CSSProperties}
@@ -438,9 +432,9 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       <UnreadCount p={p} />
-      {!ended && boardStateOf(p) !== "working" && boardStateOf(p) !== "parked" && p.doing && <span className="doing">{p.doing}</span>}
+      {p.state === "idle" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
-      <ActivityLine line={line} state={activity?.state ?? boardStateOf(p)} />
+      <ActivityLine line={line} state={activity?.state ?? p.state} />
     </div>
   );
 }

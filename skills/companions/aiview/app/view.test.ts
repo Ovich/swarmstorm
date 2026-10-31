@@ -243,7 +243,7 @@ describe("agents (D7, D20)", () => {
     const roster = [
       { ...member("same", "orchestrator", "Old Owl", "ended"), run: 5 },
       { ...member("same", "judge", "Old Hare", "ended"), run: 5 },
-      { ...member("same", "orchestrator", "New Owl", "waiting"), run: 6 },
+      { ...member("same", "orchestrator", "New Owl", "working"), run: 6 },
     ];
     expect(agents(board(runs, roster), 6).map((m) => m.nick)).toEqual(["New Owl"]);
     expect(agents(board(runs, roster), 5).map((m) => m.nick)).toEqual(["Old Owl", "Old Hare"]);

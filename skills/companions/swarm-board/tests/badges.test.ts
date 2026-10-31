@@ -110,8 +110,9 @@ test("golden owing (board-split D54): phase open, task posted later: no stall un
   await again;
 });
 
-test("golden lost (board-split D49): a link lost past LOST_MS with no wait held is lost, its state untouched; a finished transcript is not lost; recovered once the link is back", () => {
+test("golden lost: a member owing work whose link is down past LOST_MS is lost; a finished transcript is not lost; recovered once the link is back", () => {
   const { run, orch } = setup();
+  board.phase(orch, "p1", "go");
   const base = Date.now();
   // the transcript says finished: no badge from it
   board.recordActivity(run.id, "a", act({ grewAt: base - 61_000, finished: true }), at(base, 0));

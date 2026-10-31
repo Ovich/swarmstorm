@@ -68,9 +68,9 @@ test("D30: a parked member draws no gone, stalled or idle, all-done does not wai
   assert.deepEqual([parked.event, parked.mentions], ["park", ["g/b"]]);
   assert.equal(eventStep(parked, b, "swarm"), "you are parked: end your turn now, without end; the orchestrator resumes you at your next task");
   assert.equal(eventStep(parked, a, "swarm"), null);
-  // D34: the parked seat's card says until when, in its state; its doing stays its own (board-split D48, U-F2)
+  // D34: the parked seat's card reads away, parked, and until when; its doing stays its own (board-split D48, U-F2)
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/b")!;
-  assert.deepEqual([card.doing, card.state, card.parkedUntil], ["x", "parked", "p2"]);
+  assert.deepEqual([card.doing, card.state, card.parked, card.parkedUntil], ["x", "away", true, "p2"]);
   // b's link is lost long ago and its turn ended: no gone, no stalled for it
   const base = Date.now();
   board.recordActivity(run.id, "b", act({ grewAt: base - 600_000, inTurn: false }), at(base, 0));

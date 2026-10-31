@@ -40,8 +40,8 @@ except `open`, `seat`, `close` and `status`.
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
    with `--authority <roles>` naming the roles the person handed you (the `orchestrate` skill's
-   `references/authority.md`): two open runs holding a decision-authority role are told so, with
-   the command opening the decisions run (its `references/decisions-run.md`),
+   `references/authority.md`); every open's answer ends on the line registering your run on the
+   project's permanent orchestrators board (its `references/orchestrators-board.md`): run it,
    with `--protocol <name>` when the run runs one (build-verify, debate, …; the tab shows it), or
    `--protocol none` for a run with no phases on purpose. A run that builds code (plan, task)
    takes `--onto <branch>`, the branch its work merges into: each member's join makes its
@@ -112,8 +112,8 @@ waits: in the foreground; a seat runs on the plugin's
     silence alone is never a stall; a post, `doing` or endorsement is no sign of work). `<state>` is the one its card shows. On the line after it, the move: **read that `next` line and make that
     move**: a mention reaches a member in a wait, a direct message one whose turn ended. A background task or a long
     call is activity on its card (`busy <N> min · background <cmd>`), never a stall.
-  - **`lost <member>`**: it carries the `lost` badge: its link has been lost 30 s and the board holds no wait of
-    it; once. A transcript that says finished is not lost. It is not running: dispatch a fresh agent into its seat, or
+  - **`lost <member>`**: its link is down while it owes work (an open task, the phase undone); once. A
+    member whose link drops owing nothing reads `away` and raises nothing: it handed back, as it should. It is not running: dispatch a fresh agent into its seat, or
     close the seat (*A lost member*).
   - **`recovered <member>`**: a member told `lost` reads present again, its badge cleared; once. Do not dispatch into
     its seat; if you already did, close one of the two.
@@ -184,6 +184,10 @@ seat between its waits, one with the `stalled` badge. Post it on the board too, 
 **Its badge decides, never a guess.** `stalled` is alive and owes a move: *Interrupt*. `lost`:
 **`$S end --seat <seat> --as <group>/orchestrator`** frees its claims and the merge lock if it held
 it; dispatch a fresh worker, which joins the same seat; repost its open task.
+
+**An `away` member is resumed, never re-dispatched**: it finished and handed back. Post its next
+task, then resume it (`SendMessage`) so it reads it; where the harness has no resume, dispatch a
+fresh agent that joins the same seat.
 
 **An idle member stays; you decide whether to park it.** An idle member is only told to wait
 again. On `idle`, a member its peers may need (one holding files, a debate seat) keeps waiting;

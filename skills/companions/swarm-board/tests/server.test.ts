@@ -172,7 +172,7 @@ test("a resent call is answered from the cache: one post in the store, not two",
   }
 });
 
-test("a wait returns within 200 ms of a post on another connection; a cancelled wait clears waiting", async () => {
+test("a wait returns within 200 ms of a post on another connection", async () => {
   const a = await welcomed();
   const run = await value(a, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const s1 = (await value(a, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
@@ -187,15 +187,6 @@ test("a wait returns within 200 ms of a post on another connection; a cancelled 
   const woke = await b.next();
   assert.ok(Date.now() - t0 < 200, `woke after ${Date.now() - t0} ms`);
   assert.ok(woke.type === "result" && woke.id === "w7" && woke.ok && (woke.value as { full: unknown[] }).full.length === 1);
-
-  b.send({ type: "call", id: "w8", method: "wait", args: [s2, {}] });
-  await new Promise((r) => setTimeout(r, 100));
-  // board-split D49: waiting is the wait the server holds, read from the server
-  const waiting = async (): Promise<boolean> => ((await value(a, "snapshot", REPO)) as { roster: { member: string; state: string }[] }).roster.find((r) => r.member === s2.name)!.state === "waiting";
-  assert.equal(await waiting(), true);
-  b.send({ type: "cancel", id: "w8" });
-  await new Promise((r) => setTimeout(r, 50));
-  assert.equal(await waiting(), false);
 });
 
 test("closeRun over the wire refuses every member connection of that run", async () => {
@@ -296,6 +287,8 @@ const linkedRun = async () => {
   const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
   await value(c, "join", { run: run.id, seat: "S2", doing: "y", files: [] });
+  // a phase open for both: each owes work, so a link down reads lost
+  await value(c, "phase", await value(c, "participant", "g/orchestrator"), "p1", "go");
   const link = await welcomed({ member: { name: s1.name, run: run.id } });
   return { c, run, s1, link };
 };

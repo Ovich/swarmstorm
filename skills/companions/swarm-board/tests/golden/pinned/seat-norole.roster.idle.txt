@@ -1,6 +1,6 @@
 exit 0
 run 1  T
-g/orchestrator  run 1  waiting  progress <age> ago, link <age> ago  <n> unread  doing: -  on: agreement, endorsement, ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
-<nick:s1> · g/s1  run 1  working  progress <age> ago, link <age> ago  doing: x
-  seat orchestrator <nick:orchestrator>: joined
-  seat s1 <nick:s1>: joined
+g/orchestrator  run 1  working  progress <age> ago, link <age> ago  <n> unread  doing: -  on: agreement, endorsement, ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
+<nick:s1> · g/s1  run 1  idle  progress <age> ago, link <age> ago  doing: x
+  seat orchestrator <nick:orchestrator>: working
+  seat s1 <nick:s1>: idle

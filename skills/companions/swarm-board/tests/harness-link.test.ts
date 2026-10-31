@@ -143,13 +143,17 @@ test("outside a harness session, a verb finding no link spawns one detached, as 
   assert.equal(spawned.length, 1, "one detached link");
 });
 
-test("a member whose only link is killed reads gone within 66 s and draws no stalled (D12, D36, D39, board-split D55)", { timeout: 100000 }, async () => {
+test("a member owing a task whose only link is killed reads gone within 66 s and draws no stalled (D12, D36, D39, board-split D55)", { timeout: 100000 }, async () => {
   const h = joinedInHarness();
   const link = startAgentLink(h);
   const exited = new Promise((resolve) => link.on("exit", resolve));
   const verb = spawnSync(process.execPath, [CLI, "doing", "the client"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   assert.equal(verb.status, 0, verb.stderr);
   assert.doesNotMatch(verb.stdout, /start your link now/, "the verb went through the agent's link");
+  // it owes work (a task delivered, not reported): a link down on it is lost, never away
+  h.r.cli(h.r.repo, "post", "@S3 build the client", "--task", "--as", "harness-plan/orchestrator");
+  const took = spawnSync(process.execPath, [CLI, "deliver"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
+  assert.equal(took.status, 0, took.stderr);
   link.kill();
   await exited;
   // the page's reading, straight to the server: no link of S3 is started by it. The gone event is waited for as itself

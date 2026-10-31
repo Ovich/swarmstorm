@@ -62,6 +62,8 @@ export function normalise(text: string, home: string, nicks: Map<string, string>
   return out
     .replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g, "<ts>")
     .replace(/#\d+/g, "#<seq>")
+    // the orchestrators board's seats file is named by a hash of the scratch repository's path
+    .replace(/-[0-9a-f]{8}\.seats\.json/g, "-<hash>.seats.json")
     .replace(/\b\d+(s|m|h) ago\b/g, "<age> ago")
     // a roster row's unread count moves with the liveness events the board posts on its own clock
     .replace(/  \d+ unread  /g, "  <n> unread  ")

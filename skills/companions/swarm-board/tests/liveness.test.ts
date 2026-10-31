@@ -171,8 +171,9 @@ test("states: waiting is the open call the link read as the board's own wait, it
   await held;
 });
 
-test("states (board-split D49, D55): a finished transcript or silence is no badge; a link lost LOST_MS with no wait held is lost, its state untouched", () => {
-  const { run } = setup();
+test("states (board-split D49, D55): a finished transcript or silence is no badge; a link lost LOST_MS on a member owing its task is lost", () => {
+  const { run, b, orchestrator } = setup();
+  taskTo(orchestrator, b);
   const base = Date.now() + 60_000;
   // the links are up from the start (U-F3: a member never linked is lost 30 s after its join)
   tick2(board, run.id, at(base, 0), presence);
@@ -222,8 +223,9 @@ test("one member owing its task, no sign of work past SILENT_MS: stalled <member
   void a;
 });
 
-test("lost (board-split D49, D55): a finished transcript draws none; a link lost LOST_MS with no wait held draws one, once; never for an ended member (US3, D12)", () => {
-  const { run, a } = setup();
+test("lost (board-split D49, D55): a finished transcript draws none; a link lost LOST_MS on a member owing its task draws one, once; never for an ended member (US3, D12)", () => {
+  const { run, a, b, orchestrator } = setup();
+  taskTo(orchestrator, b);
   const base = Date.now() + 60_000;
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));
   tick2(board, run.id, at(base, 1), presence);

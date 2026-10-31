@@ -6,12 +6,10 @@ as long as the run is open, while other workers do theirs beside you. `$S` is th
 `SKILL.md` names it. Your brief names the run, your seat, the repository, and the branch your work
 merges into, `<target>` below.
 
-**You never end your turn while the run is open.** A worker that ends its turn is not woken by its
-listener: it is lost. Waiting is a foreground `wait`; your turn ends only after `$S end` once the
-run is closed (while it is open your own `end` is refused), or when the orchestrator parks you:
-the park line says to end your turn **without** `end`, and the orchestrator resumes you at your
-next task. **Your
-only background tasks are your link and your listener.** A check, a test run or a build runs in
+**End your turn only when you owe nothing**: your task merged and reported, or the phase done.
+The board then shows you `away`, and the orchestrator resumes you by message with the next task;
+never `end` while the run is open (it is refused). A turn ended while you owe work reads `lost`.
+**Your only background tasks are your link and your listener.** A check, a test run or a build runs in
 the foreground: an agent that ends its turn on a background task of its own is not woken by it.
 
 ## The loop
@@ -36,7 +34,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it
-   again (it holds 170 s and returns empty on purpose: a re-arm). Never end your turn to wait, never sleep. Something unclear: ask `@orchestrator` before
+   again (it holds 170 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
 4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **Before each edit,
    `$S claim <path>`**, and before a command that writes a file (a generator, a formatter, a move):
