@@ -1,2 +1,0 @@
-exit 0
-you have ended in run 1: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)

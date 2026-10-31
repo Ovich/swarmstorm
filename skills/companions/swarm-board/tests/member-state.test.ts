@@ -1,5 +1,5 @@
-// A member's one state (liveness.ts coreStateOf), from two facts, link up and owes work: working, idle, lost, away,
-// ended; read the same by the snapshot, the roster and `status` (which prints the roster). A park reads away until the
+// A member's one state (liveness.ts coreStateOf), from its link, its tokens and what it owed at its drop: working,
+// stopped, lost, away, ended; read the same by the snapshot, the roster and `status` (which prints the roster). A park reads away until the
 // orchestrator's unpark, and a parked member reads no lost anywhere.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -85,19 +85,24 @@ test("A1-1: a parked member's own wait, doing and post leave it away; only unpar
   pins("g/a", "working", null);
 });
 
-test("link up: working while it owes the open phase, idle once done or with none open; a held wait changes nothing", async () => {
-  const { a, orch } = setup();
-  pins("g/a", "idle", null);
-  board.phase(orch, "p1", "go");
+test("link up: working while its tokens moved within the window, stopped past it, owing or not; a held wait changes nothing", async () => {
+  const { run, a, orch } = setup();
   pins("g/a", "working", null);
+  board.phase(orch, "p1", "go");
   const held = heldWait(a);
   pins("g/a", "working", null);
   await held;
+  quietMember(path.join(dir, "swarm.sqlite"), "a", 20 * 60_000);
+  board.recordActivity(run.id, "a", act({ grewAt: Date.now() - 15 * 60_000 }), new Date());
+  tick2(board, run.id, new Date(), linked);
+  pins("g/a", "stopped", null);
   board.done(a, "p1");
-  pins("g/a", "idle", null);
+  pins("g/a", "stopped", null);
+  board.recordActivity(run.id, "a", act({ grewAt: Date.now() }), new Date());
+  pins("g/a", "working", null);
 });
 
-test("link down: lost with its badge while it owes work, away with none while it owes nothing", () => {
+test("link down: away with none when it dropped owing nothing, and still away once a phase opens; lost with its badge when it dropped owing (#48)", () => {
   const { run, orch } = setup();
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "a");
@@ -108,16 +113,20 @@ test("link down: lost with its badge while it owes work, away with none while it
   board.phase(orch, "p1", "go");
   quietMember(path.join(dir, "swarm.sqlite"), "a");
   tick2(board, run.id, new Date(base), down);
+  pins("g/a", "away", null);
+  // its link back, then down again while it owes p1: lost
+  tick2(board, run.id, new Date(base + 1000), linked);
+  tick2(board, run.id, new Date(base + 2000), down);
   pins("g/a", "lost", "lost");
 });
 
 test("blocked by the orchestrator or a pause on the person: its state, badge blocked", () => {
   const { orch } = setup();
   board.block(orch, "a", "the person picks");
-  pins("g/a", "idle", "blocked");
+  pins("g/a", "working", "blocked");
   board.unblock(orch, "a");
   board.pause(orch, "the person decides", { person: true });
-  pins("g/a", "idle", "blocked");
+  pins("g/a", "working", "blocked");
 });
 
 test("the orchestrator always owes: it reads working", () => {

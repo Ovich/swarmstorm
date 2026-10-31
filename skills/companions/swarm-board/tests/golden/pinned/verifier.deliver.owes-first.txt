@@ -1,3 +1,2 @@
 exit 0
-phase build (unchanged; its text: node <cli> thread --as g/v1)
 phase build is open and asks: build the thing. Do your part now, then mark it done: node <cli> done build --as g/v1

@@ -80,30 +80,25 @@ test("pause and resume are the orchestrator's, once each; a closed run refuses b
   assert.throws(() => board.resume(board.participant("idea/orchestrator")!), /closed|ended/);
 });
 
-test("a paused run raises no stalled, quiet or stale alert; after resume the silence counts from the resume", () => {
+test("a paused run raises no stopped or lost alert; after resume the stillness counts from the resume", () => {
   const { run, orchestrator } = setup();
-  // board-split D49: a stall is owing the open phase
   board.phase(orchestrator, "p1", "go");
-  // board-split D54: each member owes from its own task, delivered
   for (const m of ["a", "b"]) {
     board.post(orchestrator, `@${m} your part`);
     board.deliver(board.participant(`${board.participant(orchestrator.name)!.plan}/${m}`)!);
   }
   const base = Date.now() - 120_000;
   const at = (s: number) => new Date(base + s * 1000);
-  const alerts = () => board.snapshot(REPO).events.filter((e) => ["stalled", "lost"].includes(e.event ?? ""));
+  const alerts = () => board.snapshot(REPO).events.filter((e) => ["stopped", "lost"].includes(e.event ?? ""));
   for (const m of ["a", "b"]) board.recordActivity(run.id, m, { grewAt: base, tokens: 1, context: null, openTool: null, lastTool: null, finished: false }, at(0));
   tick2(board, run.id, at(0), linked);
   board.pause(orchestrator);
   for (const s of [6, 11, 30, 60]) tick2(board, run.id, at(s), linked);
-  board.markStaleRuns(new Date(Date.now() + 60 * 60_000));
   assert.equal(alerts().length, 0);
   board.resume(orchestrator);
   tick2(board, run.id, new Date(Date.now() + 3_000), linked);
   assert.equal(alerts().length, 0, "silence counts from the resume");
-  // no sign of progress past the run's 5 s stall window
+  // no member's tokens moved past the run's 5 s stall window since the resume: one stopped line
   tick2(board, run.id, new Date(Date.now() + 6_000), linked);
-  // a and b both quiet past the threshold at one tick: one stalled naming each
-  assert.deepEqual(alerts().map((e) => e.event), ["stalled"]);
-  assert.match(alerts()[0].body, /a.*b/);
+  assert.deepEqual(alerts().map((e) => e.event), ["stopped"]);
 });

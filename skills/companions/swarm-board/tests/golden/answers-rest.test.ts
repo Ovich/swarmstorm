@@ -1,5 +1,5 @@
 // D3 for build 3: the answers of the verbs moved onto the answer module after the wait cluster, pinned before the move:
-// post, agree, endorse, claim, release, merge-lock, merged, lock, unlock, phase, pause, resume, end, open, and the
+// post, agree, endorse, claim, release, merge-lock, merged, phase, pause, resume, end, open, and the
 // argument errors V9 and V13 name. Pinned over role x situation; each scene calls the verbs in this order.
 import { test } from "node:test";
 import fs from "node:fs";
@@ -22,8 +22,6 @@ for (const role of ROLES_REST) {
         pin(at("endorse"), s.call("endorse", "1", "--as", s.me));
         pin(at("claim"), s.call("claim", "a.ts", "--as", s.me));
         pin(at("release"), s.call("release", "a.ts", "--as", s.me));
-        pin(at("lock"), s.call("lock", "port:59999", "--as", s.me));
-        pin(at("unlock"), s.call("unlock", "port:59999", "--as", s.me));
         pin(at("merge-lock.no-onto"), s.call("merge-lock", "--as", s.me));
         pin(at("merged.unknown"), s.call("merged", "0000000", "--files", "a.ts", "--report", "-", "--as", s.me));
         if (role === "orchestrator") {

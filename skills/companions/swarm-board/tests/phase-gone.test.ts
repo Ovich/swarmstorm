@@ -1,4 +1,4 @@
-// swarm-relay D41: a gone member no longer holds the phase: all-done and idle go on without it, naming it.
+// swarm-relay D41: a gone member no longer holds the phase: all-done and stopped go on without it, naming it.
 
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
@@ -75,17 +75,14 @@ test("the last member not done going gone fires all-done at the tick, once (D41)
   assert.deepEqual(events("all-done").map((e) => e.body), ["all done diverge but the lost: 3/3 done; lost, not done: idea/d: dispatch each again or end its seat, then open the next phase"]);
 });
 
-test("every member not gone in a held wait: idle fires, naming the gone (D41, D34)", async () => {
-  const { run, members } = setup();
-  // the ticks follow the held waits closely: a held wait owing past the stall time is stalled, not idle (board-split D49)
+test("no member's tokens moved past the window, one lost: stopped fires once, its progress naming the lost (D41)", () => {
+  const { run } = setup();
   const base = Date.now();
   goneD(run.id, base);
-  const waits = ["a", "b", "c"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
-  for (const s of [2, 3]) tick2(board, run.id, at(base, s), presence);
-  const idles = events("idle").map((e) => e.body);
-  assert.equal(idles.length, 1, "once (D34)");
-  assert.match(idles[0], /^idle 0s: every member is waiting \(1 lost: idea\/d\); phase diverge 0\/3 done, 1 lost: d$/);
-  await Promise.all(waits);
+  for (const s of [6, 7]) tick2(board, run.id, at(base, s), presence);
+  const stopped = events("stopped").map((e) => e.body);
+  assert.equal(stopped.length, 1, "once");
+  assert.match(stopped[0], /^stopped idea: no member's tokens moved for \d+ min; phase diverge 0\/3 done, 1 lost: d$/);
 });
 
 test("a gone member that comes back counts again from then on (D41)", () => {
@@ -103,14 +100,8 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   assert.equal(events("all-done").length, 0, "d holds the phase again");
 });
 
-test("without any gone member, all-done, idle and the progress line read exactly as before", async () => {
+test("without any gone member, all-done and the progress line read exactly as before", () => {
   const { run, members } = setup(["a", "b"]);
-  // the ticks follow the held waits closely: a held wait owing past the stall time is stalled, not idle (board-split D49)
-  const base = Date.now();
-  const waits = ["a", "b"].map((m) => board.wait(members[m], { mentionsOnly: true, timeoutMs: 400 }));
-  tick2(board, run.id, at(base, 1), presence);
-  assert.deepEqual(events("idle").map((e) => e.body), ["idle 0s: every member is waiting; phase diverge 0/2 done"]);
-  await Promise.all(waits);
   for (const m of ["a", "b"]) board.done(members[m], "diverge");
   // idea 2: the done that leaves one member owing names it (the straggler case)
   assert.deepEqual(events("done").map((e) => e.body), ["done diverge (1/2): all but b", "done diverge (2/2)"]);

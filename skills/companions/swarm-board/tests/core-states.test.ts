@@ -1,5 +1,5 @@
-// One state per member, the same on every kind of run, from two facts (link up, owes work): working, idle, away,
-// lost, ended; a seat reads its member's, or empty.
+// One state per member, the same on every kind of run, from its link, its tokens and what it owed at its drop:
+// working, stopped, away, lost, ended; a seat reads its member's, or empty.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { coreStateOf } from "../src/board/liveness.ts";
+import { quietMember } from "./fixtures/quiet-member.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -25,7 +26,7 @@ const rosterOf = (group: string) =>
   Object.fromEntries(board.snapshot(REPO).roster.filter((r) => r.plan === group).map((r) => [r.seat, { state: r.state }]));
 
 for (const kind of ["plan", "brainstorm"] as const) {
-  test(`D36, D49 golden (${kind} run): working owes, idle owes nothing, parked is away, ended; seats read their member`, () => {
+  test(`D36, D49 golden (${kind} run): working moves, stopped does not, parked is away, ended; seats read their member`, () => {
     const group = `g-${kind}`;
     const run = board.openRun({ repo: REPO, kind, group, title: "T", seats: ["a", "b", "c", "d", "e"].map((id) => ({ id, blockers: [] })) });
     const [a, b, c, d] = ["a", "b", "c", "d"].map((seat) => board.join({ run: run.id, seat, doing: "x", files: [] }).member);
@@ -34,16 +35,20 @@ for (const kind of ["plan", "brainstorm"] as const) {
     board.done(b, "p1");
     board.park(orch, "c", "p2");
     board.end(d);
+    // b's tokens last moved 15 min ago, its link up
+    quietMember(path.join(dir, "swarm.sqlite"), "b", 20 * 60_000);
+    board.recordActivity(run.id, "b", { grewAt: Date.now() - 15 * 60_000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date());
+    board.livenessTick(run.id, new Date(), () => ({ connected: true, lostAt: null }));
     assert.deepEqual(rosterOf(group), {
       orchestrator: { state: "working" },
       a: { state: "working" },
-      b: { state: "idle" },
+      b: { state: "stopped" },
       c: { state: "away" },
       d: { state: "ended" },
     });
     assert.deepEqual(
       board.runs().find((r) => r.id === run.id)!.seats.map((s) => [s.id, s.state]),
-      [["a", "working"], ["b", "idle"], ["c", "away"], ["d", "ended"], ["e", "empty"]],
+      [["a", "working"], ["b", "stopped"], ["c", "away"], ["d", "ended"], ["e", "empty"]],
     );
     // F1: the roster reads the parked member away, never its last activity
     const listed = Object.fromEntries(board.roster(REPO).filter((m) => m.plan === group).map((m) => [m.seat, [m.state, m.parked, m.activity]]));
@@ -54,13 +59,13 @@ for (const kind of ["plan", "brainstorm"] as const) {
   });
 }
 
-test("the state: link up working or idle, link down lost or away by what it owes; parked away; ended first", () => {
-  const base = { runOpen: true, ended: false, parked: false, linkDown: false, owes: false };
-  assert.equal(coreStateOf({ ...base, owes: true }), "working");
-  assert.equal(coreStateOf(base), "idle");
-  assert.equal(coreStateOf({ ...base, linkDown: true, owes: true }), "lost");
+test("the state: link up working or stopped by its tokens, link down lost or away by what it owed at the drop; parked away; ended first", () => {
+  const base = { runOpen: true, ended: false, parked: false, linkDown: false, owedAtDrop: false, moving: false };
+  assert.equal(coreStateOf({ ...base, moving: true }), "working");
+  assert.equal(coreStateOf(base), "stopped");
+  assert.equal(coreStateOf({ ...base, linkDown: true, owedAtDrop: true }), "lost");
   assert.equal(coreStateOf({ ...base, linkDown: true }), "away");
-  assert.equal(coreStateOf({ ...base, parked: true, owes: true }), "away");
+  assert.equal(coreStateOf({ ...base, parked: true, owedAtDrop: true }), "away");
   assert.equal(coreStateOf({ ...base, ended: true, parked: true }), "ended");
-  assert.equal(coreStateOf({ ...base, runOpen: false, owes: true }), "ended");
+  assert.equal(coreStateOf({ ...base, runOpen: false, moving: true }), "ended");
 });

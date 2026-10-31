@@ -8,8 +8,8 @@ import { openBoard } from "../src/board/board.ts";
 import { profileOf } from "../src/board/kinds.ts";
 
 test("profileOf gives the plan and brainstorm profiles", () => {
-  assert.deepEqual(profileOf("plan"), { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [{ event: "ended", scope: "run" }, { event: "stalled", scope: "run" }, { event: "all-joined", scope: "run" }, ...["done", "joined", "idle"].map((event) => ({ event, scope: "run", carry: true }))] } });
-  assert.deepEqual(profileOf("brainstorm"), { kind: "brainstorm", member: "seat", wholeThread: true, defaults: { member: [], orchestrator: [{ event: "agreement", scope: "run" }, { event: "endorsement", scope: "run" }, { event: "ended", scope: "run" }, { event: "stalled", scope: "run" }, { event: "all-joined", scope: "run" }, ...["done", "joined", "idle"].map((event) => ({ event, scope: "run", carry: true }))] } });
+  assert.deepEqual(profileOf("plan"), { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [{ event: "ended", scope: "run" }, { event: "stopped", scope: "run" }, { event: "all-joined", scope: "run" }, ...["done", "joined"].map((event) => ({ event, scope: "run", carry: true }))] } });
+  assert.deepEqual(profileOf("brainstorm"), { kind: "brainstorm", member: "seat", wholeThread: true, defaults: { member: [], orchestrator: [{ event: "agreement", scope: "run" }, { event: "endorsement", scope: "run" }, { event: "ended", scope: "run" }, { event: "stopped", scope: "run" }, { event: "all-joined", scope: "run" }, ...["done", "joined"].map((event) => ({ event, scope: "run", carry: true }))] } });
 });
 
 test("an unknown kind names the known ones", () => {

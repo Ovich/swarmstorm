@@ -2,7 +2,7 @@ exit 0
 you are g/s1, <nick:s1>: @s1 or @<Nick:s1> mentions you
 orchestrator <nick:orchestrator>: working
 s1 <nick:s1>: working
-g/orchestrator  run 1  working  <n> unread  doing: -  on: agreement, endorsement, ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
+g/orchestrator  run 1  working  <n> unread  doing: -  on: agreement, endorsement, ended, stopped, all-joined, done (carried), joined (carried)
 <nick:s1> · g/s1  run 1  working  <n> unread  doing: x
 phase build: build the thing  PAUSED: hold on
 pass --as g/s1 on every call: this checkout is shared, the board cannot tell you apart

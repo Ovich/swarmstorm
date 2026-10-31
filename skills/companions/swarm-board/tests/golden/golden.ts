@@ -161,7 +161,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     const store = await openBoard(path.join(home, "swarm.sqlite"));
     try {
       const repoKey = store.participant(me)!.repo;
-      for (let i = 0; i < 100 && !store.snapshot(repoKey).events.some((e) => e.event === "idle"); i++) await new Promise((ok) => setTimeout(ok, 100));
+      for (let i = 0; i < 100 && !store.snapshot(repoKey).events.some((e) => e.event === "stopped"); i++) await new Promise((ok) => setTimeout(ok, 100));
     } finally {
       store.close();
     }

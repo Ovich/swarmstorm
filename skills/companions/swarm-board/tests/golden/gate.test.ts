@@ -120,28 +120,6 @@ for (const how of ["close", "end --seat"] as const)
   });
 
 // break-flow T58 (judged #1782): V-25, V-4 (lock, unlock), V-29, V-30, V-27
-test("golden V-4: lock and unlock after close answer the closed line first; after end, the ended line", async () => {
-  const s = await scene("worker", "closed");
-  try {
-    for (const verb of ["lock", "unlock"]) {
-      const a = s.call(verb, "port:4999", "--as", s.me);
-      pin(`gate.closed.${verb}`, a);
-      assert.match(a.text, /^run \d+ closed: run end and return your summary/, verb);
-    }
-  } finally {
-    s.stop();
-  }
-  const e = await scene("orchestrator", "idle");
-  try {
-    e.must("end", "--seat", "w1", "--as", e.me);
-    const a = e.call("lock", "port:4999", "--as", e.other);
-    pin("gate.ended.lock", a);
-    assert.match(a.text, /^you have ended in run \d+: .*return your summary/);
-  } finally {
-    e.stop();
-  }
-});
-
 test("golden V-29, V-27: end --seat says the state its member was in and what it is told; one ended post; status reads ended", async () => {
   const s = await scene("orchestrator", "idle");
   try {

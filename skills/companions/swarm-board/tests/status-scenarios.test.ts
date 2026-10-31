@@ -76,17 +76,17 @@ test("1: park, then the member's agent ends: still parked, no badge, its unread 
   tick(run.id);
   assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
   assert.ok(board.roster(REPO).find((r) => r.name === "g/b")!.unread > 0, "the post waits for it");
-  assert.deepEqual([...events("lost"), ...events("stalled")].filter((e) => e.body.includes("g/b")), []);
+  assert.deepEqual([...events("lost"), ...events("stopped")].filter((e) => e.body.includes("g/b")), []);
 });
 
 test("2: the agent ends owing nothing (done, or no task): away once its link is lost past LOST_MS, nothing raised", async () => {
   const { run, b, orch } = setup();
   board.phase(orch, "p1", "go", { for: ["b"] });
   board.done(b, "p1");
-  // its link went just now: still idle
+  // its link went just now, its tokens moved a second ago: still working
   agentEnds(run.id, "b", 1000);
   tick(run.id);
-  assert.deepEqual(shown(run.id, "g/b"), { state: "idle", badge: null });
+  assert.deepEqual(shown(run.id, "g/b"), { state: "working", badge: null });
   // past LOST_MS: away, no lost line
   agentEnds(run.id, "b");
   tick(run.id);
@@ -132,18 +132,18 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   await held;
 });
 
-test("4: unpark: idle again, its badges from board facts again", async () => {
+test("4: unpark: seated afresh, working, its badges from board facts again", async () => {
   const { run, b, orch } = setup();
   board.park(orch, "b");
   assert.equal(shown(run.id, "g/b").state, "away");
   board.unpark(orch, "b");
   const out = shown(run.id, "g/b");
-  assert.equal(out.state, "idle");
+  assert.equal(out.state, "working");
   assert.equal(out.badge, null);
   // the unpark is for it: read, then its wait is held
   board.deliver(b);
   const held = waitOf(b, 400);
-  assert.equal(shown(run.id, "g/b").state, "idle");
+  assert.equal(shown(run.id, "g/b").state, "working");
   await held;
 });
 

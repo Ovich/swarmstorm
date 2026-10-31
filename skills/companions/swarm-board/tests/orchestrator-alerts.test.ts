@@ -8,7 +8,6 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { BADGE_CONFIRM_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
-import { stalledOf } from "../src/board/stall.ts";
 import { answer, eventStep, lostMentionLines } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
@@ -47,40 +46,19 @@ const taskedNoPhase = () => {
   return { run: run.id, a, orch, taskSeq: task.seq };
 };
 
-test("V-8: the idle line names a question to the orchestrator left unanswered; an answer clears it", async () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
-  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
-  const orch = board.participant("g/orchestrator")!;
-  const q = board.post(a, "@orchestrator which file do I take?");
-  const base = Date.now();
-  const w = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
-  board.livenessTick(run.id, new Date(base + 1000), linked);
-  assert.deepEqual(events("idle").map((e) => e.body), [`idle 0s: every member is waiting; no phase open; unanswered @orchestrator #${q.seq} from g/a`]);
-  await w;
-  board.post(orch, "@a take x");
-  const w2 = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
-  board.livenessTick(run.id, new Date(base + 16 * 60_000), linked);
-  await w2;
-  assert.ok(events("idle").every((e, i) => i === 0 || !e.body.includes("unanswered")), "answered: no longer named");
-});
-
-test("V-8: the stalled line names the unanswered question too", () => {
+test("V-8: the stopped line names a question to the orchestrator left unanswered", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
-  board.post(orch, "@a your part");
   const question = board.post(a, "@orchestrator is p1 x or y?");
   for (const p of [a, orch]) board.deliver(p);
-  board.recordActivity(run.id, "a", act(), new Date());
-  const due = Date.now() + STALL_MS_DEFAULT + 1000;
-  board.livenessTick(run.id, new Date(due), linked);
-  board.livenessTick(run.id, new Date(due + BADGE_CONFIRM_MS), linked);
-  const stalled = events("stalled").map((e) => e.body);
-  assert.equal(stalled.length, 1);
-  assert.match(stalled[0], new RegExp(`; phase p1 0/1 done; unanswered @orchestrator #${question.seq} from g/a$`));
+  board.recordActivity(run.id, "a", act({ grewAt: Date.now() }), new Date());
+  board.livenessTick(run.id, new Date(Date.now() + STALL_MS_DEFAULT + 1000), linked);
+  const stopped = events("stopped").map((e) => e.body);
+  assert.equal(stopped.length, 1);
+  assert.match(stopped[0], new RegExp(`; phase p1 0/1 done; unanswered @orchestrator #${question.seq} from g/a$`));
 });
-
 test("V-10: status/roster show a pause, on the person or with its reason; a phase under a pause says when it is heard", () => {
   assert.equal(WORDING.runPausedShown(null, false), "");
   assert.equal(WORDING.runPausedShown("pick a port", true), "  paused · on you: pick a port");
@@ -101,7 +79,7 @@ test("V-12: the task-end notice is told to the orchestrator's background listene
   assert.ok(!answer(woke, situation("background")).lines.includes(WORDING.delivered));
 });
 
-test("V-23: the board's lock-freed notice for a lost holder is never taken for a member's question", async () => {
+test("V-23: the board's lock-freed notice for a lost holder is never taken for a member's question", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
   const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
@@ -117,12 +95,10 @@ test("V-23: the board's lock-freed notice for a lost holder is never taken for a
   assert.ok(events("lost").length === 1, "w2 lost, its lock freed");
   const question = board.post(w1, "@orchestrator which file?");
   board.deliver(w1);
-  const w = board.wait(w1, { mentionsOnly: true, timeoutMs: 400 });
-  board.livenessTick(run.id, new Date(base + 20_000), presence);
-  await w;
-  const idle = events("idle").map((e) => e.body);
-  assert.equal(idle.length, 1);
-  assert.match(idle[0], new RegExp(`unanswered @orchestrator #${question.seq} from g/w1$`));
+  board.livenessTick(run.id, new Date(base + STALL_MS_DEFAULT + 20_000), presence);
+  const stopped = events("stopped").map((e) => e.body);
+  assert.equal(stopped.length, 1);
+  assert.match(stopped[0], new RegExp(`unanswered @orchestrator #${question.seq} from g/w1$`));
 });
 
 test("golden V-47: the orchestrator's post naming a lost member says it is lost, with the move, the post recorded", () => {

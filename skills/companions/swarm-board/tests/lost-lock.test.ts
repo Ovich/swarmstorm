@@ -85,7 +85,7 @@ test("golden V-26: a member refused the merge lock, in its wait for the merged e
   await held;
 });
 
-test("golden V-46: a member queued on the merge lock, its wait held, reads idle, its tick waiting on lock merge held by its holder; the lock names its waiters", async () => {
+test("golden V-46: a member queued on the merge lock, its wait held, reads working (its tokens just moved), its tick waiting on lock merge held by its holder; the lock names its waiters", async () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
   const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
@@ -96,7 +96,7 @@ test("golden V-46: a member queued on the merge lock, its wait held, reads idle,
   const held = board.wait(w1, { mentionsOnly: true, timeoutMs: 400 });
   const now = Date.now();
   board.recordActivity(run.id, "w1", { grewAt: now, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: now, boardWait: true }, lastTool: null, finished: false }, new Date(now));
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/w1")!.state, "idle");
+  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/w1")!.state, "working");
   const st = board.memberStates(run.id, new Date(now)).find((s) => s.member === "w1")!;
   assert.equal(st.state, "waiting"); // the tick's activity word, not the member's state
   assert.equal(st.doing, "lock merge, held by g/w2");

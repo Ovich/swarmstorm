@@ -8,8 +8,6 @@ import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-/** The stall window of `setup`'s run (its stallMs), in seconds. */
-const STALL_S = 5;
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
@@ -71,17 +69,6 @@ const setup = () => {
   const orchestrator = board.participant("idea/orchestrator")!;
   for (const p of [a, b, orchestrator]) board.deliver(p);
   return { run, a, b, orchestrator };
-};
-/** A stall counts from the member's last sign of progress, at the latest its task's delivery (on the store's own
- *  clock, now); with the ticks a minute on, the run's stall window set so it comes due `dueAt` seconds after `base`. A
- *  transcript the test records grows at `base - 60 s` (now), so it moves nothing. */
-const stallDueAt = (run: number, dueAt: number) => {
-  const db = openRawStore(path.join(dir, "swarm.sqlite"));
-  try {
-    db.prepare("UPDATE runs SET stall_ms = ? WHERE id = ?").run(60_000 + dueAt * 1000, run);
-  } finally {
-    db.close();
-  }
 };
 /** Each member's own task, a post, delivered. */
 const taskTo = (orchestrator: Participant, ...members: Participant[]) => {
@@ -174,12 +161,10 @@ test("states (board-split D49, D55): a finished transcript or silence is no badg
   const { run, b, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go", { for: ["b"] });
   const base = Date.now() + 60_000;
-  // a window past the scene: lost, never stalled, is what it watches
-  stallDueAt(run.id, 600);
   // the links are up from the start (U-F3: a member never linked is lost 30 s after its join)
   tick2(board, run.id, at(base, 0), presence);
   board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Bash node swarm.mjs wait --mentions --as idea/a" }), at(base, 0));
-  assert.equal(stateOf(run.id, "a", at(base, 6)).badge, null, "no phase owed: no stall");
+  assert.equal(stateOf(run.id, "a", at(base, 6)).badge, null, "no phase owed: no badge");
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 7));
   tick2(board, run.id, at(base, 7), presence);
   assert.equal(stateOf(run.id, "a", at(base, 7)).badge, null, "a finished transcript is not lost");
@@ -189,39 +174,6 @@ test("states (board-split D49, D55): a finished transcript or silence is no badg
   assert.deepEqual([before.state, before.badge], ["working", null]);
   const gone = stateOf(run.id, "b", at(base, 60));
   assert.deepEqual([gone.state, gone.badge?.name, gone.badge?.reason], [before.state, "lost", "its link was lost"]);
-});
-
-test("one member owing its task, no sign of work past the stall window: stalled <member> to the orchestrator alone, no other woken; once per episode, never on a timer; the growth that ends it starts a new one (board-split D49, D54)", async () => {
-  const { run, a, b, orchestrator } = setup();
-  board.phase(orchestrator, "p1", "go");
-  board.done(b, "p1");
-  taskTo(orchestrator, a);
-  const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
-  // b has a transcript too, so no liveness line opens a window that holds the stalled
-  board.recordActivity(run.id, "b", act({ grewAt: base }), at(base, 0));
-  const bWait = board.wait(b, { mentionsOnly: true, timeoutMs: 600 });
-  tick2(board, run.id, at(base, STALL_S - 1), presence);
-  assert.equal(events("stalled").length, 0);
-  tick2(board, run.id, at(base, STALL_S + 1), presence);
-  assert.equal(events("stalled").length, 1);
-  const s = events("stalled")[0];
-  assert.match(s.body, /^stalled idea\/a: \w+, not done p1, no activity \d+ (s|min); phase p1 1\/2 done$/);
-  assert.deepEqual(s.mentions, ["idea/orchestrator"]);
-  assert.equal((await bWait).full.length, 0, "b is not woken");
-  // the same episode: never told again, however long
-  for (const t of [STALL_S + 60, STALL_S + 15 * 60, STALL_S + 40 * 60]) tick2(board, run.id, at(base, t), presence);
-  assert.equal(events("stalled").length, 1, "once per episode");
-  assert.match(stepOf("stalled")(board.read(s.seq), board.participant("idea/orchestrator")!, "swarm")!, /^ask it: .* post "@a your part of p1"/);
-  assert.equal(stepOf("stalled")(board.read(s.seq), b, "swarm"), null);
-  // its transcript grows: the episode ends; silent again past the stall window: a new one, told
-  const grew = STALL_S + 41 * 60;
-  board.recordActivity(run.id, "a", act({ grewAt: base + grew * 1000 }), at(base, grew));
-  tick2(board, run.id, at(base, grew + 1), presence);
-  assert.equal(stateOf(run.id, "a", at(base, grew + 1)).badge, null);
-  tick2(board, run.id, at(base, grew + STALL_S + 1), presence);
-  assert.equal(events("stalled").length, 2, "a new episode");
-  void a;
 });
 
 test("lost (board-split D49, D55): a finished transcript draws none; a link lost LOST_MS on a member owing its task draws one, once; never for an ended member (US3, D12)", () => {
@@ -247,47 +199,6 @@ test("lost (board-split D49, D55): a finished transcript draws none; a link lost
   assert.equal(events("lost").length, 1);
 });
 
-test("idle once when every member but the orchestrator turns waiting (D31, D34), again after 15 min only when the board changed since; a member stirring buys no idle within 15 min of the last (D44); a closed run's tick answers false", async () => {
-  const { run, a, b } = setup();
-  const opened = Date.now() - 1000;
-  const wa = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
-  const wb = board.wait(b, { mentionsOnly: true, timeoutMs: 400 });
-  const base = Date.now() + 60_000;
-  // a prefixed line, as a seat runs it: the link read it as the board's wait (D35, D45)
-  const waitCall = (m: string, since = opened) => ({ name: "Bash", target: `export SWARMSTORM_HOME=/h; node swarm.mjs wait --mentions --as idea/${m}`, since, boardWait: true });
-  const idles = () => events("idle").map((e) => [e.body.split(":")[0], e.mentions]);
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: waitCall("a") }), at(base, 0));
-  // b holds its wait in the background while it works: not waiting, no idle
-  board.recordActivity(run.id, "b", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base } }), at(base, 0));
-  for (const s of [0, 15, 30]) tick2(board, run.id, at(base, s), presence);
-  assert.equal(events("idle").length, 0);
-  board.recordActivity(run.id, "b", act({ grewAt: base, openTool: waitCall("b") }), at(base, 31));
-  for (const s of [31, 45, 60, 600, 31 + 15 * 60 - 1]) tick2(board, run.id, at(base, s), presence);
-  assert.deepEqual(idles(), [["idle 0s", ["idea/orchestrator"]]]);
-  // nothing changed on the board: no repeat, however long
-  tick2(board, run.id, at(base, 31 + 15 * 60), presence);
-  tick2(board, run.id, at(base, 31 + 15 * 60 + 1), presence);
-  assert.deepEqual(idles().length, 1);
-  // a post since: told again
-  board.post(board.participant("idea/orchestrator")!, "note for the record");
-  tick2(board, run.id, at(base, 31 + 15 * 60 + 2), presence);
-  assert.deepEqual(idles().map(([b]) => b), ["idle 0s", "idle 902s"]);
-  // b moves, then waits again: a new quiet spell, but no idle within 15 min of the last one (D44)
-  const t2 = 31 + 15 * 60 + 5;
-  board.recordActivity(run.id, "b", act({ grewAt: base + t2 * 1000 }), at(base, t2));
-  tick2(board, run.id, at(base, t2), presence);
-  board.recordActivity(run.id, "b", act({ grewAt: base + t2 * 1000, openTool: waitCall("b") }), at(base, t2 + 1));
-  tick2(board, run.id, at(base, t2 + 1), presence);
-  tick2(board, run.id, at(base, t2 + 60), presence);
-  assert.deepEqual(idles().map(([b]) => b), ["idle 0s", "idle 902s"]);
-  tick2(board, run.id, at(base, 31 + 30 * 60 + 2), presence);
-  assert.equal(idles().length, 3);
-  await Promise.all([wa, wb]);
-  board.closeRun(run.id);
-  assert.equal(tick2(board, run.id, at(base, t2 + 61), presence), false);
-  assert.equal(tick2(board, 999, at(base, t2 + 61), presence), false);
-});
-
 test("no transcript (board-split D55): a member with no link activity NO_TRANSCRIPT_MS after its join carries a card note, never an alarm; waiting in a board wait, else working, no badge (D33)", async () => {
   const { run, a } = setup();
   const base = Date.now() + 60_000;
@@ -309,30 +220,6 @@ test("no transcript (board-split D55): a member with no link activity NO_TRANSCR
   assert.equal(events("stalled").length, 0, "no alarm");
 });
 
-test("stalled needs owing AND the link alive; a lost link draws lost, never stalled; a self-post never resets it (board-split D49)", () => {
-  const { run, a, b, orchestrator } = setup();
-  board.phase(orchestrator, "p1", "go");
-  taskTo(orchestrator, a, b);
-  const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base, lastTool: "Read src/x.ts" }), at(base, 0));
-  board.recordActivity(run.id, "b", act({ grewAt: base, lastTool: "Bash npm test" }), at(base, 0));
-  // the window past LOST_MS: b is lost before it could stall
-  stallDueAt(run.id, 60);
-  // b stopped: its link died at once
-  links.set("b", { connected: false, lostAt: base + 1000 });
-  for (const s of [4, 10, 30, 60]) tick2(board, run.id, at(base, s), presence);
-  assert.equal(events("lost").length, 0);
-  tick2(board, run.id, at(base, 61), presence);
-  assert.deepEqual(events("lost").map((e) => e.body), ["lost idea/b: its link was lost"]);
-  // past the stall window: a stalled; b, its link lost, never
-  tick2(board, run.id, at(base, 121), presence);
-  assert.equal(events("stalled").length, 1);
-  assert.match(events("stalled")[0].body, /^stalled idea\/a: \w+, not done p1, no activity \d+ (s|min); /, "a stalled; b never");
-  // a post is a self-report: a stays stalled
-  board.post(a, "still here");
-  assert.equal(stateOf(run.id, "a", at(base, 122)).badge?.name, "stalled");
-});
-
 test("the snapshot's liveness and the roster carry progressAt and aliveAt (D38)", () => {
   const { run } = setup();
   const base = Date.now() + 60_000;
@@ -349,57 +236,4 @@ test("the snapshot's liveness and the roster carry progressAt and aliveAt (D38)"
   tick2(board, run.id, new Date(), presence);
   assert.deepEqual([live().progressAt, live().aliveAt], [base, before - 5000]);
   assert.deepEqual([rostered().progressAt, rostered().aliveAt], [base, before - 5000]);
-});
-
-test("no idle while a seat of the run has yet to join: a run filling up is not idle (D44)", async () => {
-  links = new Map();
-  const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "fill", title: "F", stallMs: 5000, seats: ["a", "b", "c"].map((id) => ({ id, title: id, blockers: [] })) });
-  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
-  board.deliver(a);
-  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 300 });
-  const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "node swarm.mjs wait --mentions --as fill/a", since: base - 1000, boardWait: true } }), at(base, 0));
-  for (const s of [1, 16, 31]) tick2(board, run.id, at(base, s), presence);
-  assert.equal(events("idle").length, 0);
-  await held;
-});
-
-test("G31: alerts due within the window after one told are held and told together at its end, one wake", () => {
-  const { run, orchestrator } = setup();
-  // board-split D49: a stall is owing the open phase with no board call
-  board.phase(orchestrator, "p1", "go");
-  taskTo(orchestrator, board.participant("idea/a")!, board.participant("idea/b")!);
-  const base = Date.now() + 60_000;
-  stallDueAt(run.id, 5);
-  // b's link went LOST_MS before the first tick: its lost at once, the window opened by it
-  links.set("b", { connected: false, lostAt: base - 60_000 });
-  board.recordActivity(run.id, "a", act({ grewAt: base - 60_000, tokens: 1 }), at(base, 0));
-  board.recordActivity(run.id, "b", act({ grewAt: base - 60_000, tokens: 1 }), at(base, 0));
-  tick2(board, run.id, at(base, 0), presence);
-  assert.equal(events("lost").length, 1, "the first at once");
-  // a stalls 5 s on: held inside the window
-  tick2(board, run.id, at(base, 6), presence);
-  assert.equal(events("stalled").length, 0, "held inside the window");
-  tick2(board, run.id, at(base, 11), presence);
-  assert.equal(events("stalled").length, 1, "told at the window's end");
-});
-
-test("D43: a gone due inside the window is told at once, and what is held rides along with it (S31)", () => {
-  const { run, orchestrator } = setup();
-  board.phase(orchestrator, "p1", "go");
-  taskTo(orchestrator, board.participant("idea/a")!, board.participant("idea/b")!);
-  const base = Date.now() + 60_000;
-  stallDueAt(run.id, 0);
-  board.recordActivity(run.id, "a", act({ grewAt: base - 60_000, tokens: 1 }), at(base, 0));
-  // b grew 6 s later than a: its stall comes due 6 s after a's opened the window
-  board.recordActivity(run.id, "b", act({ grewAt: base - 54_000, tokens: 1 }), at(base, 0));
-  tick2(board, run.id, at(base, 0), presence);
-  assert.equal(events("stalled").length, 1, "a's stalled at once");
-  tick2(board, run.id, at(base, 6), presence);
-  assert.equal(events("stalled").length, 1, "b's stalled held inside the window");
-  // b's link went at -52 s: lost at 8 s, told at once, the held stalled with it
-  links.set("b", { connected: false, lostAt: base - 52_000 });
-  tick2(board, run.id, at(base, 8), presence);
-  assert.deepEqual(events("lost").map((e) => e.body), ["lost idea/b: its link was lost"], "told at this tick, not at the window's end");
-  assert.equal(events("stalled").length, 2, "the held alert rode along");
 });

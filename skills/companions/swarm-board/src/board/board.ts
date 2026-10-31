@@ -508,8 +508,6 @@ const ORCHESTRATOR = "orchestrator";
 /** A watch event can be missed (a coalesced write, a platform quirk); the store is re-read
  *  this often regardless, so a missed event costs at most this much. */
 const WAIT_POLL_MS = 1000;
-/** G31: liveness alerts due within this window after one told are held and told together. */
-const ALERT_WINDOW_MS = 10 * 1000;
 const LINE_WIDTH = 100;
 const STALE_MS = 10 * 60 * 1000;
 /** A pending wait's looks are logged in call_log at most this often: well under STALE_MS, never a row per tick. */
@@ -1245,28 +1243,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const sameSub = (a: Subscription, b: Subscription): boolean => a.event === b.event && a.scope === b.scope;
 
   // ── liveness: member states from activity (swarm-relay D9, D11, D12, D31) ─────────────
-  /** G31: the liveness alerts (gone, liveness, stalled) of a run. The first goes out at once; those due within
-   *  ALERT_WINDOW_MS after it are held and told together as one wake when the window ends, unless a gone is due:
-   *  it goes at once, the held ones with it (D43). */
-  type DueAlert = { body: string; event: EventName; meta?: MessageMeta };
-  const alertsDue = new Map<RunId, { lastToldAt: number | null; items: DueAlert[] }>();
-  const raiseAlert = (run: RunId, item: DueAlert): void => {
-    const due = alertsDue.get(run) ?? { lastToldAt: null, items: [] };
-    due.items.push(item);
-    alertsDue.set(run, due);
-  };
-  /** One tick's end: the held alerts, together, once the window allows. */
-  const flushAlerts = (run: RunId, t: number, orch: Participant): void => {
-    const due = alertsDue.get(run);
-    if (!due || !due.items.length) return;
-    // board-split#D43 (G31 amended): a lost is never held by the window; what is held rides along with it
-    const lostDue = due.items.some((i) => i.event === EVENTS.lost.name);
-    if (!lostDue && due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
-    const items = due.items.splice(0);
-    due.lastToldAt = t;
-    // posted at one moment, they reach a waiting orchestrator in one wake, each line its own event
-    for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...(i.meta ? { meta: i.meta } : {}) });
-  };
   /** The presence each run's tick last gave: the snapshot and the roster read states through it. */
   const presenceOf = new Map<RunId, Presence>();
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
@@ -2198,7 +2174,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           // board-split D55: lost is an episode, opened once its predicate held BADGE_CONFIRM_MS, told once; never re-fired by a timer
           const lostStep = episodeStep(run, st.member, "lost", st.badge?.name === "lost", t);
           if (lostStep === "opened") {
-            raiseAlert(run, { body: `lost ${orch.plan}/${st.member}: ${st.badge!.reason}`, event: EVENTS.lost.name });
+            insertMessage(orch, `lost ${orch.plan}/${st.member}: ${st.badge!.reason}`, null, "event", [orch.name], { event: EVENTS.lost.name });
             postComposition(orch, st.member, "-", "lost");
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, st.member) as Row | undefined;
             if (lostRow) {
@@ -2216,7 +2192,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         }
         // a member parked or ended closes its episodes without a word (D30)
         closeEpisodesOutside(run, others.map((st) => st.member), t);
-        flushAlerts(run, t, orch);
         // D41: the lost members this tick told are out of the count; the last one not done lost means all-done now
         const progress = progressOf(run, r.phase == null ? null : String(r.phase));
         const where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";

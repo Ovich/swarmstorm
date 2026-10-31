@@ -44,32 +44,6 @@ const setup = () => {
   return { run, a, b, orch };
 };
 
-test("golden stalled (simple-states): a working member owing its task stalls only with no transcript growth and no call opened past the stall window; one alarm per episode", () => {
-  const { run, a, b, orch } = setup();
-  board.phase(orch, "p1", "go");
-  board.done(b, "p1");
-  board.post(orch, "@a your part");
-  board.deliver(a);
-  const base = Date.now();
-  // its transcript grew 4 s ago: no stall
-  board.recordActivity(run.id, "a", act({ grewAt: base + 4000, lastTool: "Edit x", inTurn: true }), at(base, 4));
-  assert.equal(badgeIn(run.id, "a", at(base, 8)).badge, null, "growth inside the window");
-  // a call opened 4 s ago: its start is a sign
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "npm test", since: base + 10_000 } }), at(base, 10));
-  assert.equal(badgeIn(run.id, "a", at(base, 14)).badge, null, "a call opened inside the window");
-  const st = badgeIn(run.id, "a", at(base, 16));
-  assert.deepEqual([st.badge?.name, st.owes], ["stalled", "p1"]);
-  assert.match(st.badge?.reason ?? "", /^working, not done p1, no activity \d+ s$/);
-  // one alarm per episode, never re-fired on a timer
-  tick2(board, run.id, at(base, 20 * 60), linked);
-  assert.equal(eventsOf("stalled").length, 1);
-  assert.match(eventsOf("stalled")[0].body, /^stalled g\/a: working, not done p1/);
-  assert.deepEqual(eventsOf("stalled")[0].meta, { rule: "silent", member: "a", phase: "p1" });
-  // done ends the owing: no badge
-  board.done(a, "p1");
-  assert.equal(badgeIn(run.id, "a", at(base, 20 * 60 + 1)).badge, null);
-});
-
 test("golden lost: a member owing work whose link is down past LOST_MS is lost; a finished transcript is not lost; its link back clears it", () => {
   const { run, orch } = setup();
   board.phase(orch, "p1", "go");
@@ -137,19 +111,20 @@ test("S40, board-split D49: a subagent that ended its turn on a background task 
   assert.deepEqual([long.state, long.badge], ["busy", null]);
 });
 
-test("subscription compatibility: gone, stale and quiet read as lost and stalled, said once; a stored old event reads as its new one", () => {
+test("subscription compatibility: gone reads as lost; stale, quiet, stalled and idle as stopped, said once; a stored old event reads as its new one", () => {
   assert.deepEqual(parseSubscriptions("stale,gone,any:quiet,ended"), [
-    { event: "stalled", scope: "run" },
+    { event: "stopped", scope: "run" },
     { event: "lost", scope: "run" },
-    { event: "stalled", scope: "any" },
+    { event: "stopped", scope: "any" },
     { event: "ended", scope: "run" },
   ]);
   assert.deepEqual(renamedIn(["stale,gone", "quiet"]), [
-    { old: "stale", now: "stalled" },
+    { old: "stale", now: "stopped" },
     { old: "gone", now: "lost" },
-    { old: "quiet", now: "stalled" },
+    { old: "quiet", now: "stopped" },
   ]);
   assert.match(WORDING.eventRenamed(renamedIn("gone")), /^gone is now lost: trouble is a badge/);
   assert.equal(eventOf({ event: "gone", kind: "event" } as never), "lost");
-  assert.equal(eventOf({ event: "stale", kind: "event" } as never), "stalled");
+  assert.equal(eventOf({ event: "stale", kind: "event" } as never), "stopped");
+  assert.equal(eventOf({ event: "idle", kind: "event" } as never), "stopped");
 });

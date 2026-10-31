@@ -9,8 +9,8 @@ import { SCENARIOS, STALL_S, play } from "./fixtures/yardstick.ts";
 const CORE: [string, number, string][] = [
   // board-split D55: lost LOST_MS after the link and the last sign went
   ["S5a", 61, "lost"],
-  // simple-states: owing the phase, no sign of progress, told once the stall window passed since its last sign
-  ["S4-owing", STALL_S + 61, "silent"],
+  // simple-states: no member's tokens moved, told `stopped` once the stall window passed since the last move
+  ["S4-owing", STALL_S + 61, "stopped"],
 ];
 
 /** board-split D49: trouble comes from board facts alone. A turn ended, a background task gone silent or a dev server

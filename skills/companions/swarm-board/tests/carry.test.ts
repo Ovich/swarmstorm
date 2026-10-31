@@ -171,34 +171,6 @@ const allWaiting = (run: number, ids: string[], m: Record<string, Participant>, 
   return Promise.all(waits);
 };
 
-test("B5: with no phase open, the first idle wakes", async () => {
-  const { run, m, orch } = setup(["w1", "w2"]);
-  const t = new Date();
-  const waits = allWaiting(run.id, ["w1", "w2"], m, t);
-  tick2(board, run.id, t, presence);
-  assert.match(all(await waitOf(orch, 150)), /^idle/m);
-  await waits;
-});
-
-test("B5, B9: the first idle after all-done was told is carried, and wakes by the deadline", async () => {
-  const { run, m, orch } = setup(["w1", "w2"]);
-  board.phase(orch, "p", "go");
-  board.done(m.w1, "p");
-  board.done(m.w2, "p");
-  assert.match(all(await waitOf(orch, 150)), /all done p/);
-  const t = new Date();
-  const waits = allWaiting(run.id, ["w1", "w2"], m, t);
-  tick2(board, run.id, t, presence);
-  assert.equal(woke(await waitOf(orch, 150)), false, "the idle after all-done is carried");
-  const idles = board.snapshot(REPO).events.filter((e) => e.event === "idle");
-  assert.equal(idles.length, 1, "the carried idle is posted");
-  assert.deepEqual(idles[0].mentions, []);
-  const held = waitOf(orch, 2000);
-  pastDeadline(run.id, t.getTime());
-  assert.match(all(await held), /idle/);
-  await waits;
-});
-
 test("B11 and d3's guards: a paused run is silent but urgent; resume gives every held line once; a gone member stays gone; a carried deadline counts from the resume", async () => {
   const { run, m, orch } = setup(["w1", "w2"]);
   board.phase(orch, "p", "go");

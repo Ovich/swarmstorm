@@ -102,15 +102,18 @@ test("D30: park and unpark are the orchestrator's, on a live seat; unpark lifts 
   assert.equal(board.phaseProgress(run.id)!.of, 2);
 });
 
-test("D30: every member but a parked one waiting is idle; every member parked is not", async () => {
-  const { run, a, orch } = setup();
+test("D30: a parked member is out of the stopped count; every member parked raises no stopped", () => {
+  const { run, orch } = setup();
   board.park(orch, "b");
   const base = Date.now();
-  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
-  board.recordActivity(run.id, "a", act({ grewAt: base, openTool: { name: "Bash", target: "swarm wait --mentions", since: base, boardWait: true } }), at(base, 0));
-  tick2(board, run.id, at(base, 1), linked);
-  assert.equal(eventsOf("idle").length, 1);
-  await held;
+  board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
+  tick2(board, run.id, at(base, 6), linked);
+  assert.equal(eventsOf("stopped").length, 1, "a still past the window, b parked");
+  // a moves, then is parked too: nobody left to be still
+  board.recordActivity(run.id, "a", act({ grewAt: base + 7000 }), at(base, 7));
+  board.park(orch, "a");
+  tick2(board, run.id, at(base, 60), linked);
+  assert.equal(eventsOf("stopped").length, 1);
 });
 
 test("S22 (board-split D25, D55): a fresh agent re-joining a seat joined long ago carries no 'no transcript found' note before its link speaks, and never an alarm", () => {

@@ -120,10 +120,10 @@ test("S1 target: join shows the unread task posted before it", async () => {
     expect(s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me), [
       "you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you",
       "orchestrator <nick:orchestrator>: working",
-      "w1 <nick:w1>: idle",
-      `${O}  run 1  working  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)`,
+      "w1 <nick:w1>: working",
+      `${O}  run 1  working  <n> unread  doing: -  on: ended, stopped, all-joined, done (carried), joined (carried)`,
       // S20: the roster is read after the join delivered the task: nothing unread on its own row
-      "<nick:w1> · g/w1  run 1  idle  doing: x",
+      "<nick:w1> · g/w1  run 1  working  doing: x",
       // the result: the task, whole, as a wait would deliver it
       `#<seq> ${O}  <ts>`,
       "@w1 the task: build the thing",

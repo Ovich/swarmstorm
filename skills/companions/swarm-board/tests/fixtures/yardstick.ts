@@ -25,8 +25,8 @@ const phaseWithTasks = (bd: Board, o: Participant, phase: string, seats: string[
   for (const seat of seats) bd.post(o, `@${seat} your part of ${phase}`);
 };
 export const EPISODE_MS = 30 * 60 * 1000;
-const ALERTS = new Set(["stalled", "lost"]);
-const WAKE_EVENTS = new Set(["stalled", "lost", "idle"]);
+const ALERTS = new Set(["stopped", "lost"]);
+const WAKE_EVENTS = new Set(["stopped", "lost"]);
 const MIN = 60;
 export const STALL_S = STALL_MS_DEFAULT / 1000;
 
@@ -146,7 +146,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       }
       board.livenessTick(run.id, at, presence);
       const badge = board.memberStates(run.id, at).find((m) => m.member === "x")?.badge?.name;
-      if ((badge === "stalled" || badge === "lost") && !isStuck(s)) falseStateS++;
+      if (badge === "lost" && !isStuck(s)) falseStateS++;
       // what reaches the orchestrator this second, about x: one wake when any of it is a liveness event
       const all = board
         .deliver(orch)
@@ -155,8 +155,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       for (const { m, e } of all) if (m.body.includes("yard/w") && ALERTS.has(e!)) companionAlerts.push(s);
       // a grouped line naming x and w both is about x too
       const fresh = all.filter(({ m }) => !m.body.includes("yard/w") || m.body.includes("yard/x"));
-      for (const { m, e } of fresh) told.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: stepOf(e as import("../../src/board/events.ts").EventName)(m, orch, "swarm") ?? null });
-      for (const { m, e } of fresh) if (ALERTS.has(e!)) alerts.push({ s, event: e!, rule: m.meta && "rule" in m.meta ? m.meta.rule : null, body: m.body, next: stepOf(e as import("../../src/board/events.ts").EventName)(m, orch, "swarm") ?? null });
+      for (const { m, e } of fresh) told.push({ s, event: e!, rule: null, body: m.body, next: stepOf(e as import("../../src/board/events.ts").EventName)(m, orch, "swarm") ?? null });
+      for (const { m, e } of fresh) if (ALERTS.has(e!)) alerts.push({ s, event: e!, rule: null, body: m.body, next: stepOf(e as import("../../src/board/events.ts").EventName)(m, orch, "swarm") ?? null });
       if (fresh.length) wakes.push({ s, events: fresh.map(({ e }) => e as string) });
     }
     for (const [p, h] of [[x, held], [w, wHeld]] as const) {

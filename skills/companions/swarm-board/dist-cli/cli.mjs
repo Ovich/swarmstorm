@@ -176,15 +176,15 @@ var init_kinds = __esm({
     run = (...events) => events.map((event) => ({ event, scope: "run" }));
     carried = (...events) => events.map((event) => ({ event, scope: "run", carry: true }));
     PROFILES = {
-      plan: { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stalled", "all-joined"), ...carried("done", "joined", "idle")] } },
+      plan: { kind: "plan", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stopped", "all-joined"), ...carried("done", "joined")] } },
       brainstorm: {
         kind: "brainstorm",
         member: "seat",
         wholeThread: true,
-        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stalled", "all-joined"), ...carried("done", "joined", "idle")] }
+        defaults: { member: [], orchestrator: [...run("agreement", "endorsement", "ended", "stopped", "all-joined"), ...carried("done", "joined")] }
       },
       // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices
-      task: { kind: "task", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stalled", "all-joined"), ...carried("done", "joined", "idle")] } }
+      task: { kind: "task", member: "worker", wholeThread: false, defaults: { member: [], orchestrator: [...run("ended", "stopped", "all-joined"), ...carried("done", "joined")] } }
     };
   }
 });
@@ -776,10 +776,10 @@ var init_schema = __esm({
 function coreStateOf(m) {
   if (!m.runOpen || m.ended) return "ended";
   if (m.parked) return "away";
-  if (m.linkDown) return m.owes ? "lost" : "away";
-  return m.owes ? "working" : "idle";
+  if (m.linkDown) return m.owedAtDrop ? "lost" : "away";
+  return m.moving ? "working" : "stopped";
 }
-var claudeCodeJsonl, IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var claudeCodeJsonl, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS;
 var init_liveness = __esm({
   "src/board/liveness.ts"() {
     "use strict";
@@ -815,7 +815,6 @@ var init_liveness = __esm({
         return { offset: from.offset + end + 1, tokens };
       }
     };
-    IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     STALL_MS_DEFAULT = 10 * 60 * 1e3;
     BADGE_CONFIRM_MS = 10 * 1e3;
@@ -825,7 +824,6 @@ var init_liveness = __esm({
     LOST_MS = 60 * 1e3;
     HEARTBEAT_MS = 5 * 1e3;
     CARRY_MAX_MS = 5 * 60 * 1e3;
-    LOCK_HELD_MS = 10 * 60 * 1e3;
   }
 });
 
@@ -908,9 +906,6 @@ var init_wire = __esm({
       "phase",
       "currentPhase",
       "showPhase",
-      "lock",
-      "unlock",
-      "locks",
       "pause",
       "resume",
       "pausedOf",
@@ -2196,8 +2191,6 @@ var init_events2 = __esm({
       endorsement: { name: "endorsement" },
       joined: { name: "joined" },
       ended: { name: "ended" },
-      // an orchestrator stalled (silent STALE_MS) calls again (D15); its silence and a run's are `stalled` (board-split D36)
-      back: { name: "back" },
       // when a run opens: its kind, group and title (D69)
       opened: { name: "opened" },
       closed: { name: "closed" },
@@ -2218,18 +2211,15 @@ var init_events2 = __esm({
       done: { name: "done" },
       // every member of the run is done with the current phase: one event to the orchestrator
       "all-done": { name: "all-done" },
-      // every member but the orchestrator waiting (D31): at each whole IDLE_MS while it holds; wakes the orchestrator alone
-      idle: { name: "idle", toAuthor: true },
-      // `stalled <member>`: one member with no progress past the run's threshold, to the orchestrator alone, once per
-      // episode, never again on a timer (swarm-relay D11, board-split D54); no other member is woken. board-split D36: also an orchestrator
-      // silent STALE_MS (once, in its run) and a run whose every member is silent (once, to its orchestrator)
-      stalled: { name: "stalled", toAuthor: true },
+      // simple-states: `stopped <group>`: no member's tokens moved for the run's stall window; to the orchestrator alone,
+      // once per still spell, never while paused
+      stopped: { name: "stopped", toAuthor: true },
       // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
       block: { name: "block" },
       unblock: { name: "unblock" },
-      // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
+      // the merge lock freed from a lost holder (D59); mentions each waiter
       unlocked: { name: "unlocked", toAuthor: true },
-      // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
+      // idea 4: a member killed by name, pattern or port; to the orchestrator alone
       breach: { name: "breach", toAuthor: true },
       // a member whose agent finished without end, or whose link is lost (D12, board-split D36); to the orchestrator alone
       lost: { name: "lost", toAuthor: true },
@@ -2241,11 +2231,11 @@ var init_events2 = __esm({
     all = null;
     allEvents = () => all ??= { ...EVENTS, ...registry.events() };
     isEvent = (s) => Object.hasOwn(allEvents(), s);
-    RENAMED_EVENTS = { gone: "lost", stale: "stalled", quiet: "stalled" };
+    RENAMED_EVENTS = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };
     currentEventName = (s) => RENAMED_EVENTS[s] ?? s;
     eventNames = () => Object.keys(allEvents());
     eventDef = (name) => allEvents()[name];
-    MEMBER_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost"]);
+    MEMBER_ALARMS = /* @__PURE__ */ new Set(["lost"]);
     isCompositionLine = (e) => e === "joined" || e === "ended";
   }
 });
@@ -2355,24 +2345,6 @@ var init_call_label = __esm({
   "src/board/call-label.ts"() {
     "use strict";
     fileName = (p) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
-  }
-});
-
-// src/board/stall.ts
-function stalledOf(f, t) {
-  if (t - f.progressAt < f.stallMs) return null;
-  return { since: f.progressAt, fact: `not done ${f.owes}, no activity` };
-}
-function ageText(ageMs) {
-  const s = Math.max(0, Math.round(ageMs / 1e3));
-  return s < 120 ? `${s} s` : `${Math.round(s / 60)} min`;
-}
-function reasonOf(state, fact, ageMs) {
-  return `${state}, ${fact} ${ageText(ageMs)}`;
-}
-var init_stall = __esm({
-  "src/board/stall.ts"() {
-    "use strict";
   }
 });
 
@@ -2563,6 +2535,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "progress_at", "progress_at TEXT");
   upkeep("participants", "board_call_at", "board_call_at TEXT");
   upkeep("participants", "quiet_flagged", "quiet_flagged INTEGER NOT NULL DEFAULT 0");
+  upkeep("participants", "dropped_owing", "dropped_owing INTEGER");
   upkeep("runs", "pruned_at", "pruned_at TEXT");
   upkeep("messages", "event", "event TEXT");
   upkeep("deliveries", "at", "at TEXT");
@@ -2594,9 +2567,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("participants", "blocked_at", "blocked_at INTEGER");
   db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   db.exec("CREATE TABLE IF NOT EXISTS carry_due (participant INTEGER NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (participant, seq))");
-  db.exec(`CREATE TABLE IF NOT EXISTS locks (name TEXT PRIMARY KEY, participant INTEGER NOT NULL, since TEXT NOT NULL, note TEXT);
-    CREATE TABLE IF NOT EXISTS named_lock_waiters (name TEXT NOT NULL, participant INTEGER NOT NULL, since TEXT NOT NULL, PRIMARY KEY (name, participant));
-    CREATE TABLE IF NOT EXISTS lock_releases (name TEXT PRIMARY KEY, at TEXT NOT NULL, by TEXT NOT NULL, how TEXT NOT NULL);`);
   upkeep("member_activity", "in_turn", "in_turn INTEGER");
   upkeep("member_activity", "last_line", "last_line TEXT");
   upkeep("member_activity", "bg_target", "bg_target TEXT");
@@ -2945,22 +2915,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return subs;
   };
   const sameSub = (a, b) => a.event === b.event && a.scope === b.scope;
-  const alertsDue = /* @__PURE__ */ new Map();
-  const raiseAlert = (run3, item) => {
-    const due = alertsDue.get(run3) ?? { lastToldAt: null, items: [] };
-    due.items.push(item);
-    alertsDue.set(run3, due);
-  };
-  const flushAlerts = (run3, t, orch) => {
-    const due = alertsDue.get(run3);
-    if (!due || !due.items.length) return;
-    const lostDue = due.items.some((i) => i.event === EVENTS.lost.name);
-    if (!lostDue && due.lastToldAt != null && t - due.lastToldAt < ALERT_WINDOW_MS) return;
-    const items = due.items.splice(0);
-    due.lastToldAt = t;
-    for (const i of items) insertMessage(orch, i.body, null, "event", [orch.name], { event: i.event, ...i.meta ? { meta: i.meta } : {} });
-  };
-  const idleSince = /* @__PURE__ */ new Map();
   const presenceOf = /* @__PURE__ */ new Map();
   const noPresence = () => ({ connected: false, lostAt: null });
   const heldWaits = /* @__PURE__ */ new Map();
@@ -2977,7 +2931,20 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const a = activityOf(Number(p.run), String(p.seat));
     return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p) != null;
   };
-  const memberStateOf = (p, run3, t = Date.now()) => coreStateOf({ runOpen: run3?.state === "open", ended: p.ended_at != null, parked: Number(p.parked) === 1, linkDown: run3 != null && lostOf(p, run3, t) != null, owes: run3 != null && owesOf(p, run3) });
+  const memberStateOf = (p, run3, t = Date.now()) => coreStateOf({
+    runOpen: run3?.state === "open",
+    ended: p.ended_at != null,
+    parked: Number(p.parked) === 1,
+    linkDown: run3 != null && lostOf(p, run3, t) != null,
+    owedAtDrop: run3 != null && owedAtDropOf(p, run3),
+    moving: run3 != null && t - tokensMovedAtOf(p, run3) < stallWindowOf(run3)
+  });
+  const owedAtDropOf = (p, run3) => p.dropped_owing == null ? owesOf(p, run3) : Number(p.dropped_owing) === 1;
+  const tokensMovedAtOf = (p, run3) => {
+    const a = activityOf(Number(run3.id), String(p.seat));
+    return Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), Date.parse(seatedAtOf(p)));
+  };
+  const stallWindowOf = (run3) => Math.max(Number(run3.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
   const owesOf = (p, run3) => String(p.seat) === ORCHESTRATOR || owedNameOf(p, run3) != null;
   const seatedAtOf = (p) => String(p.seated_at ?? p.joined_at);
   const progressAtOf = (p, run3, a) => Math.max(
@@ -3005,7 +2972,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return transaction(() => {
       const until_ = until?.trim() || null;
       if (parked) db.prepare("UPDATE participants SET parked = 1, parked_until = ? WHERE id = ?").run(until_, Number(row.id));
-      else db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, seated_at = ? WHERE id = ?").run((/* @__PURE__ */ new Date()).toISOString(), Number(row.id));
+      else db.prepare("UPDATE participants SET parked = 0, parked_until = NULL, dropped_owing = NULL, seated_at = ? WHERE id = ?").run((/* @__PURE__ */ new Date()).toISOString(), Number(row.id));
       return insertMessage(fresh, parked ? `parked @${fresh.plan}/${seat}` : `unparked @${fresh.plan}/${seat}`, null, "event", [`${fresh.plan}/${seat}`], { event: (parked ? EVENTS.park : EVENTS.unpark).name });
     });
   };
@@ -3030,7 +2997,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       return { name: "blocked", reason: String(run3.paused) || "the run is paused on the person", since: null };
     return null;
   };
-  const activityShownOf = (p, run3, withHolder, t) => {
+  const activityShownOf = (p, run3, t) => {
     const member = String(p.seat);
     const a = activityOf(Number(run3.id), member);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
@@ -3038,9 +3005,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)) };
     const open = a.open_tool == null ? null : `${a.open_tool} ${String(a.open_target ?? "")}`.trim();
     if (open && heldSince != null && Number(a.open_wait) === 1) {
-      const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
-      if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
-      const packWait = withHolder ? packLockWaitOf(p) : null;
+      const packWait = packLockWaitOf(p);
       if (packWait) return { member, state: "waiting", doing: `lock ${packWait.lock}, held by ${packWait.queuedBehind}`, since: Number(a.open_since) };
       if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min \xB7 background ${String(a.bg_target)}`, since: Number(a.bg_since) };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
@@ -3082,18 +3047,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const since = Math.max(signAt, seatedAt, up ?? 0) + LOST_MS;
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
-  };
-  const stalledBadgeOf = (p, run3, t, state) => {
-    if (state !== "working") return null;
-    const owes = owedNameOf(p, run3);
-    if (owes == null) return null;
-    const a = activityOf(Number(run3.id), String(p.seat));
-    const ms = (iso) => iso == null ? 0 : Date.parse(String(iso));
-    const progressAt = heldWaits.has(Number(p.id)) ? t : Math.max(ms(run3.resumed_at), ms(run3.phase_at), ms(p.board_call_at), ms(seatedAtOf(p)), a?.grew_at == null ? 0 : Number(a.grew_at), a?.open_tool == null ? 0 : Number(a.open_since));
-    const stallMs = Math.max(Number(run3.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
-    const stall = stalledOf({ owes, progressAt, stallMs }, t);
-    if (!stall) return null;
-    return { badge: stalledBadge(reasonOf(state, stall.fact, t - stall.since), stall.since), owes };
   };
   const episodeOpenOf = (run3, member, badge) => db.prepare("SELECT 1 FROM badge_episodes WHERE run = ? AND member = ? AND badge = ? AND opened_at IS NOT NULL AND closed_at IS NULL").get(run3, member, badge) != null;
   const episodeStep = (run3, member, badge, on, t, silent = false) => {
@@ -3137,18 +3090,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
     }
   };
   const memberView = (p, run3, t, opts = {}) => {
-    const activity = activityShownOf(p, run3, opts.withHolder ?? true, t);
+    const activity = activityShownOf(p, run3, t);
     if (Number(p.parked) === 1 || p.ended_at != null) return { ...activity, badge: null };
     const blocked = blockedOf(p, run3);
     if (blocked) return { ...activity, badge: blocked };
-    const shows = (name) => opts.predicate === true || episodeOpenOf(Number(run3.id), String(p.seat), name);
     const lost = lostOf(p, run3, t);
-    if (lost) return { ...activity, badge: owesOf(p, run3) && shows("lost") ? lost : null };
-    const stalledRaw = stalledBadgeOf(p, run3, t, memberStateOf(p, run3, t));
-    const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
-    return { ...activity, badge: stalled?.badge ?? null, ...stalled?.owes ? { owes: stalled.owes } : {} };
+    const shows = opts.predicate === true || episodeOpenOf(Number(run3.id), String(p.seat), "lost");
+    return { ...activity, badge: lost && owedAtDropOf(p, run3) && shows ? lost : null };
   };
-  const stalledBadge = (reason, since) => ({ name: "stalled", reason, since });
   const minutes = (ms) => Math.round(ms / 6e4);
   const phaseIsFor = (run3, seat) => phaseIsForSeat(phaseScopeOf(run3, String(run3.phase)), seat);
   const phaseScopeOf = (run3, phase) => {
@@ -3181,49 +3130,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (!r) return /* @__PURE__ */ new Map();
     const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run3);
     return new Map(live2.map((p) => [String(p.seat), memberView(p, r, t, { predicate })]));
-  };
-  const LOCK_NAME = /^[a-z0-9:._/-]{1,80}$/;
-  const memberRowOf = (id) => db.prepare("SELECT p.*, r.plan AS plan, r.repo AS repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
-  const holderOf = (lock, t) => {
-    const h = memberRowOf(Number(lock.participant));
-    const run3 = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(h.run));
-    const st = memberView(h, run3, t, { withHolder: false });
-    return { member: `${h.plan}/${h.seat}`, nick: nickOf(h), run: Number(h.run), code: planCode(String(h.plan)), since: String(lock.since), state: memberStateOf(h, run3, t), badge: st.badge?.name ?? null, doing: st.doing };
-  };
-  const lockWaitOf = (id, t) => {
-    const w = db.prepare("SELECT l.* FROM named_lock_waiters w JOIN locks l ON l.name = w.name WHERE w.participant = ? ORDER BY w.since LIMIT 1").get(id);
-    if (!w) return null;
-    const h = holderOf(w, t);
-    return `lock ${String(w.name)}, held by ${h.nick} (${h.state})`;
-  };
-  const releaseLocksOf = (id, how, why, only) => {
-    const held = only == null ? db.prepare("SELECT * FROM locks WHERE participant = ?").all(id) : db.prepare("SELECT * FROM locks WHERE participant = ? AND name = ?").all(id, only);
-    const freed = [];
-    const holder = memberRowOf(id);
-    for (const l of held) {
-      const name = String(l.name);
-      db.prepare("DELETE FROM locks WHERE name = ?").run(name);
-      db.prepare("INSERT OR REPLACE INTO lock_releases (name, at, by, how) VALUES (?, ?, ?, ?)").run(name, now(), `${holder.plan}/${holder.seat}`, how);
-      db.prepare("DELETE FROM liveness_warned WHERE cond = ?").run(`lock ${name}`);
-      const waiters = db.prepare("SELECT p.id FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE w.name = ? AND p.ended_at IS NULL ORDER BY w.since").all(name).map((w) => memberRowOf(Number(w.id)));
-      const names = waiters.map((w) => `${w.plan}/${w.seat}`);
-      freed.push(...names);
-      const byRepo = /* @__PURE__ */ new Map();
-      for (const w of waiters) byRepo.set(String(w.repo), [...byRepo.get(String(w.repo)) ?? [], w]);
-      if (!byRepo.has(String(holder.repo))) byRepo.set(String(holder.repo), []);
-      for (const [repo, inRepo] of byRepo) {
-        const holderRunOpen = runRow(Number(holder.run)).state === "open";
-        const authorRow = repo === String(holder.repo) && holderRunOpen ? holder : inRepo[0];
-        if (!authorRow) continue;
-        const named = inRepo.map((w) => `${w.plan}/${w.seat}`);
-        insertMessage(participantById(Number(authorRow.id)), `unlocked ${name}${why}${named.length ? `: ${named.map((n) => `@${n}`).join(" ")}` : ""}`, null, "event", named, {
-          event: EVENTS.unlocked.name,
-          meta: { unlocked: name }
-        });
-      }
-    }
-    if (only == null) db.prepare("DELETE FROM named_lock_waiters WHERE participant = ?").run(id);
-    return freed;
   };
   const livenessOf = (run3, st, t) => {
     if (!st) return void 0;
@@ -3329,7 +3235,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
       transaction(() => {
         const author = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run3, ORCHESTRATOR) ?? db.prepare("SELECT id FROM participants WHERE run = ? ORDER BY id LIMIT 1").get(run3);
         if (author) insertMessage(participantById(Number(author.id)), `run ${run3} closed`, null, "event", void 0, { event: EVENTS.closed.name });
-        for (const m of db.prepare("SELECT id FROM participants WHERE run = ?").all(run3)) releaseLocksOf(Number(m.id), "close", ` (run ${run3} closed)`);
         db.prepare("UPDATE runs SET state = 'closed', closed_at = ? WHERE id = ?").run(now(), run3);
         bump(String(runRow(run3).repo));
         db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run3);
@@ -3392,36 +3297,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       });
       if (!recorded) return false;
       board2.prune(at);
-      board2.markStaleRuns(at);
       return true;
-    },
-    markStaleRuns(at = /* @__PURE__ */ new Date()) {
-      const silentBefore = at.getTime() - STALE_MS;
-      return transaction(() => {
-        const quiet = db.prepare("SELECT p.id, p.last_call, p.joined_at FROM participants p JOIN runs r ON r.id = p.run WHERE r.state = 'open' AND r.paused IS NULL AND p.seat = ? AND p.ended_at IS NULL AND p.quiet_flagged = 0").all(ORCHESTRATOR);
-        for (const o of quiet) {
-          const silentSince = Date.parse(String(o.last_call ?? o.joined_at));
-          if (silentSince >= silentBefore) continue;
-          const minutes2 = Math.floor((at.getTime() - silentSince) / 6e4);
-          const orch = participantById(Number(o.id));
-          insertMessage(orch, `stalled ${orch.name}: no call for ${minutes2} min`, null, "event", [], { event: EVENTS.stalled.name });
-          db.prepare("UPDATE participants SET quiet_flagged = 1 WHERE id = ?").run(Number(o.id));
-        }
-        const flagged = [];
-        for (const r of db.prepare("SELECT id, plan FROM runs WHERE state = 'open' AND paused IS NULL AND stale_flagged = 0 ORDER BY id").all()) {
-          const id = Number(r.id);
-          const members = db.prepare("SELECT id, seat, last_call, joined_at FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 0").all(id);
-          if (!members.length || members.some((m) => Date.parse(String(m.last_call ?? m.joined_at)) >= silentBefore)) continue;
-          const author = members.find((m) => String(m.seat) === ORCHESTRATOR) ?? members[0];
-          const group = String(r.plan);
-          insertMessage(participantById(Number(author.id)), `stalled run ${id} (${group}): every member silent; close it or dispatch again`, null, "event", [`${group}/${ORCHESTRATOR}`], {
-            event: EVENTS.stalled.name
-          });
-          db.prepare("UPDATE runs SET stale_flagged = 1 WHERE id = ?").run(id);
-          flagged.push(id);
-        }
-        return flagged;
-      });
     },
     runs() {
       return db.prepare("SELECT * FROM runs WHERE state = 'open' ORDER BY id").all().map(toRun);
@@ -3449,7 +3325,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           const fresh = () => unusedNick(String(r.repo));
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
-            db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, idle_ended = 0, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
+            db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, idle_ended = 0, dropped_owing = NULL, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
               doing,
               JSON.stringify(files),
               where,
@@ -3549,7 +3425,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const said = `- ${seatWho(fresh.run, fresh.seat)} ended`;
         insertMessage(fresh, freed?.note ? `${said}
 ${freed.note}` : said, null, "event", freed?.mentions, ended);
-        releaseLocksOf(fresh.id, "end", " (its holder ended)");
         db.prepare("UPDATE participants SET ended_at = ?, idle_ended = ?, doing = ? WHERE id = ?").run(now(), idleEnded, lastDoing, fresh.id);
       });
     },
@@ -3591,47 +3466,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       if (shown.phase_shown === key) return { phase, first: false };
       db.prepare("UPDATE participants SET phase_shown = ? WHERE id = ?").run(key, fresh.id);
       return { phase, first: true };
-    },
-    lock(p, name, note) {
-      const fresh = live(p);
-      if (!LOCK_NAME.test(name)) throw new Error(`lock: a lock name is [a-z0-9:._/-], at most 80 characters (port:<n>, app:<name>, db:<name>, browser:<profile>); got ${JSON.stringify(name)}`);
-      return transaction(() => {
-        let held = db.prepare("SELECT * FROM locks WHERE name = ?").get(name);
-        if (held && memberRowOf(Number(held.participant)).ended_at != null) {
-          releaseLocksOf(Number(held.participant), "end", " (its holder ended)", name);
-          held = void 0;
-        }
-        if (!held || Number(held.participant) === fresh.id) {
-          if (!held) db.prepare("INSERT INTO locks (name, participant, since, note) VALUES (?, ?, ?, ?)").run(name, fresh.id, now(), note ?? null);
-          db.prepare("DELETE FROM named_lock_waiters WHERE name = ? AND participant = ?").run(name, fresh.id);
-          bump(fresh.repo);
-          const rel = db.prepare("SELECT at, by, how FROM lock_releases WHERE name = ?").get(name);
-          return { granted: true, ...rel ? { released: { at: String(rel.at), by: String(rel.by), how: String(rel.how) } } : {} };
-        }
-        db.prepare("INSERT OR IGNORE INTO named_lock_waiters (name, participant, since) VALUES (?, ?, ?)").run(name, fresh.id, now());
-        bump(fresh.repo);
-        return { granted: false, holder: holderOf(held, Date.now()) };
-      });
-    },
-    unlock(p, name) {
-      const fresh = live(p);
-      return transaction(() => {
-        const held = db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(name, fresh.id);
-        if (!held) return { released: false, waiters: [] };
-        const waiters = releaseLocksOf(fresh.id, "unlock", "", name);
-        bump(fresh.repo);
-        return { released: true, waiters };
-      });
-    },
-    locks() {
-      return db.prepare("SELECT * FROM locks ORDER BY since").all().map((l) => {
-        const h = memberRowOf(Number(l.participant));
-        const waiters = db.prepare("SELECT participant FROM named_lock_waiters WHERE name = ? ORDER BY since").all(String(l.name)).map((w) => {
-          const r = memberRowOf(Number(w.participant));
-          return `${r.plan}/${r.seat}`;
-        });
-        return { name: String(l.name), member: `${h.plan}/${h.seat}`, run: Number(h.run), since: String(l.since), note: l.note == null ? null : String(l.note), waiters };
-      });
     },
     pause(p, text = "", opts = {}) {
       const fresh = live(p);
@@ -3777,13 +3611,13 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const kill = act.breach ?? null;
         const me = kill ? db.prepare("SELECT id, joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, member) : null;
         if (kill && me && kill.at >= Date.parse(String(me.joined_at))) {
-          const unlockedPorts = (kill.ports ?? []).filter((n) => !db.prepare("SELECT 1 FROM locks WHERE name = ? AND participant = ?").get(`port:${n}`, Number(me.id)));
-          const breached = kill.kind === "pattern" || unlockedPorts.length > 0;
+          const ports = kill.ports ?? [];
+          const breached = kill.kind === "pattern" || ports.length > 0;
           const command = kill.command.slice(0, 120);
           if (breached && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run3, member, `breach ${command}`).changes) === 1) {
             const orch = orchestratorIn(run3);
-            const ports = kill.kind === "port" ? ` (port ${unlockedPorts.join(", ")} not locked)` : "";
-            insertMessage(orch, `breach ${String(r.plan)}/${member}: ${command}${ports}`, null, "event", [orch.name], { event: EVENTS.breach.name, meta: { breach: `${String(r.plan)}/${member}` } });
+            const onPorts = kill.kind === "port" ? ` (port ${ports.join(", ")})` : "";
+            insertMessage(orch, `breach ${String(r.plan)}/${member}: ${command}${onPorts}`, null, "event", [orch.name], { event: EVENTS.breach.name, meta: { breach: `${String(r.plan)}/${member}` } });
           }
         }
         bump(String(r.repo));
@@ -3796,29 +3630,29 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run3);
       if (!r || r.state !== "open") {
         presenceOf.delete(run3);
-        idleSince.delete(run3);
         return false;
       }
       presenceOf.set(run3, presence);
       const t = at.getTime();
       transaction(() => {
         db.prepare("DELETE FROM token_readings WHERE run = ? AND t < ?").run(run3, new Date(t - READINGS_KEPT_MS).toISOString());
+        const orch = orchestratorIn(run3);
+        let moved = false;
+        for (const p of db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL").all(run3)) {
+          const up = presence(String(p.seat)).connected;
+          if (!up && p.dropped_owing == null) db.prepare("UPDATE participants SET dropped_owing = ? WHERE id = ?").run(owesOf(p, r) ? 1 : 0, Number(p.id));
+          else if (up && p.dropped_owing != null) db.prepare("UPDATE participants SET dropped_owing = NULL WHERE id = ?").run(Number(p.id));
+        }
         const states = statesOf(run3, t, true);
         const parkedSeats = new Set(db.prepare("SELECT seat FROM participants WHERE run = ? AND ended_at IS NULL AND parked = 1").all(run3).map((x) => String(x.seat)));
         const others = [...states.values()].filter((st) => st.member !== ORCHESTRATOR && !parkedSeats.has(st.member));
-        const orch = orchestratorIn(run3);
-        let progress = progressOf(run3, r.phase == null ? null : String(r.phase));
-        let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
-        let moved = false;
-        const stalledNow = [];
         for (const st of others) {
           const lostStep = episodeStep(run3, st.member, "lost", st.badge?.name === "lost", t);
           if (lostStep === "opened") {
-            raiseAlert(run3, { body: `lost ${orch.plan}/${st.member}: ${st.badge.reason}`, event: EVENTS.lost.name });
+            insertMessage(orch, `lost ${orch.plan}/${st.member}: ${st.badge.reason}`, null, "event", [orch.name], { event: EVENTS.lost.name });
             postComposition(orch, st.member, "-", "lost");
             const lostRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run3, st.member);
             if (lostRow) {
-              releaseLocksOf(Number(lostRow.id), "lost", " (its holder is lost)");
               const lostMember = participantById(Number(lostRow.id));
               const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
               if (freed) insertMessage(lostMember, freed.body, null, "event", [.../* @__PURE__ */ new Set([...freed.mentions, orch.name])], { event: EVENTS.unlocked.name, meta: { unlocked: freed.unlocked } });
@@ -3828,69 +3662,15 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             postComposition(orch, st.member, "+", "back");
             moved = true;
           }
-          if (r.paused != null) continue;
-          const step = episodeStep(run3, st.member, "stalled", st.badge?.name === "stalled", t, st.badge?.name === "lost");
-          if (step === "opened") stalledNow.push({ st, meta: { rule: "silent", member: st.member, ...st.owes ? { phase: st.owes } : {} } });
-          else if (step === "closed") moved = true;
         }
         closeEpisodesOutside(run3, others.map((st) => st.member), t);
-        if (stalledNow.length === 1) {
-          const [{ st, meta }] = stalledNow;
-          raiseAlert(run3, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run3, orch)}`, event: EVENTS.stalled.name, meta });
-        } else if (stalledNow.length > 1) {
-          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run3, orch)}`;
-          raiseAlert(run3, { body, event: EVENTS.stalled.name, meta: { ...stalledNow[0].meta, members: stalledNow.map((x) => x.meta) } });
-        }
-        flushAlerts(run3, t, orch);
-        if (r.paused == null) {
-          const waited = db.prepare("SELECT w.name AS name, MIN(w.since) AS first, COUNT(*) AS n FROM named_lock_waiters w JOIN participants p ON p.id = w.participant WHERE p.run = ? AND p.ended_at IS NULL GROUP BY w.name").all(run3);
-          for (const w of waited) {
-            const name = String(w.name);
-            const lock = db.prepare("SELECT * FROM locks WHERE name = ?").get(name);
-            if (!lock) continue;
-            const h = holderOf(lock, t);
-            const holderSince = statesOf(h.run, t).get(h.member.slice(h.member.lastIndexOf("/") + 1))?.since ?? null;
-            const heldLong = t - Date.parse(String(w.first)) >= LOCK_HELD_MS;
-            const holderStuck = (h.state === "idle" || h.badge === "stalled") && holderSince != null && t - holderSince >= LOCK_HELD_MS;
-            if (!heldLong && !holderStuck) continue;
-            const holderSlice = h.member.slice(h.member.lastIndexOf("/") + 1);
-            const handle = `${h.code}\xB7${holderSlice}`;
-            const why = heldLong ? `held ${minutes(t - Date.parse(String(w.first)))} min since its first waiter` : `its holder ${h.state} ${Math.round((t - holderSince) / 1e3)} s`;
-            const body = `stalled ${h.member} \xB7 lock ${name}: ${why}; ${h.nick} (${h.state}${h.doing ? `, ${h.doing}` : ""}), ${Number(w.n)} waiting`;
-            const meta = { rule: "lock", member: holderSlice, lock: name, holder: handle };
-            const holderOrch = orchestratorIn(h.run);
-            for (const to of h.run === run3 ? [orch] : [orch, holderOrch]) {
-              if (Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(to.run, ORCHESTRATOR, `lock ${name}`).changes) !== 1) continue;
-              insertMessage(to, body, null, "event", [to.name], { event: EVENTS.stalled.name, meta });
-            }
-          }
-        }
-        progress = progressOf(run3, r.phase == null ? null : String(r.phase));
-        where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
+        const progress = progressOf(run3, r.phase == null ? null : String(r.phase));
+        const where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         if (progress?.gone.length) allDoneOnce(orch, progress);
-        const gone = others.filter((st) => st.badge?.name === "lost").map((st) => `${orch.plan}/${st.member}`);
-        const present = others.filter((st) => st.badge?.name !== "lost");
-        const joined = /* @__PURE__ */ new Set([...others.map((st) => st.member), ...parkedSeats]);
-        const toJoin = db.prepare(`SELECT s.id FROM seats s WHERE s.run = ? AND ${SEAT_STATE_SQL} != 'done'`).all(run3).some((s) => !joined.has(String(s.id)));
-        const allWaiting = r.paused == null && !toJoin && present.length > 0 && present.every((st) => st.state === "waiting" && st.badge?.name !== "stalled");
-        if (!allWaiting) {
-          const was = idleSince.get(run3);
-          if (was) idleSince.set(run3, { since: Number.NaN, postedAt: was.postedAt, spellPosted: false, postedSeq: was.postedSeq, stirred: true });
-        } else {
-          const kept = idleSince.get(run3);
-          const idle = kept && !Number.isNaN(kept.since) ? kept : { since: t, postedAt: kept?.postedAt ?? null, spellPosted: false, postedSeq: kept?.postedSeq ?? 0, stirred: kept?.stirred ?? false };
-          idleSince.set(run3, idle);
-          const held = t - idle.since;
-          const lastSeq2 = Number(db.prepare("SELECT MAX(m.seq) AS s FROM messages m JOIN participants p ON p.id = m.author WHERE p.run = ? AND (m.event IS NULL OR m.event != 'idle')").get(run3).s ?? 0);
-          if (idle.postedAt == null || t - idle.postedAt >= IDLE_MS && (idle.stirred || lastSeq2 > idle.postedSeq)) {
-            const allDoneTold = r.phase != null && db.prepare("SELECT 1 FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").get(run3, ORCHESTRATOR, `all-done ${String(r.phase)}`) != null;
-            const carriedIdle = !idle.spellPosted && allDoneTold;
-            idle.postedAt = t;
-            idle.spellPosted = true;
-            idle.postedSeq = lastSeq2;
-            idle.stirred = false;
-            insertMessage(orch, `idle ${Math.floor(held / 1e3)}s: every member is waiting${goneSuffix(gone)}; ${where}${unansweredSuffix(run3, orch)}`, null, "event", carriedIdle ? [] : [orch.name], { event: EVENTS.idle.name });
-          }
+        const members = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND seat != ? AND parked = 0").all(run3, ORCHESTRATOR);
+        const lastMove = Math.max(0, r.resumed_at == null ? 0 : Date.parse(String(r.resumed_at)), ...members.map((p) => tokensMovedAtOf(p, r)));
+        if (r.paused == null && members.length && t - lastMove >= stallWindowOf(r) && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run3, ORCHESTRATOR, `stopped ${lastMove}`).changes) === 1) {
+          insertMessage(orch, `stopped ${orch.plan}: no member's tokens moved for ${minutes(t - lastMove)} min; ${where}${unansweredSuffix(run3, orch)}`, null, "event", [orch.name], { event: EVENTS.stopped.name });
         }
         if (r.paused == null) {
           const resumedAt = r.resumed_at == null ? 0 : Date.parse(String(r.resumed_at));
@@ -3904,7 +3684,11 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             }
           }
         }
-        const badgesNow = [...statesOf(run3, t).values()].map((st) => `${st.member}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`).join(",");
+        const live2 = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run3);
+        const badgesNow = live2.map((p) => {
+          const st = memberView(p, r, t);
+          return `${st.member}:${memberStateOf(p, r, t)}:${st.state}:${st.badge?.name ?? ""}:${st.badge?.since ?? ""}`;
+        }).join(",");
         if (badgesShown.get(run3) !== badgesNow) {
           if (badgesShown.has(run3)) moved = true;
           badgesShown.set(run3, badgesNow);
@@ -4150,7 +3934,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const owedPhase = runR ? owedNameOf(r, runR) : null;
         const core = memberStateOf(r, runR ?? void 0, t);
         const state = core;
-        const fact = core === "working" || core === "idle" ? packPart.factOf(id) : null;
+        const fact = core === "working" || core === "stopped" ? packPart.factOf(id) : null;
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -4284,9 +4068,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     if (progress || PROGRESS_VERBS.has(verb)) db.prepare("UPDATE participants SET progress_at = ? WHERE id = ?").run(at, p.id);
     if (!SELF_REPORT_VERBS.has(verb)) db.prepare("UPDATE participants SET board_call_at = ? WHERE id = ?").run(at, p.id);
     db.prepare("INSERT INTO call_log (participant, at, verb) VALUES (?, ?, ?)").run(p.id, at, verb);
-    db.prepare("UPDATE runs SET stale_flagged = 0 WHERE id = ? AND stale_flagged = 1").run(p.run);
-    if (Number(db.prepare("UPDATE participants SET quiet_flagged = 0 WHERE id = ? AND quiet_flagged = 1").run(p.id).changes) > 0 && runRow(p.run).state === "open")
-      insertMessage(participantById(p.id), "back", null, "event", [], { event: EVENTS.back.name });
     bump(participantById(p.id).repo);
   };
   const counted = (name, verb) => (p, ...rest) => transaction(() => {
@@ -4318,7 +4099,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   };
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, ALERT_WINDOW_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DEFAULT_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS2;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DEFAULT_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS2;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4330,7 +4111,6 @@ var init_board = __esm({
     init_names();
     init_liveness();
     init_call_label();
-    init_stall();
     init_owing();
     projectFolderName = (repo) => {
       const base = path8.basename(repo);
@@ -4348,7 +4128,7 @@ var init_board = __esm({
         return [];
       }
     };
-    BOARD_ALARMS = /* @__PURE__ */ new Set(["stalled", "lost", "gone"]);
+    BOARD_ALARMS = /* @__PURE__ */ new Set(["stopped", "lost", "gone", "stalled"]);
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR p.parked = 1 OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
@@ -4357,7 +4137,6 @@ var init_board = __esm({
     TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
     ORCHESTRATOR = "orchestrator";
     WAIT_POLL_MS = 1e3;
-    ALERT_WINDOW_MS = 10 * 1e3;
     LINE_WIDTH = 100;
     STALE_MS = 10 * 60 * 1e3;
     WAIT_LOG_EVERY_MS = 60 * 1e3;
@@ -8692,7 +8471,6 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--since",
   "--watch",
   "--person",
-  "--note",
   "--report",
   "--report-file",
   "--unlocked"
@@ -9165,7 +8943,6 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   seatIdleEnded: (seat) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
   pausedAll: (run3, person, cli, as) => `every member of run ${run3} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
   resumed: (run3, held, cli, as) => `run ${run3} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
-  lockHeldNext: (cli, name, as, wait) => `next: wait for its unlocked event, then lock again (${cli} lock ${name} --as ${as}); in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the run ──
   // the orchestrator's own run is paused: said first at each of its verbs until the resume, so a pause is never forgotten
   stillPaused: (run3, why, cli, as) => `run ${run3} is PAUSED${why}: no member acts on this until you resume (${cli} resume "<message>" --as ${as})`,
@@ -9185,11 +8962,10 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run3, wait) => `end: refused, run ${run3} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli, as, run3) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
-  swarmQuiet: (cli, as) => `every member waits: open the next phase if all are done (${cli} phase <name> "<text>" --as ${as}), else wait again`,
+  swarmStopped: (cli, as) => `no member is moving: read the thread, then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli, as) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
-  lockFree: (cli, name, as) => `it is free: lock it now: ${cli} lock ${name} --as ${as}`,
-  breachOwn: "stop only the PIDs you started, or lock the port first: machine.md",
-  breachOther: (member) => `SendMessage ${member} "stop only the PIDs you started, or lock the port first: machine.md"`,
+  breachOwn: "stop only the PIDs you started: machine.md",
+  breachOther: (member) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
   lostMove: (cli, seat, as) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D44: block and unblock, to the seat they name */
@@ -9208,16 +8984,9 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles) => roles.length ? `  authority ${roles.join(",")}` : "",
   optionRenamed: (old, now) => `${old} is now ${now}: read as ${now}, write that next time`,
-  eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
+  eventRenamed: (renamed) => `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
-  /** simple-states: working, owing the phase or a task's report, no sign of progress for the stall window */
-  stalledSilent: (cli, post, as) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
-  stalledAsk: (id, phase) => `@${id} your part of ${phase}`,
-  stalledLock: (holder, lock, cli, post, as) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
-  stalledAny: (cli, as) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
-  /** several members stalled at one tick: each member's move after its name */
-  stalledEach: (moves) => moves.map((m) => `${m.member}: ${m.move}`).join("; "),
   // ── the seat's commands at its join (D21, D36) ──
   /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
   verifierAs: (as) => `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
@@ -9232,8 +9001,6 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
     `${cli} endorse <seq> --as ${as}`,
     `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`
   ],
-  // ── a lock granted, and status's forgotten run ──
-  unlockWhenDone: (cli, name, as) => `next: unlock it once you are done: ${cli} unlock ${name} --as ${as}`,
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
   /** D34 (T36): a parked member's state on its roster line, as its card says it */
@@ -9389,18 +9156,10 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       return m.mentions.includes(me.name) ? WORDING.parkedStop : null;
     case "all-done":
       return orchestrator ? WORDING.openNextPhase(cli, as, m.run) : null;
-    case "idle":
-      return orchestrator ? WORDING.swarmQuiet(cli, as) : null;
+    case "stopped":
+      return orchestrator ? WORDING.swarmStopped(cli, as) : null;
     case "all-joined":
       return orchestrator ? WORDING.allJoined(cli, as) : null;
-    case "stalled":
-      return orchestrator ? stalledMove(m, cli, as) : null;
-    case "unlocked": {
-      const packStep = codeEventStep(m, me, cli, event);
-      if (packStep !== void 0) return packStep;
-      const name = meta && "unlocked" in meta ? meta.unlocked : null;
-      return name && m.mentions.includes(me.name) ? WORDING.lockFree(cli, shellWord(name), as) : null;
-    }
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
       if (!member || !orchestrator) return null;
@@ -9418,20 +9177,6 @@ function eventStep(m, me, cli, event = eventOf(m)) {
       return codeEventStep(m, me, cli, event) ?? null;
   }
 }
-function stalledMove(m, cli, as) {
-  const meta = m.meta && "rule" in m.meta ? m.meta : null;
-  if (meta?.members && meta.members.length > 1)
-    return WORDING.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
-  const id = meta?.member ?? "<member>";
-  switch (meta?.rule) {
-    case "silent":
-      return WORDING.stalledSilent(cli, shellWord(WORDING.stalledAsk(id, meta.phase ?? "<phase>")), as);
-    case "lock":
-      return WORDING.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} \u2026`), as);
-    default:
-      return WORDING.stalledAny(cli, as);
-  }
-}
 
 // src/cli/answer/situation.ts
 init_kinds();
@@ -9442,7 +9187,6 @@ async function readSituation(board2, me, opts) {
   const phase = shown ? shown.phase : await board2.currentPhase(me.run);
   const owed = run3 ? await board2.owedPhase(me) : null;
   const profile = profileOf(me.kind);
-  const own = run3 && me.seat !== "orchestrator" && !me.ended ? (await board2.roster(me.repo)).find((r) => r.name === me.name) : void 0;
   return {
     cli: opts.cli,
     as: opts.word(me.name),
@@ -9458,7 +9202,7 @@ async function readSituation(board2, me, opts) {
     phase: phase ? { name: phase.name, text: phase.text } : null,
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,
-    owesNothing: own?.state === "idle" || own?.state === "away"
+    owesNothing: owed == null
   };
 }
 
@@ -9537,9 +9281,6 @@ var coreUsage = (cli, events) => [
   "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it",
   "  config  retention [<days>]                                      # prints, or sets then prints, how many days closed runs and main's talk are kept",
-  "  lock    <name> [--note <t>] [--as <member>]                     # a shared resource of the machine, before you use it: port:<n>, app:<name>, db:<name>, browser:<profile>; held: who, then how to wait",
-  "  unlock  <name> [--as <member>]                                  # releases it; its waiters are told (end, lost and close release too)",
-  "  locks                                                           # every held lock: holder, since, waiters, and for a port what listens on it now",
   CODE_IN_CORE_HELP.pruneLine,
   `events: ${events.join(", ")}; any:<event> for one posted in any run`,
   `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`
@@ -9638,8 +9379,6 @@ var EXAMPLES = {
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
-  lock: (as) => `lock port:4399 --as ${as}`,
-  unlock: (as) => `unlock port:4399 --as ${as}`,
   config: () => "config retention 30",
   worktree: () => "worktree prune",
   close: () => "close --run 3"
@@ -9822,57 +9561,6 @@ var refusedPaused = async (p, verb) => {
   return true;
 };
 var PHASELESS = "none";
-var LOCK_PORT = /^port:(\d{1,5})$/;
-function listenersOn(port) {
-  const found = /* @__PURE__ */ new Set();
-  if (process.platform === "win32") {
-    const out = hiddenSpawnSync("netstat", ["-ano", "-p", "TCP"], { encoding: "utf8", windowsHide: true }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const cols = line.trim().split(/\s+/);
-      if (cols.length >= 5 && /LISTEN/i.test(cols[3]) && cols[1].endsWith(`:${port}`)) found.add(Number(cols[4]));
-    }
-  } else {
-    const out = hiddenSpawnSync("lsof", [`-iTCP:${port}`, "-sTCP:LISTEN", "-t"], { encoding: "utf8" }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) if (/^\d+$/.test(line.trim())) found.add(Number(line.trim()));
-  }
-  return [...found].filter((pid) => pid > 0).sort((a, b) => a - b);
-}
-function processStarts(pids) {
-  const starts = /* @__PURE__ */ new Map();
-  if (!pids.length) return starts;
-  if (process.platform === "win32") {
-    const filter = pids.map((pid) => `ProcessId=${pid}`).join(" or ");
-    const script = `Get-CimInstance Win32_Process -Filter '${filter}' | ForEach-Object { "$($_.ProcessId) $($_.CreationDate.ToUniversalTime().ToString('o'))" }`;
-    const out = hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const [pid, at] = line.trim().split(/\s+/);
-      if (pid && at && Number.isFinite(Date.parse(at))) starts.set(Number(pid), Date.parse(at));
-    }
-  } else {
-    const out = hiddenSpawnSync("ps", ["-o", "pid=,lstart=", "-p", pids.join(",")], { encoding: "utf8" }).stdout ?? "";
-    for (const line of out.split(/\r?\n/)) {
-      const m = /^\s*(\d+)\s+(.+)$/.exec(line);
-      if (m && Number.isFinite(Date.parse(m[2]))) starts.set(Number(m[1]), Date.parse(m[2]));
-    }
-  }
-  return starts;
-}
-function grantListeners(port, pids, released) {
-  const starts = processStarts(pids);
-  const releasedAt = released ? Date.parse(released.at) : NaN;
-  const left = pids.filter((pid) => Number.isFinite(releasedAt) && (starts.get(pid) ?? -Infinity) < releasedAt);
-  const without = pids.filter((pid) => !left.includes(pid));
-  const lines = [
-    ...left.length ? [`listening on ${port} now: ${left.join(", ")}, left running by ${released.by}'s release: stop it only if it is yours to stop`] : [],
-    ...without.length ? [`listening on ${port} now: ${without.join(", ")}, started by someone without the lock: ask on the board before you stop it`] : []
-  ];
-  return { lines, stoppable: left };
-}
-var stopLine = (pids) => process.platform === "win32" ? pids.map((pid) => `taskkill /PID ${pid} /T /F`).join("; ") : `kill ${pids.join(" ")}`;
-var portListeners = (name) => {
-  const m = LOCK_PORT.exec(name);
-  return m ? { port: Number(m[1]), pids: listenersOn(Number(m[1])) } : null;
-};
 var mergeLocksHeld = async () => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
   const lockOf = async (project) => {
@@ -9885,7 +9573,6 @@ var mergeLocksHeld = async () => {
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []);
 };
-var lockLine = (l, listening) => `${l.name}  held by ${l.member} (run ${l.run}) since ${l.since}${l.note ? `  note: ${l.note}` : ""}${l.waiters.length ? `  waiters: ${l.waiters.join(", ")}` : ""}${listening ? `  listening: ${listening.length ? listening.join(", ") : "none"}` : ""}`;
 var firstPhaseLine = (kind, group, protocol) => {
   if (kind !== "task" && kind !== "plan") return null;
   if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
@@ -10466,15 +10153,12 @@ ${verbHelp()}`);
       const roster = await board.roster(repo);
       const runs = new Map((await board.runs()).filter((r) => r.repo === repo).map((r) => [r.id, r]));
       const progress = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.phaseProgress(id)])));
-      const names = new Set(roster.map((r) => r.name));
-      const held = (await board.locks()).filter((l) => names.has(l.member) || l.waiters.some((w) => names.has(w)));
       const merge = (await mergeLocksHeld()).filter((m) => m.project === repo);
       const mergeHeld = merge.map((m) => ({ name: "merge", member: m.holder, run: roster.find((r) => r.name === m.holder)?.run ?? 0, since: m.since, note: null, waiters: m.waiters }));
       const compositions = new Map(await Promise.all([...runs.keys()].map(async (id) => [id, await board.composition(id)])));
-      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: [...mergeHeld, ...held], mergeLocks: merge }, () => {
+      emit({ repo, roster, compositions: [...compositions.values()], runs: [...runs.values()].map((r) => ({ run: r.id, title: r.title, authority: r.authority, phase: r.phase, progress: progress.get(r.id) ?? null })), locks: mergeHeld, mergeLocks: merge }, () => {
         const projectName = projectNameOf();
         for (const m of merge) console.log(`lock ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
-        for (const l of held) console.log(`lock ${lockLine(l, null)}`);
         if (!runs.size) console.log(WORDING.noRunIn(projectName(repo)));
         let shown = null;
         for (const r of roster) {
@@ -10682,57 +10366,6 @@ ${verbHelp()}`);
       });
       break;
     }
-    case "lock": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      if (await refusedPaused(p, "lock")) break;
-      const name = args.positional[0] ?? fail(`lock: which resource? port:<n>, app:<name>, db:<name>, browser:<profile>
-${verbHelp()}`);
-      const r = await board.lock(p, name, args.flag("--note"));
-      const cli = self().join(" ");
-      const who = shellWord2(p.name);
-      if (!r.granted) {
-        process.exitCode = 3;
-        const h = r.holder;
-        const held = `held by ${h.nick} (${h.code}\xB7${h.member.split("/").pop()}, ${h.state}) since ${h.since}${h.doing ? `, doing: ${h.doing}` : ""}`;
-        const next2 = WORDING.lockHeldNext(cli, shellWord2(name), who, waitCommand2(p.name, true));
-        emit({ name, granted: false, holder: h, next: next2 }, () => {
-          console.log(held);
-          console.log(next2);
-        });
-        break;
-      }
-      const port = portListeners(name);
-      const told = port && port.pids.length ? grantListeners(port.port, port.pids, r.released) : null;
-      const next = told && told.stoppable.length ? `next: to restart what listens on ${port.port}, stop exactly these: ${stopLine(told.stoppable)}` : WORDING.unlockWhenDone(cli, shellWord2(name), who);
-      emit({ name, granted: true, ...port ? { port: port.port, listening: port.pids } : {}, ...r.released ? { released: r.released } : {}, next }, () => {
-        console.log(`granted ${name}`);
-        for (const line of told?.lines ?? []) console.log(line);
-        console.log(next);
-      });
-      break;
-    }
-    case "unlock": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      const name = args.positional[0] ?? fail(`unlock: which resource?
-${verbHelp()}`);
-      const r = await board.unlock(p, name);
-      emit({ name, ...r }, r.released ? `released ${name}${r.waiters.length ? `; told its waiters: ${r.waiters.join(", ")}` : ""}` : `you hold no lock ${name}`);
-      break;
-    }
-    case "locks": {
-      const held = await board.locks();
-      const merge = await mergeLocksHeld();
-      const listening = new Map(held.map((l) => [l.name, portListeners(l.name)?.pids ?? null]));
-      emit({ locks: held.map((l) => ({ ...l, listening: listening.get(l.name) ?? null })), mergeLocks: merge }, () => {
-        if (!held.length && !merge.length) console.log("no lock held");
-        const projectName = projectNameOf();
-        for (const m of merge) console.log(CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters));
-        for (const l of held) console.log(lockLine(l, listening.get(l.name) ?? null));
-      });
-      break;
-    }
     case "status": {
       const runs = await board.runs();
       const membersOf = async (r) => (await board.roster(r.repo)).filter((m) => m.run === r.id).map((m) => ({ name: m.name, nick: m.nick, worktree: m.worktree, state: m.state, activity: m.activity, progressAt: m.progressAt, aliveAt: m.aliveAt, files: m.held }));
@@ -10744,15 +10377,13 @@ ${verbHelp()}`);
           return { run: r.id, kind: r.kind, protocol: r.protocol ?? null, authority: r.authority, group: r.plan, title: r.title, phase: r.phase, progress: await board.phaseProgress(r.id), members: await membersOf(r), lastActivity, forgotten: idleMs >= FORGOTTEN_MS, idleMs };
         })
       );
-      const held = await board.locks();
       const merge = await mergeLocksHeld();
       const orchestrators = orchestratorsLines(runs, cli, writeOrchestratorSeats);
-      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), locks: held, mergeLocks: merge, orchestrators }, () => {
+      emit({ home: DATA_ROOT, sqlite: SQLITE_PATH, runs: runs.length, open: open.map(({ idleMs: _, ...o }) => o), mergeLocks: merge, orchestrators }, () => {
         console.log(`home    ${DATA_ROOT}`);
         console.log(`sqlite  ${SQLITE_PATH}`);
         const projectName = projectNameOf();
         for (const m of merge) console.log(`lock    ${CODE_WORDING.mergeLockLine(projectName(m.project), m.holder, m.since, m.waiters)}`);
-        for (const l of held) console.log(`lock    ${lockLine(l, null)}`);
         if (!runs.length) console.log("no open run");
         for (const [i, r] of runs.entries()) {
           console.log(`run ${r.id}  ${r.kind}  ${r.plan}  ${r.title}${WORDING.authorityShown(r.authority)}${phaseSuffix(r.phase, open[i].progress)}${WORDING.runPausedShown(r.paused, r.pausedPerson)}  ${projectName(r.repo)}`);
