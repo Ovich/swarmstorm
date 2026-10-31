@@ -28,7 +28,7 @@ export type LinkTiming = {
   idleMs: number;
   /** between two looks at the transcript: a locate until found, then a read (D8) */
   watchEveryMs: number;
-  /** spec §7: how often the worktree's changed set is read */
+  /** spec §7: how often the worktree's changed set is read, CHANGES_EVERY_MS */
   changesEveryMs: number;
   /** the least time between two activity frames (D10) */
   activityGapMs: number;
@@ -36,7 +36,9 @@ export type LinkTiming = {
   stateFileWaitMs: number;
 };
 
-const DEFAULT_TIMING: LinkTiming = { reconnectGiveUpMs: 60_000, reconnectEveryMs: 500, idleMs: 2 * 60 * 60_000, stateFileWaitMs: 5_000, watchEveryMs: 1_000, activityGapMs: 3_000, changesEveryMs: 5_000 };
+/** spec §7 (the person's word): the link reads its worktree's changed set this often. */
+export const CHANGES_EVERY_MS = 2_000;
+const DEFAULT_TIMING: LinkTiming = { reconnectGiveUpMs: 60_000, reconnectEveryMs: 500, idleMs: 2 * 60 * 60_000, stateFileWaitMs: 5_000, watchEveryMs: 1_000, activityGapMs: 3_000, changesEveryMs: CHANGES_EVERY_MS };
 
 /** D7: keyed by the data home. `\\.\pipe\swarm-<hash>-<run>-<member>` on Windows, a socket file in
  *  the OS temp folder elsewhere. Built in code: a pipe path passed through Git Bash loses its
@@ -178,7 +180,8 @@ export async function runLink(opts: {
   /** spec §7: the member's worktree and target, from the welcome; the changed set last sent, as one key */
   let worktree: { path: string; onto: string } | null = null;
   let sentChanges: string | null = null;
-  /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing */
+  /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing.
+   *  git runs synchronously, so a tick never starts while the previous look runs: a slow look delays the next. */
   const watchChanges = () => {
     if (exiting || !worktree || !welcomed) return;
     const files = changedSet(worktree.path, worktree.onto);

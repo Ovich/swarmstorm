@@ -38,7 +38,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
    again (it holds 170 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
 4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **You claim
-   nothing**: your link reads your worktree's changes from git every 5 s and the board holds
+   nothing**: your link reads your worktree's changes from git every 2 s and the board holds
    exactly those files, until `merged` releases them (*Sharing a file*).
 5. **A message for you arrives** (your listener's output, or a message the orchestrator sends you
    directly): act on it, answer on the thread if it asks (`$S post "@<them> …" --about <path>`; a
