@@ -9210,16 +9210,9 @@ var init_wire = __esm({
       "phase",
       "currentPhase",
       "showPhase",
-      "lock",
-      "unlock",
-      "locks",
       "pause",
       "resume",
       "pausedOf",
-      "park",
-      "unpark",
-      "block",
-      "unblock",
       "done",
       "phaseProgress",
       "lastActivity",
@@ -9227,32 +9220,25 @@ var init_wire = __esm({
       "idle",
       "unreadMentions",
       "guidesUntold",
-      "setting",
       "runs",
       "packCall",
       "join",
       "participant",
       "identify",
       "setDoing",
-      "subscribe",
-      "unsubscribe",
       "end",
       "roster",
       "endedMembers",
       "heldBy",
       "post",
       "endorse",
-      "read",
-      "thread",
-      "runThread",
-      "deliver",
       "deliverMentions",
       "wait",
       "repos",
       "snapshot",
       "composition"
     ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
@@ -9277,19 +9263,32 @@ var init_home2 = __esm({
 });
 
 // ../swarm-board/src/board/liveness.ts
-var IDLE_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS, CARRY_MAX_MS, LOCK_HELD_MS;
+var NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS;
 var init_liveness = __esm({
   "../swarm-board/src/board/liveness.ts"() {
     "use strict";
-    IDLE_MS = 15 * 60 * 1e3;
     NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
     STALL_MS_DEFAULT = 10 * 60 * 1e3;
     BADGE_CONFIRM_MS = 10 * 1e3;
     READINGS_KEPT_MS = 10 * 60 * 1e3;
     LOST_MS = 60 * 1e3;
     HEARTBEAT_MS = 5 * 1e3;
-    CARRY_MAX_MS = 5 * 60 * 1e3;
-    LOCK_HELD_MS = 10 * 60 * 1e3;
+  }
+});
+
+// ../swarm-board/src/git.ts
+var init_git = __esm({
+  "../swarm-board/src/git.ts"() {
+    "use strict";
+    init_proc2();
+  }
+});
+
+// ../swarm-board/src/packs/code/changes.ts
+var init_changes = __esm({
+  "../swarm-board/src/packs/code/changes.ts"() {
+    "use strict";
+    init_git();
   }
 });
 
@@ -9310,16 +9309,18 @@ function linkPipe(dataRoot, run, member) {
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os3.tmpdir(), `${name}.sock`);
 }
-var DEFAULT_TIMING;
+var CHANGES_EVERY_MS, DEFAULT_TIMING;
 var init_link = __esm({
   "../swarm-board/src/link/link.ts"() {
     "use strict";
     init_proc2();
     init_home2();
     init_liveness();
+    init_changes();
     init_wire();
     init_transcripts();
-    DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3 };
+    CHANGES_EVERY_MS = 2e3;
+    DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3, changesEveryMs: CHANGES_EVERY_MS };
   }
 });
 
