@@ -2660,8 +2660,8 @@ async function openBoard(dbPath = SQLITE_PATH) {
     }))
   });
   const nickOf = (r) => r.nick == null ? String(r.seat) : String(r.nick);
-  const unusedNick = (repo) => {
-    const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL`).all(repo);
+  const unusedNick = (repo, run3) => {
+    const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND ((r.state = 'open' AND p.ended_at IS NULL) OR p.run = ?)`).all(repo, run3 ?? -1);
     return funnyName(rows.map(nickOf));
   };
   const subsOf = (r) => JSON.parse(String(r.subs ?? "[]")).map((x) => ({
@@ -3322,7 +3322,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
           const seatOn = seatRow?.on_events != null ? parseSubscriptions(JSON.parse(String(seatRow.on_events))) : null;
           const kept = existing?.subs == null ? [] : JSON.parse(String(existing.subs));
           const subs = on != null ? JSON.stringify(on) : kept.length > 0 ? String(existing.subs) : JSON.stringify(seatOn ?? profile.defaults.member);
-          const fresh = () => unusedNick(String(r.repo));
+          const fresh = () => unusedNick(String(r.repo), run3);
           if (existing) {
             entry2 = existing.ended_at == null ? "again" : "back";
             db.prepare("UPDATE participants SET doing = ?, files = ?, place = ?, ended_at = NULL, idle_ended = 0, dropped_owing = NULL, subs = ?, nick = COALESCE(nick, ?), pack = ?, verify = ?, pack_chosen = 1, last_call = ?, seated_at = ? WHERE id = ?").run(
@@ -3358,7 +3358,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
           const seated = Number(db.prepare("SELECT COUNT(*) AS n FROM participants WHERE run = ? AND seat != ?").get(run3, ORCHESTRATOR).n);
           const phased = db.prepare("SELECT 1 FROM messages WHERE run = ? AND event = ?").get(run3, EVENTS.phase.name) !== void 0;
           if (!phased && declared > 0 && seated >= declared && db.prepare("SELECT 1 FROM seats s WHERE s.run = ? AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)").get(run3) === void 0) {
-            insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", void 0, { event: EVENTS["all-joined"].name });
+            const tasked = db.prepare(`SELECT 1 FROM messages m JOIN seats s ON s.run = m.run WHERE m.run = ? AND m.kind != 'event' AND m.mentions LIKE '%"' || ? || '/' || s.id || '"%'`).get(run3, String(member.plan)) !== void 0;
+            const allJoined = { tasked };
+            insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", void 0, { event: EVENTS["all-joined"].name, meta: allJoined });
           }
         }
         return { member, roster: board2.roster(member.repo), composition: compositionOf(run3) };
@@ -8964,6 +8966,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli, as, run3) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run3}`,
   swarmStopped: (cli, as) => `no member is moving: read the thread, then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli, as) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
+  allJoinedTasked: (cli, as) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachOwn: "stop only the PIDs you started: machine.md",
   breachOther: (member) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
@@ -9035,6 +9038,12 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   aiviewProjectAdd: (envPrefix, launcher, cwd) => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
   // ── T51 (board-split#D58): open and the run's identity ──
   /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
+  /** An open that failed after the board began the run: the run closed again, so none is left half-opened. */
+  openFailedUndone: (why, run3) => `open: failed (${why}); run ${run3} it began is closed again, no run is left: open again`,
+  /** An open that failed before the board kept a run. */
+  openFailedNone: (why) => `open: failed (${why}); no run was left open: open again`,
+  /** An open that failed and whose run could not be closed again: how to close it by hand. */
+  openFailedLeft: (why, group, cli) => `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run>), then open again`,
   groupAlreadyOpen: (group, run3, cli) => `open: refused: group ${group} already has run ${run3} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run3}), or open under another --group`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
@@ -9159,7 +9168,8 @@ function eventStep(m, me, cli, event = eventOf(m)) {
     case "stopped":
       return orchestrator ? WORDING.swarmStopped(cli, as) : null;
     case "all-joined":
-      return orchestrator ? WORDING.allJoined(cli, as) : null;
+      if (!orchestrator) return null;
+      return meta && "tasked" in meta && meta.tasked ? WORDING.allJoinedTasked(cli, as) : WORDING.allJoined(cli, as);
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
       if (!member || !orchestrator) return null;
@@ -9449,7 +9459,25 @@ var printReconciled = (unclaimed, flags, renames = []) => {
   if (lines.length) console.log("(not a flag: a write without a claim is allowed, and was claimed for you; only a file another member holds raises a flag, below)");
   for (const f of flags) console.log(`#${f.seq} flagged: you wrote ${f.path} outside your claim; ${f.holder} holds it. Settle it with @${f.holder} on the thread.`);
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? path13.dirname(path13.resolve(process.argv[1]));
+var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path13.dirname(path13.resolve(process.argv[1])));
+var undoOpen = async (repo, group, why) => {
+  try {
+    board.close();
+    board = await connectBoard({ dataRoot: DATA_ROOT });
+    const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
+    if (!begun) return WORDING.openFailedNone(why);
+    await board.closeRun(begun.id);
+    return WORDING.openFailedUndone(why, begun.id);
+  } catch {
+    return WORDING.openFailedLeft(why, group, self().join(" "));
+  }
+};
+var swarmBoardFolderAbove = (from) => {
+  for (let dir = from; ; dir = path13.dirname(dir)) {
+    if (fs13.existsSync(path13.join(dir, "swarm.mjs"))) return dir;
+    if (path13.dirname(dir) === dir) return from;
+  }
+};
 var projectFlag = () => {
   const project = args.flag("--project");
   if (project !== void 0) return project;
@@ -9782,35 +9810,42 @@ ${verbHelp()}`);
       const openRepo = repoOf2(process.cwd());
       const sameGroup = (await board.runs()).find((r) => r.repo === openRepo && r.group === group);
       if (sameGroup) fail(WORDING.groupAlreadyOpen(group, sameGroup.id, self().join(" ")));
-      const run3 = await board.openRun({
-        repo: openRepo,
-        kind,
-        group,
-        title: need("--title"),
-        link: args.flag("--link") ?? null,
-        seats: readSeats(seatsFile),
-        ...stallMs !== void 0 ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {},
-        ...protocol !== void 0 ? { protocol } : {},
-        authority,
-        // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
-        base: args.flag("--onto") ?? baseAt(process.cwd())
-      });
-      const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
-      const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
-      const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
-      const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run3.id);
-      const seatIds = run3.seats.map((s) => s.id);
-      const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run3.id, shellWord2(run3.group), shellWord2("waiting for a task"))) : null;
-      const holding = profileOf(run3.kind).member === "worker" && run3.base ? worktreeHolding(process.cwd(), run3.base) : null;
-      const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run3.base, holding, CODE_WORDING.detach(shellWord2(holding))) : null;
-      const lines = (url) => [String(run3.id), stallClamped, url, link, seatsJoin, detachLine, ...orchestrators, next].filter((l) => l !== null).join("\n");
-      if (!doc.registered) {
-        console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
-        emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, orchestrators, ...next ? { next } : {} }, lines(null));
-        break;
+      try {
+        await openAndAnswer();
+      } catch (err) {
+        fail(await undoOpen(openRepo, group, err instanceof Error ? err.message : String(err)));
       }
-      const runUrl = WORDING.runBoardUrl(doc.url, run3.id);
-      emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: runUrl, link, orchestrators, ...next ? { next } : {} }, lines(runUrl));
+      async function openAndAnswer() {
+        const run3 = await board.openRun({
+          repo: openRepo,
+          kind,
+          group,
+          title: need("--title"),
+          link: args.flag("--link") ?? null,
+          seats: readSeats(seatsFile),
+          ...stallMs !== void 0 ? { stallMs: Math.max(stallMs, stallMsFloor()) } : {},
+          ...protocol !== void 0 ? { protocol } : {},
+          authority,
+          // what a code run's worktrees branch from and merge into: --onto, else the checkout's branch
+          base: args.flag("--onto") ?? baseAt(process.cwd())
+        });
+        const link = startLinkLine({ name: `${run3.group}/orchestrator`, run: run3.id });
+        const doc = registerBoard({ home, cwd: process.cwd(), repo: run3.repo });
+        const next = firstPhaseLine(run3.kind, run3.group, protocol ?? null);
+        const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run3.id);
+        const seatIds = run3.seats.map((s) => s.id);
+        const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run3.id, shellWord2(run3.group), shellWord2("waiting for a task"))) : null;
+        const holding = profileOf(run3.kind).member === "worker" && run3.base ? worktreeHolding(process.cwd(), run3.base) : null;
+        const detachLine = holding ? CODE_WORDING.ontoCheckedOutAtOpen(run3.base, holding, CODE_WORDING.detach(shellWord2(holding))) : null;
+        const lines = (url) => [String(run3.id), stallClamped, url, link, seatsJoin, detachLine, ...orchestrators, next].filter((l) => l !== null).join("\n");
+        if (!doc.registered) {
+          console.error(`swarm: ${doc.reason}: the run is open; its board is read in aiview once aiview is installed and knows this project`);
+          emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: null, link, orchestrators, ...next ? { next } : {} }, lines(null));
+          return;
+        }
+        const runUrl = WORDING.runBoardUrl(doc.url, run3.id);
+        emit({ run: run3.id, repo: run3.repo, kind: run3.kind, group: run3.group, plan: run3.plan, url: runUrl, link, orchestrators, ...next ? { next } : {} }, lines(runUrl));
+      }
       break;
     }
     case "slice":
