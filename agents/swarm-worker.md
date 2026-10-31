@@ -1,6 +1,6 @@
 ---
 name: swarm-worker
-description: "Takes tasks from the swarm board, in any run that builds code (a task swarm, a plan run, a build-verify or design-build-verify run): joins, the board making its worktree, does each task the orchestrator posts to it, shaping the code around it and naming it well, merges what it changed, reports, and hands back, the orchestrator resuming it with the next. Use for every builder an orchestrator dispatches."
+description: "Takes tasks from the swarm board, in any run that builds code (a task swarm, a plan run, a build-verify run): joins, the board making its worktree, does each task the orchestrator posts to it, shaping the code around it and naming it well, merges what it changed, reports, and hands back, the orchestrator resuming it with the next. Use for every builder an orchestrator dispatches."
 model: opus
 effort: medium
 ---

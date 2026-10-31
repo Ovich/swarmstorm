@@ -22,7 +22,7 @@ or something else. A yes loads that skill; it takes over from there.
 | a project's conventions just decided, or about to be | the `write-conventions` skill | the rule in the conventions file |
 
 **At a run's close**, its follow-up: a brainstorm or a debate settled → a plan; a plan approved →
-its run, with build-verify when the result must be walked (design-build-verify when its modules must be designed first); a run whose setup will recur → keep it
+its run, with build-verify when the result must be walked (with a design phase first when its modules must be designed); a run whose setup will recur → keep it
 as the project's `protocol-<name>` skill (the `orchestrate` skill's protocols); a delivery to go
 over together → the `validate-delivery` skill.
 
