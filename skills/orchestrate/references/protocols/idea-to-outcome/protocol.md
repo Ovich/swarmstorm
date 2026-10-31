@@ -19,7 +19,7 @@ otherwise (`references/protocols/build-verify/protocol.md`, *Phases* and *Your d
 | `d3` skeptic | `brainswarm-seat` · medium | what the design breaks or stops catching; the failure cases | edits the repository |
 | `w1` … builders | `swarm-worker`, own worktree · low | one task per build: change, build, type-check, run once, merge, report | runs, reads, writes or fixes a test |
 | `t1` tester | `swarm-worker`, own worktree · low | the yardstick harness; every test, written after the person accepts | reads a builder's diff before drafting its cases |
-| `v1` … verifiers | `verifier` · medium, `busyMax: 300000` | the live proof of each claim, on its own instance and ports | walks the person's live data |
+| `v1` … verifiers | `verifier` · medium | the live proof of each claim, on its own instance and ports | walks the person's live data |
 
 Opus for all. **A small idea needs no panel**: when its note fits in a screen and touches one
 area, d1 frames it alone and d2, d3 sit it out.
