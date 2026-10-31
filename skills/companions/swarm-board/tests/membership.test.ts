@@ -29,7 +29,7 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
 const twoSeats = () => board.openRun({ repo: REPO, kind: "brainstorm", group: "idea", title: "I", seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
 
-test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-lost line, one joined event and no recovered", () => {
+test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-lost line, one joined event", () => {
   const run = twoSeats();
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   board.join({ run: run.id, seat: "b", doing: "x", files: [] });
@@ -53,7 +53,6 @@ test("G18: a seat whose agent finished, told gone, re-joins: not gone, no link-l
   const st = board.memberStates(run.id, soon).find((s) => s.member === "a")!;
   assert.notEqual(st.badge?.name, "lost");
   assert.equal(events("joined").length, joinedBefore + 1, "one joined event per re-join");
-  assert.equal(events("recovered").length, 0, "no recovered beside the joined event");
   assert.ok(!board.snapshot(REPO).events.some((e) => /idea\/a: link lost/.test(e.body)));
 });
 

@@ -9,8 +9,8 @@ import { SCENARIOS, STALL_S, play } from "./fixtures/yardstick.ts";
 const CORE: [string, number, string][] = [
   // board-split D55: lost LOST_MS after the link and the last sign went
   ["S5a", 61, "lost"],
-  // board-split D54: owing in a held wait, told once the stall window passed since its task was delivered
-  ["S11-1a", STALL_S + 61, "owing"],
+  // simple-states: owing the phase, no sign of progress, told once the stall window passed since its last sign
+  ["S4-owing", STALL_S + 61, "silent"],
 ];
 
 /** board-split D49: trouble comes from board facts alone. A turn ended, a background task gone silent or a dev server
@@ -38,5 +38,5 @@ for (const [id, bound, told] of CORE) {
 test("yardstick core: S14, a member with no transcript, wakes no one: its blindness is a card note, never an alarm (board-split D55)", async () => {
   const sc = SCENARIOS.find((s) => s.id === "S14")!;
   const r = await play(sc, 40);
-  assert.equal(r.wakeAt.find((w) => w.events.includes("liveness")), undefined, r.events);
+  assert.equal(r.wakeAt.find((w) => w.events.some((e) => e === "stalled" || e === "lost")), undefined, r.events);
 });

@@ -652,11 +652,11 @@ test("a pending mentions-only wait is listening; working while its open call is 
   assert.equal(s5Of().listening, false);
   const listening = board.wait(s5, { timeoutMs: 300, mentionsOnly: true });
   const t = Date.now();
-  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "npm test", since: t, boardWait: false, shell: true }, lastTool: null, finished: false }, new Date(t));
+  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "npm test", since: t, boardWait: false }, lastTool: null, finished: false }, new Date(t));
   assert.deepEqual([s5Of().state, s5Of().listening], ["idle", true]);
   await listening;
   assert.equal(s5Of().listening, false);
-  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: t, boardWait: true, shell: true }, lastTool: null, finished: false }, new Date(t));
+  board.recordActivity(s5.run, "S5", { grewAt: t, tokens: 0, context: null, openTool: { name: "Bash", target: "swarm wait", since: t, boardWait: true }, lastTool: null, finished: false }, new Date(t));
   const waiting = board.wait(s5, { timeoutMs: 300 });
   assert.deepEqual([s5Of().state, s5Of().listening], ["idle", false]);
   await waiting;

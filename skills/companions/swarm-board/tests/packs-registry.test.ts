@@ -36,7 +36,7 @@ test("a member's pack is chosen at join, stored, and survives a server restart",
   const file = path.join(dir, "swarm.sqlite");
   try {
     let board = await openBoard(file);
-    const task = board.openRun({ repo: "/repos/one/.git", kind: "task", group: "t", title: "T", seats: [{ id: "w1", blockers: [] }, { id: "v1", role: "verifier", blockers: [], busyMax: 300000 }] });
+    const task = board.openRun({ repo: "/repos/one/.git", kind: "task", group: "t", title: "T", seats: [{ id: "w1", blockers: [] }, { id: "v1", role: "verifier", blockers: [] }] });
     const talk = board.openRun({ repo: "/repos/one/.git", kind: "brainstorm", group: "b", title: "B", seats: [{ id: "s1", blockers: [] }, { id: "sk", role: "skeptic", blockers: [] }] });
     for (const seat of ["w1", "v1"]) board.join({ run: task.id, seat, doing: "x", files: [] });
     for (const seat of ["s1", "sk"]) board.join({ run: talk.id, seat, doing: "x", files: [] });

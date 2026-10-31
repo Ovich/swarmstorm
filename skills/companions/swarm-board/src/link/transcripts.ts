@@ -16,7 +16,7 @@ export type Binding = { verb: "join"; run: RunId; seat: string } | { verb: "open
 export type TranscriptCursor = {
   offset: number;
   tokens: number;
-  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean } & CallWords>;
+  open: Map<string, { name: string; target: string; since: number; boardWait?: boolean } & CallWords>;
   lastTool: string | null;
   context: number | null;
   grewAt: number | null;
@@ -488,10 +488,8 @@ export function observe(transcript: string, from: TranscriptCursor | null, bindi
           const other = typeof command === "string" && binding !== undefined && commandActsAsOther(command, binding, escapes);
           // D45: only a shell call running the board's `wait` verb is waiting; a browser's wait_for, a sleep, are work
           const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
-          // a shell call (any tool whose input holds a string command, idea 1 §3's test) has its own timeout; idea 5 bounds the rest
-          const shell = typeof command === "string";
           const words = callWordsOf(part.input);
-          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...(shell ? { shell } : {}), ...words });
+          cursor.open.set(part.id, { name, target, since: at, ...(boardWait ? { boardWait } : {}), ...words });
           cursor.lastTool = target ? `${name} ${target}` : name;
           cursor.lastLine = cursor.lastTool;
           const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);

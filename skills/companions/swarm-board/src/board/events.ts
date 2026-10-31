@@ -5,7 +5,7 @@ import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
 import type { Message, Participant } from "./board.ts";
 
-export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "lost" | "block" | "unblock" | "liveness" | "recovered" | "unlocked" | "breach" | "composition" | "all-joined";
+export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "back" | "phase" | "pause" | "resume" | "park" | "unpark" | "done" | "all-done" | "idle" | "stalled" | "lost" | "block" | "unblock" | "unlocked" | "breach" | "composition" | "all-joined";
 export type EventName = CoreEventName | PackEventName;
 /** `run`: the member's own run; `any`: every run of the project. */
 export type Scope = "run" | "any";
@@ -18,7 +18,7 @@ export interface EventDef<N extends string = EventName> {
   always?: boolean;
   /** the event rides on every member's next wake, never waking and never due by itself (composition, D4) */
   ambient?: true;
-  /** posted by the board in a member's name, it reaches that member too (stalled, liveness) */
+  /** posted by the board in a member's name, it reaches that member too (stalled, lost) */
   toAuthor?: boolean;
 }
 
@@ -63,16 +63,12 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   // board-split D44: the orchestrator marks a seat blocked on the person (`block <seat> <reason>`), `unblock` lifts it; mentions the seat
   block: { name: "block" },
   unblock: { name: "unblock" },
-  // a member told lost reads present again (idea 1, rule 4): once, to the orchestrator alone
-  recovered: { name: "recovered", toAuthor: true },
   // idea 4: a named lock released (unlock, end, gone, close); mentions each waiter across runs, who locks again
   unlocked: { name: "unlocked", toAuthor: true },
   // idea 4: a member killed by name or pattern, or by port without the port's lock; to the orchestrator alone
   breach: { name: "breach", toAuthor: true },
   // a member whose agent finished without end, or whose link is lost (D12, board-split D36); to the orchestrator alone
   lost: { name: "lost", toAuthor: true },
-  // a member's transcript cannot be read, or its link is lost while it grows: mentions the orchestrator
-  liveness: { name: "liveness", toAuthor: true },
   // the run's composition changed (D4): `+ w4 worker (the app)`, `- w2 lost`, `+ w2 back`; carried to every member, waking none
   composition: { name: "composition", ambient: true },
   // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
@@ -131,7 +127,7 @@ export function mentions(m: Message, me: Participant): boolean {
 
 /** The alarms about one member's liveness, whose body names their subject (`stalled <member>: …`, or one line
  *  naming several). */
-const MEMBER_ALARMS = new Set<string>(["stalled", "lost", "recovered", "liveness"]);
+const MEMBER_ALARMS = new Set<string>(["stalled", "lost"]);
 
 /** u1 #1349: an alarm about `me` never reaches `me` through a subscription: its own stalled ending its wait would make
  *  it recover, re-arm and stall again. Alarms go to the orchestrator and to subscribers other than their subject. */

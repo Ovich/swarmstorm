@@ -46,7 +46,7 @@ test("golden claim flow: worktree at first claim, merged releases, git failure w
     (JSON.parse(must("roster", "--json")) as { roster: { name: string; held: { path: string }[] }[] }).roster.find((r) => r.name === member)?.held.map((h) => h.path) ?? [];
   try {
     const seats = path.join(home, "seats.json");
-    fs.writeFileSync(seats, JSON.stringify([{ id: "w1", blockers: [] }, { id: "w2", blockers: [] }, { id: "v1", role: "verifier", blockers: [], busyMax: 300000 }]));
+    fs.writeFileSync(seats, JSON.stringify([{ id: "w1", blockers: [] }, { id: "w2", blockers: [] }, { id: "v1", role: "verifier", blockers: [] }]));
     const runId = must("open", "--kind", "task", "--group", "g", "--title", "T", "--seats", seats, "--onto", "main").split("\n")[0].trim();
     const wtOf = (seat: string) => path.join(repo, ".git", "swarm", "worktrees", runId, seat);
 

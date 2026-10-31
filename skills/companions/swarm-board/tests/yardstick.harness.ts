@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { BUSY_MAX_MS } from "../src/board/liveness.ts";
+/** The busy bound the harness recorded its rows under, before simple-states removed it from the board. */
+const BUSY_MAX_MS = 15 * 60 * 1000;
 // board-split D55 deleted these rules from the board; this measurement harness keeps the bounds it recorded under them
 const IN_TURN_MS = 120 * 1000;
 const OWE_WAIT_MS = 10 * 60 * 1000;
@@ -200,10 +201,3 @@ test("idea 3, C6: a phase opened late raises no alert on the member at work; the
   assert.ok(r.detectS! <= OWE_WAIT_MS / 1000 + 1, `owing ${r.detectS} s after the phase opened`);
 });
 
-test("idea 5, E1/E1b: a seat's busyMax bounds its non-shell call (stalled · call at 300 s); its shell calls keep 15 min; a seat without it keeps 15 min", () => {
-  const e1 = rowOf("E1");
-  assert.equal(e1.rule, "call");
-  assert.ok(Math.abs(e1.detectS! - 300) <= 1, `E1 at ${e1.detectS} s`);
-  for (const id of ["E1b-install", "E1b-until"]) assert.equal(rowOf(id).alerts.length, 0, `${id}: ${rowOf(id).events}`);
-  assert.equal(rowOf("S3b").detectS, 900);
-});

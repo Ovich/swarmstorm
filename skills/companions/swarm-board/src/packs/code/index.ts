@@ -5,7 +5,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Conflicts, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
-import { LOCK_HELD_MS } from "../../board/liveness.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
@@ -71,17 +70,11 @@ export const codePack: Pack = {
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
   // holding the merge lock, the member is merging (D36), whatever its core state says
   memberFact: (member, ctx) => (tablesOf(ctx).heldMergeLock(member) ? "merging" : null),
-  // board-split D52: the merge lock is held only to rebase, check and fast-forward; held past LOCK_HELD_MS it is a stall
-  // board-split V-26: a member refused the lock and waiting for it is queued, never stalled, as a named lock's waiter
-  memberStall: (member, ctx, t) => {
-    const lock = tablesOf(ctx).heldMergeLock(member);
-    if (!lock) {
-      const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
-      return holder ? { queuedBehind: holder, lock: "merge" } : null;
-    }
-    const since = Date.parse(lock.grantedAt);
-    // board-split D55: the fact alone; the board's reasonOf adds the state word and the age
-    return t - since >= LOCK_HELD_MS ? { reason: "holds the merge lock", since } : null;
+  // board-split V-26: a member refused the merge lock and waiting for it is queued, as a named lock's waiter
+  lockQueue: (member, ctx) => {
+    if (tablesOf(ctx).heldMergeLock(member)) return null;
+    const holder = tablesOf(ctx).mergeLockQueuedBehind(member);
+    return holder ? { queuedBehind: holder, lock: "merge" } : null;
   },
 
   // the code tables' DDL and an older store's upkeep, then the store over them (D20)

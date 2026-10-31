@@ -842,7 +842,7 @@ test("join --on with an unknown event exits 1 listing the known ones; --on store
   const id = openBrainstorm();
   const bad = joinSeat(id, "architect", "--on", "agreed");
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, joined, ended, back, opened, closed, urgent, phase, pause, resume, park, unpark, done, all-done, idle, stalled, block, unblock, recovered, unlocked, breach, lost, liveness, composition, all-joined, merged, flag/);
+  assert.match(bad.stderr, /unknown event agreed: the events are agreement, endorsement, joined, ended, back, opened, closed, urgent, phase, pause, resume, park, unpark, done, all-done, idle, stalled, block, unblock, unlocked, breach, lost, composition, all-joined, merged, flag/);
   const ok = joinSeat(id, "architect", "--on", "agreement,any:merged");
   assert.equal(ok.status, 0, ok.stderr);
   const roster = run("roster");
@@ -1327,18 +1327,6 @@ test("idea 3's addition: open --protocol none ends on next: phaseless, with no p
   assert.equal(r.stdout.trimEnd().split("\n").at(-1), "next: phaseless: the workers take tasks on call");
   assert.doesNotMatch(run("post", "@w1 task T1", "--as", "none1/orchestrator").stdout, /^next:/m);
   assert.doesNotMatch(String(JSON.parse(run("post", "@w1 task T2", "--as", "none1/orchestrator", "--json").stdout).next), /^next:/);
-});
-
-test("idea 5: seat add --busy-max gives the seat its bound, shown in the roster; a bad one is refused", () => {
-  const id = openRun();
-  const bad = run("seat", "add", "V2", "--run", String(id), "--role", "verifier", "--busy-max", "5min");
-  assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /--busy-max takes a positive whole number of ms, got 5min/);
-  const ok = run("seat", "add", "V2", "--run", String(id), "--role", "verifier", "--busy-max", "300000");
-  assert.equal(ok.status, 0, ok.stderr);
-  run("join", "--run", String(id), "--seat", "V2", "--doing", "verify");
-  assert.match(run("roster").stdout, /V2[^\n]*busy max: 300 s \(non-shell calls\)/);
-  assert.doesNotMatch(run("roster").stdout.split("\n").filter((l) => /review-tool\/S3/.test(l)).join("\n"), /busy max/, "the default is not shown");
 });
 
 test("post --urgent is the orchestrator's: a member is refused, the orchestrator's wakes a mentions wait with no mention (F8, D10)", () => {

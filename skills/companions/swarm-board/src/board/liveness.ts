@@ -87,12 +87,11 @@ export const IDLE_MS = 15 * 60 * 1000;
 /** A member whose link has sent no activity this long after its join has no transcript: a card note, never an alarm (board-split D55). */
 // SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
 export const NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1000;
-/** The default stall window of a run, in ms (board-split D54: 5 min): a member owing the open phase in a held wait this
- *  long after its task was delivered reads stalled. */
-export const STALL_MS_DEFAULT = 5 * 60 * 1000;
-/** board-split D55 (amended, gate G5): the held-wait window is never shorter, whatever a run stored (runs opened before
- *  D55 keep the old 60 s default) or `open --stall-ms` asked. SWARM_STALL_FLOOR_MS: a scaled test scene lowers it;
- *  read at each use. */
+/** The default stall window of a run (simple-states: 10 min): a working member with no sign of progress this long
+ *  reads stalled; a long test run with no transcript growth stays under it. */
+export const STALL_MS_DEFAULT = 10 * 60 * 1000;
+/** The stall window is never shorter, whatever a run stored (runs opened before keep an older default) or `open
+ *  --stall-ms` asked. SWARM_STALL_FLOOR_MS: a scaled test scene lowers it; read at each use. */
 /** board-split D55 (amended, U-F27): a lost or stalled episode opens once its predicate held this long, and an open one
  *  closes once it held false this long: time, never a count of ticks. SWARM_BADGE_CONFIRM_MS: the suite's older
  *  scenes, which confirm in two ticks, set it short (tests/fixtures/outside-harness.ts); read at each use. */
@@ -101,8 +100,6 @@ export const badgeConfirmMs = (): number => Number(process.env.SWARM_BADGE_CONFI
 export const stallMsFloor = (): number => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
 /** Readings older than this are pruned. */
 export const READINGS_KEPT_MS = 10 * 60 * 1000;
-/** A tool call open longer than this keeps its member `busy`, and the orchestrator is told it may be hung (stalled, D46). */
-export const BUSY_MAX_MS = 15 * 60 * 1000;
 /** board-split D55: lost needs its link unseen, its last sign, the server's start and its seating all this old: twelve
  *  missed heartbeats, longer than a server restart plus every link's reconnect, and the time a harness takes to start a
  *  member's link after `join` or a restart (D55 (6)). */
@@ -132,6 +129,3 @@ export function coreStateOf(m: CoreStateFacts): CoreMemberState {
 
 /** A seat's state: its member's, or `empty` while nobody has sat in it. */
 export type SeatState = CoreMemberState | "empty";
-/** board-split D54 (amended): out of any wait, a member owing the open phase reads stalled only when its transcript has
- *  not grown and no tool call of its own is open for this long; board-call silence alone is never a stall. */
-export const SILENT_MS = Number(process.env.SWARM_SILENT_MS) || 10 * 60 * 1000;

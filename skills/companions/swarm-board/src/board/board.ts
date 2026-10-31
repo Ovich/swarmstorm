@@ -13,11 +13,11 @@ import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type Pa
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
-import { BUSY_MAX_MS, CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, SILENT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { CARRY_MAX_MS, IDLE_MS, LOCK_HELD_MS, LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import type { MemberActivity } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
-import { nextWaitSpell, reasonOf, stalledOf, type WaitSpell } from "./stall.ts";
+import { reasonOf, stalledOf } from "./stall.ts";
 
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
@@ -29,8 +29,7 @@ export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog"
 export type { StatsScope, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
 export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns } from "../packs/registry.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
-/** `busyMax`: the seat's bound (ms) for a non-shell call, past which it is `stalled · call` (idea 5); absent: BUSY_MAX_MS. */
-export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null; busyMax?: number };
+export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null };
 export type Seat = SeatSpec & { state: SeatState };
 /** One place of a run's composition (D3): a declared seat, who sits in it, and whether they do. */
 export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: SeatState };
@@ -56,14 +55,14 @@ export const projectFolderName = (repo: string): string => {
 export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");
 /** A member's activity from its transcript and its link (swarm-relay D9, D31, E12, D12): what it does, never trouble. */
 export type MemberStateName = "working" | "busy" | "waiting";
-/** board-split D36: trouble, beside the state, never a state. stalled: no progress past the stall time, or a call open
- *  past BUSY_MAX_MS; lost: its agent or its link vanished, not parked; blocked: it waits on the person (D44). */
+/** board-split D36: trouble, beside the state, never a state. stalled: working with no progress past the stall
+ *  window; lost: its link vanished while it owes work; blocked: it waits on the person (D44). */
 export type BadgeName = "stalled" | "lost" | "blocked";
 /** A badge with its reason (shown on hover) and since when it holds, ms epoch (null: unknown). */
 export type Badge = { name: BadgeName; reason: string; since: number | null };
 /** `doing`: the open tool, else the last; `since`: ms epoch the state counts from; `badge`: its trouble, null when none.
  *  A lost member keeps the last activity read of it. */
-export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; badge: Badge | null; rule?: StallRule; owes?: string };
+export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; badge: Badge | null; owes?: string };
 /** board-split D55: why a link dropped, as its server saw it. */
 export type LinkDropCause = "member-closed" | "server-restart" | "superseded" | "version" | "socket";
 /** board-split D55: a member's link as the server keeps it (a row of `member_links`): connected, else since when it
@@ -182,8 +181,6 @@ export interface RosterEntry {
   aliveAt: number | null;
   /** Messages for it (a mention, an urgent post, an event it subscribed to) not yet delivered to it (swarm-relay D43). */
   unread: number;
-  /** Idea 5: its seat's bound for a non-shell call (ms), null when it has the default. */
-  busyMax: number | null;
 }
 
 export interface Message {
@@ -283,10 +280,9 @@ export type SnapshotMember = {
 };
 /** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
 export type PhaseMeta = { phase: string };
-/** Which rule made a member quiet (idea 1, rule 6): the `stalled` stores it, and its `next` prints that rule's move. */
-//   board-split D49: `owing` (a held wait owing the phase) and `silent` (owing it out of a wait, no board call) are the
-//   ones the board sets now, beside `lock`; the others are read from an older server's stored events.
-export type StallRule = "ended" | "in-turn" | "background" | "call" | "owing" | "silent" | "lock";
+/** Which rule made a member stalled: the `stalled` stores it, and its `next` prints that rule's move. simple-states:
+ *  `silent` (a working member with no progress) and `lock` (a named lock held too long) are the only two. */
+export type StallRule = "silent" | "lock";
 /** A stalled event's data: its rule, the member's id, for `owing` the phase it owes, for `lock` the lock and its
  *  holder as a cross-run handle (`<CODE>·<id>`). */
 export type StalledMeta = { rule: StallRule; member: string; phase?: string; lock?: string; holder?: string; members?: (Omit<StalledMeta, "rule" | "members"> & { rule?: StallRule })[] };
@@ -300,7 +296,7 @@ export type LockRelease = { at: string; by: string; how: "unlock" | "end" | "los
 export type NamedLock = { name: string; member: string; run: RunId; since: string; note: string | null; waiters: string[] };
 /** Who holds a lock a caller was refused (idea 4): enough to find it and judge whether it is stuck. */
 export type LockHolder = { member: string; nick: string; run: RunId; code: string; since: string; state: CoreMemberState; badge: BadgeName | null; doing: string | null };
-/** A link-down liveness's data: the member, `<group>/<id>`, whose link is lost while its transcript grows. */
+/** A link-down liveness's data, stored by an older server: the member, `<group>/<id>`, whose link was lost while its transcript grew. */
 export type LinkDownMeta = { linkDown: string; linkDowns?: string[] };
 /** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
 export type PauseMeta = { person: boolean; text: string };
@@ -326,7 +322,7 @@ export type SnapshotEvent = {
 };
 /** board-split D51: the board's own alarms about a member. Stored under the orchestrator's row (its run, its wake), they
  *  are always served as the board's (`from: swarm`), never the orchestrator's (D51 over D36), with the member they tell of as `subject`. */
-export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stalled", "lost", "gone", "liveness", "recovered"]);
+export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stalled", "lost", "gone"]);
 export { BOARD_AUTHOR };
 /** The member a board alarm tells of: the stall rule's member in its run's group, a lost link's member, else the body's head. */
 function alarmSubjectOf(m: Message): string | null {
@@ -334,7 +330,7 @@ function alarmSubjectOf(m: Message): string | null {
   const group = m.from.split("/")[0];
   if (meta && typeof meta.rule === "string" && typeof meta.member === "string") return `${group}/${meta.member}`;
   if (meta && typeof meta.linkDown === "string") return meta.linkDown;
-  // `lost <group>/<id>: …`, `recovered <group>/<id>: …`; a run's idle stall (`stalled <group>: 3 members …`) names none
+  // `lost <group>/<id>: …`; a run's idle stall (`stalled <group>: 3 members …`) names none
   const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
   return head ?? null;
 }
@@ -754,9 +750,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
   // the seats file's `on`, JSON (D59)
   upkeep("seats", "on_events", "on_events TEXT");
-  // idea 5: a seat's bound for a non-shell call, and whether the member's open call is a shell one
-  upkeep("seats", "busy_max", "busy_max INTEGER");
-  upkeep("member_activity", "open_shell", "open_shell INTEGER NOT NULL DEFAULT 0");
   // the run's current phase, set by `phase`: its name and its text; null until one is opened
   upkeep("runs", "phase", "phase TEXT");
   upkeep("runs", "phase_text", "phase_text TEXT");
@@ -766,8 +759,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("runs", "resumed_at", "resumed_at TEXT");
   // the run's stall threshold, and the stalled events posted since a counter last moved
   upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
-  // board-split D54: the run's silent time, out of a wait, with no sign of work (default SILENT_MS)
-  upkeep("runs", "silent_ms", `silent_ms INTEGER NOT NULL DEFAULT ${SILENT_MS}`);
   upkeep("runs", "protocol", "protocol TEXT");
   // board-split#D28: the roles the run's orchestrator holds, a JSON array; null on an old row reads as []
   upkeep("runs", "authority", "authority TEXT");
@@ -924,7 +915,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       link: s.link == null ? null : String(s.link),
       blockers: JSON.parse(String(s.blockers)) as string[],
       state: seatStateOf(r, String(s.id), s.stood_for != null),
-      ...(s.busy_max == null ? {} : { busyMax: Number(s.busy_max) }),
     })),
   });
 
@@ -1246,8 +1236,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
   const insertSeat = (run: RunId, s: SeatSpec, ord: number): void => {
     if (s.on) parseOn(s.on); // an unknown event name is refused at open, not at join
-    if (s.busyMax != null && !(Number.isInteger(s.busyMax) && s.busyMax > 0)) throw new Error(`seat ${s.id}: busyMax is a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
-    db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events, busy_max) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(
+    db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord, on_events) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
       run,
       s.id,
       s.role ?? null,
@@ -1256,7 +1245,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       s.link ?? null,
       ord,
       s.on ? JSON.stringify(s.on) : null,
-      s.busyMax ?? null,
     );
   };
 
@@ -1332,8 +1320,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const noPresence: Presence = () => ({ connected: false, lostAt: null });
   /** The waits this process holds, by participant id, and since when (ms epoch): the waiting of D35. */
   const heldWaits = new Map<number, number>();
-  /** board-split D55 (amended, U-F22): each participant's waiting spell, by id: the held-wait window counts from it. */
-  const waitSpells = new Map<number, WaitSpell>();
   /** U-F20: per run, the badges its last tick read, so a badge changing with time alone tells the readers. */
   const badgesShown = new Map<RunId, string>();
   const orchestratorIn = (run: RunId): Participant =>
@@ -1343,17 +1329,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   /** board-split D49 (A1-5): in a board wait this server holds, set and cleared by the wait itself, and that wait is the
    *  member's open call (its link says so; with no link yet, the held wait alone): a background listener is not. */
   /** V-26, V-46: the pack's lock `p` is queued on (the holder and the lock's name), as its pack says; null: none. */
-  const packLockWaitOf = (p: Row, t: number): { queuedBehind: string; lock: string } | null => {
+  const packLockWaitOf = (p: Row): { queuedBehind: string; lock: string } | null => {
     if (String(p.seat) === ORCHESTRATOR || p.ended_at != null) return null;
     const m = participantById(Number(p.id));
-    const s = packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null;
-    return s && "queuedBehind" in s ? s : null;
+    return packOf(m)?.lockQueue?.(m, packCtxOf(m)) ?? null;
   };
   const inHeldWaitOf = (p: Row): boolean => {
     if (!heldWaits.has(Number(p.id))) return false;
     const a = activityOf(Number(p.run), String(p.seat));
     // V-46: a member queued on a pack's lock, its wait held, is waiting on that lock, whatever else it runs
-    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p, Date.now()) != null;
+    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p) != null;
   };
   /** A participant row's one state (liveness.ts), the same for snapshot, roster, status, seats and reader. */
   const memberStateOf = (p: Row, run: Row | undefined, t = Date.now()): CoreMemberState =>
@@ -1372,11 +1357,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       Date.parse(seatedAtOf(p)),
       run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)),
     );
-  /** Idea 5: the seat's bound for a non-shell call (ms), from its row or `seat add --busy-max`; null when it has none. */
-  const seatBusyMaxOf = (run: RunId, seat: string): number | null => {
-    const s = db.prepare("SELECT busy_max FROM seats WHERE run = ? AND id = ?").get(run, seat) as Row | undefined;
-    return s?.busy_max == null ? null : Number(s.busy_max);
-  };
   /** board-split D31, D32: the snapshot's `activity` of a live member, from its link's last report; {} with none. */
   const activityShown = (run: RunId, seat: string): { activity?: SnapshotMember["activity"] } => {
     const a = activityOf(run, seat);
@@ -1451,14 +1431,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const lockWait = withHolder ? lockWaitOf(Number(p.id), t) : null;
       if (lockWait) return { member, state: "waiting", doing: lockWait, since: Number(a.open_since) };
       // V-46: queued on a pack's lock: `lock <name>, held by <holder>`, as a named lock's waiter reads
-      const packWait = withHolder ? packLockWaitOf(p, t) : null;
+      const packWait = withHolder ? packLockWaitOf(p) : null;
       if (packWait) return { member, state: "waiting", doing: `lock ${packWait.lock}, held by ${packWait.queuedBehind}`, since: Number(a.open_since) };
       // board-split D31 (S37): a board wait over an un-notified background task of its own is busy on that task
       if (a.bg_target != null) return { member, state: "busy", doing: `${minutes(t - Number(a.bg_since))} min · background ${String(a.bg_target)}`, since: Number(a.bg_since) };
       return { member, state: "waiting", doing: open, since: Number(a.open_since) };
     }
     if (open) return { member, state: "busy", doing: open, since: Number(a.open_since) };
-    if (a.bg_target != null && Number(a.bg_since) + BUSY_MAX_MS > t) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
+    if (a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
     // U-F6 (D45, D49): the last call ended; it is not what the member is on, so working names none
     return { member, state: "working", doing: null, since: progressAtOf(p, run, a) };
   };
@@ -1527,51 +1507,26 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (link.lostAt == null || link.lostAt < seatedAt) return { name: "lost", reason: "no link since its join", since };
     return { name: "lost", reason: `its link was lost${link.cause ? ` (${link.cause})` : ""}`, since };
   };
-  /** board-split D55: the stalled badge from stall.ts over the facts gathered here (the pack's lock stall, the owing
-   *  rules), its reason from reasonOf. blocked and lost are `memberView`'s, over this. */
-  const stalledBadgeOf = (p: Row, run: Row, t: number, shownState: string = "waiting"): { badge: Badge; rule?: StallRule; owes?: string } | null => {
-    const member = String(p.seat);
-    const heldSince = heldWaits.get(Number(p.id)) ?? null;
-    const seatedAt = Date.parse(seatedAtOf(p));
-    // board-split D55: stalled is stall.ts's, from the facts gathered here; the merge lock held too long, owing or not
-    const m = participantById(Number(p.id));
-    const packStall = String(p.seat) === ORCHESTRATOR ? null : (packOf(m)?.memberStall?.(m, packCtxOf(m), t) ?? null);
-    // board-split V-26: queued on the pack's lock (the merge lock): a lock wait, as a named lock's, never stalled here
-    const lockWaited = !!lockWaitOf(Number(p.id), t) || packLockWaitOf(p, t) != null;
-    // the reason opens on the state the card shows: the pack's fact (merging) over the activity's word
-    const lockStall = packStall && "reason" in packStall ? { fact: packStall.reason, since: packStall.since, state: packOf(m)?.memberFact?.(m, packCtxOf(m)) ?? shownState } : null;
-    const a = activityOf(Number(run.id), member);
+  /** simple-states: the stalled badge, stall.ts's one rule over the facts gathered here: a working member (link up,
+   *  owing work) with no sign of progress for the run's stall window; its reason from reasonOf. */
+  const stalledBadgeOf = (p: Row, run: Row, t: number, state: CoreMemberState): { badge: Badge; owes?: string } | null => {
+    if (state !== "working") return null;
     // board-split D64: with no phase open, a delivered task owes its report instead
     const owedReport = run.phase == null ? taskOwedReportOf(p, run) : null;
     const owes = owedReport ? `task #${owedReport.seq}` : owedNameOf(p, run);
-    const ownCallOpen = a?.open_tool != null && !(heldSince != null && Number(a.open_wait) === 1);
-    const inHeldWait = heldSince != null && !lockWaited && (a == null || Number(a.open_wait) === 1);
-    const spell = nextWaitSpell(waitSpells.get(Number(p.id)) ?? null, inHeldWait ? heldSince : null, t);
-    if (spell) waitSpells.set(Number(p.id), spell);
-    const stall = stalledOf(
-      {
-        shownState,
-        owes,
-        owesReport: owedReport != null,
-        taskDeliveredAt: owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run),
-        clockFloorAt: Math.max(run.resumed_at == null ? 0 : Date.parse(String(run.resumed_at)), run.phase_at == null ? 0 : Date.parse(String(run.phase_at))),
-        inHeldWait,
-        waitSpellSince: inHeldWait ? spell!.since : null,
-        openCallSince: ownCallOpen ? Number(a!.open_since) : null,
-        background: a?.bg_target != null ? { since: Number(a.bg_since), grewAt: a.bg_grew_at == null ? null : Number(a.bg_grew_at) } : null,
-        transcriptGrewAt: a?.grew_at == null ? null : Number(a.grew_at),
-        signAt: Math.max(p.board_call_at == null ? 0 : Date.parse(String(p.board_call_at)), seatedAt),
-        stallMs: Math.max(Number(run.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor()),
-        silentMs: Number(run.silent_ms ?? SILENT_MS),
-        busyMaxMs: seatBusyMaxOf(Number(run.id), member) ?? BUSY_MAX_MS,
-        lockStall,
-      },
-      t,
-    );
-    // a lock wait (another's lock) is told by the lock rule, never stalled here
-    if (!stall || (heldSince != null && lockWaited && stall.rule !== "lock")) return null;
-    const stateWord = stall.rule === "lock" && lockStall ? lockStall.state : shownState;
-    return { badge: stalledBadge(reasonOf(stateWord, stall.fact, t - stall.since), stall.since), rule: stall.rule, ...(owes != null && owedReport == null && stall.rule !== "lock" ? { owes } : {}) };
+    // the orchestrator owes its run, never a phase; board-split D54: no clock runs before a task is delivered
+    const deliveredAt = owedReport ? owedReport.deliveredAt : owes == null ? null : taskDeliveredAtOf(p, run);
+    if (owes == null || deliveredAt == null) return null;
+    const a = activityOf(Number(run.id), String(p.seat));
+    const ms = (iso: unknown): number => (iso == null ? 0 : Date.parse(String(iso)));
+    // a held board wait is a board call, under way now
+    const progressAt = heldWaits.has(Number(p.id))
+      ? t
+      : Math.max(deliveredAt, ms(run.resumed_at), ms(run.phase_at), ms(p.board_call_at), ms(seatedAtOf(p)), a?.grew_at == null ? 0 : Number(a.grew_at), a?.open_tool == null ? 0 : Number(a.open_since));
+    const stallMs = Math.max(Number(run.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
+    const stall = stalledOf({ owes, owesReport: owedReport != null, progressAt, stallMs }, t);
+    if (!stall) return null;
+    return { badge: stalledBadge(reasonOf(state, stall.fact, t - stall.since), stall.since), ...(owedReport == null ? { owes } : {}) };
   };
   /** board-split D55 (amended, U-F27): a lost or stalled badge holds only once its episode opened (its predicate true
    *  for BADGE_CONFIRM_MS, by time, not by tick count); `predicate`: the tick's own read, before that confirm. */
@@ -1605,7 +1560,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       return null;
     }
     // board-split D55 (amended, U-F27): an open episode closes once its predicate held false BADGE_CONFIRM_MS (a
-    // re-arm's second out of its wait never tells recovered); an outranking badge closes it at once
+    // re-arm's second out of its wait never closes it); an outranking badge closes it at once
     if (!silent) {
       if (row.clearing_at == null) {
         db.prepare("UPDATE badge_episodes SET clearing_at = ? WHERE rowid = ?").run(t, Number(row.id));
@@ -1640,7 +1595,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     if (lost) return { ...activity, badge: owesOf(p, run) && shows("lost") ? lost : null };
     const stalledRaw = stalledBadgeOf(p, run, t, memberStateOf(p, run, t));
     const stalled = stalledRaw && shows("stalled") ? stalledRaw : null;
-    return { ...activity, badge: stalled?.badge ?? null, ...(stalled?.rule ? { rule: stalled.rule } : {}), ...(stalled?.owes ? { owes: stalled.owes } : {}) };
+    return { ...activity, badge: stalled?.badge ?? null, ...(stalled?.owes ? { owes: stalled.owes } : {}) };
   };
   const stalledBadge = (reason: string, since: number | null): Badge => ({ name: "stalled", reason, since });
   const minutes = (ms: number): number => Math.round(ms / 60000);
@@ -2428,8 +2383,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
            ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
              open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`,
         ).run(run, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
-        // idea 5: whether the open call is a shell one, bounded by its own timeout rather than the seat's busyMax
-        db.prepare("UPDATE member_activity SET open_shell = ? WHERE run = ? AND member = ?").run(o?.shell ? 1 : 0, run, member);
         // idea 1: the turn state, last line, awaited background task and transcript path; absent from an older link, kept null
         const bg = act.background ?? null;
         db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(
@@ -2501,10 +2454,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         let where = progress ? `phase ${progress.phase} ${progressText(progress)}` : "no phase open";
         let moved = false;
         // one tick's stalled lines go out as one wake (several members at once: one line naming each)
-        const stalledNow: { st: MemberState; meta?: StalledMeta }[] = [];
+        const stalledNow: { st: MemberState; meta: StalledMeta }[] = [];
         for (const st of others) {
-          // board-split D55: lost and stalled are episodes, opened on the second tick their predicate holds, an alarm
-          // once when one opens and recovered once when it closes; never re-fired by a timer. Lost outranks stalled
+          // board-split D55: lost and stalled are episodes, opened once their predicate held BADGE_CONFIRM_MS, an alarm
+          // once when one opens; never re-fired by a timer. Lost outranks stalled
           const lostStep = episodeStep(run, st.member, "lost", st.badge?.name === "lost", t);
           if (lostStep === "opened") {
             raiseAlert(run, { body: `lost ${orch.plan}/${st.member}: ${st.badge!.reason}`, event: EVENTS.lost.name });
@@ -2521,32 +2474,24 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
             }
             moved = true;
           } else if (lostStep === "closed") {
-            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
             postComposition(orch, st.member, "+", "back");
             moved = true;
           }
           // D11: stalled per member, to the orchestrator alone; a pause holds its episode as it is
           if (r.paused != null) continue;
           const step = episodeStep(run, st.member, "stalled", st.badge?.name === "stalled", t, st.badge?.name === "lost");
-          if (step === "opened") {
-            const meta: StalledMeta | undefined = st.rule ? { rule: st.rule, member: st.member, ...(st.owes ? { phase: st.owes } : {}) } : undefined;
-            stalledNow.push({ st, meta });
-          } else if (step === "closed") {
-            insertMessage(orch, `recovered ${orch.plan}/${st.member}: ${st.state}`, null, "event", [orch.name], { event: EVENTS.recovered.name });
-            moved = true;
-          }
+          if (step === "opened") stalledNow.push({ st, meta: { rule: "silent", member: st.member, ...(st.owes ? { phase: st.owes } : {}) } });
+          else if (step === "closed") moved = true;
         }
         // a member parked, blocked or ended closes its episodes without a word (D30)
         closeEpisodesOutside(run, others.map((st) => st.member), t);
         // D11: the members whose stalled episode opened at this tick, told in one line
         if (stalledNow.length === 1) {
           const [{ st, meta }] = stalledNow;
-          raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run, orch)}`, event: EVENTS.stalled.name, ...(meta ? { meta } : {}) });
+          raiseAlert(run, { body: `stalled ${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}; ${where}${unansweredSuffix(run, orch)}`, event: EVENTS.stalled.name, meta });
         } else if (stalledNow.length > 1) {
-          const metas = stalledNow.map((x) => x.meta ?? { member: x.st.member });
-          const ruled = stalledNow.find((x) => x.meta)?.meta;
-          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}${st.rule ? ` (${st.rule})` : ""}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run, orch)}`;
-          raiseAlert(run, { body, event: EVENTS.stalled.name, ...(ruled ? { meta: { ...ruled, members: metas } } : {}) });
+          const body = `stalled ${orch.plan}: ${stalledNow.length} members: ${stalledNow.map(({ st }) => `${orch.plan}/${st.member}: ${st.badge?.reason ?? ""}`).join("; ")}; ${where}${unansweredSuffix(run, orch)}`;
+          raiseAlert(run, { body, event: EVENTS.stalled.name, meta: { ...stalledNow[0].meta, members: stalledNow.map((x) => x.meta) } });
         }
         flushAlerts(run, t, orch);
         // idea 4 (D8): a lock this run's members wait on, held LOCK_HELD_MS since its first waiter queued, or by a holder
@@ -2684,7 +2629,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         activity: Number(r.parked) === 1 ? null : (stateIn(Number(r.run), String(r.seat))?.doing ?? null),
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
-        busyMax: seatBusyMaxOf(Number(r.run), String(r.seat)),
         ...factEntry(toParticipant(r)),
       }));
     },

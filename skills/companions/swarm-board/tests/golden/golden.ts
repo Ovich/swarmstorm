@@ -17,7 +17,7 @@ const UPDATING = process.env.GOLDEN_UPDATE === "1";
 
 /** Who answers: the run's orchestrator, a worker of a task run (background listener, own worktree),
  *  a seat of a brainstorm run (foreground waits, shared checkout); beyond ROLES, a verifier seat of a task run
- *  (seat row role "verifier", busyMax 300000) and a brainstorm seat whose row has no role (board-split D11). */
+ *  (seat row role "verifier") and a brainstorm seat whose row has no role (board-split D11). */
 export type Role = "orchestrator" | "worker" | "seat" | "verifier" | "seat-norole";
 /** The member's situation when the verbs are called. */
 export type Situation = "idle" | "owes-first" | "owes-again" | "paused" | "listening" | "closed";
@@ -28,7 +28,7 @@ export const SITUATIONS: Situation[] = ["idle", "owes-first", "owes-again", "pau
 const GROUP = "g";
 const SEAT_OF: Record<Exclude<Role, "orchestrator">, string> = { worker: "w1", seat: "s1", verifier: "v1", "seat-norole": "s1" };
 /** The seat row each role's run is opened with, beyond its id and blockers. */
-const SEAT_ROW_OF: Partial<Record<Role, object>> = { verifier: { role: "verifier", busyMax: 300000 } };
+const SEAT_ROW_OF: Partial<Record<Role, object>> = { verifier: { role: "verifier" } };
 const isBrainstormRole = (role: Role) => role === "seat" || role === "seat-norole";
 
 /** A verb's answer as pinned: the exit code, stdout, then stderr when there is any. */

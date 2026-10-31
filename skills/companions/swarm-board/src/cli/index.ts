@@ -267,10 +267,8 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
-  // a seat's own bound on a non-shell call, shown only when it differs from the default (idea 5)
-  const bound = r.busyMax != null ? `  busy max: ${Math.round(r.busyMax / 1000)} s (non-shell calls)` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}${bound}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -570,7 +568,7 @@ const declaredPath = (file: string): string => {
 
 /** V13: a seats file the CLI cannot take: what is wrong, then a seats file it takes. */
 const seatsFail = (what: string): never =>
-  fail(`${what}\ne.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": [], "busyMax": 300000}]`);
+  fail(`${what}\ne.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]`);
 
 function readSeats(file: string): SeatSpec[] {
   let raw: unknown;
@@ -581,15 +579,12 @@ function readSeats(file: string): SeatSpec[] {
   }
   const list = Array.isArray(raw) ? raw : (raw as { seats?: unknown }).seats;
   if (!Array.isArray(list)) return seatsFail(`${file}: expected an array of {id, role, area, blockers}`);
-  return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown; on?: unknown; busyMax?: unknown }) => {
+  return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown; on?: unknown }) => {
     if (typeof s.id !== "string") seatsFail(`${file}: a seat without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
     if ("title" in s) seatsFail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
     if ("transcript" in s) seatsFail(`${file}: unknown field transcript in ${s.id}`);
-    // busyMax: the seat's bound on a non-shell call (idea 5), validated as seat add --busy-max is
-    if (s.busyMax !== undefined && !(Number.isInteger(s.busyMax) && (s.busyMax as number) > 0)) seatsFail(`${file}: busyMax of ${s.id} takes a positive whole number of ms, got ${JSON.stringify(s.busyMax)}`);
     return {
-      ...(s.busyMax !== undefined ? { busyMax: s.busyMax as number } : {}),
       id: String(s.id),
       ...(typeof s.role === "string" && s.role ? { role: s.role } : {}),
       ...(typeof s.area === "string" && s.area ? { area: s.area } : {}),
@@ -788,15 +783,10 @@ async function main(): Promise<void> {
         if (on !== undefined) subscriptionsArg(on);
         const role = args.flag("--role");
         const area = args.flag("--area");
-        // --busy-max: the seat's bound on a non-shell call (a browser or MCP step), as a seat row's busyMax (idea 5)
-        const rawBusyMax = args.flag("--busy-max");
-        const busyMax = rawBusyMax === undefined ? undefined : Number(rawBusyMax);
-        if (busyMax !== undefined && !(Number.isInteger(busyMax) && busyMax > 0)) fail(`--busy-max takes a positive whole number of ms, got ${rawBusyMax}`);
         const added = await board.addSeat(run, {
           id,
           ...(role ? { role } : {}),
           ...(area ? { area } : {}),
-          ...(busyMax !== undefined ? { busyMax } : {}),
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
           ...(on !== undefined ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}),

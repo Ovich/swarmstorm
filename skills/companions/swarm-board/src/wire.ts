@@ -78,9 +78,8 @@ export type MemberActivity = {
   context: number | null;
   /** a tool_use with no result yet */
   /** `boardWait`: the call runs the board's own `wait` verb, the one call that is waiting (swarm-relay D45) */
-  /** `shell`: its input holds a string `command` (a shell call), bounded by its own timeout; any other call is bounded by the seat's `busyMax` (idea 5) */
   /** `label`, `command` (board-split D45): the call's own description and its whole command; absent from an older link */
-  openTool: { name: string; target: string; since: number; boardWait?: boolean; shell?: boolean; label?: string | null; command?: string | null } | null;
+  openTool: { name: string; target: string; since: number; boardWait?: boolean; label?: string | null; command?: string | null } | null;
   /** "<name> <target, 50 chars>" */
   lastTool: string | null;
   /** the harness says the agent ended (meta.json) */

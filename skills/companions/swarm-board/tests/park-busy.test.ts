@@ -46,14 +46,14 @@ test("D31 (S37): a board wait over its own un-notified background suite reads bu
   const { run, a } = setup();
   const base = Date.now();
   const held = board.wait(a, { mentionsOnly: true, timeoutMs: 400 });
-  const waitCall = { name: "Bash", target: "swarm wait --mentions", since: base, boardWait: true, shell: true };
+  const waitCall = { name: "Bash", target: "swarm wait --mentions", since: base, boardWait: true };
   board.recordActivity(run.id, "a", act({ grewAt: base, openTool: waitCall, background: { target: "npm test", since: base - 3 * 60_000, outputGrewAt: base } }), at(base, 0));
   const st = board.memberStates(run.id, at(base, 1)).find((s) => s.member === "a")!;
   assert.deepEqual([st.state, st.doing, st.badge], ["busy", "3 min · background npm test", null]);
   // the card's activity carries both the open wait and the background task (D32)
   const card = board.snapshot(REPO).roster.find((r) => r.member === "g/a")!;
   assert.deepEqual([card.activity?.open?.boardWait, card.activity?.background?.target], [true, "npm test"]);
-  // past BUSY_MAX_MS from the task's start it stays busy, no badge: a background task is activity only (board-split D49)
+  // 13 min from the task's start it stays busy, no badge: a background task is activity only (board-split D49)
   const long = board.memberStates(run.id, new Date(base + 13 * 60_000)).find((s) => s.member === "a")!;
   assert.deepEqual([long.state, long.badge], ["busy", null]);
   await held;

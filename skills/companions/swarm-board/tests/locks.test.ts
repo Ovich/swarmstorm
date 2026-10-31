@@ -211,7 +211,7 @@ test("D9: a member waiting on a lock while owing the phase reads waiting on the 
   const st = board.memberStates(runB.id, new Date(base + 700_000)).find((m) => m.member === "b1")!;
   assert.equal(st.state, "waiting");
   assert.match(st.doing!, /^lock port:4415, held by /);
-  assert.ok(!board.deliver(oB).full.some((m) => m.meta && "rule" in m.meta && m.meta.rule === "owing" && m.meta.member === "b1"), "never owing");
+  assert.ok(!board.deliver(oB).full.some((m) => m.event === "stalled" && m.meta && "member" in m.meta && m.meta.member === "b1"), "never owing");
   await held;
 });
 

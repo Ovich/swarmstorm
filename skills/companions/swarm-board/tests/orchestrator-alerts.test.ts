@@ -47,48 +47,31 @@ const taskedNoPhase = () => {
   return { run: run.id, a, orch, taskSeq: task.seq };
 };
 
-/** Holds `a` in a board wait from `base`, as its link reports it. */
-const heldWait = (run: number, a: ReturnType<typeof taskedNoPhase>["a"], base: number) => {
-  const stop = new AbortController();
-  const held = board.wait(a, { mentionsOnly: true, timeoutMs: 60_000, signal: stop.signal }).catch(() => null);
-  board.recordActivity(run, "a", act({ openTool: { name: "Bash", target: "", since: base, boardWait: true } }), new Date(base));
-  return async () => {
-    stop.abort();
-    await held;
-  };
-};
-
 test("V-9 stalledOf: a no-phase task owes its report: the fact names the task", () => {
   const T0 = 1_800_000_000_000;
-  const f = { shownState: "waiting", owes: "task #7", owesReport: true, taskDeliveredAt: T0, clockFloorAt: 0, inHeldWait: true, waitSpellSince: null, openCallSince: null, background: null, transcriptGrewAt: null, signAt: T0, stallMs: STALL_MS_DEFAULT, silentMs: 600_000, busyMaxMs: 900_000, lockStall: null };
-  assert.deepEqual(stalledOf(f, T0 + STALL_MS_DEFAULT), { rule: "owing", since: T0, fact: "task #7 delivered, no report, in a wait" });
+  const f = { owes: "task #7", owesReport: true, progressAt: T0, stallMs: STALL_MS_DEFAULT };
+  assert.deepEqual(stalledOf(f, T0 + STALL_MS_DEFAULT), { since: T0, fact: "task #7 delivered, no report, no activity" });
 });
 
-test("V-9: no phase open, a delivered task with no report reads stalled in a held wait past the window, once", async () => {
-  const { run, a, taskSeq } = taskedNoPhase();
-  const base = Date.now();
-  const release = heldWait(run, a, base);
-  const due = base + STALL_MS_DEFAULT + 1000;
+test("V-9: no phase open, a delivered task with no report reads stalled with no sign of progress past the window, once", () => {
+  const { run, taskSeq } = taskedNoPhase();
+  const due = Date.now() + STALL_MS_DEFAULT + 1000;
   board.livenessTick(run, new Date(due), linked);
   board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
   const stalled = events("stalled").map((e) => e.body);
   assert.equal(stalled.length, 1);
-  assert.match(stalled[0], new RegExp(`^stalled g/a: working, task #${taskSeq} delivered, no report, in a wait \\d+ min; no phase open$`));
+  assert.match(stalled[0], new RegExp(`^stalled g/a: working, task #${taskSeq} delivered, no report, no activity \\d+ min; no phase open$`));
   board.livenessTick(run, new Date(due + 60_000), linked);
   assert.equal(events("stalled").length, 1, "one alarm per episode");
-  await release();
 });
 
-test("V-9: a report to the orchestrator after the task ends the owing", async () => {
+test("V-9: a report to the orchestrator after the task ends the owing", () => {
   const { run, a } = taskedNoPhase();
   board.post(a, "@orchestrator done: here is my report");
-  const base = Date.now();
-  const release = heldWait(run, a, base);
-  const due = base + STALL_MS_DEFAULT + 1000;
+  const due = Date.now() + STALL_MS_DEFAULT + 1000;
   board.livenessTick(run, new Date(due), linked);
   board.livenessTick(run, new Date(due + BADGE_CONFIRM_MS), linked);
   assert.equal(events("stalled").length, 0);
-  await release();
 });
 
 test("V-8: the idle line names a question to the orchestrator left unanswered; an answer clears it", async () => {
@@ -108,7 +91,7 @@ test("V-8: the idle line names a question to the orchestrator left unanswered; a
   assert.ok(events("idle").every((e, i) => i === 0 || !e.body.includes("unanswered")), "answered: no longer named");
 });
 
-test("V-8: the stalled line names the unanswered question too", async () => {
+test("V-8: the stalled line names the unanswered question too", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
@@ -117,15 +100,12 @@ test("V-8: the stalled line names the unanswered question too", async () => {
   const question = board.post(a, "@orchestrator is p1 x or y?");
   for (const p of [a, orch]) board.deliver(p);
   board.recordActivity(run.id, "a", act(), new Date());
-  const base = Date.now();
-  const release = heldWait(run.id, a, base);
-  const due = base + STALL_MS_DEFAULT + 1000;
+  const due = Date.now() + STALL_MS_DEFAULT + 1000;
   board.livenessTick(run.id, new Date(due), linked);
   board.livenessTick(run.id, new Date(due + BADGE_CONFIRM_MS), linked);
   const stalled = events("stalled").map((e) => e.body);
   assert.equal(stalled.length, 1);
   assert.match(stalled[0], new RegExp(`; phase p1 0/1 done; unanswered @orchestrator #${question.seq} from g/a$`));
-  await release();
 });
 
 test("V-10: status/roster show a pause, on the person or with its reason; a phase under a pause says when it is heard", () => {

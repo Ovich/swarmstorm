@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { BUSY_MAX_MS, LOST_MS } from "../src/board/liveness.ts";
+import { LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { tick2 } from "./fixtures/tick2.ts";
@@ -105,7 +105,7 @@ test("2b: the agent ends owing the open phase: lost past LOST_MS, told once", ()
   assert.equal(board.runs().find((r) => r.id === run.id)!.seats.find((x) => x.id === "b")!.state, "lost");
 });
 
-test("3: a background task of its own while in a board wait: busy activity, no badge; owing the open phase past the stall time, never held-wait stalled; stalled only past BUSY_MAX with no growth (D55 amended, O-F3)", async () => {
+test("3: a background task of its own while in a board wait: busy activity, no badge; owing the open phase, never stalled while the wait is held", async () => {
   const { run, b, orch } = setup();
   board.phase(orch, "p1", "go", { for: ["b"] });
   // board-split D54: the owing clock starts at b's own task, delivered
@@ -113,7 +113,7 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   board.deliver(b);
   const held = waitOf(b, 3000);
   const now = Date.now();
-  board.recordActivity(run.id, "b", act({ grewAt: now, openTool: { name: "Bash", target: "swarm wait --mentions", since: now, boardWait: true, shell: true }, background: { target: "npm test", since: now, outputGrewAt: now } }), new Date());
+  board.recordActivity(run.id, "b", act({ grewAt: now, openTool: { name: "Bash", target: "swarm wait --mentions", since: now, boardWait: true }, background: { target: "npm test", since: now, outputGrewAt: now } }), new Date());
   tick(run.id);
   const early = shown(run.id, "g/b");
   assert.equal(early.badge, null);
@@ -124,11 +124,10 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   tick2(board, run.id, lateAt, presence);
   const late = board.memberStates(run.id, lateAt).find((s) => s.member === "b")!;
   assert.equal(late.badge, null);
-  // its task with no growth past BUSY_MAX: stalled by the busy bound
-  const hungAt = new Date(now + BUSY_MAX_MS + 2000);
+  // 20 min on, its task silent, still in the wait: no badge
+  const hungAt = new Date(now + 20 * 60_000);
   tick2(board, run.id, hungAt, presence);
-  const hung = board.memberStates(run.id, hungAt).find((s) => s.member === "b")!;
-  assert.deepEqual([hung.badge?.name, hung.rule, hung.owes], ["stalled", "call", "p1"]);
+  assert.equal(board.memberStates(run.id, hungAt).find((s) => s.member === "b")!.badge, null);
   board.post(orch, "@b go");
   await held;
 });

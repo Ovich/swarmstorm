@@ -94,9 +94,9 @@ export interface Pack {
   busy?(member: Participant, ctx: PackCtx): boolean;
   /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
-  /** board-split D52: a stall of the pack's own at `t` (ms epoch), as the stalled badge's reason and since; V-26: or the
-   *  holder of a lock of the pack's the member waits on, which exempts its wait as a named lock's does; null: none. */
-  memberStall?(member: Participant, ctx: PackCtx, t: number): { reason: string; since: number } | { queuedBehind: string; lock: string } | null;
+  /** board-split V-26: the holder of a lock of the pack's the member is queued on, and the lock's name, so its wait
+   *  reads as a named lock's does; null: none. */
+  lockQueue?(member: Participant, ctx: PackCtx): { queuedBehind: string; lock: string } | null;
   beforeEnd?(member: Participant, ctx: PackCtx): Refusal | null;
   /** Inside the end's transaction: releases what the member held in the pack's tables; null: nothing to say. */
   onEnded?(member: Participant, ctx: PackCtx): EndedFreed | null;
