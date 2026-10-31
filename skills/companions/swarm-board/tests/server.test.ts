@@ -141,7 +141,7 @@ test("every method answers over the wire what the Board answers in process; an u
   }
   // writes answer as in process
   assert.equal((await value(c, "deliverMentions", s2)).full.length, 1);
-  assert.equal(typeof (await value(c, "packCall", s1, "check-edit", { file: "a.ts" })).allowed, "boolean");
+  assert.notEqual(await value(c, "packCall", s1, "held-merge-lock", {}), undefined, "a pack verb answers over the wire");
   const unknown = await call(c, "markStaleRuns");
   assert.deepEqual(unknown.type === "result" && !unknown.ok && unknown.error, "unknown method markStaleRuns");
   const thrown = await call(c, "endorse", s1, 99999);

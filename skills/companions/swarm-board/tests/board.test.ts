@@ -231,7 +231,7 @@ test("end releases a pending wait of that member, empty, at once", async () => {
   const t0 = Date.now();
   other.end(other.participant(s5.name)!);
   const d = await waiting;
-  assert.deepEqual(d, { full: [] });
+  assert.deepEqual(d, { full: [], ended: true });
   assert.ok(Date.now() - t0 < 1000, `released after ${Date.now() - t0} ms`);
 });
 
