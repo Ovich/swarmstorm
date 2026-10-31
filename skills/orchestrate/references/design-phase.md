@@ -19,28 +19,27 @@ changes nothing, `done design` at once.
 
 ## The design
 
-- **The format is the `orchestrate` skill's `references/design.md`**, read before the first line:
-  why and why not, before and after, the modules after, the flows as pseudo-code, state and its
-  writers, failure modes, the decisions, the guides. Every major area is a deep module, designed
-  as the `deepen-module` skill says; read against the code it lands in, cited `file:line`.
+- **The format is the short form of the `orchestrate` skill's `references/design.md`**, read
+  before the first line: goal, architecture (a diagram), modules (usage and signatures), flows,
+  open questions. Never the plan's nine sections. Every major area is a deep module, designed as
+  the `deepen-module` skill says, read against the code it lands in.
 - **Built on the board one section at a time, and only there**: no design file. In the format's
   order, the designer posts a section to `@orchestrator`, shown the way it is best understood: a diagram
   (the module map, a sequence, a state, through the `write-diagrams` skill), pseudo-code over the
-  entries, signatures, a table. You judge it and post `§<n> accepted` or what to change; **the
-  next section is posted only after that answer**, never ahead of it (sections crossing your
-  answers cost rounds). A section with nothing to say is one line, accepted with the next.
-- **§3 is one post per deep module**, the designer having read the `deepen-module` skill first,
-  after one post of the module map (a diagram: who imports whom, the imports that must not exist).
-  Each module's post: its usage (the code a caller writes), its entry as signatures without
-  bodies, what it hides, what stays outside, the `deepen-module` conditions each marked held or
-  broken, the gap from today.
-- **The accepted section posts are the design**: a task cites the post it implements
-  (`#<seq> §3`), quoting its entries word for word. A section changed later is posted again, its
+  entries, signatures, a table.
+- **Strict turns**: you answer a part naming its post, `#<seq> accepted` or what to change; the
+  designer posts the next part only in reply to that acceptance, never ahead of it, and ignores
+  any answer of yours naming an older post. You never revise an acceptance once the next part is
+  posted: a later problem is a change asked on the part where it shows.
+- **Modules are one post each**, after the architecture post, the designer having read the
+  `deepen-module` skill first.
+- **The accepted posts are the design**: a task cites the post it implements
+  (`#<seq>`), quoting its entries word for word. A part changed later is posted again, its
   change listed first, and the new post is the one cited. A body too long for one shell argument
   goes through `post --file` from a scratch file, deleted once posted: the board holds the design,
   never a file.
-- **Open decisions are rows**, each with its options and a recommendation; the designer settles
-  them with you on the board, never with another seat.
+- **Open questions are one line each**, with a recommendation; the designer settles them with
+  you on the board, never with another seat.
 
 ## Your duties
 
@@ -48,14 +47,16 @@ changes nothing, `done design` at once.
   modules expected, what is out), the charter's constraints, what the person asked in their
   words, and the branch the code is read on.
 - **Judge each section as it lands**: read it as a cold reader would (could a seat carry a task
-  out from it alone?), then post `§<n> accepted` or what to change; after the last section,
+  out from it alone?), then post `#<seq> accepted` or what to change; after the last part,
   `design accepted`. **A module's post is judged against the `deepen-module` skill**: every export
   a named caller needs, one entry per case the callers are in, the conditions held; a broken
   condition goes back, unless a decision row accepts it and says what is owed. You accept it; the person is asked only when a decision is theirs (outside your
   authority) or changes what they asked.
 - **Cut the protocol's first tasks from the design**: one task per entry or module, each quoting
-  its entry word for word and citing the section post and decision ids (`#<seq> §3`, `D3`), with
-  its done-when and its boundary.
+  its entry word for word and citing the module's post (`#<seq>`), with its done-when and its
+  boundary. **The task carries the text** (the signatures, the usage, what the flow needs), never
+  the post number alone: a member reads only what is addressed to it, and no verb reads the
+  thread. A design changed after a task went out: post that member a new task, quoted again.
 - **The design reopens** only when a judged finding changes an accepted entry or decision, or you
   judge the design wrong: a short `design <k>` on those rows alone, before the protocol's next
   round. A finding inside the design is a task as usual.
@@ -64,4 +65,4 @@ changes nothing, `done design` at once.
 
 | phase | text |
 |---|---|
-| design | `design <k>: the design message is posted to the designer. Designer: post the design one section at a time, in the design format's order, each as a diagram, pseudo-code or table, and wait for the section's accepted before the next; done design once the design is accepted. Every other seat: on call, change nothing, done design now.` |
+| design | `design <k>: the design message is posted to the designer. Designer: post the design's short form one part at a time (goal, architecture, modules, flows, open questions), each as a diagram, pseudo-code or signatures, and post the next part only in reply to its acceptance; done design once the design is accepted. Every other seat: on call, change nothing, done design now.` |

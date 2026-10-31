@@ -56,6 +56,21 @@ The project's guides that apply: the shipped `guide-*` skills and the project's 
 has no decision yet is an open row in Decisions.
 ```
 
+## The short form, on the board
+
+A run's design phase uses this form, never the nine sections: the architecture, shown. Each part
+is a post, judged before the next.
+
+1. **Goal**: two or three lines: what changes, what is out.
+2. **Architecture**: the module map as a diagram (through the `write-diagrams` skill): who imports
+   whom, before → after when it changes, the imports that must not exist.
+3. **Modules**: one post per deep module, as the `deepen-module` skill designs it: its usage (the
+   code a caller writes), its entry as signatures without bodies, what it hides; a condition it
+   breaks, one line.
+4. **Flows**: the main flow as a sequence diagram or pseudo-code over the entries, the failure
+   branches that matter on it.
+5. **Open questions**: only if any, one line each, with a recommendation.
+
 **A task quotes the entries it implements word for word**, and cites the decisions it carries
-(on the board, the section post `#<seq> §3` and `D3`; in a plan, `<topic>#D3`); an entry changed
+(on the board, the module's post `#<seq>`; in a plan, the decision `<topic>#D3`); an entry changed
 later is a new decision.
