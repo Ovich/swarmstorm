@@ -260,7 +260,7 @@ export function phaseCountText(p: PhaseCount): string {
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };
 /** What the conversation shows: one run (null = All), or the member followed. */
 export type Pick = { run: RunId | null; follow: string | null };
-export type ItemKind = "message" | "flag" | "urgent" | "held" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "liveness" | "recovered" | "gone";
+export type ItemKind = "message" | "flag" | "urgent" | "held" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "gone";
 export type Tier = "act" | "wait" | "decided" | "talk";
 export type Item =
   | { kind: ItemKind; tier: Tier; seq: number; at: string; run: RunId; from: string; word: string | null; tip: string | null; text: string; joined: boolean; state: string | null; about: string | null }
@@ -284,28 +284,20 @@ export const TIPS = {
   joined: "Joined: a member arrived on the board and took its seat.",
   ended: "Ended: the member left the board and its claims were released.",
   stalled: "Idle: no member's token counter has moved for this long. The orchestrator is told: it opens the next phase or asks the member who owes a move. The row keeps only the latest count and leaves once anything happens.",
-  liveness: "Liveness: the board cannot read this member's transcript, so the stall check cannot see whether it works.",
-  stalledMember: "Stalled: this member owes a move it is not making. The rule says why (turn ended, in turn with no line, a background task, a long call, waiting while owing a phase), and the orchestrator is told the move that reaches it.",
-  linkDown: "Link down: this member's link to the board is lost, but its transcript still grows, so it is working. The orchestrator asks it to restart its link.",
-  recovered: "Recovered: a member the board had told lost reads alive again. Its seat needs no new agent.",
-  gone: "Lost: this member's agent finished without ending, or its link is lost and its transcript has stopped growing. The orchestrator dispatches it again or closes its seat.",
+  stalledMember: "Stalled: this member is working (link up, owing work) but has made no progress, or holds a lock others wait on too long; the orchestrator is told the move that reaches it.",
+  gone: "Lost: this member's link is down while it still owes work (a member owing nothing whose link is down is away, resumable); the orchestrator dispatches a fresh agent into its seat or ends it.",
 } as const;
 
 /** What a stall says, by its rule (idea 1, rule 6): the word on the row. */
 const STALL_WORDS: Record<string, string> = {
-  ended: "turn ended",
-  "in-turn": "in turn, no line",
-  background: "background task",
-  call: "long call",
-  owing: "waiting, owes its part",
+  silent: "no progress",
+  lock: "lock held too long",
 };
 
 /** The stall rule a `stalled` event stores in its data, null for one written before the rules. */
 const stallRuleOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.rule : null);
 /** The member a rule-bearing `stalled` names, null for one written before the rules. */
 const stalledMemberOf = (e: SnapshotEvent): string | null => (e.meta && "rule" in e.meta ? e.meta.member : null);
-/** A `liveness` that tells of a lost link while the transcript grows, not of a transcript that cannot be read. */
-const isLinkDown = (e: SnapshotEvent): boolean => !!e.meta && "linkDown" in e.meta;
 
 /** A board event's tip, by its word or its stored name. */
 const EVENT_TIPS: Record<string, string> = {
@@ -438,10 +430,6 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     if (runSilent) return said("stalled", "act", `◷ run stalled · ${runSilent}`, TIPS.stalled);
     return { ...said("stalled", "wait", "◷ idle", TIPS.stalled), text: idleText(e.body) };
   }
-  if (e.kind === "event" && e.event === "liveness") {
-    return isLinkDown(e) ? said("liveness", "wait", `liveness · ${who}link down`, TIPS.linkDown, "link-down") : said("liveness", "wait", `liveness · ${who}blind`, TIPS.liveness);
-  }
-  if (e.kind === "event" && e.event === "recovered") return said("recovered", "decided", `↺ ${who}recovered`, TIPS.recovered);
   // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
   if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${who}${e.event}`, TIPS.gone);
   if (isQuiet(e)) {
@@ -485,7 +473,7 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   const items: Item[] = [];
   /** A rule-bearing stall's seq, to the member it names. */
   const stalledMembers = new Map<number, string>();
-  /** A member event's seq (liveness, gone, recovered), to the member `<group>/<id>` it tells of. */
+  /** A member event's seq (stalled, lost), to the member `<group>/<id>` it tells of. */
   const toldOf = new Map<number, string>();
   for (const e of [...snap.events].sort((a, b) => a.seq - b.seq)) {
     const run = runOf(snap, e);
@@ -519,21 +507,13 @@ export function conversation(snap: BoardSnapshot, pick: Pick): Item[] {
   const saidSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.run === i.run && splitMember(x.from).seat === member);
   // V4, plan D55: a stall has passed once the board's badge for the member is no longer stalled; aiview derives none
   const groupOf = new Map(snap.runs.map((r) => [r.run, r.group]));
-  const livenessOf = new Map(snap.roster.map((r) => [r.member, r.liveness]));
   const badgeOf = new Map(snap.roster.map((r) => [r.member, r.badge ?? null]));
   const stallPassed = (i: Item, member: string): boolean => badgeOf.get(`${groupOf.get(i.run)}/${member}`)?.name !== "stalled";
-  // F9: a link-down row leaves once the member's link reads it again after the row; a gone row once a
-  // `recovered` of the member follows, or its liveness reads anything but gone
-  const linkBack = (i: Item, member: string): boolean => {
-    const aliveAt = livenessOf.get(member)?.aliveAt;
-    return typeof aliveAt === "number" && aliveAt > Date.parse(i.at);
-  };
-  const recoveredSince = (i: Item, member: string): boolean => items.some((x) => x.seq > i.seq && x.kind === "recovered" && toldOf.get(x.seq) === member);
-  const goneHolds = (i: Item, member: string): boolean => !recoveredSince(i, member) && badgeOf.get(member)?.name === "lost";
+  // a lost row stays while the board's badge for the member says lost
+  const lostHolds = (member: string): boolean => badgeOf.get(member)?.name === "lost";
   return items.filter((i) => {
     const member = toldOf.get(i.seq);
-    if (i.kind === "liveness" && i.state === "link-down" && member) return !linkBack(i, member);
-    if (i.kind === "gone" && member) return goneHolds(i, member);
+    if (i.kind === "gone" && member) return lostHolds(member);
     if (i.kind !== "stalled") return true;
     const stalled = stalledMembers.get(i.seq);
     if (!stalled) return i === last;
@@ -554,16 +534,15 @@ export function pauseChip(run: RunSummary): PauseChip | null {
   return { label: pause.person ? "On you" : "Paused", reason: pause.text || null };
 }
 
-/** The board's events that tell of one member (stalled, liveness, gone, recovered): its member in the event's data or
+/** The board's events that tell of one member (stalled, lost, an older board's gone): its member in the event's data or
  *  at the head of its body (`gone <group>/<id>: …`), so following that member keeps them (V5). */
-const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "liveness", "lost", "gone", "recovered"]);
+const MEMBER_EVENTS: ReadonlySet<string> = new Set(["stalled", "lost", "gone"]);
 /** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
 function memberEventMember(e: SnapshotEvent, run: RunSummary): string | null {
   if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;
   // board-split#D51: the board names it (an alarm served as the board's carries its subject)
   if (e.subject) return e.subject;
   if (e.meta && "rule" in e.meta) return `${run.group}/${e.meta.member}`;
-  if (e.meta && "linkDown" in e.meta) return e.meta.linkDown;
   return new RegExp(`^${e.event} (\\S+?):? `).exec(e.body)?.[1] ?? null;
 }
 const isAboutMember = (e: SnapshotEvent, run: RunSummary, member: string): boolean => memberEventMember(e, run) === member;

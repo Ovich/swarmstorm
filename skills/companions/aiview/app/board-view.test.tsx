@@ -468,7 +468,7 @@ test("under a closed run, no claims row", () => {
 // ── MergeLock ────────────────────────────────────────────────────────────────────
 
 test("the merge lock sits at the tab row's end, free or held, with its tip on hover and focus (D22)", () => {
-  show([APP], null, [{ ...LIVE, lock: { holder: "refresh-tokens/S4", since: LIVE.events[0].at } }]);
+  show([APP], null, [{ ...LIVE, lock: { holder: "refresh-tokens/S4", since: LIVE.events[0].at, waiters: [] } }]);
   const lock = tabs().getByText("merge lock").closest('[data-component="MergeLock"]') as HTMLElement;
   expect(lock.tagName).toBe("BUTTON");
   expect(lock.dataset.tip).toMatch(/^Merge lock: one member merges at a time, across every run\./);

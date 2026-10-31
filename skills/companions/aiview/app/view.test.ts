@@ -116,37 +116,26 @@ describe("conversation: what an item is (D8, D16)", () => {
 
   test("idea 1: a stalled with a rule renders as stalled with its rule's word, per member, until that member speaks (I2)", () => {
     const ev = (member: string, rule: string, body: string) => item(1, "alpha/orchestrator", body, { kind: "event", event: "stalled", meta: { rule, member } } as Partial<SnapshotEvent>);
-    const a = ev("S1", "ended", 'stalled alpha/S1: turn ended; last: "done"; no phase open');
-    const b = ev("S9", "owing", 'stalled alpha/S9: waiting, not done p1; last: "x"; no phase open');
+    const a = ev("S1", "silent", 'stalled alpha/S1: no progress; last: "done"; no phase open');
+    const b = ev("S9", "lock", "stalled alpha/S9: holds merge-lock too long");
     const live = conversation(board(RUNS, badged({ "alpha/S1": "stalled", "alpha/S9": "stalled" }), [a, b]), { run: 1, follow: null });
-    expect(live.map((i) => [i.kind, wordOf(i)])).toEqual([["stalled", "◷ S1 stalled · turn ended"], ["stalled", "◷ S9 stalled · waiting, owes its part"]]);
+    expect(live.map((i) => [i.kind, wordOf(i)])).toEqual([["stalled", "◷ S1 stalled · no progress"], ["stalled", "◷ S9 stalled · lock held too long"]]);
     expect("tier" in live[0] ? live[0].tier : null).toBe("act");
     const after = conversation(board(RUNS, badged({ "alpha/S1": "stalled", "alpha/S9": "stalled" }), [a, b, item(1, "alpha/S1", "back at it")]), { run: 1, follow: null });
     expect(after.map((i) => i.kind)).toEqual(["stalled", "message"]);
   });
 
-  test("idea 1: a link-down liveness reads link down; a no-transcript liveness reads blind (V2)", () => {
-    const down = item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
-    const blind = item(1, "alpha/orchestrator", "no transcript found for alpha/S1: its state is presence only", { kind: "event", event: "liveness" } as Partial<SnapshotEvent>);
-    const items = conversation(board(RUNS, ROSTER, [down, blind]), { run: 1, follow: null });
-    expect(items.map(wordOf)).toEqual(["liveness · S1 link down", "liveness · blind"]);
-  });
-
-  test("idea 1: recovered and gone each render as their own row (I2)", () => {
+  test("idea 1: an older board's gone renders as its own row while the badge says lost (I2)", () => {
     const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as unknown as Partial<SnapshotEvent>);
-    const back = item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
-    // F9: a gone row leaves once its recovered follows, so each is rendered on its own here
     const alone = conversation(board(RUNS, badged({ "alpha/S1": "lost" }), [gone]), { run: 1, follow: null });
     expect(alone.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ S1 gone"]]);
-    const items = conversation(board(RUNS, ROSTER, [gone, back]), { run: 1, follow: null });
-    expect(items.map((i) => [i.kind, wordOf(i)])).toEqual([["recovered", "↺ S1 recovered"]]);
   });
 
   test("D51 (U-F11): a board alarm is the board's, about its subject: its header names the member, following the orchestrator leaves it out", () => {
-    const alarm = item(1, "swarm", "stalled alpha/S9: background open 15 min", { kind: "event", event: "stalled", meta: { rule: "background", member: "S9" }, subject: "alpha/S9" } as Partial<SnapshotEvent>);
+    const alarm = item(1, "swarm", "stalled alpha/S9: no progress for 15 min", { kind: "event", event: "stalled", meta: { rule: "silent", member: "S9" }, subject: "alpha/S9" } as Partial<SnapshotEvent>);
     const said = item(1, "alpha/orchestrator", "@S1 rebase");
     const all = conversation(board(RUNS, badged({ "alpha/S9": "stalled" }), [alarm, said]), { run: 1, follow: null });
-    expect(all.map((i) => [i.kind, i.from, wordOf(i)])).toEqual([["stalled", "swarm", "◷ S9 stalled · background task"], ["message", "alpha/orchestrator", null]]);
+    expect(all.map((i) => [i.kind, i.from, wordOf(i)])).toEqual([["stalled", "swarm", "◷ S9 stalled · no progress"], ["message", "alpha/orchestrator", null]]);
     expect(conversation(board(RUNS, badged({ "alpha/S9": "stalled" }), [alarm, said]), { run: 1, follow: "alpha/orchestrator" }).map((i) => i.kind)).toEqual(["message"]);
     expect(conversation(board(RUNS, badged({ "alpha/S9": "stalled" }), [alarm, said]), { run: 1, follow: "alpha/S9" }).map((i) => i.kind)).toEqual(["stalled"]);
   });
@@ -438,25 +427,8 @@ test("idea 2, B12: the run header's chip says On you for a pause --person, Pause
   expect(pauseChip(run(1, "alpha", "AL"))).toBeNull();
 });
 
-describe("idea 2, B13 (F9): a member's link-down and gone rows leave once it is back", () => {
-  const AT_MS = Date.parse(AT);
-  const withLiveness = (liveness: object) => ROSTER.map((r) => (r.member === "alpha/S1" ? { ...r, liveness } : r)) as SnapshotMember[];
-  const down = () => item(1, "alpha/orchestrator", "liveness alpha/S1: link lost, transcript still growing: restart its link", { kind: "event", event: "liveness", meta: { linkDown: "alpha/S1" } } as Partial<SnapshotEvent>);
-  const gone = () => item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as unknown as Partial<SnapshotEvent>);
-  const back = () => item(1, "alpha/orchestrator", "recovered alpha/S1: working", { kind: "event", event: "recovered" } as Partial<SnapshotEvent>);
+describe("idea 2, B13 (F9): a member's lost row leaves once its badge does", () => {
   const kinds = (roster: SnapshotMember[], events: SnapshotEvent[]) => conversation(board(RUNS, roster, events), { run: 1, follow: null }).map((i) => i.kind);
-
-  test("a link-down row stays while the member's link has not been heard since; it leaves once it has", () => {
-    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS - 1000 }), [down()])).toEqual(["liveness"]);
-    expect(kinds(withLiveness({ state: "working", aliveAt: AT_MS + 60_000 }), [down()])).toEqual([]);
-  });
-
-  // plan D55: the row holds on the board's badge alone; an older board's liveness words keep none
-  test("a gone row stays while the board's badge says lost; a recovered after it, or no badge, takes it away", () => {
-    expect(kinds(badged({ "alpha/S1": "lost" }), [gone()])).toEqual(["gone"]);
-    expect(kinds(badged({ "alpha/S1": "lost" }), [gone(), back()])).toEqual(["recovered"]);
-    expect(kinds(withLiveness({ state: "gone" }), [gone()])).toEqual([]);
-  });
 
   // board-split#D36: the board's `lost` event and badge; the badge, when sent, says whether the member is still lost
   test("a lost row stays while the board's badge says lost, and leaves once the badge is gone", () => {

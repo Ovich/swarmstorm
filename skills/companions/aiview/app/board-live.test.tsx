@@ -1,6 +1,6 @@
 // The board page as a browser gets it: the real useBoard over fetch and /events (stood in for),
 // answered a body shaped as /api/run answers it. A phase event of a closed run, picked by the URL,
-// draws a separator; the board server's liveness events draw rows of their own; the agent strip holds the
+// draws a separator; a stall something came after leaves the thread; the agent strip holds the
 // orchestrator as one of its cards, each with its token counter. And a tab of an older build reloads.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -78,7 +78,6 @@ const answer = () => {
   const events = [
     ev("orchestrator", "run 32 opened: brainstorm letter4, Letter run 32", "event", "opened"),
     ev("writer", "joined: the writer", "event", "joined"),
-    ev("orchestrator", "liveness: no readable transcript for letter4/checker, stall check blind for it", "event", "liveness", [`${G}/orchestrator`]),
     ev("orchestrator", "phase research: the researcher posts the dossier", "event", "phase", [`${G}/*`], { phase: "research" }),
     ev("writer", "Here is the dossier.", "msg", null),
     ev("writer", "done research (1/2)", "event", "done", [`${G}/orchestrator`], { phase: "research" }),
@@ -134,13 +133,10 @@ test("a closed run's phase events, as /api/run sends them, draw one separator ea
   expect(convo().queryAllByText(/^phase research:/)).toHaveLength(0);
 });
 
-test("liveness draws a row of its own; a stall something came after has passed and leaves the thread", async () => {
+test("a stall something came after has passed and leaves the thread", async () => {
   render(<BoardView repos={[REPO]} run={32} />);
-  await waitFor(() => expect(document.querySelector('[data-kind="liveness"]')).not.toBeNull());
+  await waitFor(() => expect(document.querySelector(".phase")).not.toBeNull());
   expect(document.querySelector('[data-kind="stalled"]')).toBeNull();
-  const blind = document.querySelector('[data-kind="liveness"]')!;
-  expect(blind.textContent).toMatch(/liveness · blind/);
-  expect(blind.textContent).toMatch(/letter4\/checker/);
 });
 
 test("the agent strip: the orchestrator is its first card; each card shows its counter, flat past the run's threshold marked, an unreadable one said", async () => {
