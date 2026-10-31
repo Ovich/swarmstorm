@@ -9150,16 +9150,6 @@ var shellWord2 = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`]
 var fwd = (p) => p.split("\\").join("/");
 var projectNameOf = () => projectNamer({ toolRoot: toolRoot(), cwd: process.cwd(), fallback: projectFolderName });
 var self = () => [...HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord2(fwd(HOME_OVERRIDE))}`] : [], "node", shellWord2(process.argv[1].replace(/\\/g, "/"))];
-var linkToldFile = (member) => path13.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
-var linkTold = (member) => fs13.existsSync(linkToldFile(member));
-var markLinkTold = (member) => {
-  try {
-    fs13.mkdirSync(path13.dirname(linkToldFile(member)), { recursive: true });
-    fs13.writeFileSync(linkToldFile(member), "");
-  } catch {
-  }
-};
-var clearLinkTold = (member) => fs13.rmSync(linkToldFile(member), { force: true });
 var startLinkLine = (member) => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord2)].join(" "));
 var waitCommand2 = (name, foreground = false) => WORDING.wait(self().join(" "), shellWord2(name), foreground ? FOREGROUND_WAIT_MS : void 0);
 var pausedLine2 = async (p) => pausedLine(await situation(p));
@@ -9217,10 +9207,7 @@ var emitHeard = async (p, json, result) => {
   const a = answer({ verb: "heard", lines }, await situation(p));
   emit({ ...json, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
     for (const l of lines) console.log(l);
-    if (linkToStart && !linkTold(linkToStart)) {
-      console.log(startLinkLine(linkToStart));
-      markLinkTold(linkToStart);
-    }
+    if (linkToStart) console.log(startLinkLine(linkToStart));
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
@@ -9883,7 +9870,6 @@ var relaunchLink = async () => {
 if (args.verb === "link") {
   try {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
-    clearLinkTold(member);
     const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     if (stop.why === "new version") process.exit(await relaunchLink());
     if (stop.why === "pipe taken") console.log(WORDING.linkRunning(member.name));
@@ -9904,10 +9890,7 @@ if (args.verb === "serve") {
   try {
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
-    if (linkToStart && !linkTold(linkToStart)) {
-      (asJson ? console.error : console.log)(startLinkLine(linkToStart));
-      markLinkTold(linkToStart);
-    }
+    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
   } catch (e) {
     const said = e.message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);

@@ -288,18 +288,6 @@ const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(
 /** The link line of join and open, before any listener or wait line (D32, swarm-relay D33, AGENTS rule 10): the member's link, run as its agent's own
  *  background task, so a stopped agent takes it down; a verb that finds none spawns one detached outside a harness session,
  *  and inside one ends on this line (D39). */
-/** V11: where the board marks that a member was told to start its link: one file per member and run. */
-const linkToldFile = (member: BoardMember): string => path.join(DATA_ROOT, "links", "told", `${member.run}-${member.name.replace(/[^\w.-]/g, "_")}`);
-const linkTold = (member: BoardMember): boolean => fs.existsSync(linkToldFile(member));
-const markLinkTold = (member: BoardMember): void => {
-  try {
-    fs.mkdirSync(path.dirname(linkToldFile(member)), { recursive: true });
-    fs.writeFileSync(linkToldFile(member), "");
-  } catch {
-    // a mark not written: the line is told again next call, never lost
-  }
-};
-const clearLinkTold = (member: BoardMember): void => fs.rmSync(linkToldFile(member), { force: true });
 const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord)].join(" "));
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
 const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
@@ -387,10 +375,7 @@ const emitHeard = async (p: Participant, json: object, result: string | string[]
   emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
-    if (linkToStart && !linkTold(linkToStart)) {
-      console.log(startLinkLine(linkToStart));
-      markLinkTold(linkToStart);
-    }
+    if (linkToStart) console.log(startLinkLine(linkToStart));
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
@@ -1227,8 +1212,6 @@ if (args.verb === "link") {
   // found none (D32): not a member's verb, so not in the usage
   try {
     const member = { name: args.flag("--as") ?? "", run: Number(args.flag("--run")) };
-    // V11: a link that starts clears its member's told mark, so a link lost later is told once more
-    clearLinkTold(member);
     const stop = await runLink({ dataRoot: DATA_ROOT, member: member.name, run: member.run, binding: bindingOf(member) });
     // plan D56 (amended): a rebuild met: the same command again, through the launcher, loads the new bundle; this process
     // stays its parent so the harness's background task lives on, and ends with it
@@ -1255,12 +1238,9 @@ if (args.verb === "serve") {
     // every verb reaches the board through the server, started on demand (D6, D19); the poller reads the store itself
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
-    // D39: the call went straight to the server; the agent starts its own link (on stderr under --json, which stays parseable)
-    // V11: once per member, not on every call: told until its link starts, which clears the mark
-    if (linkToStart && !linkTold(linkToStart)) {
-      (asJson ? console.error : console.log)(startLinkLine(linkToStart));
-      markLinkTold(linkToStart);
-    }
+    // D39: the call went straight to the server; the agent starts its own link (on stderr under --json, which stays
+    // parseable). On every call while the link is down: unseen, the member reads away or lost while it works
+    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);

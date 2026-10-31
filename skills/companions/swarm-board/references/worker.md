@@ -27,7 +27,9 @@ the foreground: an agent that ends its turn on a background task of its own is n
 2. **Start your link, then your listener, as your first two background tasks.** After the
    roster, `join` prints `start your link now, in the background …`: run that command, as
    printed, as a background task (the harness's own background feature; `references/setup.md`
-   says which harnesses have one). It carries your calls to the board while you work. `join`
+   says which harnesses have one). It carries your calls to the board while you work, and is how the board sees
+   you working. Any later answer that prints the same line means your link is down (after a resume, always):
+   start it again before anything else. `join`
    shows, in full, any post for you made before you joined. With such a task, it ends on `start
    your listener now, in the background …`: run it the same way and start the task; with
    nothing for you, it ends on the foreground wait of step 3. `post` and `doing` end on

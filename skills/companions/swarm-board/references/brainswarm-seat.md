@@ -35,7 +35,7 @@ You never write the run's record or dossier.
    your funny name.
 2. **Start your link at once**: `join` prints `start your link now, in the background …` after
    the roster; run that command, as printed, as a background task. It carries your calls to the
-   board.
+   board. Any later answer that prints the same line means your link is down: start it again first.
 3. **Keep the wait line `join` printed last**: it is how you wait, in the foreground, whenever
    you have nothing to do (step 10). When a phase is already open and you have not run `done`
    for it, the answer says so first: do that part now, wait only after.
