@@ -5,14 +5,12 @@
 // The client loads only when a reader opens: the board page imports this module for its types and
 // pure helpers, and a browser cannot evaluate the client's node modules.
 import type { BoardSnapshot, RepoSummary } from "../board/board.ts";
-import type { Stats, StatsScope } from "../board/board.ts";
 import type { Frame, RpcMethod } from "../wire.ts";
 
 export type { BoardSnapshot, CoreMemberState, LockTurn, Liveness, Phase, PhaseProgress, RepoSummary, RunSummary, SeatState, SnapshotMember, SnapshotMemberState, SnapshotEvent } from "../board/board.ts";
 // The pure helpers the board page needs, so the page too reaches swarm through this door (D18).
 export { planCode, nameHandle, parseMentions, BOARD_AUTHOR } from "../board/mentions.ts";
 export type { Kind } from "../board/kinds.ts";
-export type { Stats, StatsScope, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns, Interval, Mark, QuestionStats, BrainstormRunStats } from "../board/board.ts";
 
 /** board-split D47: a project as aiview reads it, the one word; `RepoSummary` is its older name, kept for readers built on it. */
 export type ProjectSummary = RepoSummary;
@@ -24,8 +22,6 @@ export interface BoardReader {
   projects(): Promise<ProjectSummary[]>;
   /** Rejects "no project <key>", as Board.snapshot() throws. */
   snapshot(repo: string): Promise<BoardSnapshot>;
-  /** As Board.stats: the figures of the scope's runs. */
-  stats(scope: StatsScope): Promise<Stats>;
   /** The listener hears the repository of each commit, and every repository once after a reconnect. Returns the unsubscribe. */
   onChange(listener: (repo: string) => void): () => void;
   close(): void;
@@ -35,7 +31,7 @@ export interface BoardReader {
 const RECONNECT_MS = 200;
 
 /** The calls a reader makes: reading only, never a write. */
-const READING: readonly RpcMethod[] = ["repos", "snapshot", "stats"];
+const READING: readonly RpcMethod[] = ["repos", "snapshot"];
 
 /** Opens the reader on the data home's board server, started first when none answers, as the CLI
  *  does. `swarmEntry`: the swarm launcher the server is started and versioned from. */
@@ -109,7 +105,6 @@ export async function openBoardReader(opts: { dataRoot: string; swarmEntry?: str
     repos: () => call("repos", []),
     projects: () => call("repos", []),
     snapshot: (repo) => call("snapshot", [repo]),
-    stats: (scope) => call("stats", [scope]),
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

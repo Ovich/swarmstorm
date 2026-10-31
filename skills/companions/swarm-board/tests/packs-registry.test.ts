@@ -27,7 +27,6 @@ test("registry: each (kind, role) row", () => {
 test("registry: the code pack lists its verbs and carries its pack methods (D15, D19, D38)", () => {
   const code = registry.forMember("task", null).pack!;
   assert.deepEqual(code.verbs.map((v) => v.name), ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"]);
-  assert.equal(typeof code.stats?.ofRun, "function");
   for (const method of ["alsoFor", "defaultParties", "busy", "openTables", "run", "beforeEnd", "afterEnd"] as const) assert.equal(typeof code[method], "function", method);
 });
 

@@ -1,9 +1,7 @@
 // The board's top row (D7, prototype #643): Archive first, opening the closed runs, then one tab per open run, an
 // archived run picked as a tab with ×, and the merge lock at the row's end, always visible.
-// Analytics, beside the lock, opens the across-runs view; while it shows, no run tab is pressed.
 import type { BoardSnapshot } from "../../../../../swarm-board/src/client/reader.ts";
 import { phaseCountText, runHue, seatCount, type RunId, type RunTab } from "../../../lib/board/view.ts";
-import { AnalyticsButton } from "./AnalyticsButton.tsx";
 import { MergeLock } from "./MergeLock.tsx";
 
 /** A tab's count, as words: a plan's slices merged of its slices, a brainstorm's or a task's seats (rule 12); null for none. */
@@ -53,8 +51,6 @@ export function RunTabs({
   menuOpen,
   onMenu,
   onPick,
-  analytics,
-  onAnalytics,
   closedCount = 0,
 }: {
   tabs: RunTab[];
@@ -65,9 +61,6 @@ export function RunTabs({
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   onPick: (run: RunId | null) => void;
-  /** The across-runs view is shown. */
-  analytics: boolean;
-  onAnalytics: () => void;
   /** How many closed runs the archive holds, on its pill. */
   closedCount?: number;
 }) {
@@ -90,10 +83,10 @@ export function RunTabs({
         </svg>
       </button>
       {tabs.map((t) => (
-        <RunTabButton key={t.run} tab={t} picked={!analytics && pick === t.run} onPick={() => onPick(t.run)} />
+        <RunTabButton key={t.run} tab={t} picked={pick === t.run} onPick={() => onPick(t.run)} />
       ))}
       {archived && (
-        <span className="run archived" data-component="ArchivedTab" aria-pressed={!analytics && pick === archived.run} title={tabTip(archived, "archived")}>
+        <span className="run archived" data-component="ArchivedTab" aria-pressed={pick === archived.run} title={tabTip(archived, "archived")}>
           <StateDot state="closed" />
           <Code tab={archived} />
           <span className="t">{archived.title}</span>
@@ -104,7 +97,6 @@ export function RunTabs({
       )}
       </span>
       <span className="lockwrap">
-        <AnalyticsButton pressed={analytics} onPress={onAnalytics} />
         <MergeLock lock={lock} history={lockHistory} />
       </span>
     </nav>

@@ -1,7 +1,7 @@
 // The conversation's filters (SL11, prototype #643): one quiet row of kind chips, one at a time,
 // counted within what the pick shows, then File ▾, a searchable menu of every file the items are
 // about. Escape, × or a click outside closes the menu.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { basename, conversationFiles, filterCounts, type Item, type KindFilter, type Narrow } from "../../../lib/board/view.ts";
 
 const KINDS: { kind: KindFilter; label: string }[] = [
@@ -56,8 +56,7 @@ function FileMenu({ files, onPick, onClose }: { files: { path: string; count: nu
   );
 }
 
-/** `end`: what sits at the toolbar's right end, a run's Analytics button. */
-export function ConversationFilters({ items, narrow, onNarrow, end = null }: { items: Item[]; narrow: Narrow; onNarrow: (n: Narrow) => void; end?: ReactNode }) {
+export function ConversationFilters({ items, narrow, onNarrow }: { items: Item[]; narrow: Narrow; onNarrow: (n: Narrow) => void }) {
   const [open, setOpen] = useState(false);
   const counts = filterCounts(items);
   const files = conversationFiles(items);
@@ -94,7 +93,6 @@ export function ConversationFilters({ items, narrow, onNarrow, end = null }: { i
           />
         )}
       </span>
-      {end && <span className="fend" role="group" aria-label="This run">{end}</span>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 ---
 name: swarm-board
-description: "Use when agents run together on the project's swarm board: a plan, a task swarm or a brainswarm, as its orchestrator or a member whose brief names a run, or when a run on the board has to be opened, read, interrupted or closed, or how the runs went has to be read from outside them. Produces nothing but the run's state on the board, or its figures. Not for documents (aiview)."
+description: "Use when agents run together on the project's swarm board: a plan, a task swarm or a brainswarm, as its orchestrator or a member whose brief names a run, or when a run on the board has to be opened, read, interrupted or closed. Produces nothing but the run's state on the board. Not for documents (aiview)."
 ---
 
 # swarm-board: the board
@@ -115,7 +115,3 @@ installed.
 - **Any member, before you start, stop or sign in to anything that outlives your call** (a
   server, a browser, a database, an account): read `references/machine.md`, the shared machine's
   rules and its locks.
-- **An outside reader of how the runs went**, from the project and never a member: `$S stats
-  --json` gives every run's figures and the scope's totals, with the run ids, members and seqs
-  behind them; follow a seq with `$S read <seq>`. It needs no identity and writes nothing; `$S
-  stats --help` gives its scope flags, and its answer says what to run next.

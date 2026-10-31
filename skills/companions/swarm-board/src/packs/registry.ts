@@ -2,9 +2,6 @@
 // verify setting, and the only place a kind or a role is looked up for it. A new pack is a folder under `src/packs/`
 // and a line in PACKS; a new kind or role is a row in MEMBER_ROWS.
 import { profileOf } from "../board/kinds.ts";
-import type * as CoreStats from "../board/stats.ts";
-import type { StatsFigures } from "../board/stats.ts";
-import type { CodeMemberStats, CodeRunStats, CodeTotals, FileAcrossRuns, PlanRunStats, SharedFile } from "./code/stats.ts";
 import { codePack } from "./code/index.ts";
 import type { EventDef } from "../board/events.ts";
 import type { CodeEventName } from "./code/events.ts";
@@ -35,15 +32,6 @@ export const registry = {
     const known = profileOf(kind).kind;
     const own = role === null ? undefined : MEMBER_ROWS.find((r) => r.kind === known && r.role === role);
     return rowOf(own ?? MEMBER_ROWS.find((r) => r.kind === known && r.role === null)!);
-  },
-  /** The part of `swarm stats` a run of `kind` carries: its members' pack's alone, none for a run with no pack (V-19, D66). */
-  statsFiguresFor(kind: string): StatsFigures[] {
-    const stats = registry.forMember(kind, null).pack?.stats;
-    return stats ? [stats] : [];
-  },
-  /** Every pack's part of `swarm stats` (D15), in PACKS' order. */
-  statsFigures(): StatsFigures[] {
-    return Object.values(PACKS).flatMap((p) => (p.stats ? [p.stats] : []));
   },
   /** Why a join declaring files is refused in a run of `kind`, whose seats have no pack to hold them. */
   declaredRefused(kind: string): string {
@@ -91,15 +79,7 @@ export const registry = {
   },
 };
 
-// `swarm stats` as it reads with every pack's figures (D15): the core's shape and each pack's fields, the types the
-// CLI and aiview read the JSON by.
-export type MemberStats = CoreStats.MemberStats & CodeMemberStats;
-export type RunStats = Omit<CoreStats.RunStats, "members"> & CodeRunStats & { members: MemberStats[] };
-export type Totals = Omit<CoreStats.Totals, "series"> &
-  CodeTotals & { series: CoreStats.Totals["series"] & Record<"slicesMerged" | "sliceTimeP50" | "lockWaitP50" | "sharedAgreed" | "flags" | "conflicts", (number | null)[]> };
 export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile } from "./code/snapshot.ts";
-export type Stats = Omit<CoreStats.Stats, "runs" | "totals" | "files"> & { runs: RunStats[]; totals: Totals; files: FileAcrossRuns[] };
-export type { FileAcrossRuns, PlanRunStats, SharedFile };
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
 export type { HeldMergeLock } from "./code/claims.ts";
 /** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */

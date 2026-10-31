@@ -22,23 +22,6 @@ const W3 = `${GROUP}/w3`;
 /** A commit's sha, full or short, moves with every run's timestamps. */
 const withoutShas = (text: string): string => text.replace(/\b[0-9a-f]{7,40}\b/g, "<sha>");
 
-/** Stats' figures that move with the clock (keys ending Ms or At, and the series of times), the lock-wait
- *  histogram's bins by its total, and the store's repository path. */
-function stableStats(json: string): string {
-  const timed = /(Ms|At|P50|P90)$/;
-  const walk = (v: unknown, key = ""): unknown => {
-    if (key === "repo") return "<repo>";
-    // a member's state intervals and post times follow the link's clock, not the flow
-    if (key === "intervals" || key === "postTimes") return "<clocked>";
-    if (key === "bins" && Array.isArray(v)) return `<${(v as number[]).reduce((a, b) => a + b, 0)} in bins>`;
-    if (timed.test(key) && v !== null) return Array.isArray(v) ? v.map(() => "<time>") : "<time>";
-    if (Array.isArray(v)) return v.map((x) => walk(x));
-    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x, k)]));
-    return v;
-  };
-  return JSON.stringify(walk(JSON.parse(json)), null, 2) + "\n";
-}
-
 test("golden code flow: two workers, one run onto main", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-golden-code-"));
   const repo = path.join(home, "repo");
@@ -139,9 +122,6 @@ test("golden code flow: two workers, one run onto main", async () => {
     git(wt3, "add", "c.ts");
     git(wt3, "commit", "-q", "-m", "w3 c");
 
-    const stats = raw(["stats", "--json"]);
-    assert.equal(stats.status, 0, stats.stderr);
-    pin("code.stats", { status: stats.status, text: withoutShas(normalise(stableStats(stats.stdout), home, nicks)) });
     pin("code.close", call("close", "--run", runId, "--as", ORCHESTRATOR));
   } finally {
     stopServerOf(home);

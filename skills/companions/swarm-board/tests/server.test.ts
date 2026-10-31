@@ -131,13 +131,12 @@ test("every method answers over the wire what the Board answers in process; an u
       ["packCall", [s1, "held-merge-lock", {}]],
       ["repos", []],
       ["snapshot", [REPO]],
-      ["stats", [{ repo: REPO }]],
     ];
     for (const [m, args] of same) {
       const wire = await value(c, m, ...args);
       const here = JSON.parse(JSON.stringify((local as any)[m](...args) ?? null));
       // a read counts a call: compared on the fields a call does not move
-      if (m === "snapshot" || m === "roster" || m === "stats" || m === "runs" || m === "repos" || m === "lastActivity") assert.equal(typeof wire, typeof here, m);
+      if (m === "snapshot" || m === "roster" || m === "runs" || m === "repos" || m === "lastActivity") assert.equal(typeof wire, typeof here, m);
       else assert.deepEqual(wire, here, m);
     }
   } finally {

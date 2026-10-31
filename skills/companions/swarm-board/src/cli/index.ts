@@ -4,7 +4,7 @@ import { hiddenSpawnSync } from "../proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, projectFolderName, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type RunStats, type SeatSpec } from "../board/board.ts";
+import { openBoard, progressText, projectFolderName, type EditAllowed, type EditHeld, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
@@ -22,7 +22,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { claimHeldLine, pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, statsUsage, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -65,34 +65,6 @@ const verbHelp = (verb = args.verb ?? ""): string => {
   const usage = `usage: ${CLI} ${line.trim().replace(/\s+#.*$/, "")}`;
   const example = EXAMPLES[verb]?.(asWord());
   return example ? `${usage}\ne.g. ${CLI} ${example}` : usage;
-};
-
-/** `stats` is for an outside reader, never a member: not in USAGE, its own help (D33). */
-const STATS_USAGE = statsUsage(CLI);
-
-/** A length as an agent reads it: `2h 05m`, `12m`, `40s`; `—` when not known. */
-const lengthText = (ms: number | null): string => {
-  if (ms === null) return "—";
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
-  return minutes >= 1 ? `${minutes}m` : `${Math.round(ms / 1000)}s`;
-};
-/** `stats`' line for a run (D34, D35): `<code> <title> · <kind> · <length> · <open|closed> · conflicts <n|unknown>`; a run
- *  whose kind merges nothing (a brainswarm: no code figures, V-19) ends before the conflicts. */
-const statsLine = (r: RunStats): string => {
-  const head = `${r.code} ${r.title} · ${r.kind} · ${lengthText(r.lengthMs)} · ${r.closedAt === null ? "open" : "closed"}`;
-  if (!("firstMergeAtMs" in r)) return head;
-  const c = r.plan?.conflicts;
-  // no merge: —; not recorded: unknown; some merges unknown: <n> + <m> unknown
-  const conflicts =
-    !c || (r.recorded && r.firstMergeAtMs === null)
-      ? "—"
-      : c.known === null
-        ? "unknown"
-        : c.unknownMerges
-          ? `${c.known} + ${c.unknownMerges} unknown`
-          : String(c.known);
-  return `${head} · conflicts ${conflicts}`;
 };
 
 class CliError extends Error {}
@@ -1449,36 +1421,6 @@ async function main(): Promise<void> {
       });
       break;
     }
-    case "stats": {
-      // an outside reader's verb: no member identity, no write of its own (board D6)
-      const raw = args.flag("--run");
-      const run = raw === undefined ? undefined : Number(raw);
-      if (run !== undefined && !Number.isInteger(run)) fail(`--run takes a run id, got ${raw}`);
-      const all = args.has("--all");
-      const since = args.flag("--since");
-      if (all && args.has("--since")) fail("stats: --since or --all, not both");
-      const kinds = args.list("--kind").map((k) => {
-        try {
-          return profileOf(k).kind;
-        } catch (e) {
-          return fail(`stats: ${(e as Error).message}`);
-        }
-      });
-      const stats = await board.stats({
-        repo: projectRepo(),
-        ...(run !== undefined ? { run } : {}),
-        // a named run is read whatever its age: no default period (plan D40)
-        ...(all ? {} : since !== undefined ? { since } : run !== undefined ? {} : { since: "30d" }),
-        ...(kinds.length ? { kinds } : {}),
-        ...(args.has("--closed") ? { closedOnly: true } : {}),
-      });
-      emit(stats, () => {
-        if (!stats.runs.length) console.log("no run in this scope");
-        for (const r of stats.runs) console.log(statsLine(r));
-        console.log(WORDING.statsJson(self().join(" ")));
-      });
-      break;
-    }
     case "lock": {
       const p = await caller();
       if (await answeredGate(p)) break;
@@ -1583,10 +1525,6 @@ async function main(): Promise<void> {
 if (!args.verb) {
   console.error(USAGE);
   process.exit(1);
-}
-if (args.verb === "stats" && args.has("--help")) {
-  console.log(STATS_USAGE);
-  process.exit(0);
 }
 // a hidden verb's help never starts it (run 75: `serve --help` took the start lock and logged a start)
 if ((args.verb === "serve" || args.verb === "link") && (args.has("--help") || args.has("-h"))) {

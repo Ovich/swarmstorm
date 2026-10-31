@@ -7,9 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
 import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts";
-import { statsOf, summarize, type StatsScope } from "./stats.ts";
 import { type Kind, profileOf } from "./kinds.ts";
-import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput, type Stats } from "../packs/registry.ts";
+import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { type EventName, type Subscription, carries, currentEventName, EVENTS, eventDef, eventOf, isEvent, formatSubscriptions, mentions as mentionsMe, parseSubscriptions as parseOn, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
@@ -26,8 +25,6 @@ export type { PackRefusal } from "../packs/registry.ts";
 /** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
  *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */
 export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
-export type { StatsScope, Interval, Mark, QuestionStats, BrainstormRunStats } from "./stats.ts";
-export type { Stats, Totals, RunStats, MemberStats, PlanRunStats, SharedFile, FileAcrossRuns } from "../packs/registry.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; on?: string[]; transcript?: string | null };
 export type Seat = SeatSpec & { state: SeatState };
@@ -497,8 +494,6 @@ export interface Board {
   /** A pack verb's server side (board-split#D9, D19): the member's pack answers, before any transaction, with facts or a
    *  `PackRefusal`; `p` null for a call no member makes (a seat's place before its join, a close, a prune). */
   packCall(p: Participant | null, verb: string, input: PackVerbInput): unknown;
-  /** The figures of the scope's runs (D33, D34): one read, no write; a figure not recorded or not computed yet is null, never 0. */
-  stats(scope: StatsScope): Stats;
 
   // the page (D39)
   /** Every project with an open run or a closed run within the retention (D46); a run kept only as a pruned author never. */
@@ -548,7 +543,6 @@ export const UPKEEP_EVERY_MS = 5 * 60 * 1000;
 /** The settings row holding the last upkeep's time, ISO: the board's own, never a user setting. */
 const LAST_UPKEEP = "last-upkeep";
 /** The settings row holding when the analytics records began, ISO: the board's own (D33). */
-const RECORDS_SINCE = "records-since";
 const RETENTION_DEFAULT_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The page shows the last this many messages of a thread. */
@@ -578,9 +572,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the busy timeout set at open, not by the pragma below: the first reads already need it, and
   // without it a verb that opens while another process writes fails outright with SQLITE_BUSY
   const db = new DatabaseSync(dbPath, { timeout: 5000 });
-  // the analytics records (call_log, lock_requests, run_stats) start with the store that first creates them:
-  // a run opened before reads recorded: false (D33)
-  const recordsAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'call_log'").get() === undefined;
   // D16: a store from before the seat vocabulary: table `slices` is `seats`, `participants.slice` is `seat`, a seat has no title
   const hasTable = (name: string): boolean => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
   const columnsOf = (table: string): string[] => (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((c) => String(c.name));
@@ -650,9 +641,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     -- one row per counted call, written by countCall in the verb's transaction (D25); deleted with its run
     CREATE TABLE IF NOT EXISTS call_log (participant INTEGER NOT NULL, at TEXT NOT NULL, verb TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);
-    -- a closed run's figures, RunStats JSON, written once at close or by prune first; never pruned (D20, D21)
-    CREATE TABLE IF NOT EXISTS run_stats (run INTEGER PRIMARY KEY, repo TEXT NOT NULL, kind TEXT NOT NULL,
-      closed_at TEXT NOT NULL, body TEXT NOT NULL);
     -- board settings (D32): retention-days; the board's own last-upkeep (D16)
     CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
     -- the identities and hook_seen tables, left in stores from before D58, are no longer read or written
@@ -686,7 +674,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     -- board-split D55: the board server's own facts (server_up_at, ms epoch)
     CREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
   `);
-  if (recordsAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(RECORDS_SINCE, new Date().toISOString());
   // Schema upkeep for stores created by earlier versions: add a column when it is missing.
   const upkeep = (table: string, column: string, ddl: string): void => {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
@@ -1729,13 +1716,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return true;
   };
 
-  /** The closed run's summary into run_stats (D20); summarize reads, this writes. */
-  const storeRunStats = (run: RunId): void => {
-    const body = summarize(db, run, STALE_MS);
-    const r = runRow(run);
-    db.prepare("INSERT OR REPLACE INTO run_stats (run, repo, kind, closed_at, body) VALUES (?, ?, ?, ?, ?)").run(run, String(r.repo), body.kind, String(r.closed_at), JSON.stringify(body));
-  };
-
   const board: Board = {
     openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, authority = [], base }) {
       const profile = profileOf(kind);
@@ -1802,11 +1782,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         db.prepare("UPDATE runs SET state = 'closed', closed_at = ? WHERE id = ?").run(now(), run);
         bump(String(runRow(run).repo));
         db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run);
-        // the run's figures, kept past pruning, read while its claims still say which are interfaces (D37); the summary
-        // only reads before its one write, so a failure leaves the close whole: close succeeds, prune writes it later (D25)
-        try {
-          storeRunStats(run);
-        } catch {}
         for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) packTables.releaseAll(Number(p.id));
       });
     },
@@ -1814,16 +1789,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     prune(at = new Date()) {
       return transaction(() => {
         const cutoff = retentionCutoff(at);
-        // a run with no summary is summarized before its raw rows go; one whose summary throws keeps them for the next upkeep (D33)
-        const expired = (db.prepare("SELECT id, repo FROM runs WHERE state = 'closed' AND closed_at < ? AND pruned_at IS NULL").all(cutoff) as Row[]).filter((r) => {
-          if (db.prepare("SELECT 1 FROM run_stats WHERE run = ?").get(Number(r.id))) return true;
-          try {
-            storeRunStats(Number(r.id));
-            return true;
-          } catch {
-            return false;
-          }
-        });
+        const expired = db.prepare("SELECT id, repo FROM runs WHERE state = 'closed' AND closed_at < ? AND pruned_at IS NULL").all(cutoff) as Row[];
         const touched = new Set(expired.map((r) => String(r.repo)));
         const runIds = expired.map((r) => Number(r.id));
         const inExpired = runIds.length ? `run IN (${runIds.join(", ")})` : "0";
@@ -2774,10 +2740,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       return answers.length <= 1 ? (answers[0] ?? null) : answers.flat();
     },
 
-    stats(scope) {
-      // the core's shape with every pack's fields, as the registry types it (D15)
-      return statsOf(db, scope, STALE_MS) as Stats;
-    },
 
     repos() {
       const byRepo = new Map<string, RunSummary[]>();

@@ -1,6 +1,6 @@
 import type { BoardSnapshot } from "../../../../../swarm-board/src/client/reader.ts";
 import { useEffect, useRef, useState } from "react";
-import { formatDuration } from "../../../lib/board/analytics.ts";
+import { formatDuration } from "../../../lib/board/duration.ts";
 import { MemberTag } from "./chips.tsx";
 
 /** What the lock is, on hover and keyboard focus (D22), read by TipLayer. */

@@ -1,4 +1,4 @@
-// Test support for the merge and stats cases: one real repository with two worktrees (a, b), the
+// Test support for the merge cases: one real repository with two worktrees (a, b), the
 // swarm CLI spawned on a temporary data home, and the git steps a merge goes through (a commit, a
 // rebase onto main whose conflicts are resolved by writing the file). Never the person's store.
 import assert from "node:assert/strict";

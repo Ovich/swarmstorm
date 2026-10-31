@@ -55,7 +55,6 @@ export const RPC_METHODS = [
   "deliver",
   "deliverMentions",
   "wait",
-  "stats",
   "repos",
   "snapshot",
   "composition",

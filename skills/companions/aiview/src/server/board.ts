@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import type http from "node:http";
 import path from "node:path";
-import { openBoardReader, type BoardReader, type Kind, type StatsScope } from "../../../swarm-board/src/client/reader.ts";
+import { openBoardReader, type BoardReader } from "../../../swarm-board/src/client/reader.ts";
 import type { BoardChangedEventPayload } from "../core/api.ts";
 import { TOOL_ROOT } from "../core/db.ts";
 import { DATA_ROOT } from "../core/home.ts";
@@ -128,42 +128,9 @@ export function mountBoard(
     json(res, { repos: repos.filter((r) => r.repo === named.repo).map(withProjectName), snapshot: withProjectName(snapshot) });
   };
 
-  /** The figures of a scope, `BoardReader.stats()` as it answers; the scope maps the CLI's flags one to one
-   *  (D34): `since=all` is `--all` (no since, every run kept), `closedOnly=1` is `--closed`, `kind` is `--kind`. */
-  const answerStats = async (board: BoardReader, url: URL, res: http.ServerResponse): Promise<void> => {
-    const q = url.searchParams;
-    const key = projectAsked(q);
-    // a named repository is read as `swarm stats --repo` reads it, its run whatever its age, pruned with its summary
-    // kept or not in the board's list (plan D40); a run named alone is found among the runs the board lists
-    const known = key !== null ? repoOfKey(await board.repos(), key) : undefined;
-    const named = key !== null ? (known ? { repo: known } : { missing: `no project ${key}` }) : await repoNamed(board, url);
-    if ("missing" in named) return json(res, { error: named.missing }, 404);
-    const run = q.get("run");
-    const since = q.get("since");
-    const kinds = (q.get("kind") ?? "").split(",").filter(Boolean) as Kind[];
-    // the keys in the CLI's order, so the two bodies are the same text
-    const scope: StatsScope = {
-      repo: named.repo,
-      ...(run !== null ? { run: Number(run) } : {}),
-      ...(since !== null && since !== "all" ? { since } : {}),
-      ...(kinds.length ? { kinds } : {}),
-      ...(q.get("closedOnly") === "1" ? { closedOnly: true } : {}),
-    };
-    let stats: Awaited<ReturnType<BoardReader["stats"]>>;
-    try {
-      stats = await board.stats(scope);
-    } catch (err) {
-      // a run unknown to the named repository is a 404, as an unknown repository is
-      if (scope.run !== undefined && (err as Error).message === `no run ${scope.run}`) return json(res, { error: (err as Error).message }, 404);
-      throw err;
-    }
-    json(res, stats);
-  };
-
   const ROUTES = new Map<string, (board: BoardReader, url: URL, res: http.ServerResponse) => Promise<void>>([
     ["/api/board", answerBoard],
     ["/api/run", answerBoard],
-    ["/api/stats", answerStats],
   ]);
 
   return {

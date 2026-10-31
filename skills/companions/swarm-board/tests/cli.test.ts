@@ -1479,7 +1479,7 @@ test("open prints one shape for every kind: the bare run id, then its board URL,
   }
 });
 
-test("D47: roster and stats take --project; the old --repo is read as it, with one line naming the new word", () => {
+test("D47: roster takes --project; the old --repo is read as it, with one line naming the new word", () => {
   openRun();
   const other = os.tmpdir();
   const now = runIn(other, "roster", "--project", repo);
@@ -1491,9 +1491,7 @@ test("D47: roster and stats take --project; the old --repo is read as it, with o
   const ageless = (out: string): string => out.replace(/progress [^,]*, link [^ ]*( ago)?/g, "progress <age>, link <age>");
   assert.equal(ageless(old.stdout), ageless(now.stdout));
   assert.equal(old.stderr, "--repo is now --project: read as --project, write that next time\n");
-  const stats = runIn(other, "stats", "--project", repo, "--json");
-  assert.equal(stats.status, 0, stats.stderr);
-  for (const help of [run("--help").stdout, run("stats", "--help").stdout]) assert.doesNotMatch(help, /--repo\b/);
+  assert.doesNotMatch(run("--help").stdout, /--repo\b/);
 });
 
 test("verify 3 F15, F17: --project takes an aiview project's name or a path; an unknown one answers no project; a project with no run says so", () => {
@@ -1514,11 +1512,9 @@ test("verify 3 F15, F17: --project takes an aiview project's name or a path; an 
   assert.notEqual(unknown.status, 0);
   assert.match(unknown.stderr, /no project Nowhere/);
   // verify-decisions F20: outside any repository, the refusal names the flag that picks the project
-  const outside = withAiview("stats", "--json");
+  const outside = withAiview("roster", "--json");
   assert.notEqual(outside.status, 0);
   assert.match(outside.stderr, /is in no repository: name the project with --project <name>/);
-  const stats = withAiview("stats", "--project", "Mine", "--json");
-  assert.equal(stats.status, 0, stats.stderr);
   const none = withAiview("roster", "--project", "Empty");
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /^no open run in /);

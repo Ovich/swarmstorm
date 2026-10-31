@@ -101,18 +101,3 @@ test("V-14: help states the real stall default and where a worktree is made", ()
   }
 });
 
-test("V-19: a brainswarm run carries no code figures in stats", () => {
-  const s = scene([{ id: "s1", blockers: [] }]);
-  try {
-    s.must("open", "--kind", "brainstorm", "--group", "bs", "--title", "bs", "--seats", s.seatsFile);
-    openTask(s, "vt");
-    const stats = JSON.parse(s.must("stats", "--json")) as { runs: Record<string, unknown>[] };
-    const brainswarm = stats.runs.find((r) => r.kind === "brainstorm")!;
-    const task = stats.runs.find((r) => r.kind === "task")!;
-    assert.equal("racesLost" in brainswarm, false, "no merge-lock figure on a brainswarm");
-    assert.equal("firstMergeAtMs" in brainswarm, false);
-    assert.equal("racesLost" in task, true, "a code run keeps its figures");
-  } finally {
-    s.done();
-  }
-});

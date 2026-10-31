@@ -5,7 +5,6 @@
 // opens (D19).
 import type { Declared, Kind, Message, Participant, RunId } from "../board/board.ts";
 import type { EventDef } from "../board/events.ts";
-import type { StatsFigures } from "../board/stats.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
 import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
 import type { CodeMemberFact } from "./code/types.ts";
@@ -111,8 +110,6 @@ export interface Pack {
   everClaimed?(db: PackTablesDeps["db"], member: number): string[];
   /** Deletes its rows of a pruned member, or of a pruned run (D20): only the pack touches its tables. */
   forget?(db: PackTablesDeps["db"], scope: { member: number } | { run: RunId }): void;
-  /** Its part of `swarm stats`: fields on runs, members and totals, read from the store (D15). */
-  stats?: StatsFigures;
 }
 
 /** What a member is given at join (D11, D22): its pack, none for core only, and whether it carries the verify setting. */

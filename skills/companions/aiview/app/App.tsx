@@ -12,7 +12,7 @@ import { PendingCards } from "./components/docs/PendingCards.tsx";
 import { PrototypeFrame } from "./components/viewers/PrototypeFrame.tsx";
 import { PdfFrame } from "./components/viewers/PdfFrame.tsx";
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
-import { readRunInHash } from "./lib/board/analytics.ts";
+import { readRunInHash } from "./lib/board/hash.ts";
 
 /** The board page's older address, still read; the board's own is its hash, `#board&project=<name>` (board-split#D41, D47). */
 export const BOARD_PATH = "/board";

@@ -72,9 +72,6 @@ test("repos and snapshot answer what the server's board answers", async () => {
   assert.deepEqual(repos[0].runs.map((r) => r.run), [run.id]);
   assert.deepEqual(await reader!.snapshot(REPO), await writer.snapshot(REPO));
   await assert.rejects(reader!.snapshot("/repos/none/.git"), /no project \/repos\/none\/\.git/);
-  const stats = await reader!.stats({ repo: REPO });
-  assert.deepEqual(stats.scope, { repo: REPO });
-  assert.deepEqual(stats.runs.map((r) => r.run), [run.id]);
 });
 
 test("a post committed on the server reaches the reader as changed within 1 s", async () => {

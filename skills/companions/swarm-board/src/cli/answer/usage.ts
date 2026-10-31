@@ -52,15 +52,6 @@ export const coreUsage = (cli: Command, events: string[]): string =>
     `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`,
   ].join("\n");
 
-/** `stats` is for an outside reader, never a member: not in the core help, its own (D33). */
-export const statsUsage = (cli: Command): string =>
-  [
-    `usage: ${cli} stats [--project <path>] [--run <id>] [--since 30d|<ISO> | --all] [--closed] [--kind plan|brainstorm|task[,…]] [--json]`,
-    "  the figures of a project's runs, oldest first, with the scope's totals; a figure not recorded or not computed yet is null, never 0",
-    "  --since: runs open, or closed since then, default 30d, none with --run; --all: every run kept; --closed: closed runs only",
-    `  without --json: one line per run; --json carries every figure, with the run ids, members and seqs to follow with ${cli} read <seq>`,
-  ].join("\n");
-
 /** A hidden verb's own help line: `serve` and `link` start nothing when asked for help. */
 export const hiddenUsage = (cli: Command, verb: "serve" | "link"): string =>
   verb === "serve"

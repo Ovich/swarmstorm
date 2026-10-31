@@ -55,10 +55,10 @@ test("the tab row: the Archive icon, then each open run with its code, title and
   expect(names[0]).toBe("");
   expect(tabs().getAllByRole("button")[0].getAttribute("aria-label")).toBe("Archive");
   expect(tabs().queryByText("All")).toBeNull();
-  // the run tabs, then the Analytics pill drawn beside the merge lock at the row's end (SL4)
+  // the run tabs, then the merge lock at the row's end
   // a brainstorm's seat rows are seats, never slices to merge: never "0/1"
-  expect(names.slice(1, -2)).toEqual(["RTSessions with refresh tokens", "ALAudit log", "NMNaming the kinds"]);
-  expect(names.slice(-2)).toEqual(["All runs", "merge lock free"]);
+  expect(names.slice(1, -1)).toEqual(["RTSessions with refresh tokens", "ALAudit log", "NMNaming the kinds"]);
+  expect(names.slice(-1)).toEqual(["merge lock free"]);
   for (const r of CLOSED) expect(tabs().queryByText(r.title)).toBeNull();
   expect(pressed()).toBe(tabOf("Naming the kinds"));
 });
@@ -553,7 +553,7 @@ test("a phase opened more than once reads its iteration: build 1, verify 1, buil
   const loop = [{ name: "build", text: "" }, { name: "verify", text: "" }, { name: "build", text: "" }, { name: "verify", text: "walk again" }];
   expect(phaseLabels(loop)).toEqual(["build 1", "verify 1", "build 2", "verify 2"]);
   expect(phaseLabels([{ name: "diverge" }, { name: "converge" }])).toEqual(["diverge", "converge"]);
-  render(<RunViewSwitch view="conversation" line="" json={null} onView={() => {}} phases={loop} />);
+  render(<RunViewSwitch phases={loop} />);
   const names = [...document.querySelectorAll('[data-component="PhaseStrip"] .name')].map((n) => n.textContent);
   expect(names).toEqual(["build 1", "verify 1", "build 2", "verify 2"]);
 });

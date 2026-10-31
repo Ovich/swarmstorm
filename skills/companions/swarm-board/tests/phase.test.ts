@@ -118,15 +118,6 @@ test("done is stored once per run, member and phase; the last member's done post
   assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 0, of: 2, gone: [], idleEnded: [], parked: [] });
 });
 
-test("a phase event is not a post in the stats", () => {
-  const { idea, orchestrator, skeptic } = twoRuns();
-  board.post(skeptic, "an idea");
-  const before = board.stats({ repo: REPO, run: idea.id }).runs[0];
-  board.phase(orchestrator, "diverge", "every idea");
-  const after = board.stats({ repo: REPO, run: idea.id }).runs[0];
-  assert.deepEqual(after.members.map((x) => x.posts), before.members.map((x) => x.posts));
-});
-
 test("the run keeps its current phase, plan runs too: runs(), currentPhase and the snapshot's summary", () => {
   const plan = board.openRun({ repo: REPO, group: "review-tool", title: "R", seats: [{ id: "S1", blockers: [] }] });
   const orchestrator = board.participant("review-tool/orchestrator")!;

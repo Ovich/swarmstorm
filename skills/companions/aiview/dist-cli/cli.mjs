@@ -9248,7 +9248,6 @@ var init_wire = __esm({
       "deliver",
       "deliverMentions",
       "wait",
-      "stats",
       "repos",
       "snapshot",
       "composition"
@@ -9694,7 +9693,6 @@ async function openBoardReader(opts) {
     repos: () => call("repos", []),
     projects: () => call("repos", []),
     snapshot: (repo) => call("snapshot", [repo]),
-    stats: (scope) => call("stats", [scope]),
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -9713,7 +9711,7 @@ var init_reader = __esm({
     "use strict";
     init_mentions();
     RECONNECT_MS = 200;
-    READING = ["repos", "snapshot", "stats"];
+    READING = ["repos", "snapshot"];
   }
 });
 
@@ -9795,35 +9793,9 @@ function mountBoard(sse, opts = {}) {
     const withProjectName = (o) => slug === null ? o : { ...o, name: slug };
     json(res, { repos: repos.filter((r) => r.repo === named.repo).map(withProjectName), snapshot: withProjectName(snapshot) });
   };
-  const answerStats = async (board, url, res) => {
-    const q = url.searchParams;
-    const key = projectAsked(q);
-    const known = key !== null ? repoOfKey(await board.repos(), key) : void 0;
-    const named = key !== null ? known ? { repo: known } : { missing: `no project ${key}` } : await repoNamed(board, url);
-    if ("missing" in named) return json(res, { error: named.missing }, 404);
-    const run = q.get("run");
-    const since = q.get("since");
-    const kinds = (q.get("kind") ?? "").split(",").filter(Boolean);
-    const scope = {
-      repo: named.repo,
-      ...run !== null ? { run: Number(run) } : {},
-      ...since !== null && since !== "all" ? { since } : {},
-      ...kinds.length ? { kinds } : {},
-      ...q.get("closedOnly") === "1" ? { closedOnly: true } : {}
-    };
-    let stats;
-    try {
-      stats = await board.stats(scope);
-    } catch (err) {
-      if (scope.run !== void 0 && err.message === `no run ${scope.run}`) return json(res, { error: err.message }, 404);
-      throw err;
-    }
-    json(res, stats);
-  };
   const ROUTES = /* @__PURE__ */ new Map([
     ["/api/board", answerBoard],
-    ["/api/run", answerBoard],
-    ["/api/stats", answerStats]
+    ["/api/run", answerBoard]
   ]);
   return {
     handle(req, res, url) {

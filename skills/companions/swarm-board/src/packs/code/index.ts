@@ -10,7 +10,6 @@ import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
-import { codeStats } from "./stats.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
@@ -60,7 +59,6 @@ export const codePack: Pack = {
   name: "code",
   events: CODE_EVENTS,
   verbs: ["claim", "release", "merge-lock", "merged", "flag", "conflicts", "unclaimed", "guides"].map((name) => ({ name })),
-  stats: codeStats,
   // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
   alsoFor: (member, message, ctx) =>
     (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),

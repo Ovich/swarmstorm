@@ -37,7 +37,7 @@ export interface Claims {
   mergeLockQueuedBehind(p: Participant): string | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
   heldMergeLock(p: Participant): HeldMergeLock | null;
-  /** `conflicts` absent: unknown. Writes the merge's row; known conflicts narrow the sharers to the conflicted paths (D5, D25). */
+  /** `conflicts` absent: unknown. Known conflicts narrow the sharers to the conflicted paths (D5, D25). */
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** join's declared files, claimed where free */
   claimDeclared(p: Participant, files: Declared[]): void;
@@ -478,15 +478,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...(waiters.length ? { free: waiters } : {}) };
         insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: CODE_EVENTS.merged.name, meta });
-        // the merge, for the stats: its files and conflicts, null for unknown (D25)
-        db.prepare("INSERT INTO merges (participant, run, sha, at, files, conflicts) VALUES (?, ?, ?, ?, ?, ?)").run(
-          me.id,
-          me.run,
-          sha,
-          now(),
-          JSON.stringify(rels),
-          conflicts && "files" in conflicts ? JSON.stringify(conflicts.files.map(slashes)) : null,
-        );
         // S28: the merged files are no longer the merger's to hold; its other claims stay for the work still open
         const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
         for (const rel of rels) release.run(me.repo, rel, me.id);

@@ -11,7 +11,7 @@ export { closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";
-export { coreUsage, hiddenUsage, statsUsage } from "./usage.ts";
+export { coreUsage, hiddenUsage } from "./usage.ts";
 
 /** A message already formatted by the verb, with the line its event registry row adds (D36). */
 export type Shown = { text: string; next?: string | null; event?: string | null };
