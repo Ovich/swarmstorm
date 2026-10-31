@@ -2136,7 +2136,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           if (settled) return;
           try {
             // `end`, from this process or another, releases a pending wait of that member
-            if (participantById(p.id).ended) return finish({ full: [], ended: true });
+            // its run closed: the close's own line answers it; ended in an open run: `ended`, said at once
+            if (participantById(p.id).ended) return finish(runRow(p.run).state === "open" ? { full: [], ended: true } : { full: [] });
             // the look and the superseded test in one transaction: a superseded wait takes nothing
             const d = transaction(() => (current() ? deliverTo(p, true) : null));
             if (!d) return finish({ full: [], superseded: true });

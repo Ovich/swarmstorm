@@ -3554,7 +3554,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const check = () => {
           if (settled) return;
           try {
-            if (participantById(p.id).ended) return finish({ full: [], ended: true });
+            if (participantById(p.id).ended) return finish(runRow(p.run).state === "open" ? { full: [], ended: true } : { full: [] });
             const d = transaction(() => current() ? deliverTo(p, true) : null);
             if (!d) return finish({ full: [], superseded: true });
             if (d.full.length) finish(d);
