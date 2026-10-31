@@ -1,2 +1,0 @@
-exit 0
-phase ideas is open and asks: ideas for beta. Read the whole phase first: node <cli> thread --as gb/s1. Do your part now, then mark it done: node <cli> done ideas --as gb/s1

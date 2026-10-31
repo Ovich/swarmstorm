@@ -119,14 +119,11 @@ test("every method answers over the wire what the Board answers in process; an u
       ["roster", [REPO]],
       ["participant", [s1.name]],
       ["heldBy", [s1]],
-      ["read", [1]],
-      ["thread", [s1]],
       ["currentPhase", [run.id]],
       ["pausedOf", [run.id]],
       ["phaseProgress", [run.id]],
       ["lastActivity", [run.id]],
       ["owedPhase", [s2]],
-      ["setting", ["retention-days"]],
       ["endedMembers", [REPO]],
       ["packCall", [s1, "held-merge-lock", {}]],
       ["repos", []],
@@ -143,11 +140,11 @@ test("every method answers over the wire what the Board answers in process; an u
     local.close();
   }
   // writes answer as in process
-  assert.equal((await value(c, "deliver", s2)).full.length, 1);
+  assert.equal((await value(c, "deliverMentions", s2)).full.length, 1);
   assert.equal(typeof (await value(c, "packCall", s1, "check-edit", { file: "a.ts" })).allowed, "boolean");
   const unknown = await call(c, "markStaleRuns");
   assert.deepEqual(unknown.type === "result" && !unknown.ok && unknown.error, "unknown method markStaleRuns");
-  const thrown = await call(c, "read", 99999);
+  const thrown = await call(c, "endorse", s1, 99999);
   assert.ok(thrown.type === "result" && !thrown.ok && /unknown message/.test(thrown.error));
 });
 
@@ -176,8 +173,8 @@ test("a wait returns within 200 ms of a post on another connection", async () =>
   const run = await value(a, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const s1 = (await value(a, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
   const s2 = (await value(a, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
-  await value(a, "deliver", s1);
-  await value(a, "deliver", s2);
+  await value(a, "deliverMentions", s1);
+  await value(a, "deliverMentions", s2);
   const b = await welcomed({ member: { name: s2.name, run: run.id } });
   b.send({ type: "call", id: "w7", method: "wait", args: [s2, { mentionsOnly: true }] });
   await new Promise((r) => setTimeout(r, 100));

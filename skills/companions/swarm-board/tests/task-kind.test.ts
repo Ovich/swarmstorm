@@ -27,7 +27,7 @@ test("a task run: workers join, a task posted to w2 reaches w2 in full and w1 as
   const w1 = board.join({ run: run.id, seat: "w1", doing: "waiting for a task", files: [], place: "/wt/w1" }).member;
   const w2 = board.join({ run: run.id, seat: "w2", doing: "waiting for a task", files: [], place: "/wt/w2" }).member;
   const orchestrator = board.participant("chores/orchestrator")!;
-  for (const p of [w1, w2, orchestrator]) board.deliver(p);
+  for (const p of [w1, w2, orchestrator]) board.deliverMentions(p);
   board.post(orchestrator, "@w2 rename the config loader; done when: npm test exits 0");
   const toW2 = board.deliverMentions(w2);
   assert.equal(toW2.full.length, 1);

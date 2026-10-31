@@ -24,7 +24,7 @@ const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", c
 const member = (seat: string, nick: string): SnapshotMember => ({
   badge: null,
   member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working", stale: false,
-  files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
+  files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
 });
 let seq = 0;
 const item = (from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({

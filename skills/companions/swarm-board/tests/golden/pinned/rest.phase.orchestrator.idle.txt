@@ -1,4 +1,4 @@
 exit 0
 #<seq>
 brief the person: the list of what is done since the session began, one short phrase each, then what comes next
-phase verify is open; each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>. Listen in the background: node <cli> wait --mentions --as g/orchestrator. When the board says every member is done, open the next phase: node <cli> phase <name> "<text>" --as g/orchestrator; after the last, node <cli> close --run 1
+phase verify is open; the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>. Listen in the background: node <cli> wait --mentions --as g/orchestrator. When the board says every member is done, open the next phase: node <cli> phase <name> "<text>" --as g/orchestrator; after the last, node <cli> close --run 1

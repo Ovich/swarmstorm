@@ -59,32 +59,6 @@ test("rows 1, 2: a closed run or an ended member reads ended, no badge", () => {
   void orch;
 });
 
-test("parked reads away, over a lost link, an ended agent and a block; no badge", () => {
-  const { run, orch } = setup();
-  board.phase(orch, "p1", "go");
-  board.park(orch, "a", "p2");
-  const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base - 600_000, finished: true }), new Date(base));
-  tick2(board, run.id, new Date(base + 120_000), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
-  pins("g/a", "away", null);
-  board.block(orch, "a", "the person picks");
-  pins("g/a", "away", null);
-});
-
-test("A1-1: a parked member's own wait, doing and post leave it away; only unpark lifts it", async () => {
-  const { a, orch } = setup();
-  board.phase(orch, "p1", "go");
-  board.park(orch, "a");
-  const held = heldWait(a);
-  board.setDoing(a, "back");
-  board.post(a, "@orchestrator here");
-  await held;
-  board.deliver(a);
-  pins("g/a", "away", null);
-  board.unpark(orch, "a");
-  pins("g/a", "working", null);
-});
-
 test("link up: working while its tokens moved within the window, stopped past it, owing or not; a held wait changes nothing", async () => {
   const { run, a, orch } = setup();
   pins("g/a", "working", null);
@@ -120,34 +94,9 @@ test("link down: away with none when it dropped owing nothing, and still away on
   pins("g/a", "lost", "lost");
 });
 
-test("blocked by the orchestrator or a pause on the person: its state, badge blocked", () => {
-  const { orch } = setup();
-  board.block(orch, "a", "the person picks");
-  pins("g/a", "working", "blocked");
-  board.unblock(orch, "a");
-  board.pause(orch, "the person decides", { person: true });
-  pins("g/a", "working", "blocked");
-});
-
 test("the orchestrator always owes: it reads working", () => {
   setup();
   pins("g/orchestrator", "working", null);
-});
-
-test("A1-2: parked after a lost was told: no lost in composition or progress", () => {
-  const { run, orch } = setup();
-  board.phase(orch, "p1", "go");
-  const base = Date.now();
-  quietMember(path.join(dir, "swarm.sqlite"), "a");
-  board.recordActivity(run.id, "a", act({ grewAt: base - 600_000 }), new Date(base - 600_000));
-  tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
-  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "lost");
-  board.park(orch, "a");
-  // U-F4: the join answer's head lines (the composition) say away, as the roster does
-  assert.equal(board.composition(run.id).entries.find((e) => e.seat === "a")!.state, "away");
-  assert.ok(board.composition(run.id).lines.some((l) => l.startsWith("a ") && l.endsWith(": away")));
-  assert.deepEqual(board.phaseProgress(run.id)!.gone, []);
-  pins("g/a", "away", null);
 });
 
 test("D53: a member still calling the board, or a fresh seating, is never lost on its link alone", async () => {
@@ -177,12 +126,6 @@ test("D53, D55: a link-less member whose transcript still grows, as its link las
   board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
   tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", null);
-});
-
-test("roster: a parked member carries the phase it is parked until", () => {
-  const { orch } = setup();
-  board.park(orch, "a", "verify");
-  assert.equal(board.roster(REPO).find((r) => r.name === "g/a")!.parkedUntil, "verify");
 });
 
 test("U-F20: a badge that comes with time alone is a change the readers redraw on, so the card and the roster read the same", () => {

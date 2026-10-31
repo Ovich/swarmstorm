@@ -145,7 +145,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
   if (situation === "owes-first") phase();
   if (situation === "owes-again") {
     phase();
-    must("deliver", "--as", me);
+    must("wait", "--mentions", "--timeout", "200", "--as", me);
   }
   if (situation === "paused") {
     phase();
@@ -154,9 +154,9 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
   if (situation === "listening") {
     phase();
     // drained first: a listener started with the phase unread returns at once
-    must("deliver", "--as", me);
+    must("wait", "--mentions", "--timeout", "200", "--as", me);
     await s.listen(me);
-    // every member now waits: the server's tick posts idle when it next runs; waited out and read, so no verb's
+    // every member now waits: the server's tick posts idle when it next runs; waited out, so no verb's
     // answer carries it or not by timing
     const store = await openBoard(path.join(home, "swarm.sqlite"));
     try {
@@ -165,7 +165,6 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     } finally {
       store.close();
     }
-    must("deliver", "--as", me);
   }
   if (situation === "closed") must("close", "--run", runId, "--as", orchestrator);
   return s;

@@ -43,11 +43,11 @@ const setup = () => {
   const b1 = board.join({ run: runB.id, seat: "b1", doing: "x", files: [] }).member;
   const oA = board.participant("ga/orchestrator")!;
   const oB = board.participant("gb/orchestrator")!;
-  for (const p of [a1, a2, b1, oA, oB]) board.deliver(p);
+  for (const p of [a1, a2, b1, oA, oB]) board.deliverMentions(p);
   return { runA, runB, a1, a2, b1, oA, oB };
 };
 const waitOf = (p: Participant, ms = 300) => board.wait(p, { mentionsOnly: true, timeoutMs: ms });
-const bodies = (p: Participant) => board.deliver(p).full.map((m) => m.body);
+const bodies = (p: Participant) => board.deliverMentions(p).full.map((m) => m.body);
 
 test("D5: the link reads a kill by name or pattern as a breach, once per command; by PID never; by port only without its lock", () => {
   const { runA, a1 } = setup();

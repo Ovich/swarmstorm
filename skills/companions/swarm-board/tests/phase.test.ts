@@ -42,8 +42,8 @@ const twoRuns = () => {
   const orchestrator = board.participant("idea/orchestrator")!;
   const skeptic = board.join({ run: idea.id, seat: "skeptic", doing: "x", files: [] }).member;
   const elsewhere = board.join({ run: other.id, seat: "skeptic", doing: "x", files: [] }).member;
-  board.deliver(skeptic);
-  board.deliver(elsewhere);
+  board.deliverMentions(skeptic);
+  board.deliverMentions(elsewhere);
   return { idea, other, orchestrator, skeptic, elsewhere };
 };
 
@@ -67,7 +67,7 @@ test("a phase wakes a seat's wait --mentions in its run, and not a member of ano
   const idle = (await another()).wait(elsewhere, { mentionsOnly: true, timeoutMs: 1500 });
   const m = (await another()).phase(orchestrator, "diverge", "every idea");
   assert.deepEqual((await waiting).full.map((x) => x.seq), [m.seq]);
-  assert.deepEqual(await idle, { full: [], lines: [] });
+  assert.deepEqual(await idle, { full: [] });
 });
 
 test("a seat's phase is refused; so is a phase on a closed run, and a phase with no text", () => {
@@ -91,31 +91,30 @@ test("a woken seat is told to run done; the orchestrator gets no line; end is a 
 test("done is stored once per run, member and phase; the last member's done posts one all-done to the orchestrator; a phase opened again clears its marks", () => {
   const { idea, orchestrator, skeptic } = twoRuns();
   const architect = board.join({ run: idea.id, seat: "architect", doing: "x", files: [] }).member;
-  board.deliver(orchestrator);
+  board.deliverMentions(orchestrator);
   assert.throws(() => board.done(skeptic, "diverge"), /no phase is open/);
   board.phase(orchestrator, "diverge", "every idea");
   assert.throws(() => board.done(orchestrator, "diverge"), /orchestrator opens phases/);
   assert.throws(() => board.done(skeptic, "converge"), /the current phase is diverge/);
   const first = board.done(skeptic, "diverge");
-  assert.deepEqual([first.progress, first.all, first.already], [{ phase: "diverge", done: 1, of: 2, gone: [], idleEnded: [], parked: [] }, false, false]);
+  assert.deepEqual([first.progress, first.all, first.already], [{ phase: "diverge", done: 1, of: 2, gone: [], idleEnded: [] }, false, false]);
   assert.deepEqual(first.message!.mentions, ["idea/orchestrator"]);
   assert.equal(first.message!.event, "done");
   assert.deepEqual(board.done(skeptic, "diverge").already, true);
-  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 1, of: 2, gone: [], idleEnded: [], parked: [] });
+  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 1, of: 2, gone: [], idleEnded: [] });
   const last = board.done(architect, "diverge");
   assert.equal(last.all, true);
-  // idea 2: the first done (the straggler case) and all-done in full; the last plain done carried, as a line
-  const delivery = board.deliver(orchestrator);
+  // idea 2: the first done (the straggler case) and all-done; the last plain done wakes nobody
+  const delivery = board.deliverMentions(orchestrator);
   const told = delivery.full;
   assert.deepEqual(told.map((m) => m.event), ["done", "all-done"]);
-  assert.ok(delivery.lines.some((l) => /done diverge \(2\/2\)/.test(l)), delivery.lines.join("\n"));
   assert.match(told[1].body, /^all done diverge: every member is done \(2\/2\)/);
   assert.match(stepOf("all-done")(told[1], orchestrator, "swarm")!, /^open the next phase: swarm phase <name> "<text>" --as idea\/orchestrator/);
   assert.equal(stepOf("all-done")(told[1], skeptic, "swarm"), null);
-  assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [], idleEnded: [], parked: [] });
+  assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === idea.id)!.progress, { phase: "diverge", done: 2, of: 2, gone: [], idleEnded: [] });
   board.phase(orchestrator, "converge", "pick");
   board.phase(orchestrator, "diverge", "again");
-  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 0, of: 2, gone: [], idleEnded: [], parked: [] });
+  assert.deepEqual(board.phaseProgress(idea.id), { phase: "diverge", done: 0, of: 2, gone: [], idleEnded: [] });
 });
 
 test("the run keeps its current phase, plan runs too: runs(), currentPhase and the snapshot's summary", () => {
@@ -124,12 +123,12 @@ test("the run keeps its current phase, plan runs too: runs(), currentPhase and t
   assert.equal(board.currentPhase(plan.id), null);
   assert.equal(board.snapshot(REPO).runs.find((r) => r.run === plan.id)!.phase, null);
   const member = board.join({ run: plan.id, seat: "S1", doing: "x", files: [] }).member;
-  board.deliver(member);
+  board.deliverMentions(member);
   board.phase(orchestrator, "build", "the first wave");
   assert.deepEqual(board.currentPhase(plan.id), { name: "build", text: "the first wave" });
   assert.deepEqual(board.runs().find((r) => r.id === plan.id)!.phase, { name: "build", text: "the first wave" });
   assert.deepEqual(board.snapshot(REPO).runs.find((r) => r.run === plan.id)!.phase, { name: "build", text: "the first wave" });
-  assert.equal(board.deliver(member).full.at(-1)!.event, "phase"); // it mentions every member of the run
+  assert.equal(board.deliverMentions(member).full.at(-1)!.event, "phase"); // it mentions every member of the run
   board.phase(orchestrator, "end", "merged and verified");
   assert.deepEqual(board.currentPhase(plan.id), { name: "end", text: "merged and verified" });
 });

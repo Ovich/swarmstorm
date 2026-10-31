@@ -1,6 +1,6 @@
 exit 0
 run 1  T  phase build: build the thing  1/1 done
-g/orchestrator  run 1  working  progress <age> ago, link <age> ago  <n> unread  doing: -  on: ended, stopped, all-joined, done (carried), joined (carried)
+g/orchestrator  run 1  working  progress <age> ago, link <age> ago  <n> unread  doing: -
 <nick:v1> · g/v1  run 1  working  progress <age> ago, link <age> ago  doing: done build
   seat orchestrator <nick:orchestrator>: working
   seat v1 <nick:v1>: working

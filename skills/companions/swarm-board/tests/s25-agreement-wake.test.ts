@@ -39,8 +39,8 @@ test("S25: an agreement of an earlier run's member of the same name wakes no one
     must("join", "--run", runA, "--seat", "w1", "--doing", "x", "--as", "g/w1");
     must("join", "--run", runA, "--seat", "w3", "--doing", "x", "--as", "g/w3");
     must("agree", "w1 changes a.ts", "--about", "a.ts", "--with", "w3", "--as", "g/w1");
-    must("deliver", "--as", "g/w1");
-    must("deliver", "--as", "g/w3");
+    must("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
+    must("wait", "--mentions", "--timeout", "200", "--as", "g/w3");
     must("end", "--seat", "w1", "--as", "g/orchestrator");
     must("end", "--seat", "w3", "--as", "g/orchestrator");
     must("close", "--run", runA, "--as", "g/orchestrator");
@@ -56,8 +56,7 @@ test("S25: an agreement of an earlier run's member of the same name wakes no one
     git(wt, "commit", "-q", "-am", "a");
     git(wt, "push", "-q", ".", "HEAD:main");
     must("merged", git(wt, "rev-parse", "HEAD"), "--files", "a.ts", "--report", "-", "--as", "g/w1");
-    const heard = must("deliver", "--as", "g/w3");
-    assert.match(heard, /merged \S+ into main/);
+    const heard = must("wait", "--mentions", "--timeout", "200", "--as", "g/w3");
     assert.doesNotMatch(heard, /you agreed on a file it changed/);
   } finally {
     stopServerOf(home);

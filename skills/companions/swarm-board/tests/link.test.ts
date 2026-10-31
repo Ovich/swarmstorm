@@ -182,7 +182,7 @@ test("a call through the pipe reaches the server once and its result comes back;
   const b = await openPipe(home);
   a.call({ id: "a1", method: "roster", args: [] });
   b.call({ id: "b1", method: "post", args: ["hi"] });
-  a.call({ id: "a2", method: "deliver", args: [] });
+  a.call({ id: "a2", method: "deliverMentions", args: [] });
   await until("three results", () => a.received.length === 2 && b.received.length === 1);
   assert.deepEqual(a.received.map((f) => f.type === "result" && f.id), ["a1", "a2"]);
   assert.deepEqual(b.received, [{ type: "result", id: "b1", ok: true, value: "post" }]);

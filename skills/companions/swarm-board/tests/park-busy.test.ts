@@ -1,5 +1,5 @@
-// board-split D30, D31, D33, D34: a parked member raises nothing and is not waited on; a member in a board wait over
-// a background task of its own is busy; the shown doing follows the latest board fact; a parked seat says until when.
+// board-split D31, D33, D45: a member in a board wait over a background task of its own is busy; the shown doing
+// follows the latest board fact; the card carries the call's label.
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -8,7 +8,6 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { eventStep } from "../src/cli/answer/rules.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { observe } from "../src/link/transcripts.ts";
 import { toolCall, writeMain } from "./fixtures/transcripts.ts";
@@ -19,7 +18,7 @@ let dir: string;
 let board: Board;
 
 beforeEach(async () => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-park-"));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-busy-"));
   board = await openBoard(path.join(dir, "swarm.sqlite"));
 });
 afterEach(() => {
@@ -38,7 +37,7 @@ const setup = () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  for (const p of [a, b, orch]) board.deliver(p);
+  for (const p of [a, b, orch]) board.deliverMentions(p);
   return { run, a, b, orch };
 };
 
@@ -57,63 +56,6 @@ test("D31 (S37): a board wait over its own un-notified background suite reads bu
   const long = board.memberStates(run.id, new Date(base + 13 * 60_000)).find((s) => s.member === "a")!;
   assert.deepEqual([long.state, long.badge], ["busy", null]);
   await held;
-});
-
-test("D30: a parked member draws no gone, stalled or idle, all-done does not wait for it; its own call leaves it parked", async () => {
-  const { run, a, b, orch } = setup();
-  board.phase(orch, "p1", "go");
-  board.deliver(a);
-  board.deliver(b);
-  const parked = board.park(orch, "b", "p2");
-  assert.deepEqual([parked.event, parked.mentions], ["park", ["g/b"]]);
-  assert.equal(eventStep(parked, b, "swarm"), "you are parked: end your turn now, without end; the orchestrator resumes you at your next task");
-  assert.equal(eventStep(parked, a, "swarm"), null);
-  // D34: the parked seat's card reads away, parked, and until when; its doing stays its own (board-split D48, U-F2)
-  const card = board.snapshot(REPO).roster.find((r) => r.member === "g/b")!;
-  assert.deepEqual([card.doing, card.state, card.parked, card.parkedUntil], ["x", "away", true, "p2"]);
-  // b's link is lost long ago and its turn ended: no gone, no stalled for it
-  const base = Date.now();
-  board.recordActivity(run.id, "b", act({ grewAt: base - 600_000, inTurn: false }), at(base, 0));
-  tick2(board, run.id, at(base, 120), (m) => (m === "b" ? lost(base - 600_000)(m) : linked(m)));
-  assert.deepEqual([...eventsOf("lost"), ...eventsOf("stalled"), ...eventsOf("liveness")].filter((e) => e.body.includes("g/b")), []);
-  // all-done counts a alone
-  const done = board.done(a, "p1");
-  assert.deepEqual([done.progress.done, done.progress.of, done.all], [1, 1, true]);
-  // D33 (S35): the done is a's latest fact, shown over its older doing
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.doing, "done p1");
-  // D49 (A1-1): b's own call leaves it parked, out of the count; the orchestrator's unpark counts it again
-  board.setDoing(b, "back");
-  board.phase(orch, "p2", "next");
-  assert.equal(board.phaseProgress(run.id)!.of, 1);
-  board.unpark(orch, "b");
-  assert.equal(board.phaseProgress(run.id)!.of, 2);
-});
-
-test("D30: park and unpark are the orchestrator's, on a live seat; unpark lifts it", () => {
-  const { run, a, orch } = setup();
-  assert.throws(() => board.park(a, "b"), /only the orchestrator/);
-  assert.throws(() => board.park(orch, "zz"), /no live member in seat zz/);
-  board.park(orch, "b");
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "x");
-  assert.throws(() => board.park(orch, "b"), /already parked/);
-  board.unpark(orch, "b");
-  assert.throws(() => board.unpark(orch, "b"), /not parked/);
-  board.phase(orch, "p1", "go");
-  assert.equal(board.phaseProgress(run.id)!.of, 2);
-});
-
-test("D30: a parked member is out of the stopped count; every member parked raises no stopped", () => {
-  const { run, orch } = setup();
-  board.park(orch, "b");
-  const base = Date.now();
-  board.recordActivity(run.id, "a", act({ grewAt: base }), at(base, 0));
-  tick2(board, run.id, at(base, 6), linked);
-  assert.equal(eventsOf("stopped").length, 1, "a still past the window, b parked");
-  // a moves, then is parked too: nobody left to be still
-  board.recordActivity(run.id, "a", act({ grewAt: base + 7000 }), at(base, 7));
-  board.park(orch, "a");
-  tick2(board, run.id, at(base, 60), linked);
-  assert.equal(eventsOf("stopped").length, 1);
 });
 
 test("S22 (board-split D25, D55): a fresh agent re-joining a seat joined long ago carries no 'no transcript found' note before its link speaks, and never an alarm", () => {

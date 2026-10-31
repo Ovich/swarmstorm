@@ -1,4 +1,4 @@
-// The answer module (board-rework D1): a verb of the wait cluster (wait, deliver, read, thread, done, join) hands what it
+// The answer module (board-rework D1): a verb of the wait cluster (wait, done, join) hands what it
 // did as a VerbResult, with the member's situation read once (readSituation); `answer` returns the lines it prints, its
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
@@ -22,13 +22,10 @@ export type VerbResult =
   /** nothing came: `idle` when the board says the member has nothing to do; `again` the command re-arming this very wait */
   | { verb: "wait"; outcome: "empty"; idle: boolean; again: string; foregroundAgain: string }
   /** a wake: `phaseEvent` when the phase's own event is among what woke it */
-  | { verb: "wait"; outcome: "woke"; again: string; foregroundAgain: string; phaseEvent: boolean; mentionsOnly: boolean; shown: Shown[]; lines: string[] }
-  | { verb: "deliver"; mentionsOnly: boolean; shown: Shown[]; lines: string[] }
-  | { verb: "read"; shown: Shown; member: boolean }
-  | { verb: "thread"; phase: string | null; shown: Shown[] }
+  | { verb: "wait"; outcome: "woke"; again: string; foregroundAgain: string; phaseEvent: boolean; mentionsOnly: boolean; shown: Shown[] }
   | { verb: "done"; phase: string; none: true }
   | { verb: "done"; phase: string; none?: false; line: string; facts?: string[] }
-  /** a verb that heard from the member (post, agree, endorse, claim, release, doing, subscribe): its result lines */
+  /** a verb that heard from the member (post, agree, endorse, claim, release, doing): its result lines */
   | { verb: "heard"; lines: string[] }
   /** join's own lines, before its phase: who, roster; after it: worktree, commands, drawing, link. `shown`: the unread
    *  posts for the member, delivered at its join (S1), the phase's own event left out: the phase line states it */
@@ -61,13 +58,10 @@ function answerOf(r: VerbResult, s: Situation): Answer {
       if (r.outcome === "superseded") return { lines: [W.superseded], next: null, phase: null };
       if (r.outcome === "ended") return { lines: [W.ended(s.run)], next: null, phase: null };
       if (r.outcome === "empty") {
-        // D60: a parked member is told it is parked before it is told it is idle
-        const next = s.parked
-          ? pausedLine(s)!
-          : r.idle
-            ? // simple-states: an idle wait of a member owing nothing ends its turn; one owing waits again
-              (owesNothingLine(s) ?? W.idle(r.foregroundAgain))
-            : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
+        const next = r.idle
+          ? // simple-states: an idle wait of a member owing nothing ends its turn; one owing waits again
+            (owesNothingLine(s) ?? W.idle(r.foregroundAgain))
+          : (pausedLine(s) ?? (s.seat === "orchestrator" ? W.nothingYetOrchestrator(r.again) : W.nothingYet(r.foregroundAgain)));
         return { lines: [next], next, phase: null };
       }
       const headers = phaseHeaders(s, !pausedLine(s));
@@ -95,31 +89,10 @@ function answerOf(r: VerbResult, s: Situation): Answer {
         next,
         ...(s.listens !== "foreground" && phase ? [phase] : []),
         ...shownLines(shown),
-        ...r.lines,
         // V-12: only a background listener's end is announced again by its harness
         ...(r.mentionsOnly && s.listens === "orchestrator" ? [W.delivered] : []),
       ];
       return { lines, next, phase: headers.full };
-    }
-    case "deliver": {
-      const any = r.shown.length > 0 || r.lines.length > 0;
-      const headers = any ? phaseHeaders(s) : { printed: null, full: null };
-      // a member owing the open phase is told to do it, last
-      const owes = r.mentionsOnly ? null : owedLine(s);
-      return { lines: [...(headers.printed ? [headers.printed] : []), ...shownLines(r.shown), ...r.lines, ...(owes ? [owes] : [])], next: owes, phase: headers.full };
-    }
-    case "read": {
-      const headers = phaseHeaders(s);
-      const owes = r.member ? owedLine(s) : null;
-      // V10: the result first (the post), then its phase, then the owed step
-      return { lines: [r.shown.text, ...(headers.printed ? [headers.printed] : []), ...(owes ? [owes] : [])], next: owes, phase: headers.full };
-    }
-    case "thread": {
-      const headers = phaseHeaders(s);
-      // G33: the header above states the phase; the owed step alone, brief, its text not again
-      const owes = owedLine(s, { thread: false, brief: !!headers.printed });
-      const none = r.shown.length ? [] : [W.noPostYet(r.phase ?? s.phase?.name ?? null)];
-      return { lines: [...(headers.printed ? [headers.printed] : []), ...none, ...shownLines(r.shown), ...(owes ? [owes] : [])], next: owes, phase: headers.full };
     }
     case "done": {
       if (r.none) return { lines: [W.doneNone], next: null, phase: null };

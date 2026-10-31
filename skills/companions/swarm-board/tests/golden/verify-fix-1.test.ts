@@ -14,7 +14,7 @@ test("F2: pause --person with the text before it reads the text, not --as", asyn
     assert.match(paused.text, /waiting on the person: ask the person;/);
     assert.doesNotMatch(paused.text, /--as;|person: --as/);
     const roster = s.call("roster");
-    assert.match(roster.text, /blocked: ask the person/);
+    assert.match(roster.text, /on you: ask the person/);
   } finally {
     s.stop();
   }
@@ -32,19 +32,6 @@ test("F4: a verifier's join names one way to listen", async () => {
   }
 });
 
-// F5: thread in a run with no phase gives the run's posts
-test("F5: thread in a brainstorm with no phase gives the run's posts", async () => {
-  const s = await scene("seat", "idle");
-  try {
-    s.must("post", "an idea", "--as", s.me);
-    const thread = s.call("thread", "--as", s.me);
-    assert.match(thread.text, /an idea/);
-    assert.doesNotMatch(thread.text, /no post yet in phase -/);
-  } finally {
-    s.stop();
-  }
-});
-
 // F7 (D12, rule 10): refusals in plain words, no plan ids, every command runnable as printed
 test("F7: a verifier's code verb and seat --state refuse in plain words, commands carrying --as", async () => {
   const s = await scene("verifier", "idle");
@@ -55,8 +42,7 @@ test("F7: a verifier's code verb and seat --state refuse in plain words, command
     assert.doesNotMatch(claim.text, /code pack|\(D\d+\)/);
     const state = s.call("seat", "v1", "--state", "done", "--as", O);
     assert.doesNotMatch(state.text, /\(D\d+\)/);
-    assert.match(state.text, /block v1 "<reason>" --as g\/orchestrator/);
-    assert.match(state.text, /park v1 --as g\/orchestrator/);
+    assert.match(state.text, /end --seat v1 --as g\/orchestrator/);
   } finally {
     s.stop();
   }

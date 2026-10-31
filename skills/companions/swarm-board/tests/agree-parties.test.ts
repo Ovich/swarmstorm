@@ -24,7 +24,7 @@ const setup = (files: Record<string, string[]>) => {
   const ids = Object.keys(files);
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "G", seats: ids.map((id) => ({ id, blockers: [] })) });
   const members = ids.map((id) => board.join({ run: run.id, seat: id, doing: "x", files: files[id].map((p) => ({ path: p, interface: false })) }).member);
-  for (const m of members) board.deliver(m);
+  for (const m of members) board.deliverMentions(m);
   return members;
 };
 
@@ -32,8 +32,8 @@ test("F25: --with names the agreement's party, and the merge of its file wakes i
   const [w1, w2] = setup({ w1: [], w2: [] });
   const m = board.post(w2, "you merge first", { kind: "agreement", about: "docs/notes.md", with: ["w1"] });
   assert.deepEqual(m.mentions, ["g/w1"]);
-  board.deliver(w1);
-  board.deliver(w2);
+  board.deliverMentions(w1);
+  board.deliverMentions(w2);
   const waiting = board.wait(w2, { mentionsOnly: true, timeoutMs: 3000 });
   codeVerbs(board).merged(w1, "abc123", ["docs/notes.md"]);
   const got = await waiting;
@@ -59,13 +59,12 @@ test("F25: an agreement with no other party is refused, nothing recorded", () =>
   assert.ok(board.post(w1, "plain").seq > 0);
 });
 
-test("F28: what a wait --mentions answered is delivered; deliver does not repeat it", async () => {
+test("F28: what a wait --mentions answered is delivered; a later look does not repeat it", async () => {
   const [w1, w2] = setup({ w1: [], w2: [] });
   const waiting = board.wait(w2, { mentionsOnly: true, timeoutMs: 3000 });
   board.post(w1, "@g/w2 look");
   const got = await waiting;
   assert.equal(got.full.length, 1);
-  const again = board.deliver(w2);
+  const again = board.deliverMentions(w2);
   assert.equal(again.full.some((m) => m.body.includes("look")), false);
-  assert.equal(again.lines.some((l) => JSON.stringify(l).includes("look")), false);
 });

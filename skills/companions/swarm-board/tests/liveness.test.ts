@@ -67,14 +67,14 @@ const setup = () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   const orchestrator = board.participant("idea/orchestrator")!;
-  for (const p of [a, b, orchestrator]) board.deliver(p);
+  for (const p of [a, b, orchestrator]) board.deliverMentions(p);
   return { run, a, b, orchestrator };
 };
 /** Each member's own task, a post, delivered. */
 const taskTo = (orchestrator: Participant, ...members: Participant[]) => {
   for (const m of members) {
     board.post(orchestrator, `@${m.name.slice(m.name.indexOf("/") + 1)} your part`);
-    board.deliver(m);
+    board.deliverMentions(m);
   }
 };
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);

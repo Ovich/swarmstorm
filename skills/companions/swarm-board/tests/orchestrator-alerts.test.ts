@@ -41,7 +41,7 @@ const taskedNoPhase = () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
   const task = board.post(orch, "@a your task");
-  for (const p of [a, orch]) board.deliver(p);
+  for (const p of [a, orch]) board.deliverMentions(p);
   board.recordActivity(run.id, "a", act(), new Date());
   return { run: run.id, a, orch, taskSeq: task.seq };
 };
@@ -52,7 +52,7 @@ test("V-8: the stopped line names a question to the orchestrator left unanswered
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "p1", "go");
   const question = board.post(a, "@orchestrator is p1 x or y?");
-  for (const p of [a, orch]) board.deliver(p);
+  for (const p of [a, orch]) board.deliverMentions(p);
   board.recordActivity(run.id, "a", act({ grewAt: Date.now() }), new Date());
   board.livenessTick(run.id, new Date(Date.now() + STALL_MS_DEFAULT + 1000), linked);
   const stopped = events("stopped").map((e) => e.body);
@@ -68,7 +68,7 @@ test("V-10: status/roster show a pause, on the person or with its reason; a phas
 });
 
 const situation = (listens: Situation["listens"]): Situation => ({
-  cli: "swarm", as: "g/x", run: 1, seat: listens === "orchestrator" ? "orchestrator" : "a", ended: false, parked: false, listenerRunning: true, listens,
+  cli: "swarm", as: "g/x", run: 1, seat: listens === "orchestrator" ? "orchestrator" : "a", ended: false, listenerRunning: true, listens,
   wholeThread: false, closed: false, pause: null, phase: null, owed: null, phaseFirst: null, owesNothing: false,
 });
 const woke = { verb: "wait" as const, outcome: "woke" as const, again: "swarm wait", foregroundAgain: "swarm wait", phaseEvent: false, mentionsOnly: true, shown: [], lines: ["#1 a post"] };
@@ -87,14 +87,14 @@ test("V-23: the board's lock-freed notice for a lost holder is never taken for a
   codeVerbs(board).lockMerge(w1);
   // w2 owes the open phase: a link down owing nothing is only away
   board.phase(board.participant("g/orchestrator")!, "p", "go", { for: ["g/w2"] });
-  board.deliver(w2);
+  board.deliverMentions(w2);
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
   const presence: Presence = (m) => (m === "w2" ? { connected: false, lostAt: base - 61_000 } : { connected: true, lostAt: null });
   tick2(board, run.id, new Date(base), presence);
   assert.ok(events("lost").length === 1, "w2 lost, its lock freed");
   const question = board.post(w1, "@orchestrator which file?");
-  board.deliver(w1);
+  board.deliverMentions(w1);
   board.livenessTick(run.id, new Date(base + STALL_MS_DEFAULT + 20_000), presence);
   const stopped = events("stopped").map((e) => e.body);
   assert.equal(stopped.length, 1);

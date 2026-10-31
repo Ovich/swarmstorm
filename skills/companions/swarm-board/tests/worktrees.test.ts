@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stopServerOf } from "./fixtures/server.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 let home: string;
@@ -99,7 +100,7 @@ test("merged keeps the worktree for the seat's next task", () => {
 test("end refuses while the worktree holds work not merged, naming it and the merge; once merged, end removes it", () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
-  ok("deliver", "--as", "g/w1");
+  ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
   const dir = wt(run, "w1");
   fs.writeFileSync(path.join(dir, "c.txt"), "c\n");
   git(dir, "add", ".");
@@ -151,7 +152,7 @@ test("two runs whose group and seat join to the same text get their own folders 
 test("end with uncommitted work says to commit it, then merge it", () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
-  ok("deliver", "--as", "g/w1");
+  ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
   fs.writeFileSync(path.join(wt(run, "w1"), "c.txt"), "c\n");
   const refused = swarm("end", "--seat", "w1", "--as", "g/orchestrator");
   assert.equal(refused.status, 1);
@@ -161,7 +162,7 @@ test("end with uncommitted work says to commit it, then merge it", () => {
 test("end stops only the link whose pid this data home recorded; a process with the same command line survives", async () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
-  ok("deliver", "--as", "g/w1");
+  ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
   const idle = ["-e", "setInterval(() => {}, 1000)", "link", "--run", run, "--as", "g/w1"];
   const link = spawn(process.execPath, idle, { stdio: "ignore" });
   const decoy = spawn(process.execPath, idle, { stdio: "ignore" });
@@ -197,7 +198,10 @@ test("golden V-7 (D63): done with commits not merged is accepted, naming the bra
   assert.ok(done.includes(`branch swarm/${run}-g/w1 has 1 commit not merged into main: merge it: `), done);
   assert.doesNotMatch(done, /holds work not merged \(branch/);
   assert.match(done, /merge-lock --onto main --as g\/w1/);
-  const thread = ok("deliver", "--as", "g/orchestrator");
+  // the done line is on the run's thread (stored), the orchestrator told once all are done
+  const db = openRawStore(path.join(home, "swarm.sqlite"), { readOnly: true });
+  const thread = (db.prepare("SELECT body FROM messages WHERE event = 'done'").all() as { body: string }[]).map((m) => m.body).join(" ");
+  db.close();
   assert.ok(thread.includes(`done build (1/1); unmerged swarm/${run}-g/w1`), thread);
   const closed = ok("close", "--run", run);
   assert.ok(closed.includes(`(g/w1): branch swarm/${run}-g/w1 has 1 commit not merged into main`), closed);
@@ -207,7 +211,7 @@ test("golden V-7 (D63): done with commits not merged is accepted, naming the bra
 test("golden V-2 (D59): the orchestrator ending a live member's seat with work not merged is refused", () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
-  ok("deliver", "--as", "g/w1");
+  ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
   commitOnly(wt(run, "w1"), "c.txt");
   assert.equal(swarm("end", "--seat", "w1", "--as", "g/orchestrator").status, 1);
   assert.ok(hasBranch(`swarm/${run}-g/w1`));
@@ -231,11 +235,11 @@ test("golden V-36 (D71): a pause while a member holds the merge lock names it; i
   ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
   const paused = ok("pause", "rebasing", "--as", "g/orchestrator");
   assert.ok(paused.includes("g/w1 holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause"), paused);
-  const holder = ok("deliver", "--as", "g/w1");
+  const holder = ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
   assert.ok(holder.includes(`run ${run} is paused: rebasing. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: `), holder);
   // the pause event stays the board's fact; the holder's step under it is never the stop
   assert.doesNotMatch(holder, /land nothing/);
-  assert.match(ok("deliver", "--as", "g/w2"), /land nothing/);
+  assert.match(ok("wait", "--mentions", "--timeout", "200", "--as", "g/w2"), /land nothing/);
   assert.match(ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1"), /lock released/);
 });
 

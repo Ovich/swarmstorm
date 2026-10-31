@@ -1,5 +1,5 @@
-// The whole thread: in a seat's run every post is everyone's, delivered in full, a wake brings the unread
-// thread with it, and thread gives a phase's whole discussion; a plan run keeps its one-line delivery.
+// The whole thread: in a seat's run every post is everyone's, a wake bringing the unread thread with it, in full;
+// a plan run delivers a post only to whom it names.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -38,18 +38,9 @@ const seats = () => {
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "letter", title: "L", seats: SEATS });
   const orchestrator = board.participant("letter/orchestrator")!;
   const [writer, checker, judge] = SEATS.map((s) => board.join({ run: run.id, seat: s.id, doing: "x", files: [] }).member);
-  for (const p of [orchestrator, writer, checker, judge]) board.deliver(p);
+  for (const p of [orchestrator, writer, checker, judge]) board.deliverMentions(p);
   return { run, orchestrator, writer, checker, judge };
 };
-
-test("in a seat's run, a post not addressed to a seat still reaches it in full", () => {
-  const { writer, checker } = seats();
-  const long = `@orchestrator ${"the record holds the figure, per academic year. ".repeat(4)}`;
-  board.post(checker, long);
-  const d = board.deliver(writer);
-  assert.deepEqual(d.full.map((m) => m.body), [long]);
-  assert.deepEqual(d.lines, []);
-});
 
 test("in a seat's run, a wake brings every unread post of the run with it, in full", async () => {
   const { writer, checker, judge } = seats();
@@ -79,34 +70,13 @@ test("in a seat's run, posts that wake no one stay until a wake, then come with 
   assert.deepEqual(d.full.map((m) => m.body), ["@orchestrator no strike", "@writer your turn"]);
 });
 
-test("a plan run keeps its delivery: another member's post is one line", () => {
+test("a plan run delivers another member's post to nobody it does not name", () => {
   const plan = board.openRun({ repo: REPO, group: "build", title: "B", seats: [{ id: "S1", blockers: [] }, { id: "S2", blockers: [] }] });
   const [s1, s2] = ["S1", "S2"].map((id) => board.join({ run: plan.id, seat: id, doing: "x", files: [] }).member);
-  board.deliver(s1);
-  board.deliver(s2);
+  board.deliverMentions(s1);
+  board.deliverMentions(s2);
   board.post(s1, "@orchestrator the parser is in");
-  const d = board.deliver(s2);
+  const d = board.deliverMentions(s2);
   assert.equal(d.full.length, 0);
-  assert.equal(d.lines.length, 1);
 });
 
-test("thread: every post of the current phase in full, events and earlier phases left out", () => {
-  const { orchestrator, writer, checker, judge } = seats();
-  board.phase(orchestrator, "judge", "split every requirement");
-  board.post(judge, "@orchestrator the table");
-  board.done(writer, "judge");
-  board.phase(orchestrator, "brief", "settle the brief");
-  board.post(checker, "@orchestrator the sources forbid the figure");
-  board.post(writer, "@checker taken");
-  assert.deepEqual(
-    board.thread(writer).map((m) => m.body),
-    ["@orchestrator the sources forbid the figure", "@checker taken"],
-  );
-  assert.deepEqual(board.thread(writer, "judge").map((m) => m.body), ["@orchestrator the table"]);
-});
-
-test("thread: empty before the first phase; an unknown phase is refused", () => {
-  const { writer } = seats();
-  assert.deepEqual(board.thread(writer), []);
-  assert.throws(() => board.thread(writer, "polish"), /phase polish was never opened/);
-});

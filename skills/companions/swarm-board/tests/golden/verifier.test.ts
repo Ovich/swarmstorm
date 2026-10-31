@@ -17,12 +17,9 @@ for (const role of MEMBERS) {
         const at = (verb: string) => `${role}.${verb}.${situation}`;
         pin(at("join"), s.call("join", "--run", RUN, "--seat", seat, "--doing", "x", "--as", s.me));
         pin(at("post"), s.call("post", "a note", "--as", s.me));
-        pin(at("read"), s.call("read", "1", "--as", s.me));
-        pin(at("thread"), s.call("thread", "--as", s.me));
         pin(at("wait.empty"), s.call("wait", "--mentions", "--as", s.me, "--timeout", "1000"));
         if (situation !== "closed") s.must("post", `@${seat} a question for you`, "--as", "g/orchestrator");
         pin(at("wait.mention"), s.call("wait", "--mentions", "--as", s.me, "--timeout", "1000"));
-        pin(at("deliver"), s.call("deliver", "--as", s.me));
         pin(at("done"), s.call("done", "build", "--as", s.me));
         pin(at("roster"), s.call("roster", "--as", s.me));
         pin(at("claim"), s.call("claim", "a.ts", "--as", s.me));

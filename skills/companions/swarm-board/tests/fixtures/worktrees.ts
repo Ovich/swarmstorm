@@ -123,8 +123,8 @@ export function openTwoRunners(r: Repo, plan = "review-tool", title = "T"): numb
   const id = Number(r.cli(r.repo, "open", "--plan", plan, "--title", title, "--seats", slices).split("\n")[0].trim());
   r.cli(r.wtA, "join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside");
   r.cli(r.wtB, "join", "--run", String(id), "--seat", "S5", "--doing", "the skill");
-  r.cli(r.wtA, "deliver");
-  r.cli(r.wtB, "deliver");
+  r.cli(r.wtA, "wait", "--mentions", "--timeout", "200");
+  r.cli(r.wtB, "wait", "--mentions", "--timeout", "200");
   return id;
 }
 

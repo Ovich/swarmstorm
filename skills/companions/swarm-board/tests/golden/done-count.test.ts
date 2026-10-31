@@ -7,7 +7,7 @@ import { pin, scene } from "./golden.ts";
 /** The `n/m done[, k lost: …]` count a line carries. */
 const countIn = (text: string): string | null => /(\d+\/\d+ done(?:, \d+ lost: [\w, -]+)?)/.exec(text)?.[1] ?? null;
 
-test("golden V-11: done, roster and status print one count; a parked member's done leaves it", async () => {
+test("golden V-11: done, roster and status print one count", async () => {
   const s = await scene("orchestrator", "owes-first");
   try {
     const orch = s.me;
@@ -19,12 +19,6 @@ test("golden V-11: done, roster and status print one count; a parked member's do
     assert.equal(countIn(done.text), "1/1 done");
     assert.equal(countIn(roster.text), countIn(done.text));
     assert.equal(countIn(status.text), countIn(done.text));
-    // parked, its done is out of the count until unparked: every line says so alike
-    s.must("park", worker.split("/")[1], "--as", orch);
-    const parkedRoster = s.call("roster", "--as", orch);
-    pin("done-count.orchestrator.roster-parked", parkedRoster);
-    assert.equal(countIn(parkedRoster.text), "0/0 done");
-    assert.equal(countIn(s.call("status").text), "0/0 done");
   } finally {
     s.stop();
   }
@@ -89,21 +83,6 @@ test("golden V-18: status names the run's project, never its git dir", async () 
   }
 });
 
-test("golden V-28: a done from a parked seat says it is not counted, never a count", async () => {
-  const s = await scene("orchestrator", "owes-first");
-  try {
-    const orch = s.me;
-    const worker = s.other;
-    const seat = worker.split("/")[1];
-    s.must("park", seat, "--as", orch);
-    const parked = s.call("done", "build", "--as", worker);
-    pin("done-count.worker.done-parked", parked);
-    assert.match(parked.text, /^done build recorded; you are parked: not counted until unparked$/m);
-  } finally {
-    s.stop();
-  }
-});
-
 test("golden V-27: the phase text and the done event say the --for set and the count once", async () => {
   const s = await scene("orchestrator", "owes-first");
   try {
@@ -114,22 +93,6 @@ test("golden V-27: the phase text and the done event say the --for set and the c
     const runLine = s.call("status").text.split("\n").find((l) => l.startsWith("run "))!;
     pin("done-count.status.phase-for", { status: 0, text: runLine });
     assert.doesNotMatch(runLine, new RegExp(`${seat} only ${seat}`));
-  } finally {
-    s.stop();
-  }
-});
-
-test("golden V-34: a phase opened for a member parked until it names it with its unpark; the count names it parked", async () => {
-  const s = await scene("orchestrator", "owes-first");
-  try {
-    const orch = s.me;
-    const worker = s.other;
-    const seat = worker.split("/")[1];
-    s.must("park", seat, "--until", "build-3", "--as", orch);
-    const opened = s.call("phase", "build-3", "build 3", "--as", orch);
-    pin("done-count.orchestrator.phase-parked-until", opened);
-    assert.match(opened.text, new RegExp(`${worker} is parked and not counted in this phase: unpark it .* unpark ${seat} --as`));
-    assert.match(s.call("status").text, new RegExp(`0/0 done, 1 parked: ${seat}`));
   } finally {
     s.stop();
   }

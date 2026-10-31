@@ -152,7 +152,7 @@ test("a member owing the phase whose only link is killed reads gone within 66 s 
   assert.doesNotMatch(verb.stdout, /start your link now/, "the verb went through the agent's link");
   // it owes work (the open phase undone): a link down on it is lost, never away
   h.r.cli(h.r.repo, "phase", "build", "build the client", "--as", "harness-plan/orchestrator");
-  const took = spawnSync(process.execPath, [CLI, "deliver"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
+  const took = spawnSync(process.execPath, [CLI, "wait", "--mentions", "--timeout", "200"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   assert.equal(took.status, 0, took.stderr);
   link.kill();
   await exited;
@@ -184,7 +184,7 @@ test("a member owing the phase whose only link is killed reads gone within 66 s 
   const afterLoss = Date.parse(gone.at) - aliveAt;
   assert.ok(afterLoss >= 60_000 && afterLoss <= 66_000, `gone posted ${afterLoss} ms after the server's last sign of the link (stored lost_at ${lost.lost_at}, ${Date.parse(gone.at) - lost.lost_at} ms)`);
   assert.equal(await answers(linkPipe(h.r.home, h.run, h.member.name)), false, "no link of S3 came back");
-  const told = h.r.cli(h.r.repo, "deliver", "--as", "harness-plan/orchestrator");
+  const told = h.r.cli(h.r.repo, "wait", "--mentions", "--timeout", "200", "--as", "harness-plan/orchestrator");
   assert.match(told, /lost harness-plan\/S3/);
   assert.doesNotMatch(told, /stalled/);
 });

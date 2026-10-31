@@ -1,3 +1,0 @@
-exit 1
---- stderr
-swarm: park: no live member in seat nobody of run 1

@@ -2,6 +2,7 @@
 // merge-lock lists the guides of the branch's changes; merged refuses until each is settled.
 import { test, beforeEach, afterEach } from "node:test";
 import { stopServerOf } from "./fixtures/server.ts";
+import { openRawStore } from "./fixtures/raw-store.ts";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -13,6 +14,15 @@ import { discoverGuides, globRegex, guidesFor, guidesSettlement, parseGuide, pro
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
 let home: string;
+/** A message's body as stored (the read verb is gone). */
+const storedBody = (seq: string): string => {
+  const db = openRawStore(path.join(home, "swarm.sqlite"), { readOnly: true });
+  try {
+    return String((db.prepare("SELECT body FROM messages WHERE seq = ?").get(Number(seq)) as { body: string } | undefined)?.body);
+  } finally {
+    db.close();
+  }
+};
 let repo: string;
 let wtA: string;
 let wtB: string;
@@ -99,7 +109,7 @@ test("merge-lock lists the branch's guides; merged refuses until every one is se
   const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits, ui:n/a no screen, only a constant");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
-  assert.match(cli(repo, "read", seq), /guides: all:ok fits, ui:n\/a no screen, only a constant/);
+  assert.match(storedBody(seq), /guides: all:ok fits, ui:n\/a no screen, only a constant/);
 });
 
 test("a branch touching no guide's paths merges without --guides", () => {
@@ -154,7 +164,7 @@ test("merged refuses an unknown guide, a verdict that is neither ok nor n/a with
   // a silent merge still records its guides in the run
   const seq = /guides recorded as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
-  assert.match(cli(repo, "read", seq), /guides: all:ok, ui:ok/);
+  assert.match(storedBody(seq), /guides: all:ok, ui:ok/);
 });
 
 test("merge-lock names a guide the target gained since the branch left it", () => {
@@ -206,7 +216,7 @@ test("D11: merged refuses a sha git does not know, and takes a long report from 
   const out = cli(wtA, "merged", sha, "--files", "src/a.ts", "--report-file", file, "--guides", "all:ok");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
-  assert.match(cli(repo, "read", seq!), /a long report\nover two lines/);
+  assert.match(storedBody(seq!), /a long report\nover two lines/);
 });
 
 test("golden V-32 (D69): merged --report naming an existing file is refused with the --report-file line", () => {

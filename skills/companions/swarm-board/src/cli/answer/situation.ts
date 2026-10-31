@@ -14,8 +14,6 @@ export type Situation = {
   run: number;
   seat: string;
   ended: boolean;
-  /** parked by the orchestrator (D30, D60): every own call answers parked first */
-  parked: boolean;
   /** a background listener of the member's is running (the link's report, D4) */
   listenerRunning: boolean;
   /** how the member listens: a seat in the foreground, a worker and the orchestrator in the background */
@@ -37,7 +35,7 @@ export type Situation = {
   owesNothing: boolean;
 };
 
-/** Reads the member's situation. `show`: the verb shows the phase to the member (wait, deliver, read), which the board
+/** Reads the member's situation. `show`: the verb shows the phase to the member (wait, join), which the board
  *  records, so a later answer in the same phase is told it was shown. */
 export async function readSituation(board: ConnectedBoard, me: Participant, opts: { cli: string; word: (w: string) => string; show?: boolean }): Promise<Situation> {
   const runs = await board.runs();
@@ -52,7 +50,6 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     run: me.run,
     seat: me.seat,
     ended: !!me.ended,
-    parked: !!me.parked,
     listenerRunning: !!me.listening,
     listens: me.seat === "orchestrator" ? "orchestrator" : profile.member === "worker" ? "background" : "foreground",
     wholeThread: !!profile.wholeThread,

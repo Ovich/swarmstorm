@@ -26,14 +26,13 @@ const rosterOf = (group: string) =>
   Object.fromEntries(board.snapshot(REPO).roster.filter((r) => r.plan === group).map((r) => [r.seat, { state: r.state }]));
 
 for (const kind of ["plan", "brainstorm"] as const) {
-  test(`D36, D49 golden (${kind} run): working moves, stopped does not, parked is away, ended; seats read their member`, () => {
+  test(`D36, D49 golden (${kind} run): working moves, stopped does not, ended; seats read their member`, () => {
     const group = `g-${kind}`;
     const run = board.openRun({ repo: REPO, kind, group, title: "T", seats: ["a", "b", "c", "d", "e"].map((id) => ({ id, blockers: [] })) });
     const [a, b, c, d] = ["a", "b", "c", "d"].map((seat) => board.join({ run: run.id, seat, doing: "x", files: [] }).member);
     const orch = board.participant(`${group}/orchestrator`)!;
     board.phase(orch, "p1", "go");
     board.done(b, "p1");
-    board.park(orch, "c", "p2");
     board.end(d);
     // b's tokens last moved 15 min ago, its link up
     quietMember(path.join(dir, "swarm.sqlite"), "b", 20 * 60_000);
@@ -43,29 +42,25 @@ for (const kind of ["plan", "brainstorm"] as const) {
       orchestrator: { state: "working" },
       a: { state: "working" },
       b: { state: "stopped" },
-      c: { state: "away" },
+      c: { state: "working" },
       d: { state: "ended" },
     });
     assert.deepEqual(
       board.runs().find((r) => r.id === run.id)!.seats.map((s) => [s.id, s.state]),
-      [["a", "working"], ["b", "stopped"], ["c", "away"], ["d", "ended"], ["e", "empty"]],
+      [["a", "working"], ["b", "stopped"], ["c", "working"], ["d", "ended"], ["e", "empty"]],
     );
-    // F1: the roster reads the parked member away, never its last activity
-    const listed = Object.fromEntries(board.roster(REPO).filter((m) => m.plan === group).map((m) => [m.seat, [m.state, m.parked, m.activity]]));
-    assert.deepEqual(listed.c, ["away", true, null]);
     void a;
     board.closeRun(run.id);
     assert.ok(Object.values(rosterOf(group)).every((m) => m.state === "ended"), "a closed run: every member ended");
   });
 }
 
-test("the state: link up working or stopped by its tokens, link down lost or away by what it owed at the drop; parked away; ended first", () => {
-  const base = { runOpen: true, ended: false, parked: false, linkDown: false, owedAtDrop: false, moving: false };
+test("the state: link up working or stopped by its tokens, link down lost or away by what it owed at the drop; ended first", () => {
+  const base = { runOpen: true, ended: false, linkDown: false, owedAtDrop: false, moving: false };
   assert.equal(coreStateOf({ ...base, moving: true }), "working");
   assert.equal(coreStateOf(base), "stopped");
   assert.equal(coreStateOf({ ...base, linkDown: true, owedAtDrop: true }), "lost");
   assert.equal(coreStateOf({ ...base, linkDown: true }), "away");
-  assert.equal(coreStateOf({ ...base, parked: true, owedAtDrop: true }), "away");
-  assert.equal(coreStateOf({ ...base, ended: true, parked: true }), "ended");
+  assert.equal(coreStateOf({ ...base, ended: true }), "ended");
   assert.equal(coreStateOf({ ...base, runOpen: false, moving: true }), "ended");
 });

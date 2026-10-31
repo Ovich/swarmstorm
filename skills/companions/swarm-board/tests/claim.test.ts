@@ -54,8 +54,8 @@ const running = (): string => {
   const id = cli(repo, "open", "--plan", "review-tool", "--title", "T", "--seats", slices).split("\n")[0].trim(); // the run id, then the page's URL
   const s3 = JSON.parse(cli(wtA, "join", "--run", id, "--seat", "S3", "--doing", "the page", "--files", "src/a.ts:inside", "--json"));
   cli(wtB, "join", "--run", id, "--seat", "S5", "--doing", "the skill");
-  cli(wtA, "deliver");
-  cli(wtB, "deliver");
+  cli(wtA, "wait", "--mentions", "--timeout", "200");
+  cli(wtB, "wait", "--mentions", "--timeout", "200");
   return s3.nick;
 };
 
@@ -135,14 +135,14 @@ test("the claimer's post reaches the holder ending on the agreement to answer wi
   swarm(wtB, "claim", "src/a.ts");
   cli(wtB, "post", "@S3 I add isExpired() at the end", "--about", "src/a.ts");
   const AGREE = 'answer with an agreement on who changes what: swarm agree "<who changes what in src/a.ts>" --about src/a.ts';
-  const heard = cli(wtA, "deliver");
+  const heard = cli(wtA, "wait", "--mentions", "--timeout", "200");
   assert.ok(heard.includes(`I add isExpired() at the end\n${AGREE}\n`), heard);
   // the holder's answer, and a post once the claimer holds the file, carry no such line
   cli(wtB, "claim", "src/a.ts");
   cli(wtA, "agree", "@S5 S5 adds isExpired() at the end, S3 the rest", "--about", "src/a.ts");
   cli(wtB, "post", "@S3 done with my part", "--about", "src/a.ts");
-  assert.ok(!cli(wtB, "deliver").includes("answer with an agreement"));
-  assert.ok(!cli(wtA, "deliver").includes("answer with an agreement"));
+  assert.ok(!cli(wtB, "wait", "--mentions", "--timeout", "200").includes("answer with an agreement"));
+  assert.ok(!cli(wtA, "wait", "--mentions", "--timeout", "200").includes("answer with an agreement"));
 });
 
 test("claim --interface claims the path as an interface", async () => {
@@ -175,7 +175,7 @@ test("end reconciles git status before releasing: a shell write and a rename cla
     [["src/a.ts", "review-tool/S3"]],
   );
   // the flag is on the thread, mentioning both
-  const forS3 = JSON.parse(cli(wtA, "deliver", "--json"));
+  const forS3 = JSON.parse(cli(wtA, "wait", "--mentions", "--timeout", "200", "--json"));
   const flag = forS3.full.find((m: { body: string }) => /flag:/.test(m.body));
   assert.ok(flag, JSON.stringify(forS3));
   assert.deepEqual([...flag.mentions].sort(), ["review-tool/S3", "review-tool/S5"]);
@@ -221,7 +221,7 @@ test("merge-lock flags a committed file another member holds, mentioning both, a
     r.flags.map((f: { path: string; holder: string }) => [f.path, f.holder]),
     [["src/a.ts", "review-tool/S3"]],
   );
-  const forS3 = JSON.parse(cli(wtA, "deliver", "--json"));
+  const forS3 = JSON.parse(cli(wtA, "wait", "--mentions", "--timeout", "200", "--json"));
   const flag = forS3.full.find((m: { body: string }) => /flag:/.test(m.body));
   assert.ok(flag, JSON.stringify(forS3));
   assert.deepEqual([...flag.mentions].sort(), ["review-tool/S3", "review-tool/S5"]);
@@ -268,8 +268,8 @@ const crossRuns = async () => {
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats });
   const mine = board.join({ run: a.id, seat: "S3", doing: "page", files: [] }).member;
   const theirs = board.join({ run: b.id, seat: "S3", doing: "schema", files: [{ path: "src/x.ts", interface: true }] }).member;
-  board.deliver(mine);
-  board.deliver(theirs);
+  board.deliverMentions(mine);
+  board.deliverMentions(theirs);
   return { board, mine, theirs };
 };
 
@@ -279,11 +279,11 @@ test("across runs: the post that opens a held file keeps its author's run and op
     assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, false);
     const ask = board.post(mine, "@swarm/S3 I add a helper to src/x.ts", { about: "src/x.ts" });
     assert.equal(ask.run, mine.run);
-    assert.deepEqual(board.deliver(theirs).full.map((m) => m.seq), [ask.seq]);
+    assert.deepEqual(board.deliverMentions(theirs).full.map((m) => m.seq), [ask.seq]);
     assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, true);
     const agreed = board.post(theirs, "review-tool/S3 adds the helper at the end", { about: "src/x.ts", kind: "agreement" });
     assert.equal(agreed.run, theirs.run);
-    assert.deepEqual(board.deliver(mine).full.map((m) => m.seq), [agreed.seq]);
+    assert.deepEqual(board.deliverMentions(mine).full.map((m) => m.seq), [agreed.seq]);
   } finally {
     board.close();
   }
@@ -294,10 +294,10 @@ test("across runs: the answer line the holder gets carries no --main, and its ag
   try {
     assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, false);
     board.post(mine, "@swarm/S3 I add a helper to src/x.ts", { about: "src/x.ts" }); // settles the claim (D7)
-    const heard = board.deliver(theirs).full[0] as { answer?: string };
+    const heard = board.deliverMentions(theirs).full[0] as { answer?: string };
     assert.equal(heard.answer, 'answer with an agreement on who changes what: swarm agree "<who changes what in src/x.ts>" --about src/x.ts');
     const agreed = board.post(theirs, "review-tool/S3 adds the helper at the end", { about: "src/x.ts", kind: "agreement" });
-    assert.deepEqual(board.deliver(mine).full.map((m) => m.seq), [agreed.seq]);
+    assert.deepEqual(board.deliverMentions(mine).full.map((m) => m.seq), [agreed.seq]);
   } finally {
     board.close();
   }
@@ -308,10 +308,10 @@ test("across runs: a merge notice keeps the merger's run and reaches another run
   try {
     board.post(mine, "@swarm/S3 I add a helper", { about: "src/x.ts" });
     assert.equal(codeVerbs(board).checkEdit(mine, "src/x.ts").allowed, true);
-    board.deliver(theirs);
+    board.deliverMentions(theirs);
     assert.equal(codeVerbs(board).lockMerge(mine).granted, true);
     codeVerbs(board).merged(mine, "abc123", ["src/x.ts"]);
-    const got = board.deliver(theirs).full;
+    const got = board.deliverMentions(theirs).full;
     assert.equal(got.length, 1);
     assert.equal(got[0].run, mine.run);
     assert.match(got[0].body, /merged abc123/);
@@ -355,7 +355,7 @@ test("a flag is posted once, whether merge-lock or end finds it; it is the flag 
   commit(wtB, "a");
   assert.equal(JSON.parse(cli(wtB, "merge-lock", "--onto", "main", "--json")).flags.length, 1);
   assert.deepEqual(JSON.parse(cli(wtB, "end", "--seat", "S5", "--as", "review-tool/orchestrator", "--json")).flags, []);
-  const heard = cli(wtA, "deliver");
+  const heard = cli(wtA, "wait", "--mentions", "--timeout", "200");
   assert.match(heard, /settle it: .* agree "@review-tool\/S5 <who changes what>" --about src\/a\.ts/);
   const board = await openBoard(path.join(home, "swarm.sqlite"));
   try {
@@ -415,7 +415,7 @@ test("a plan runs in phases: the orchestrator opens one, each member's done coun
   cli(repo, "phase", "build", "every member: your seat, then done build", "--as", "review-tool/orchestrator");
   cli(wtA, "done", "build");
   cli(wtB, "done", "build");
-  const told = cli(repo, "deliver", "--as", "review-tool/orchestrator");
+  const told = cli(repo, "wait", "--mentions", "--timeout", "200", "--as", "review-tool/orchestrator");
   assert.match(told, /all.done/i, told);
 });
 
@@ -427,8 +427,8 @@ test("a paused run refuses claim and merge-lock with exit 4, tells the member to
   assert.match(refused.stdout, /^claim refused: run \d+ is paused: hold on\. Stop where you are: .*wait in the foreground for the resume \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as review-tool\/S3 --timeout 170000$/m);
   const lock = swarm(wtA, "merge-lock", "--onto", "main");
   assert.equal(lock.status, 4, lock.stderr);
-  const roster = cli(wtA, "deliver");
-  assert.match(roster, /PAUSED: hold on/);
+  const roster = cli(wtA, "wait", "--mentions", "--timeout", "200");
+  assert.match(roster, /run [0-9]+ is paused: hold on/);
   cli(repo, "resume", "go on", "--as", "review-tool/orchestrator");
   assert.match(cli(wtA, "claim", "src/a.ts"), /claimed src\/a\.ts/);
 });

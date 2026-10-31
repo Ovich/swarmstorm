@@ -46,8 +46,8 @@ const setup = () => {
   });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
-  board.deliver(a);
-  board.deliver(b);
+  board.deliverMentions(a);
+  board.deliverMentions(b);
   return { run, a, b, orchestrator: board.participant("idea/orchestrator")! };
 };
 
@@ -85,7 +85,7 @@ test("a paused run raises no stopped or lost alert; after resume the stillness c
   board.phase(orchestrator, "p1", "go");
   for (const m of ["a", "b"]) {
     board.post(orchestrator, `@${m} your part`);
-    board.deliver(board.participant(`${board.participant(orchestrator.name)!.plan}/${m}`)!);
+    board.deliverMentions(board.participant(`${board.participant(orchestrator.name)!.plan}/${m}`)!);
   }
   const base = Date.now() - 120_000;
   const at = (s: number) => new Date(base + s * 1000);

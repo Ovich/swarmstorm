@@ -20,18 +20,10 @@ except `open`, `seat`, `close` and `status`.
      the seat's row on that board is named in its brief:
 
      ```json
-     [{ "id": "skeptic", "role": "<the role>", "link": "<brainstorm board URL>", "on": ["agreement"] },
+     [{ "id": "skeptic", "role": "<the role>", "link": "<brainstorm board URL>" },
       { "id": "builder", "role": "<…>", "link": "<…>" }]
      ```
 
-   - **`on`**, on any row: the events that wake that member's `wait --mentions` besides
-     mentions and urgent posts, as the strategy assigns them (the skeptic `agreement`).
-     `any:<event>` for one of any run, a plain `<event>` your own run's; `$S --help` lists the events (an old name, `gone`, `stale`, `quiet`, `stalled` or `idle`, is read as `lost` or `stopped`, and the answer says so). A row without `on`
-     gets its kind's defaults: none for a member; for you, waking on `ended, stopped` and
-     carrying `done, joined` on a code run, waking on `agreement, endorsement,
-     ended, stopped` on a brainstorm (*Watching the thread* says what carried means). An explicit
-     `subscribe merged` wakes, and replaces the carry. A member's `join --on` replaces
-     its row's list; `subscribe` / `unsubscribe` change it later.
 
 2. **From the repository's checkout:**
    `$S open --kind <plan|brainstorm|task> --group <slug> --title "<title>" --seats <file> --link <plan or board URL>`,
@@ -64,15 +56,13 @@ waits: in the foreground; a seat runs on the plugin's
 ## Seat states
 
 - **A seat's state is derived from its member** (`ready`, `running`, `done`); you set none.
-  **`$S block <seat> "<what the person decides>" --as <group>/orchestrator`** when one seat waits
-  on the person: it carries the `blocked` badge, that text its reason, and is told to stop and
-  wait; **`$S unblock <seat>`** with their answer. The seat leaves the run by `end --seat <seat>`.
+  One seat waiting on the person is told so by a post; the seat leaves the run by `end --seat <seat>`.
 - **A worker stays for the whole run**, task after task; a member never ends itself while the
   run is open (its own `end` is refused). One whose context runs long is ended by you,
   `$S end --seat <seat> --as <group>/orchestrator` (it refuses while that seat's work is not
   merged), and a fresh worker joins the same seat.
 - **A seat added mid-run**: `$S seat add <seat> --run <run> [--link <url>]
-  [--role <role>] [--on <events>]`. It lands after the last, `ready`; an id already in the run or
+  [--role <role>]`. It lands after the last, `ready`; an id already in the run or
   a closed run is refused. Then dispatch it like the others.
 
 ## Watching the thread
@@ -81,13 +71,11 @@ waits: in the foreground; a seat runs on the plugin's
   started with the harness's background-task feature; you are not a subagent, its end reaches
   you. The answers of `phase` and of your `wait` print this step: read them. The harness's
   task-end notice repeats the wait's answer: one event, already delivered, its last line says so. **These wake it**:
-  every mention of you, `all-done`, `stopped`, `lost`, `urgent`, your
-  waking subscriptions (`ended`, `stopped`), and a member's `done` in five cases,
+  every mention of you, `all-done`, `all-joined`, `stopped`, `lost`, `urgent`, and a member's `done` in five cases,
   its case named in the body: the member is in the phase's `--watch`, it is done without a post
   since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
-  done for a phase that is not current (`late done`). **These are carried**: any other
-  `done`, `joined`. A carried line does not end your wait; it
-  comes with the next wake, one line each, and wakes you itself after 5 min if nothing else did.
+  done for a phase that is not current (`late done`). Nothing else reaches you: any other
+  `done` is counted, and `all-done` tells you once every member is in.
   To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
   the phase with `--watch <ids>`. When it ends, read its output, act, and start it again at once, in the
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of
@@ -96,7 +84,7 @@ waits: in the foreground; a seat runs on the plugin's
 - **Two events reach you alone**; no member is woken by them, and neither fires while the run is
   paused. Each ends on the step it asks for.
   - **`stopped <group>`**: no member's tokens moved for the run's window (default 10 min); once,
-    again only after one moved. The swarm waits on you, or every member is stuck: read the thread,
+    again only after one moved. The swarm waits on you, or every member is stuck: read the board,
     then post the next task, open the next phase, or resume the members by message (`SendMessage`).
     A member's own card reads `stopped` the same way, its link up and its tokens still: a long call
     with no line written (a hung command, a prompt it cannot answer) reads so too.
@@ -106,14 +94,13 @@ waits: in the foreground; a seat runs on the plugin's
     close the seat (*A lost member*).
 - **A merge report is a task to check**: the worker's `@orchestrator merged <sha>: <report>`,
   posted by `merged --report`, is the one wake of a merge; the `merged` event itself no longer
-  reaches you (`subscribe merged` to hear it). Re-run the done-when at the sha it names, not at
+  reaches you. Re-run the done-when at the sha it names, not at
   the branch's tip by then; the report adds what it found.
 - **A merge past the lock is yours alone**: `merged` refuses a member that holds no merge lock;
   when a merge had to land without it (the holder died mid-merge), record it with
   `$S merged <sha> --files <path>... --report - --unlocked "<why>" --as <plan>/orchestrator`, the why posted in the run.
-- **`$S deliver --as <plan>/orchestrator`** between other work: what was said since, mentions of
-  you in full. With no background notification in the harness (`references/setup.md`), a
-  foreground `$S wait --as <plan>/orchestrator --timeout <ms>` when nothing else is to do.
+- **With no background notification in the harness** (`references/setup.md`), a foreground
+  `$S wait --mentions --as <plan>/orchestrator --timeout <ms>` between other work, and when nothing else is to do.
 - **Answer what is asked of you**, on the thread. Two workers' agreement is theirs to make; an
   agreement that changes a decision the plan took is recorded in the plan.
 - **A brainstorm's events**: an agreement and its endorsement, an escalation, a new question,
@@ -138,14 +125,14 @@ waits: in the foreground; a seat runs on the plugin's
 **To stop the whole run**, `$S pause "<why>" --as <group>/orchestrator`: every member is told to
 stop and wait, claim and merge-lock are refused, and no `stopped` or `lost` alert fires.
 A paused run is silent for you too: only `urgent` wakes you; everything else (`lost`,
-`done`, `all-done`) is held, and the 5 min carry does not run.
+`done`, `all-done`) is held.
 `$S resume "<what changed, what to do>" --as <group>/orchestrator` lets them go on, the message
 in their wake, and its answer hands you every held line, one each. The answers print the next step.
 
 **While the run waits on the person**, pause it: `$S pause --person "<what they decide>" --as
 <group>/orchestrator`. The members' paused line and the viewer then say `waiting on the person:
-<what>`, and every member carries the `blocked` badge with that text; a protocol's human phase
-opens with it. Resume with their answer. One seat alone waiting on the person: `block` (*Seat states*).
+<what>`; a protocol's human phase opens with it. Resume with their answer. One seat alone waiting on
+the person: a post to it says so (*Seat states*).
 
 **A mention reaches a `waiting` member at once**, and one with a listener when its listener ends;
 the roster's `unread` shows what it has not read yet. **You may always message a member
@@ -166,14 +153,9 @@ it; dispatch a fresh worker, which joins the same seat; repost its open task.
 task, then resume it (`SendMessage`) so it reads it; where the harness has no resume, dispatch a
 fresh agent that joins the same seat.
 
-**A member with nothing to do stays; you decide whether to park it.** It is only told to wait
-again. On `stopped`, a member its peers may need (one holding files, a debate seat) keeps waiting;
-one only you need (a worker between tasks with nothing held, a verifier until its phase) you
-park: `$S park <seat> [--until <phase>] --as <group>/orchestrator`. It is told to end its turn
-without `end`; its card reads `parked until <phase>`; it carries no badge and raises no
-`stopped` or `lost`, its unread kept for its return, and all-done does not wait for it. Only you lift
-the park, its own calls never do: `$S unpark <seat>`, then resume it (`SendMessage`) with its next task, or, where the harness has no
-resume, dispatch a fresh agent that joins the same seat.
+**A member with nothing to do stays.** A member owing nothing ends its turn and reads `away`; it
+raises nothing. Resume it (`SendMessage`) with its next task, or, where the harness has no resume,
+dispatch a fresh agent that joins the same seat.
 
 ## Close
 

@@ -47,7 +47,7 @@ test("D55: an agent gone (no link, no call, no growth) LOST_MS after the server 
   const run = setup();
   // it owes the open phase: a link down owing nothing is only away
   board.phase(board.participant("g/orchestrator")!, "p1", "do T1");
-  board.deliver(board.participant("g/a")!);
+  board.deliverMentions(board.participant("g/a")!);
   board.recordServerUp(Date.now() - LONG);
   quietMember(path.join(dir, "swarm.sqlite"), "a", LONG);
   links.set("a", { connected: false, lostAt: Date.now() - LONG, seenAt: Date.now() - LONG, cause: "socket" });
@@ -79,17 +79,11 @@ test("D55: a link that drops and reconnects within LOST_MS is never lost", () =>
   assert.equal(lostEvents().length, 0);
 });
 
-test("D55: a join, or an unpark, is never lost for LOST_MS after it", () => {
+test("D55: a join is never lost for LOST_MS after it", () => {
   const run = setup();
   board.recordServerUp(Date.now() - LONG);
   // just joined, no link ever came
   assert.equal(badgeOfA(run), null, "a fresh join");
-  const orch = board.participant("g/orchestrator")!;
-  board.park(orch, "a");
-  quietMember(path.join(dir, "swarm.sqlite"), "a", LONG);
-  assert.equal(badgeOfA(run), null, "parked: never lost");
-  board.unpark(orch, "a");
-  assert.equal(badgeOfA(run), null, "just unparked: seated afresh");
   assert.equal(lostEvents().length, 0);
 });
 

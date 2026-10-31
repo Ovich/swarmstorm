@@ -1,5 +1,5 @@
-// board-split D36, D44, S40: trouble is a badge beside the state, never a state: stalled, lost, blocked, each with
-// its reason; a parked member carries none (D30); busy is activity, never a badge (D31); the old event names read as
+// board-split D36, D44, S40: trouble is a badge beside the state, never a state: stalled, lost, each with
+// its reason; busy is activity, never a badge (D31); the old event names read as
 // the new ones.
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { test, beforeEach, afterEach } from "node:test";
@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { parseSubscriptions, renamedIn, eventOf } from "../src/board/events.ts";
+import { eventOf } from "../src/board/events.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
@@ -40,7 +40,7 @@ const setup = () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  for (const p of [a, b, orch]) board.deliver(p);
+  for (const p of [a, b, orch]) board.deliverMentions(p);
   return { run, a, b, orch };
 };
 
@@ -66,35 +66,6 @@ test("golden lost: a member owing work whose link is down past LOST_MS is lost; 
   assert.equal(badgeIn(run.id, "a", at(base, 2)).badge, null);
 });
 
-test("golden blocked: block badges the seat with its reason and tells it to wait; unblock lifts it; pause --person blocks every member", () => {
-  const { run, a, orch } = setup();
-  const m = board.block(orch, "a", "the person picks the schema");
-  assert.equal(m.event, "block");
-  assert.deepEqual(m.mentions, ["g/a"]);
-  assert.equal(eventStep(m, a, "swarm"), WORDING.blockedWait);
-  assert.deepEqual([cardOf("g/a").badge?.name, cardOf("g/a").badge?.reason], ["blocked", "the person picks the schema"]);
-  assert.throws(() => board.block(a, "b", "x"), /only the orchestrator/);
-  assert.throws(() => board.block(orch, "b", " "), /say what/);
-  board.unblock(orch, "a");
-  assert.equal(cardOf("g/a").badge, null);
-  assert.throws(() => board.unblock(orch, "a"), /not blocked/);
-  board.pause(orch, "the person decides the scope", { person: true });
-  assert.deepEqual([cardOf("g/b").badge?.name, cardOf("g/b").badge?.reason], ["blocked", "the person decides the scope"]);
-  assert.equal(cardOf("g/orchestrator").badge, null);
-  board.resume(orch);
-  assert.equal(cardOf("g/b").badge, null);
-  void run;
-});
-
-test("D30: a parked member carries no badge, blocked or stalled", () => {
-  const { run, orch } = setup();
-  const base = Date.now();
-  board.block(orch, "a", "waits on the person");
-  board.park(orch, "a");
-  board.recordActivity(run.id, "a", act({ grewAt: base, inTurn: false }), at(base, 0));
-  assert.equal(cardOf("g/a").badge, null);
-});
-
 test("S40, board-split D49: a subagent that ended its turn on a background task of its own is busy on it, never lost or stalled from it, however long", () => {
   const { run } = setup();
   const base = Date.now();
@@ -109,22 +80,4 @@ test("S40, board-split D49: a subagent that ended its turn on a background task 
   assert.equal(eventsOf("lost").length, 0);
   const long = badgeIn(run.id, "a", at(base, 16 * 60));
   assert.deepEqual([long.state, long.badge], ["busy", null]);
-});
-
-test("subscription compatibility: gone reads as lost; stale, quiet, stalled and idle as stopped, said once; a stored old event reads as its new one", () => {
-  assert.deepEqual(parseSubscriptions("stale,gone,any:quiet,ended"), [
-    { event: "stopped", scope: "run" },
-    { event: "lost", scope: "run" },
-    { event: "stopped", scope: "any" },
-    { event: "ended", scope: "run" },
-  ]);
-  assert.deepEqual(renamedIn(["stale,gone", "quiet"]), [
-    { old: "stale", now: "stopped" },
-    { old: "gone", now: "lost" },
-    { old: "quiet", now: "stopped" },
-  ]);
-  assert.match(WORDING.eventRenamed(renamedIn("gone")), /^gone is now lost: trouble is a badge/);
-  assert.equal(eventOf({ event: "gone", kind: "event" } as never), "lost");
-  assert.equal(eventOf({ event: "stale", kind: "event" } as never), "stopped");
-  assert.equal(eventOf({ event: "idle", kind: "event" } as never), "stopped");
 });

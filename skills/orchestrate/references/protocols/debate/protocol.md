@@ -16,7 +16,7 @@ are its decisions rows, status open, ordered as a tree. Swarm kind `brainstorm`.
 
 | Field | Content | Recommended |
 |---|---|---|
-| seats | the skeptic (fixed, `on: ["agreement"]`, so every agreement reaches it unmentioned) + topic seats, `on` none. The skeptic's role asks for the diagram or the table whenever a claim is about a flow, a structure or a comparison, and endorses no agreement on a comparison without its table | skeptic + 2 to 3 to start from, reconsidered against the sides and expertise the questions need |
+| seats | the skeptic (fixed; every agreement names it, `--with skeptic`, so each reaches it) + topic seats. The skeptic's role asks for the diagram or the table whenever a claim is about a flow, a structure or a comparison, and endorses no agreement on a comparison without its table | skeptic + 2 to 3 to start from, reconsidered against the sides and expertise the questions need |
 | experiments | yes · no; on yes, each seat its own sandbox outside the repository, only its recipe comes back; the brief adds `**Experiments**: <no \| yes, in your own sandbox at <path>>` | no |
 | exchanges | N posts on one question before it escalates | 6 |
 | new questions | seats may raise them: yes · no | yes |

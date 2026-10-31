@@ -68,7 +68,6 @@ const member = (seat: string, liveness: object, state = "working") => ({
   ended: null,
   calls: 3,
   listening: true,
-  on: [],
   lastCall: ago(5),
   liveness,
 });

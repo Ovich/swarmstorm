@@ -1,2 +1,6 @@
 exit 0
-nothing yet; wait: node <cli> wait --mentions --as g/orchestrator --timeout 1000
+act on it, then start this listener again, in the background: node <cli> wait --mentions --as g/orchestrator --timeout 1000
+#<seq> g/w1 (event)  <ts>
+all joined: 1 seat
+every declared seat has joined: post the tasks, or open the first phase (node <cli> phase <name> "<text>" --as g/orchestrator)
+these lines are delivered; the task-end notice is the same event

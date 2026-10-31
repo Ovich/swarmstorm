@@ -1,4 +1,0 @@
-exit 0
-#<seq> g/orchestrator (event)  <ts>
-run 1 opened: task g, T
-phase build (unchanged; its text: node <cli> thread --as g/orchestrator)

@@ -1,4 +1,4 @@
-// P2 composition (plan D3-D6, D17, D18): the join answer carries who is in the run; changes ride as carried lines.
+// P2 composition (plan D3-D6, D17, D18): the join answer carries who is in the run; changes are lines on the thread.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -46,46 +46,34 @@ test("D6: role is left out when every seat shares one (or none)", () => {
   assert.ok(c.lines.every((l) => !/worker/.test(l)));
 });
 
-test("D4: a late join, an added seat, an end, a back reach members as carried lines that never end a wait", async () => {
+test("D4: a late join, an added seat, an end, a back are lines on the run's thread that never end a wait", async () => {
   const run = open([{ id: "w1" }, { id: "w2" }]);
   const w1 = join(run.id, "w1").member;
   const orch = board.participant("g/orchestrator")!;
-  board.deliver(w1);
-  board.deliver(orch);
+  board.deliverMentions(w1);
+  board.deliverMentions(orch);
   const waiting = board.wait(w1, { mentionsOnly: true, timeoutMs: 500 });
   join(run.id, "w2");
   board.addSeat(run.id, { id: "w3", role: "worker", area: "docs", blockers: [] });
-  assert.deepEqual(await waiting, { full: [], lines: [] });
+  assert.deepEqual(await waiting, { full: [] });
   const w2 = board.participant("g/w2")!;
   board.end(w2);
   join(run.id, "w2");
-  // they ride on the next wake: a mention brings them
+  // they are on the run's thread, and a mention's wake brings only the mention
   board.post(orch, "@w1 go");
   const got = await board.wait(w1, { mentionsOnly: true, timeoutMs: 2000 });
-  const bodies = [...got.full.map((m) => m.body), ...got.lines];
-  assert.ok(bodies.some((b) => /go/.test(b)));
-  const joined = bodies.join("\n");
+  assert.deepEqual(got.full.map((m) => m.body), ["@w1 go"]);
+  const joined = board.snapshot(REPO).events.map((e) => e.body).join("\n");
   assert.match(joined, /\+ w2 [A-Z]/);
   assert.match(joined, /\+ w3 .*\(docs\) added/);
   assert.match(joined, /- w2 [A-Z][a-z]+ [A-Z][a-z]+ ended/);
   assert.match(joined, /\+ w2 [A-Z][a-z]+ [A-Z][a-z]+ back/);
 });
 
-test("D4: a member subscribed to composition wakes on a change", async () => {
-  const run = open([{ id: "w1" }, { id: "w2" }]);
-  const w1 = join(run.id, "w1").member;
-  board.subscribe(w1, [{ event: "composition", scope: "run" }]);
-  board.deliver(w1);
-  const waiting = board.wait(w1, { mentionsOnly: true, timeoutMs: 3000 });
-  join(run.id, "w2");
-  const got = await waiting;
-  assert.match(got.full.map((m) => m.body).join("\n"), /\+ w2/);
-});
-
 test("D5: all-joined reaches the orchestrator once every declared seat has a member, and only then", async () => {
   const run = open([{ id: "w1" }, { id: "w2" }]);
   const orch = board.participant("g/orchestrator")!;
-  board.deliver(orch);
+  board.deliverMentions(orch);
   const waiting = board.wait(orch, { mentionsOnly: true, timeoutMs: 600 });
   join(run.id, "w1");
   assert.deepEqual((await waiting).full.filter((m) => m.event === "all-joined"), []);
@@ -95,7 +83,7 @@ test("D5: all-joined reaches the orchestrator once every declared seat has a mem
   assert.deepEqual(got.full.map((m) => m.event), ["all-joined"]);
   // a rejoin does not tell again
   join(run.id, "w2");
-  assert.equal(board.deliver(orch).full.filter((m) => m.event === "all-joined").length, 0);
+  assert.equal(board.deliverMentions(orch).full.filter((m) => m.event === "all-joined").length, 0);
 });
 
 test("D17: join of a seat the run does not declare refuses and points to seat add", () => {
@@ -110,7 +98,7 @@ test("D18: a run opened with no seats is valid and grows seat by seat; all-joine
   assert.deepEqual(board.composition(run.id).entries.map((e) => e.seat), ["orchestrator"]);
   board.addSeat(run.id, { id: "w1", blockers: [] });
   const orch = board.participant("g/orchestrator")!;
-  board.deliver(orch);
+  board.deliverMentions(orch);
   const waiting = board.wait(orch, { mentionsOnly: true, timeoutMs: 3000 });
   join(run.id, "w1");
   assert.deepEqual((await waiting).full.map((m) => m.event), ["all-joined"]);

@@ -10,7 +10,7 @@ const run = (id: number, group: string, code: string, open = true): RunSummary =
 });
 const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({ badge: undefined as unknown as null /* an older board: no badge, its liveness says the trouble */,
   member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state, stale: false,
-  files: [], joined: AT, ended: null, calls: 0, listening: false, on: [], lastCall: AT,
+  files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
 });
 let seq = 0;
 const item = (runId: number, from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({

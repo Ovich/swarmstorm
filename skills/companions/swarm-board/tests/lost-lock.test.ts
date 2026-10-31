@@ -34,7 +34,7 @@ test("golden V-2 (D59): the lost holder's merge lock is released at once, its wa
   assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: false, holder: "g/w2" });
   // w2 owes the open phase: a link down owing nothing is only away, and keeps its lock
   board.phase(board.participant("g/orchestrator")!, "p1", "do T1", { for: ["w2"] });
-  board.deliver(w2);
+  board.deliverMentions(w2);
 
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w2", 120_000);
@@ -59,7 +59,7 @@ test("a lost member holding no merge lock: no lock line", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: [{ id: "w1", blockers: [] }] });
   const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
   board.phase(board.participant("g/orchestrator")!, "p1", "do T1");
-  board.deliver(w1);
+  board.deliverMentions(w1);
   const base = Date.now();
   quietMember(path.join(dir, "swarm.sqlite"), "w1", 120_000);
   tick2(board, run.id, new Date(base), () => ({ connected: false, lostAt: base - 61_000 }));
@@ -74,7 +74,7 @@ test("golden V-26: a member refused the merge lock, in its wait for the merged e
   const orch = board.participant("g/orchestrator")!;
   board.phase(orch, "build", "go");
   board.post(orch, "@w1 your part");
-  board.deliver(w1);
+  board.deliverMentions(w1);
   codeVerbs(board).lockMerge(w2);
   assert.deepEqual(codeVerbs(board).lockMerge(w1), { granted: false, holder: "g/w2" });
   const linked: Presence = () => ({ connected: true, lostAt: null });

@@ -1,5 +1,4 @@
-// board-split D60, D61 goldens (break-flow T53): one gate before every member verb, core and code pack. A parked
-// member is answered parked first, refused claim, merge-lock and doing, its post accepted with the parked line (V-3);
+// board-split D60, D61 goldens (break-flow T53): one gate before every member verb, core and code pack:
 // a closed run's or an ended member's verbs answer the closed or ended line first, never a flag or a git error, the
 // ended line ending on the summary to return (V-4, V-17); a re-join posts one `<seat> back` line, never another joined
 // (V-15); the lost alarm prints the end verb as it runs (V-17); a link of a closed run exits 0 (V-17).
@@ -13,33 +12,6 @@ import { pin, scene } from "./golden.ts";
 import { eventStep } from "../../src/cli/answer/rules.ts";
 import type { Message, Participant } from "../../src/board/board.ts";
 import { openRawStore } from "../fixtures/raw-store.ts";
-
-const PARKED = "you are parked: end your turn now, without end; the orchestrator resumes you at your next task";
-
-test("golden V-3: a parked worker is answered parked first; claim, merge-lock, doing refused; post accepted", async () => {
-  const s = await scene("orchestrator", "owes-first");
-  try {
-    const worker = s.other;
-    s.must("park", worker.split("/")[1], "--as", s.me);
-    s.must("deliver", "--as", worker);
-    for (const verb of [["doing", "x"], ["claim", "a.ts"], ["merge-lock", "--onto", "main"]]) {
-      const a = s.call(...verb, "--as", worker);
-      pin(`gate.parked.${verb[0]}`, a);
-      assert.equal(a.status, 4, `${verb[0]}: ${a.text}`);
-      assert.match(a.text, new RegExp(`^${verb[0]} refused: ${PARKED}`), verb[0]);
-    }
-    const post = s.call("post", "hello", "--as", worker);
-    pin("gate.parked.post", post);
-    assert.equal(post.status, 0);
-    assert.ok(post.text.includes(PARKED), post.text);
-    assert.ok(!/owe|listener/.test(post.text), post.text);
-    const wait = s.call("wait", "--mentions", "--as", worker, "--timeout", "500");
-    pin("gate.parked.wait", wait);
-    assert.equal(wait.text.trim(), PARKED);
-  } finally {
-    s.stop();
-  }
-});
 
 test("golden V-4, V-17: after close, every member verb answers the closed line first, code verbs included", async () => {
   const s = await scene("worker", "closed");

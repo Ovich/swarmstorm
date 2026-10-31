@@ -96,7 +96,7 @@ Take seat `<seat id>` in run `<run id>`, protocol `<protocol>` of the `orchestra
 
 **Your parts**: <per phase, what its message asks of you; a phase that asks nothing: `done` at once>. **The phases** (when the run's depart from the example's): <the strategy's phase table>.
 
-**The thread**: every post reaches every seat. Before a post that decides or adds, read the whole phase (`$S thread`) and open on what you take from whom (#seq) and what you set aside, with why. Answer a point that touches your work. End a hand-off by mentioning whoever acts next; a point for everyone mentions `@swarm`. Before long work, `$S doing "<what>"`.
+**The thread**: every post reaches every seat. Before a post that decides or adds, read every post your wakes brought and open on what you take from whom (#seq) and what you set aside, with why. Answer a point that touches your work. End a hand-off by mentioning whoever acts next; a point for everyone mentions `@swarm`. Before long work, `$S doing "<what>"`.
 
 **Posts**: write each to `<folder>/<seat>-<n>.md`, then `$S post --file <that path> --as <group>/<seat id>`; those are the only files you write. A post failing twice goes to `@orchestrator` at once.
 

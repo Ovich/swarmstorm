@@ -33,7 +33,7 @@ Read the plan's *Mandate* section. Ask what it leaves open before the first phas
 **When the mandate's `verify:` is on, the plan runs the `orchestrate` skill's build-verify
 protocol** (`references/protocols/build-verify/protocol.md`, read before the run opens): the
 plan's phases are its builds, its seats its builders, the validator its verifier `v1` (one per
-focus when the mandate names several), dispatched at the run's open with the builders, parked
+focus when the mandate names several), dispatched at the run's open with the builders, away
 until a verify phase. **A verify phase is yours to open** after each phase or at the
 end, as `verify:` says, its message the protocol's. **The verifiers' tables are judged** as the
 `orchestrate` skill's `references/findings.md` says, and **the judged table decides the next

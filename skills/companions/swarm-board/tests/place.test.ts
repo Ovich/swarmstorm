@@ -90,11 +90,11 @@ test("D6: the legacy data-home worktrees are swept once: a clean one removed, a 
   git(main, "worktree", "add", "-q", "-b", "dirty", path.join(legacy, "dirty"));
   fs.writeFileSync(path.join(legacy, "dirty", "new.txt"), "x");
   const env = { ...process.env, SWARMSTORM_HOME: home, SWARM_ROOT: home, SWARM_NO_POLLER: "1" };
-  const first = spawnSync(process.execPath, [CLI, "config", "retention"], { cwd: main, encoding: "utf8", env });
+  const first = spawnSync(process.execPath, [CLI, "status"], { cwd: main, encoding: "utf8", env });
   assert.match(first.stderr, /legacy worktree .*dirty: uncommitted changes, kept/);
   assert.ok(!fs.existsSync(path.join(legacy, "clean")));
   assert.ok(fs.existsSync(path.join(legacy, "dirty")));
-  const again = spawnSync(process.execPath, [CLI, "config", "retention"], { cwd: main, encoding: "utf8", env });
+  const again = spawnSync(process.execPath, [CLI, "status"], { cwd: main, encoding: "utf8", env });
   assert.doesNotMatch(again.stderr, /legacy worktree/);
   assert.ok(git(main, "branch", "--list", "clean"), "the branch is kept");
   stopServerOf(home);

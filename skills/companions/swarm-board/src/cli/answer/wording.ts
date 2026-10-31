@@ -11,7 +11,7 @@ export const WORDING = {
   /** `wait --mentions`, foreground carrying its hold */
   wait: (cli: Command, as: string, holdMs?: number): Command => `${cli} wait --mentions --as ${as}${holdMs ? ` --timeout ${holdMs}` : ""}`,
   done: (cli: Command, phase: string, as: string): Command => `${cli} done ${phase} --as ${as}`,
-  thread: (cli: Command, as: string): Command => `${cli} thread --as ${as}`,
+  status: (cli: Command): Command => `${cli} status`,
   end: (cli: Command, as: string): Command => `${cli} end --as ${as}`,
 
   /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
@@ -52,14 +52,14 @@ export const WORDING = {
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
   /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
   seatState: (state: string) => (state === "done" ? "ended" : state),
-  /** D60, D65: a verb the member may not run now (parked, paused), refused with the line saying why */
+  /** D65: a verb the member may not run now (paused), refused with the line saying why */
   verbRefused: (verb: string, why: string) => `${verb} refused: ${why}`,
   // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
   delivered: "these lines are delivered; the task-end notice is the same event",
 
   // ── the phase ──
   phaseWhole: (name: string, text: string) => `phase ${name}: ${text}`,
-  phaseShort: (name: string, thread: Command) => `phase ${name} (unchanged; its text: ${thread})`,
+  phaseShort: (name: string, status: Command) => `phase ${name} (unchanged; its text: ${status})`,
   phasePaused: (head: string | null, why: string) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
   // board-split D65: a paused run's header in status and roster; on the person, it says whose move it is
   runPausedShown: (paused: string | null, onPerson: boolean) =>
@@ -67,10 +67,8 @@ export const WORDING = {
   // board-split D65: a phase opened during a pause is open, but nothing wakes the members before the resume
   phaseOpenedPaused: (name: string, run: number) => `run ${run} is paused: phase ${name} is open, and its members hear it at resume`,
   pauseWhy: (person: boolean, text: string) => (person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : ""),
-  owedOpen: (name: string, text: string, read: string, done: Command) => `phase ${name} is open and asks: ${text}. ${read}Do your part now, then mark it done: ${done}`,
-  owedBrief: (name: string, read: string, done: Command) => `you owe phase ${name}: ${read}${read ? "Do" : "do"} your part, then mark it done: ${done}`,
-  readWholePhase: (thread: Command) => `Read the whole phase first: ${thread}. `,
-  noPostYet: (name: string | null) => (name === null ? "no post yet in this run" : `no post yet in phase ${name}`),
+  owedOpen: (name: string, text: string, done: Command) => `phase ${name} is open and asks: ${text}. Do your part now, then mark it done: ${done}`,
+  owedBrief: (name: string, done: Command) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
@@ -95,8 +93,8 @@ export const WORDING = {
   // ── the orchestrator's verbs ──
   phaseHeard: (watch: string[]) =>
     watch.length
-      ? `the done of ${watch.join(", ")} wakes you; every other done rides on your next wake`
-      : "each member's done rides on your next wake; to hear one the moment it lands, open the phase with --watch <ids>",
+      ? `the done of ${watch.join(", ")} wakes you; the board tells you once every member is done`
+      : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only: string[]) => (only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : ""),
   phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
     `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
@@ -121,32 +119,22 @@ export const WORDING = {
   pauseStop: (person: string | null, wait: Command) =>
     `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
   resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
-  // board-split D30: parked by the orchestrator; ending the turn is the member's, `end` the orchestrator's alone
-  parkedStop: "you are parked: end your turn now, without end; the orchestrator resumes you at your next task",
-  parked: (member: string, cli: Command, seat: string, as: string) =>
-    `${member} is parked: it raises nothing and all-done does not wait for it; resume it with SendMessage at its next task, or ${cli} unpark ${seat} --as ${as}`,
-  unparked: (member: string) => `${member} is unparked: its alerts and its share of all-done are back`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
   packVerbRefused: (verb: string, seatKind: string) =>
     `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
+  /** a member's end with messages to it not yet read: it reads them first, its wait returning them at once */
+  unreadBeforeEnd: (unread: number, wait: Command) => `you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${wait}\` first`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
-  swarmStopped: (cli: Command, as: string) => `no member is moving: read the thread, then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
+  swarmStopped: (cli: Command, as: string) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachOwn: "stop only the PIDs you started: machine.md",
   breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
   lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
-  /** board-split D44: block and unblock, to the seat they name */
-  blockedWait: "you are blocked on the person: stop where you are, change nothing, and wait in the foreground until unblock",
-  unblockedGoOn: "unblocked: go on with your task",
-  blockedSet: (member: string, cli: Command, seat: string, as: string) =>
-    `${member} is blocked: its badge says so, it stops and waits; once the person answers, ${cli} unblock ${seat} --as ${as}`,
-  unblockedSet: (member: string) => `${member} is unblocked: told to go on`,
-  /** board-split D36: a subscription naming an event under its old name, read as the new one */
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
   /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
   noProject: (name: string) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
@@ -157,8 +145,6 @@ export const WORDING = {
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
   optionRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
-  eventRenamed: (renamed: { old: string; now: string }[]) =>
-    `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
 
@@ -179,9 +165,7 @@ export const WORDING = {
   ],
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli: Command, seat: string, as: string) =>
-    `seat: --state is gone: a seat is ready, running or done as its member is. Waiting on the person: ${cli} block ${seat} "<reason>" --as ${as} (${cli} unblock ${seat} --as ${as} lifts it); finished: ${cli} end --seat ${seat} --as ${as}; kept with no agent: ${cli} park ${seat} --as ${as}`,
-  /** D34 (T36): a parked member's state on its roster line, as its card says it */
-  parkedUntil: (phase: string) => `parked until ${phase}`,
+    `seat: --state is gone: a seat is ready, running or done as its member is. Finished: ${cli} end --seat ${seat} --as ${as}`,
   forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
 
   // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──
@@ -203,14 +187,10 @@ export const WORDING = {
     `done ${phase}: ${progress}${all ? (lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done") : ""}`,
   /** V-44: `phase --for` with no seat in it */
   phaseForEmpty: (name: string) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
-  /** V-34 (D70): a member parked until the phase just opened, or named in its --for: it stays parked until unparked */
-  phaseParkedMember: (member: string, cli: Command, seat: string, as: string) =>
-    `${member} is parked and not counted in this phase: unpark it when it should take its part: ${cli} unpark ${seat} --as ${as}`,
   /** V-35: a member owing the phase just opened whose agent is lost */
   phaseLostMember: (member: string, move: string) => `${member} owes this phase and is lost: ${move}`,
   /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
-  doneNotOwed: (phase: string, why: { parked: true } | { forSeats: string[] }) =>
-    `done ${phase} recorded; ${"parked" in why ? "you are parked: not counted until unparked" : `you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`}`,
+  doneNotOwed: (phase: string, why: { forSeats: string[] }) => `done ${phase} recorded; you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`,
   /** a done run again for the same phase: nothing new recorded; for a phase no longer open, what the member owes now */
   doneAlready: (phase: string, progress: string | null, late: { owesNow: string | null } | null) =>
     `already done ${phase}${progress ? `: ${progress}` : ""}; nothing new recorded${late && !late.owesNow ? "; you owe nothing now" : ""}`,

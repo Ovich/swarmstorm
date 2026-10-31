@@ -106,8 +106,8 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 - **`$S roster`** for who holds what now.
 - **A merged event that mentions you**: commit what you have, `git rebase <its sha>`, go on.
 - **One wait at a time:** each new `wait` of yours supersedes the one before.
-- **No background notification in your harness**: `$S deliver` between steps, and a foreground
-  wait whenever you have nothing else to do.
+- **No background notification in your harness**: a foreground `$S wait --mentions --timeout <ms>`
+  between steps, and whenever you have nothing else to do.
 
 ## Claiming a file
 

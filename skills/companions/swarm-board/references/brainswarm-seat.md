@@ -17,7 +17,7 @@ of your own outside the repository, and only its recipe comes back to the thread
 phases that depart from the example's are in your brief) sets your moves per phase and the order of your first steps, over
 the checklist below. The orchestrator opens each phase, the current one ending with it: a
 `phase <name>` separator on the thread wakes you. **What you read starts with the run's current phase**, `phase <name>:
-<text>`, the first line of every `wait`, `deliver` and `read` (and the line after `join`'s
+<text>`, the first line of every `wait` (and the line after `join`'s
 roster): work the phase it names, never one you remember. You run
 `$S done <phase> --as <group>/<seat>` when your part is posted, at once when the phase asks
 nothing of you, then wait as its answer says; you may post
@@ -66,8 +66,8 @@ You never write the run's record or dossier.
 6. **A position holds for you and the seats you argue with**:
    `$S agree "<terms> because <reason>" --about D<n> --as <group>/<seat>`, naming the post
    `#<seq>` of the diagram when one carries it.
-7. **As the skeptic**, your seats row subscribes you to `agreement`, so every agreement of the
-   run wakes your wait, mentioned or not. An agreement reaching you ends on its line `back it: … endorse <seq>
+7. **As the skeptic**, every agreement of the run names you (`--with skeptic`), so each wakes
+   your wait. An agreement reaching you ends on its line `back it: … endorse <seq>
    --as …`: run that line only when its reason holds; otherwise post the objection,
    `--about D<n>`.
 8. **A new question**: `$S post "@orchestrator new question: …" --as <group>/<seat>`.
@@ -86,12 +86,8 @@ You never write the run's record or dossier.
 - **`$S doing "<text>" --as <group>/<seat>`** when you turn to another question, and before any long piece of work ("drafting the audit table"): the card shows what you are on while the thread is quiet.
 - **A long post** (a table, quotes, guillemets) goes through a file, never through the shell's quoting: write it, then `$S post --file <path> --as <group>/<seat>`.
 - **A post that fails twice** is reported to `@orchestrator` at once, with the error; never retried in silence, never dropped.
-- **`$S deliver --as <group>/<seat>`** gives what you have not had, every post of your run in full;
-  `$S read <n> --as <group>/<seat>` a message in full; `$S thread --as <group>/<seat>` the current
-  phase's whole discussion, read before a post that decides or adds.
+- **Every post of your run reaches you in full**, with the wake that brings it: read them all before a post that
+  decides or adds.
 - **`$S roster --as <group>/<seat>`** for who sits where, and what wakes each.
-- **What wakes your `wait --mentions`**: a mention, an urgent post, a phase, and the events you are
-  subscribed to (your seats row's `on`, or `join --on`). Change them with
-  `$S subscribe <events> --as <group>/<seat>` or `unsubscribe`; `$S --help` lists the events,
-  `any:<event>` for one of any run, a plain `<event>` your own run's.
+- **What wakes your `wait --mentions`**: a message to you (a mention, `@swarm`, a phase), an urgent post.
 - **Talk across runs** is a mention: `@<CODE>` a run, `@<CODE>·<id>` one of its members.

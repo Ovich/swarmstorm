@@ -1,7 +1,0 @@
-exit 0
-phase build: build alpha
-#<seq> ga/orchestrator  <ts>
-alpha plain talk
-#<seq> ga/orchestrator  <ts>
-@w1 a-task-only: do it
-you owe phase build: do your part, then mark it done: node <cli> done build --as ga/w1

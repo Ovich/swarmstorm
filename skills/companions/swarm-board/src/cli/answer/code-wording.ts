@@ -11,7 +11,6 @@ export const CODE_IN_CORE_HELP = {
   pauseRefuses: "claim and merge-lock refused",
   closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
   joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at your first claim or merge-lock, or reuses it",
-  onExample: "agreement,any:merged",
   pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   withoutAs: "the member joined from this worktree",
 };

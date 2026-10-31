@@ -35,8 +35,8 @@ const run = () => {
   const orchestrator = board.participant("idea/orchestrator")!;
   const architect = board.join({ run: r.id, seat: "architect", doing: "x", files: [] }).member;
   const skeptic = board.join({ run: r.id, seat: "skeptic", doing: "x", files: [] }).member;
-  board.deliver(architect);
-  board.deliver(skeptic);
+  board.deliverMentions(architect);
+  board.deliverMentions(skeptic);
   return { r, orchestrator, architect, skeptic };
 };
 
@@ -47,7 +47,7 @@ test("phase --for wakes only its seats; only they owe done, and all-done counts 
   const m = (await another()).phase(orchestrator, "draft", "write it", { for: ["idea/skeptic"] });
   assert.deepEqual(m.mentions, ["idea/skeptic"]);
   assert.deepEqual((await woken).full.map((x) => x.seq), [m.seq]);
-  assert.deepEqual(await asleep, { full: [], lines: [] });
+  assert.deepEqual(await asleep, { full: [] });
   assert.equal(board.owedPhase(architect), null);
   assert.equal(board.owedPhase(skeptic)?.name, "draft");
   // the others still read the phase as their header
@@ -87,7 +87,7 @@ test("an idle-ended seat still owes: a later phase counts it, all-done waits for
   board.phase(orchestrator, "p1", "first");
   board.done(architect, "p1");
   board.done(skeptic, "p1");
-  board.deliver(skeptic);
+  board.deliverMentions(skeptic);
   await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 50 });
   await board.wait(skeptic, { mentionsOnly: true, timeoutMs: 50 });
   assert.equal(board.idle(skeptic), true);

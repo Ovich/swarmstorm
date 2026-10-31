@@ -12,7 +12,7 @@ const lastLine = (text: string): string => text.trimEnd().split("\n").at(-1)!;
 test("S15 target: an idle worker's join ends on the foreground wait", async () => {
   const s = await scene("worker", "idle");
   try {
-    s.must("deliver", "--as", s.me);
+    s.must("wait", "--mentions", "--timeout", "200", "--as", s.me);
     const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
     assert.equal(lastLine(joined.text), `nothing yet; wait, in the foreground (${FOREGROUND}): node <cli> wait --mentions --as ${s.me} --timeout 170000`);
   } finally {

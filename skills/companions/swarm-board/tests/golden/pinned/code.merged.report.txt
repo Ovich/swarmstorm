@@ -1,5 +1,5 @@
 exit 0
+act on it, then start this listener again, in the background: node <cli> wait --mentions --as g/orchestrator --timeout 200
 #<seq> g/w2  <ts>
 @orchestrator merged <sha>: w2 changed b.ts
-#<seq> g/w1 (event): - w1 <nick:w1> ended
-#<seq> g/w2 (event): merged <sha> into main: rebase your branch onto it.
+these lines are delivered; the task-end notice is the same event

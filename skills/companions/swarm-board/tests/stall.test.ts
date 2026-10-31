@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { carries, wakes } from "../src/board/events.ts";
+import { wakes } from "../src/board/events.ts";
 import type { Message } from "../src/board/board.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { tick2 } from "./fixtures/tick2.ts";
@@ -109,26 +109,4 @@ test("#48: a link dropped owing nothing reads away, and stays away when a phase 
   tick2(board, run.id, new Date(base + 3000), (m) => (m === "b" ? { connected: false, lostAt: base - 2 * MIN } : linked(m)));
   tick2(board, run.id, new Date(base + 4000), bothDown);
   assert.equal(stateOf("a"), "lost", "dropped again, now owing p1");
-});
-
-test("U-F29: a rejoin keeps the subscriptions the seat's member made", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
-  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
-  board.subscribe(a, [{ event: "stopped", scope: "run" }]);
-  board.end(a);
-  const again = board.join({ run: run.id, seat: "a", doing: "y", files: [] }).member;
-  assert.deepEqual(again.subscriptions.map((s) => s.event), ["stopped"]);
-});
-
-test("u1 #1349: an alarm about a member never wakes that member, though it subscribed; another subscriber wakes", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }, { id: "b", blockers: [] }] });
-  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
-  const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
-  for (const p of [a, b]) board.subscribe(p, [{ event: "lost", scope: "run" }]);
-  const subject = { ...board.participant("g/a")! };
-  const other = { ...board.participant("g/b")! };
-  const alarm = { seq: 1, repo: REPO, from: "g/orchestrator", body: "lost g/a: its link was lost", about: null, kind: "event", mentions: ["g/orchestrator"], at: new Date().toISOString(), run: run.id, endorses: null, event: "lost" } as unknown as Message;
-  assert.equal(wakes(alarm, subject, subject.subscriptions), false);
-  assert.equal(carries(alarm, subject, subject.subscriptions), false);
-  assert.equal(wakes(alarm, other, other.subscriptions), true);
 });

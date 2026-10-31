@@ -1,4 +1,4 @@
-// D14: G21 (read with no seq names its usage), G26 (a listener exiting 0 with no output: repro), G30 (a closed run's thread read with --run).
+// D14: G26 (a listener exiting 0 with no output: repro).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -42,14 +42,6 @@ afterEach(() => {
   fs.rmSync(toolRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-test("G21, V1: read with no seq prints its usage and one corrected form, runnable as printed", () => {
-  const r = run("read", "--as", "p/S3");
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /read: which seq\?/);
-  // the real invocation: the data home when not the default, node, this script; never a bare `swarm`
-  assert.match(r.stderr, /^usage: (SWARMSTORM_HOME=\S+ )?node \S+index\.ts read <seq> \[--as <member>\]$/m);
-  assert.match(r.stderr, /^e\.g\. (SWARMSTORM_HOME=\S+ )?node \S+index\.ts read 12 --as p\/S3$/m);
-});
 
 test("V1: the usage header names the real invocation", () => {
   const r = run("--help");
@@ -64,20 +56,6 @@ test("V1: done with no phase prints usage and a corrected form", () => {
   assert.match(r.stderr, /^e\.g\. .* done <phase> --as p\/S3$/m);
 });
 
-test("G30: a closed run's thread is read with --run, every post or one phase; read-only", () => {
-  assert.equal(run("phase", "build", "build it", "--as", "p/orchestrator").status, 0);
-  assert.equal(run("post", "first word").status, 0);
-  assert.equal(run("close", "--run", runId).status, 0);
-  const all = run("thread", "--run", runId);
-  assert.equal(all.status, 0, all.stderr);
-  assert.match(all.stdout, /first word/);
-  const phase = run("thread", "--run", runId, "build");
-  assert.equal(phase.status, 0, phase.stderr);
-  assert.match(phase.stdout, /first word/);
-  const unknown = run("thread", "--run", "9999");
-  assert.notEqual(unknown.status, 0);
-  assert.match(unknown.stderr, /unknown run 9999/);
-});
 
 test("G26 repro: a live member's wait --mentions that times out says what to do; it never exits 0 silent", () => {
   const r = run("wait", "--mentions", "--timeout", "500");

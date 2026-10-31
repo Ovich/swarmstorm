@@ -3,14 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { owesPhase, phaseCount, progressText, type PhaseMember, type PhaseScope } from "../src/board/owing.ts";
 
-const member = (seat: string, o: Partial<PhaseMember> = {}): PhaseMember => ({ member: `g/${seat}`, seat, done: false, ended: false, idleEnded: false, parked: false, lost: false, ...o });
+const member = (seat: string, o: Partial<PhaseMember> = {}): PhaseMember => ({ member: `g/${seat}`, seat, done: false, ended: false, idleEnded: false, lost: false, ...o });
 const open: PhaseScope = { open: true, forSeats: null };
-
-test("a parked member is out of the count, done or not (V-11)", () => {
-  const p = phaseCount("build", [member("w1", { done: true }), member("w2", { done: true, parked: true }), member("w3", { parked: true })], open);
-  assert.deepEqual([p.done, p.of], [1, 1]);
-  assert.equal(owesPhase(member("w3", { parked: true }), open), false);
-});
 
 test("a lost member owing the phase is out of the count and named in every count line (D41, D62)", () => {
   const p = phaseCount("build", [member("w1", { done: true }), member("w2", { lost: true })], open);

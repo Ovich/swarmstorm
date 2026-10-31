@@ -37,6 +37,11 @@ afterEach(() => {
 });
 
 const ago = (ms: number, from = Date.now()): string => new Date(from - ms).toISOString();
+/** A stored message as the store keeps it: its body, its run (an old row's: its author's), its author, mentions, endorses. */
+const stored = (seq: number) =>
+  raw
+    .prepare("SELECT m.body, COALESCE(m.run, p.run) AS run, m.endorses, m.mentions, r.plan || '/' || p.seat AS sender FROM messages m JOIN participants p ON p.id = m.author JOIN runs r ON r.id = p.run WHERE m.seq = ?")
+    .get(seq) as { body: string; run: number; endorses: number | null; mentions: string; sender: string } | undefined;
 const count = (sql: string, ...params: (string | number)[]): number => Number((raw.prepare(sql).get(...params) as { n: number }).n);
 
 const runWithMembers = (group: string) => {
@@ -68,14 +73,14 @@ test("a closed run refuses a post; its messages stay readable", () => {
   raw.prepare("UPDATE participants SET ended_at = NULL WHERE id IN (?, ?)").run(s1.id, s2.id);
   assert.throws(() => board.post(s1, "late"), new RegExp(`run ${run.id} is closed`));
   assert.throws(() => board.post(s1, "late", { kind: "agreement", with: ["orchestrator"] }), new RegExp(`run ${run.id} is closed`));
-  assert.equal(board.read(m.seq).body, "before the close");
+  assert.equal(stored(m.seq)!.body, "before the close");
   assert.ok(board.snapshot(REPO).events.some((e) => e.seq === m.seq));
 });
 
 test("prune removes a run closed past the retention with its seats, messages and deliveries; keeps a recent one and an open one", () => {
   const old = runWithMembers("old");
   const said = board.post(old.s1, "@S2 in the old run");
-  board.deliver(old.s2);
+  board.deliverMentions(old.s2);
   closedAgo(old.run.id, 31 * DAY);
   const recent = runWithMembers("recent");
   closedAgo(recent.run.id, 29 * DAY);
@@ -108,33 +113,20 @@ test("a pruned run's id is never given to a new run, and the page lists it nowhe
   assert.ok(!board.runs().some((r) => r.id === a.run.id));
 });
 
-test("open posts the opened event with the run, naming kind, group and title: a member of another run subscribed to any:opened wakes (D69)", async () => {
-  const { run: first } = runWithMembers("alpha");
-  const watcher = board.join({ run: first.id, seat: "S1", doing: "watching", files: [], on: [{ event: "opened", scope: "any" }] }).member;
-  board.deliver(watcher);
+test("open posts the opened event with the run, naming kind, group and title (D69)", () => {
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "beta", title: "Beta topic", seats: SEATS });
   const opened = board.snapshot(REPO).events.filter((e) => e.kind === "event" && e.body.startsWith(`run ${run.id} opened`));
   assert.equal(opened.length, 1);
   assert.equal(opened[0].run, run.id);
   assert.equal(opened[0].body, `run ${run.id} opened: brainstorm beta, Beta topic`);
-  const { wakes } = await import("../src/board/events.ts");
-  assert.ok(wakes(board.read(opened[0].seq), watcher, [{ event: "opened", scope: "any" }]));
-  assert.ok(!wakes(board.read(opened[0].seq), watcher, [{ event: "opened", scope: "run" }]));
 });
 
-test("close posts the closed event with the run it closes: a member of another run subscribed to any:closed wakes (D67)", async () => {
+test("close posts the closed event with the run it closes (D67)", () => {
   const { run } = runWithMembers("alpha");
-  const other = board.openRun({ repo: REPO, group: "beta", title: "beta", seats: SEATS });
-  const watcher = board.join({ run: other.id, seat: "S1", doing: "watching", files: [], on: [{ event: "closed", scope: "any" }] }).member;
-  board.deliver(watcher);
   board.closeRun(run.id);
   const closed = board.snapshot(REPO).events.filter((e) => e.kind === "event" && e.body === `run ${run.id} closed`);
   assert.equal(closed.length, 1);
   assert.equal(closed[0].run, run.id);
-  const { wakes } = await import("../src/board/events.ts");
-  const m = board.read(closed[0].seq);
-  assert.ok(wakes(m, watcher, [{ event: "closed", scope: "any" }]));
-  assert.ok(board.deliver(watcher).lines.some((l) => l.includes(`run ${run.id} closed`)));
 });
 
 test("prune reaches only old rows stored before runs (run null): plain talk goes, agreements and their endorsements stay with their pruned author; an open run's old talk stays (D23)", () => {
@@ -152,12 +144,12 @@ test("prune reaches only old rows stored before runs (run null): plain talk goes
 
   const removed = board.prune();
   assert.equal(removed.runs, 1);
-  assert.throws(() => board.read(plain.seq), /unknown message/);
-  assert.equal(board.read(agreement.seq).from, "alpha/S1");
-  assert.equal(board.read(agreement.seq).run, alpha.run.id); // still labelled with its author's run
-  assert.equal(board.read(endorsement.seq).endorses, agreement.seq);
-  assert.equal(board.read(recentOld.seq).body, "old row, recent");
-  assert.equal(board.read(openTalk.seq).body, "an open run's talk, long ago");
+  assert.equal(stored(plain.seq), undefined);
+  assert.equal(stored(agreement.seq)!.sender, "alpha/S1");
+  assert.equal(stored(agreement.seq)!.run, alpha.run.id); // still labelled with its author's run
+  assert.equal(stored(endorsement.seq)!.endorses, agreement.seq);
+  assert.equal(stored(recentOld.seq)!.body, "old row, recent");
+  assert.equal(stored(openTalk.seq)!.body, "an open run's talk, long ago");
   // kept only as the agreement's author: never listed
   assert.deepEqual(board.repos().flatMap((r) => r.runs.map((x) => x.run)), [beta.run.id]);
 });
@@ -171,26 +163,11 @@ test("a second prune removes nothing", () => {
   assert.deepEqual(board.prune(), { messages: 0, runs: 0 });
 });
 
-test("prune uses the retention setting, and a run within it stays", () => {
-  const { run } = runWithMembers("short");
-  closedAgo(run.id, 8 * DAY);
-  assert.equal(board.prune().runs, 0);
-  board.setting("retention-days", 7);
-  assert.equal(board.prune().runs, 1);
-  // and `now` moves it: a run closed today, pruned 31 days from now
+test("prune keeps 30 days: a run within them stays, and `now` moves it", () => {
   const later = runWithMembers("later");
   board.closeRun(later.run.id);
-  assert.equal(board.prune(new Date(Date.now() + 6 * DAY)).runs, 0);
-  assert.equal(board.prune(new Date(Date.now() + 8 * DAY)).runs, 1);
-});
-
-test("the retention setting: 30 by default, set to 7, refuses what is not a positive whole number", () => {
-  assert.equal(board.setting("retention-days"), 30);
-  assert.equal(board.setting("retention-days", 7), 7);
-  assert.equal(board.setting("retention-days"), 7);
-  assert.throws(() => board.setting("retention-days", 0), /positive whole number/);
-  assert.throws(() => board.setting("retention-days", 1.5), /positive whole number/);
-  assert.equal(board.setting("retention-days"), 7);
+  assert.equal(board.prune(new Date(Date.now() + 29 * DAY)).runs, 0);
+  assert.equal(board.prune(new Date(Date.now() + 31 * DAY)).runs, 1);
 });
 
 test("repos() lists every closed run within the retention, beyond ten, and none pruned", () => {

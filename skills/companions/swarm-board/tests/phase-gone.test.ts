@@ -39,7 +39,7 @@ const setup = (seats = ["a", "b", "c", "d"]) => {
   const orchestrator = board.participant("idea/orchestrator")!;
   board.phase(orchestrator, "diverge", "every idea");
   // what was already for them had: a wait blocks until something new
-  for (const p of [...Object.values(members), orchestrator]) board.deliver(p);
+  for (const p of [...Object.values(members), orchestrator]) board.deliverMentions(p);
   return { run, members, orchestrator };
 };
 /** `d`'s agent went without end: its link lost past LOST_MS, no wait held (board-split D49); the tick at `s` tells it lost. */
@@ -61,7 +61,7 @@ test("four members, one gone, the three others done: all-done once, naming the g
   assert.equal(all.length, 1);
   assert.equal(all[0].body, "all done diverge but the lost: 3/3 done; lost, not done: idea/d: dispatch each again or end its seat, then open the next phase");
   const progress = board.phaseProgress(run.id)!;
-  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [], parked: [] });
+  assert.deepEqual(progress, { phase: "diverge", done: 3, of: 3, gone: ["idea/d"], idleEnded: [] });
   assert.equal(progressText(progress), "3/3 done, 1 lost: d");
 });
 
@@ -90,11 +90,11 @@ test("a gone member that comes back counts again from then on (D41)", () => {
   const base = Date.now() + 60_000;
   links.set("d", { connected: false, lostAt: base });
   tick2(board, run.id, at(base, 60), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [], parked: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 3, gone: ["idea/d"], idleEnded: [] });
   // a new link
   links.set("d", { connected: true, lostAt: null });
   tick2(board, run.id, at(base, 61), presence);
-  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [], parked: [] });
+  assert.deepEqual(board.phaseProgress(run.id), { phase: "diverge", done: 0, of: 4, gone: [], idleEnded: [] });
   for (const m of ["a", "b", "c"]) board.done(members[m], "diverge");
   tick2(board, run.id, at(base, 62), presence);
   assert.equal(events("all-done").length, 0, "d holds the phase again");

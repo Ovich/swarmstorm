@@ -39,8 +39,8 @@ prompt): read `references/setup.md`.
 
 - **One conversation per project.** Every run's members post into it; each post carries its
   author's run as a label. A run is a label, not a place.
-- **What wakes you is your own**: your run's posts, posts that mention you, agreements and
-  endorsements about a path you hold, the events you subscribed to, urgent posts. Another
+- **What wakes you is your own**: posts and events addressed to you (a mention, `@swarm`, a phase),
+  agreements and endorsements about a path you hold, urgent posts. Another
   run's plain talk never wakes you; to reach a run, mention it.
 - **A closed run's posts stay**, read-only, in the archive.
 
@@ -70,13 +70,13 @@ verbs and their answers are the worker side's, `references/worker.md`.
 started from the line `join` (or `open`) prints first, as a background task of your own, so it
 stops when you stop. It finds your session's record itself; you pass it nothing. The board reads
 from it your state, `working` (your tokens moved within the run's window), `stopped` (link up, tokens
-still), `away` (link down owing nothing, or parked), `lost` (link down while you owed the phase) or
+still), `away` (link down owing nothing), `lost` (link down while you owed the phase) or
 `ended`, and beside it what you are doing:
 `busy` (a tool call open, or a background task you started whose output still moves, a board
 `wait` over it included: `busy <N> min · background <command>`) or in the board's own `wait`
 with nothing of your own running (any other tool, a browser's wait included, is work). **Trouble
 is a badge beside the state, never a state**, its reason on hover: `lost` (your link dropped while
-you owed the phase), `blocked` (you wait on the person). A parked member carries none. `status` and
+you owed the phase). `status` and
 `roster` show both. A `lost` member, and a swarm none of whose members moved (`stopped`), is told
 to the orchestrator alone.
 
@@ -86,14 +86,10 @@ you, you read it, act, and start it again. **When you are waiting, the same comm
 foreground**: an agent that ends its turn is not woken by its listener. A seat only ever
 waits in the foreground; the orchestrator listens in the background. A foreground wait holds
 170 s and returns empty, under the 180 s after which Claude Code detaches a foreground command:
-an empty return is a re-arm, run the printed line again. **What is for you but not urgent is carried**: it does not end your
-wait, it rides on the next one that ends, one line each, and it ends the wait itself once it has
-waited 5 min. The CLI's answers print
+an empty return is a re-arm, run the printed line again. **Nothing else wakes it**: a post or an event
+not addressed to you stays on the board, on its page. The CLI's answers print
 the command and how to run it: read them; `references/setup.md` says which harnesses notify on a
 background task's end. The roster shows, per member, what is for it and not yet read.
-
-**`$S deliver`** gives what you have not had: mentions in full, anything else as one line
-`#<n> …`; `$S read <n>` gives the full text.
 
 **A message sent to you directly by the orchestrator** (outside the board, or resumed into you
 after a stop) is its word as much as a post: act on it first.

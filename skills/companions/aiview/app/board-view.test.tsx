@@ -289,7 +289,6 @@ test.each([
   ["stopped", { state: "stopped" }, "stopped"],
   ["away", { state: "away" }, "away"],
   ["lost", { state: "lost" }, "lost"],
-  ["parked until a phase", { state: "away", parked: true, parkedUntil: "P5" }, "away until P5"],
   ["ended", { state: "ended", ended: "2026-10-29T14:09:00.000Z" }, /^ended \d\d:\d\d$/],
 ])("a %s member's card reads the board's word", (_name, patch, word) => {
   show([APP], 1, [withMember(patch)]);
@@ -321,10 +320,9 @@ test.each([
   expect(badgeOf(activeCard())).toBeNull();
 });
 
-// board-split#D36: the board's own badge, its reason on hover, beside the word; none on a parked or ended member
+// board-split#D36: the board's own badge, its reason on hover, beside the word; none on an ended member
 test.each([
   ["lost", "its agent finished without end"],
-  ["blocked", "waits on the person: the API key"],
 ] as const)("the board's %s badge reads beside the word, its reason on hover, the member under Needs attention", (name, reason) => {
   show([APP], 1, [withMember({ badge: { name, reason, since: minutesAgo(3) } })]);
   const card = activeCard();
@@ -588,15 +586,15 @@ test("a run that is not paused shows no pause on its head", () => {
   expect(document.querySelector('[data-component="RunPause"]')).toBeNull();
 });
 
-// board-split#D48, D49 (A1-7, A1-8, A1-9): the word never carries doing; a parked seat's unread is kept, not alarmed
+// board-split#D48, D49 (A1-7, A1-8, A1-9): the word never carries doing; an away seat's unread is kept, not alarmed
 test("a working member's doing never reaches the word, and no card says dormant", () => {
   show([APP], 1, [withMember({ state: "working", doing: "unparked" })]);
   expect(activeCard().querySelector(".state")!.textContent).toBe("working");
   expect(strip()!.textContent).not.toMatch(/dormant/);
 });
 
-test("a parked seat's unread reads quiet, kept for its return: no alarm, no attention bucket, no rail dot", () => {
-  show([APP], 1, [withMember({ state: "away", parked: true, parkedUntil: "P5", unread: 4, doing: "parked until P5", badge: null })]);
+test("an away seat's unread reads quiet, kept for its return: no alarm, no attention bucket, no rail dot", () => {
+  show([APP], 1, [withMember({ state: "away", unread: 4, doing: "handed back", badge: null })]);
   const card = activeCard();
   const unread = card.querySelector('[data-component="UnreadCount"]')!;
   expect(unread.textContent).toBe("4 unread");
@@ -610,10 +608,10 @@ test("a parked seat's unread reads quiet, kept for its return: no alarm, no atte
   expect([alarm.textContent, alarm.classList.contains("kept")]).toEqual(["4 unread", false]);
 });
 
-// U-F13 (D49): a parked card shows no activity line, even when the snapshot still carries a background call from before
-test("a parked card draws no activity line from a stale background call", () => {
+// U-F13 (D49): an away card shows no activity line, even when the snapshot still carries a background call from before
+test("an away card draws no activity line from a stale background call", () => {
   const stale = { open: null, background: { target: "for i in 1 2 3", since: minutesAgo(28), outputGrewAt: null, label: null, command: "for i in 1 2 3; do sleep 1; done" } };
-  show([APP], 1, [withMember({ state: "away", parked: true, parkedUntil: "P5", activity: stale })]);
+  show([APP], 1, [withMember({ state: "away", activity: stale })]);
   expect(activityOfCard(activeCard())).toBeNull();
   cleanup();
   show([APP], 1, [withMember({ state: "working", activity: stale })]);

@@ -72,12 +72,12 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
     const run = board.openRun({ repo: REPO, kind: "task", group: "yard", title: "Yardstick", stallMs: STALL_MS_DEFAULT, seats: (sc.companion ? ["x", "w"] : ["x"]).map((m) => ({ id: m, title: m, blockers: [] })) });
     const x = board.join({ run: run.id, seat: "x", doing: "work", files: [] }).member;
     const w = sc.companion ? board.join({ run: run.id, seat: "w", doing: "work", files: [] }).member : null;
-    if (w) board.deliver(w);
+    if (w) board.deliverMentions(w);
     const orch = board.participant("yard/orchestrator")!;
     // oweAt 0: owed from the start, delivered before the clock's base, so its delivery is no later sign of life
     if (sc.oweAt === 0 && sc.owe) sc.owe(board, orch);
-    board.deliver(x);
-    board.deliver(orch);
+    board.deliverMentions(x);
+    board.deliverMentions(orch);
     // simulated second 5, where the scenarios first wait, is the wall clock now: a board wait's start is the
     // wall clock's, and the owing span (rule 5) compares it with the tick's time
     const base = Date.now() - 5000;
@@ -109,8 +109,8 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       const at = new Date(base + s * 1000);
       if (sc.oweAt !== 0 && s === (sc.oweAt ?? 1) && sc.owe) {
         sc.owe(board, orch);
-        board.deliver(x);
-        if (w) board.deliver(w);
+        board.deliverMentions(x);
+        if (w) board.deliverMentions(w);
       }
       if (wFile) {
         if (sc.companion === "works" && s % 20 === 0) append(wFile, textLine("w works", usage, iso(base, s)), at);
@@ -135,7 +135,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
           // the wait returns (its 110 s timeout, as a worker re-arms it): released by a word to x, never x's own progress
           board.post(orch, "@x re-arm");
           await held;
-          board.deliver(x);
+          board.deliverMentions(x);
           held = null;
         }
       }
@@ -149,7 +149,7 @@ export async function play(sc: Scenario, length = sc.length): Promise<Row> {
       if (badge === "lost" && !isStuck(s)) falseStateS++;
       // what reaches the orchestrator this second, about x: one wake when any of it is a liveness event
       const all = board
-        .deliver(orch)
+        .deliverMentions(orch)
         .full.map((m) => ({ m, e: eventOf(m) }))
         .filter(({ m, e }) => e !== null && WAKE_EVENTS.has(e) && m.mentions.includes(orch.name));
       for (const { m, e } of all) if (m.body.includes("yard/w") && ALERTS.has(e!)) companionAlerts.push(s);

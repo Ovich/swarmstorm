@@ -6,7 +6,7 @@ import { unreachedMentionLines } from "../src/cli/answer/rules.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 
 const worker: Situation = {
-  cli: "swarm", as: "g/w1", run: 1, seat: "w1", ended: false, parked: false, listenerRunning: true, listens: "background",
+  cli: "swarm", as: "g/w1", run: 1, seat: "w1", ended: false, listenerRunning: true, listens: "background",
   wholeThread: false, closed: false, pause: null, phase: null, owed: null, phaseFirst: null, owesNothing: true,
 };
 const END_TURN = "you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task";

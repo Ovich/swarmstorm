@@ -1,7 +1,7 @@
 // A picked run's members, a closed run's as they ended, a column left of the conversation, the orchestrator first (D7, D20):
 // each card its member (code, then nick), its state word, the seat, what it does. A card clicked
 // follows the member and narrows the conversation; clicked again, released. Two layers (board-split#D35): the state
-// word is the board's alone; what the agent runs now is the activity line (D32); trouble (lost, blocked) is a
+// word is the board's alone; what the agent runs now is the activity line (D32); trouble (lost) is a
 // badge with its reason on hover, never the word.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
 import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
@@ -32,12 +32,11 @@ function ageSince(at: number, now: number): string {
 type BoardBadge = NonNullable<SnapshotMember["badge"]>;
 export type BadgeName = BoardBadge["name"];
 
-/** The member as any board sends it: an older one's state words (watching, done) and no badge (D36), a parked seat's
- *  phase (D34), the open calls (D31, D32). The card reads an older board's words as the new ones. */
+/** The member as any board sends it: an older one's state words (watching, done) and no badge (D36), the open calls
+ *  (D31, D32). The card reads an older board's words as the new ones. */
 type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
   state: string;
   badge?: BoardBadge | null;
-  parkedUntil?: string | null;
   activity?: {
     open: { name: string; target: string; since: number; boardWait: boolean; label?: string | null; command?: string | null } | null;
     background: { target: string; since: number; outputGrewAt: number | null; label?: string | null; command?: string | null } | null;
@@ -45,23 +44,22 @@ type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
 };
 
 const isEnded = (p: { state: string }): boolean => p.state === "ended";
-/** Not running on the board now: away (finished, handed back or parked), lost, or ended. */
+/** Not running on the board now: away (finished or handed back), lost, or ended. */
 const isOff = (p: { state: string }): boolean => p.state === "away" || p.state === "lost" || p.state === "ended";
 
-/** The state word, the board's alone: working, stopped, away (parked until a phase), lost, ended; a pack's
+/** The state word, the board's alone: working, stopped, away, lost, ended; a pack's
  *  fact (merging) replaces working or stopped. `className` is the word's state. */
-export function stateWordOf(p: MemberOnBoard & { parked?: boolean; fact?: string }): { text: string; className: string } {
+export function stateWordOf(p: MemberOnBoard & { fact?: string }): { text: string; className: string } {
   const state = p.state;
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
-  if (state === "away") return { text: p.parkedUntil ? `away until ${p.parkedUntil}` : "away", className: "away" };
   if (p.fact) return { text: p.fact, className: p.fact };
   return { text: state, className: state };
 }
 
-/** Unread on a parked seat is kept for its return, never an alarm (D48, D49). */
+/** Unread on an away seat is kept for its return, never an alarm (D48, D49). */
 const unreadKept = (p: { state: string }): boolean => p.state === "away";
 
-/** The unread count beside the seat: `N unread`; on a parked seat drawn quiet, kept for its return ("held" is the files' word, rule 12). */
+/** The unread count beside the seat: `N unread`; on an away seat drawn quiet, kept for its return ("held" is the files' word, rule 12). */
 function UnreadCount({ p }: { p: SnapshotMember }) {
   if (!p.unread) return null;
   return unreadKept(p) ? (
@@ -122,7 +120,7 @@ const minutesShort = (since: number, now: number): string => `${Math.max(0, Math
  *  the board's own wait is no line (the state word says waiting); nothing open, no line. `hover`: the whole command,
  *  foreground or background, since when, and the last call. */
 export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
-  // U-F13 (D49): a parked or ended seat has no activity line, whatever an older snapshot still carries
+  // U-F13 (D49): an away, lost or ended seat has no activity line, whatever an older snapshot still carries
   if (isOff(p)) return null;
   const open = p.activity?.open && !p.activity.open.boardWait ? p.activity.open : null;
   const background = p.activity?.background ?? null;
@@ -210,7 +208,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
       </span>
       <span className="seat">{orch ? "orchestrator" : p.role ? `${p.seat} · ${p.role}` : p.seat}</span>
       <UnreadCount p={p} />
-      {/* the doing line, never the word (D49); a parked seat's is the park itself */}
+      {/* the doing line, never the word (D49) */}
       {p.state === "stopped" && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
       <ActivityLine line={line} state={activity?.state ?? p.state} />
@@ -314,7 +312,7 @@ export function AgentStrip({
   const q = query.trim().toLowerCase();
   const byBucket = new Map<Bucket, SnapshotMember[]>(BUCKETS.map((b) => [b.id, []]));
   for (const p of rest) byBucket.get(bucketOf(p))!.push(p);
-  // under Needs attention, the blocked before the lost: they can still be steered
+  // under Needs attention, lost members last
   const lost = (p: SnapshotMember) => Number(troubleOf(p)?.kind === "lost");
   byBucket.get("attention")!.sort((a, b) => lost(a) - lost(b));
   const shown = (b: Bucket): SnapshotMember[] => (only && only !== b ? [] : byBucket.get(b)!.filter((p) => matches(p, nicks.get(p.member), q)));

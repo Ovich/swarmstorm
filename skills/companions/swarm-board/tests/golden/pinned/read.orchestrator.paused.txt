@@ -1,5 +1,0 @@
-exit 0
-run 1 is PAUSED: hold on: no member acts on this until you resume (node <cli> resume "<message>" --as g/orchestrator)
-#<seq> g/orchestrator (event)  <ts>
-run 1 opened: task g, T
-phase build: build the thing  PAUSED: hold on

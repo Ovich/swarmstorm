@@ -10,12 +10,9 @@ import { shellWord, WORDING as W } from "./wording.ts";
 /** The member's wait command: a background listener holds until something comes, a foreground wait carries its hold. */
 export const waitCommand = (s: Situation, foreground = false): string => W.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : undefined);
 
-/** The member's one step while it is held: parked (D60: before anything, a pause included), or its run paused; null
- *  when neither, for the orchestrator and an ended member. */
+/** The member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
 export const pausedLine = (s: Situation): string | null => {
-  if (s.seat === "orchestrator" || s.ended) return null;
-  if (s.parked) return W.parkedStop;
-  if (!s.pause) return null;
+  if (s.seat === "orchestrator" || s.ended || !s.pause) return null;
   // board-split V-36 (D71): a step the member's pack gives it in this pause comes first
   if (s.pauseStep) return s.pauseStep;
   return W.paused(s.run, W.pauseWhy(s.pause.person, s.pause.text), waitCommand(s, true));
@@ -27,17 +24,16 @@ export const stillPausedLine = (s: Situation): string | null =>
 
 /** The step a member owing the open phase takes before any wait; the paused line instead in a pause; null when it owes none.
  *  `brief`: the answer shows the phase, or showed it before, so the step alone. */
-export const owedLine = (s: Situation, opts: { thread?: boolean; brief?: boolean } = {}): string | null => {
+export const owedLine = (s: Situation, opts: { brief?: boolean } = {}): string | null => {
   const paused = pausedLine(s);
   if (paused) return paused;
   if (!s.owed) return null;
-  const read = (opts.thread ?? true) && s.wholeThread ? W.readWholePhase(W.thread(s.cli, s.as)) : "";
   const done = W.done(s.cli, s.owed.word, s.as);
-  return opts.brief ? W.owedBrief(s.owed.name, read, done) : W.owedOpen(s.owed.name, s.owed.text, read, done);
+  return opts.brief ? W.owedBrief(s.owed.name, done) : W.owedOpen(s.owed.name, s.owed.text, done);
 };
 
 /** simple-states: the step of a member that owes nothing (task merged and reported, phase done): end its turn; the
- *  pause or the park first; null while it owes, and for the orchestrator. */
+ *  pause first; null while it owes, and for the orchestrator. */
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
 
 /** simple-states: what the orchestrator's post tells it of a member it mentions whose link is down, by its board state. */
@@ -68,10 +64,7 @@ export const joinStep = (s: Situation, showedPosts: boolean): string => {
 /** What a verb that heard from the member ends on: nothing for an ended member or one whose listener runs; a seat is told
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {
-  if (s.ended) return null;
-  // D60: a parked member is told it is parked, whatever else runs
-  if (s.parked) return W.parkedStop;
-  if (s.listenerRunning) return null;
+  if (s.ended || s.listenerRunning) return null;
   // S21, board-split F8: the owed phase is news once, at the wake or join that showed it; a verb that heard from a
   // working member only asks for its listener
   if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
@@ -82,7 +75,7 @@ export const heardStep = (s: Situation): string | null => {
  *  the pause beside it. `printed` for the human answer, `full` always whole, for --json. */
 export const phaseHeaders = (s: Situation, showPause = true): { printed: string | null; full: string | null; first: boolean } => {
   const whole = s.phase ? W.phaseWhole(s.phase.name, s.phase.text) : null;
-  const short = s.phase && s.phaseFirst === false ? W.phaseShort(s.phase.name, W.thread(s.cli, s.as)) : whole;
+  const short = s.phase && s.phaseFirst === false ? W.phaseShort(s.phase.name, W.status(s.cli)) : whole;
   const first = s.phaseFirst !== false;
   if (!s.pause || !showPause) return { printed: short, full: whole, first };
   const why = W.pauseWhy(s.pause.person, s.pause.text);
@@ -129,9 +122,6 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
     }
     case "resume":
       return orchestrator || own ? null : W.resumeGoOn;
-    case "park":
-      // board-split D30: the parked member ends its turn, never `end`; the orchestrator resumes it at its next task
-      return m.mentions.includes(me.name) ? W.parkedStop : null;
     case "all-done":
       return orchestrator ? W.openNextPhase(cli, as, m.run) : null;
     case "stopped":
@@ -150,11 +140,6 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       const seat = /^lost [^/\s]+\/([^:\s]+):/.exec(m.body)?.[1];
       return orchestrator ? W.lostMove(cli, shellWord(seat ?? "<seat>"), as) : null;
     }
-    case "block":
-      // board-split D44: the blocked seat waits on the person, in the foreground, until unblock
-      return m.mentions.includes(me.name) ? W.blockedWait : null;
-    case "unblock":
-      return m.mentions.includes(me.name) ? W.unblockedGoOn : null;
     default:
       return codeEventStep(m, me, cli, event) ?? null;
   }

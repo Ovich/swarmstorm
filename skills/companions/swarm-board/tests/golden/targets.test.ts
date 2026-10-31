@@ -83,20 +83,6 @@ test("G32 target: join in an open phase states it once", async () => {
   }
 });
 
-// G33: thread's result first (the phase header and its posts), then the owed step brief, not the phase text again
-test("G33 target: thread states the phase text once", async () => {
-  const s = await scene("worker", "owes-first");
-  try {
-    expect(s.call("thread", "--as", s.me), [
-      "phase build: build the thing",
-      "no post yet in phase build",
-      `you owe phase build: do your part, then mark it done: node <cli> done build --as ${s.me}`,
-    ]);
-  } finally {
-    s.stop();
-  }
-});
-
 // G38: a listener never returns empty: a live member's empty wait prints its re-arm, an ended member's says it ended
 test("G38: an empty wait --mentions prints the re-arm line; an ended member's, why it stopped", async () => {
   const s = await scene("worker", "owes-again");
@@ -121,7 +107,7 @@ test("S1 target: join shows the unread task posted before it", async () => {
       "you are g/w1, <nick:w1>: @w1 or @<Nick:w1> mentions you",
       "orchestrator <nick:orchestrator>: working",
       "w1 <nick:w1>: working",
-      `${O}  run 1  working  <n> unread  doing: -  on: ended, stopped, all-joined, done (carried), joined (carried)`,
+      `${O}  run 1  working  <n> unread  doing: -`,
       // S20: the roster is read after the join delivered the task: nothing unread on its own row
       "<nick:w1> · g/w1  run 1  working  doing: x",
       // the result: the task, whole, as a wait would deliver it

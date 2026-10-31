@@ -52,8 +52,8 @@ const shown = (run: number, member: string): { state: string; badge: string | nu
     assert.deepEqual({ state: row.state, badge: row.badge?.name ?? null }, fromCard, `${member}: the roster and the card agree`);
   }
   const ticked = board.memberStates(run, new Date()).find((s) => s.member === member.slice(member.indexOf("/") + 1));
-  // the tick's states hold the live members; a parked one's badge is never raised by it (D30)
-  if (ticked && !card.parked) assert.equal(ticked.badge?.name ?? null, fromCard.badge, `${member}: the tick's badge and the card agree`);
+  // the tick's states hold the live members
+  if (ticked) assert.equal(ticked.badge?.name ?? null, fromCard.badge, `${member}: the tick's badge and the card agree`);
   return fromCard;
 };
 
@@ -63,21 +63,10 @@ const setup = () => {
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
   const b = board.join({ run: run.id, seat: "b", doing: "x", files: [] }).member;
   const orch = board.participant("g/orchestrator")!;
-  for (const p of [a, b, orch]) board.deliver(p);
+  for (const p of [a, b, orch]) board.deliverMentions(p);
   return { run, a, b, orch };
 };
 const waitOf = (p: Participant, ms = 300) => board.wait(p, { mentionsOnly: true, timeoutMs: ms });
-
-test("1: park, then the member's agent ends: still parked, no badge, its unread held, nothing raised", () => {
-  const { run, orch } = setup();
-  board.park(orch, "b", "p2");
-  agentEnds(run.id, "b");
-  board.post(orch, "@b for later");
-  tick(run.id);
-  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
-  assert.ok(board.roster(REPO).find((r) => r.name === "g/b")!.unread > 0, "the post waits for it");
-  assert.deepEqual([...events("lost"), ...events("stopped")].filter((e) => e.body.includes("g/b")), []);
-});
 
 test("2: the agent ends owing nothing (done, or no task): away once its link is lost past LOST_MS, nothing raised", async () => {
   const { run, b, orch } = setup();
@@ -110,7 +99,7 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   board.phase(orch, "p1", "go", { for: ["b"] });
   // board-split D54: the owing clock starts at b's own task, delivered
   board.post(orch, "@b your part");
-  board.deliver(b);
+  board.deliverMentions(b);
   const held = waitOf(b, 3000);
   const now = Date.now();
   board.recordActivity(run.id, "b", act({ grewAt: now, openTool: { name: "Bash", target: "swarm wait --mentions", since: now, boardWait: true }, background: { target: "npm test", since: now, outputGrewAt: now } }), new Date());
@@ -132,21 +121,6 @@ test("3: a background task of its own while in a board wait: busy activity, no b
   await held;
 });
 
-test("4: unpark: seated afresh, working, its badges from board facts again", async () => {
-  const { run, b, orch } = setup();
-  board.park(orch, "b");
-  assert.equal(shown(run.id, "g/b").state, "away");
-  board.unpark(orch, "b");
-  const out = shown(run.id, "g/b");
-  assert.equal(out.state, "working");
-  assert.equal(out.badge, null);
-  // the unpark is for it: read, then its wait is held
-  board.deliver(b);
-  const held = waitOf(b, 400);
-  assert.equal(shown(run.id, "g/b").state, "working");
-  await held;
-});
-
 test("5: end --seat: ended, no badge, nothing raised for it", () => {
   const { run, b } = setup();
   board.end(b);
@@ -156,31 +130,3 @@ test("5: end --seat: ended, no badge, nothing raised for it", () => {
   assert.equal(events("lost").length, 0);
 });
 
-test("6: a parked member's own wait leaves it parked: only unpark lifts a park", async () => {
-  const { run, b, orch } = setup();
-  board.park(orch, "b");
-  const held = waitOf(b, 200);
-  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
-  await held;
-  board.setDoing(b, "back");
-  assert.deepEqual(shown(run.id, "g/b"), { state: "away", badge: null });
-});
-
-test("U-F2: a park leaves the member's doing its own; a doing an older server wrote for a park or an unpark is cleared at open (board-split D48)", async () => {
-  const { b, orch } = setup();
-  board.setDoing(b, "reading the plan");
-  board.park(orch, "b", "p2");
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "reading the plan");
-  board.unpark(orch, "b");
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/b")!.doing, "reading the plan");
-  board.close();
-  const raw = openRawStore(path.join(dir, "swarm.sqlite"));
-  try {
-    raw.prepare("UPDATE participants SET doing = 'unparked' WHERE seat = 'b'").run();
-    raw.prepare("UPDATE participants SET doing = 'parked until its next task' WHERE seat = 'a'").run();
-  } finally {
-    raw.close();
-  }
-  board = await openBoard(path.join(dir, "swarm.sqlite"));
-  for (const m of ["g/a", "g/b"]) assert.equal(board.snapshot(REPO).roster.find((r) => r.member === m)!.doing, "", m);
-});

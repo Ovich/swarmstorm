@@ -104,21 +104,18 @@ export const READINGS_KEPT_MS = 10 * 60 * 1000;
 export const LOST_MS = 60 * 1000;
 /** board-split D55: a link's heartbeat, a sign of life each time: the card's freshness, a fact on it within seconds (D55 (6)). */
 export const HEARTBEAT_MS = 5 * 1000;
-/** A carried message pending this long (from its post, or from the resume) is due: it wakes its member by itself (idea 2). */
-export const CARRY_MAX_MS = 5 * 60 * 1000;
 
 /** A member's one state (simple-states), from three facts: is its link up, are its tokens moving, did it owe the open
  *  phase when its link dropped (the orchestrator always owes). Link up: `working` moving, `stopped` not. Link down:
- *  `lost` owing at the drop (needs action), `away` not (handed back, resumable; a parked member too). `ended`: it left,
+ *  `lost` owing at the drop (needs action), `away` not (handed back, resumable). `ended`: it left,
  *  or its run closed. What it is on (a call, a merge) is its `doing`, never a state. */
 export type CoreMemberState = "working" | "stopped" | "away" | "lost" | "ended";
 
-export type CoreStateFacts = { runOpen: boolean; ended: boolean; parked: boolean; linkDown: boolean; owedAtDrop: boolean; moving: boolean };
+export type CoreStateFacts = { runOpen: boolean; ended: boolean; linkDown: boolean; owedAtDrop: boolean; moving: boolean };
 
 /** The one derivation of a member's state, read by snapshot, roster, status, seats and reader alike. */
 export function coreStateOf(m: CoreStateFacts): CoreMemberState {
   if (!m.runOpen || m.ended) return "ended";
-  if (m.parked) return "away";
   if (m.linkDown) return m.owedAtDrop ? "lost" : "away";
   return m.moving ? "working" : "stopped";
 }

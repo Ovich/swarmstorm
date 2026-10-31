@@ -21,7 +21,7 @@ const A_ONLY = /ga\/|a-task-only|alpha plain|a\.ts/;
 /** Words only run B's talk carries, never an answer of A's member. */
 const B_ONLY = /gb\/|beta plain|an idea for b/;
 
-test("two runs on one server answer each its own members: no plain post, claim or phase of one reaches the other's waits, deliveries, thread or done", async () => {
+test("two runs on one server answer each its own members: no plain post, claim or phase of one reaches the other's waits or done", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-two-runs-"));
   const repo = path.join(home, "repo");
   try {
@@ -71,10 +71,6 @@ test("two runs on one server answer each its own members: no plain post, claim o
 
     pinOwn("two-runs.a-worker.wait", call("wait", "--mentions", "--as", A_WORKER, "--timeout", "2000"), B_ONLY);
     pinOwn("two-runs.b-seat.wait", call("wait", "--mentions", "--as", B_SEAT, "--timeout", "2000"), A_ONLY);
-    pinOwn("two-runs.a-worker.deliver", call("deliver", "--as", A_WORKER), B_ONLY);
-    pinOwn("two-runs.b-seat.deliver", call("deliver", "--as", B_SEAT), A_ONLY);
-    pinOwn("two-runs.a-worker.thread", call("thread", "--as", A_WORKER), B_ONLY);
-    pinOwn("two-runs.b-seat.thread", call("thread", "--as", B_SEAT), A_ONLY);
     // the roster is the project's, every run's members and claims in it (the swarm-board skill: claims are the project's)
     // a member's state follows the board's clock, not the scene: pinned as <state>
     const roster = call("roster", "--as", B_SEAT);

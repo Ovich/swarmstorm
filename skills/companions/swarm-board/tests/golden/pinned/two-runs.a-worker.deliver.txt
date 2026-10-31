@@ -1,4 +1,0 @@
-exit 0
-phase build (unchanged; its text: node <cli> thread --as ga/w1)
-#<seq> ga/orchestrator: alpha plain talk
-phase build is open and asks: build alpha. Do your part now, then mark it done: node <cli> done build --as ga/w1

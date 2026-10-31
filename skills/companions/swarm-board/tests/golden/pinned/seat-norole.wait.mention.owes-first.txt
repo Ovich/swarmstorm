@@ -1,4 +1,6 @@
 exit 0
-wait again, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/s1 --timeout 170000
+phase build: build the thing
+you owe phase build: do your part, then mark it done: node <cli> done build --as g/s1
+only then wait again, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node <cli> wait --mentions --as g/s1 --timeout 170000
 #<seq> g/orchestrator  <ts>
 @s1 a question for you

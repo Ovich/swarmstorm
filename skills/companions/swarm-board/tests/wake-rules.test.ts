@@ -24,15 +24,15 @@ afterEach(() => {
 const setup = (kind: "task" | "brainstorm", ids: string[]) => {
   const run = board.openRun({ repo: REPO, kind, group: "g", title: "G", seats: ids.map((id) => ({ id, blockers: [] })) });
   const members = ids.map((id) => board.join({ run: run.id, seat: id, doing: "x", files: [] }).member);
-  for (const m of members) board.deliver(m);
+  for (const m of members) board.deliverMentions(m);
   return { run, members, orchestrator: board.participant("g/orchestrator")! };
 };
 
 test("D7: a merge of a file named in an agreement wakes the agreement's other party, with no claim held", async () => {
   const { members: [w1, w3, w2] } = setup("task", ["w1", "w3", "w2"]);
   board.post(w3, "@g/w1 you merge first, I append after", { kind: "agreement", about: "docs/notes.md" });
-  board.deliver(w1);
-  board.deliver(w3);
+  board.deliverMentions(w1);
+  board.deliverMentions(w3);
   const waiting = board.wait(w3, { mentionsOnly: true, timeoutMs: 3000 });
   const bystander = board.wait(w2, { mentionsOnly: true, timeoutMs: 600 });
   codeVerbs(board).merged(w1, "abc123", ["docs/notes.md"]);
@@ -46,8 +46,8 @@ test("D7: a merge of a file named in an agreement wakes the agreement's other pa
 test("D7: a merge of another file wakes nobody of the agreement; the merger is not told of its own merge", async () => {
   const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
   board.post(w3, "@g/w1 you merge first", { kind: "agreement", about: "docs/notes.md" });
-  board.deliver(w1);
-  board.deliver(w3);
+  board.deliverMentions(w1);
+  board.deliverMentions(w3);
   const waiting = board.wait(w3, { mentionsOnly: true, timeoutMs: 600 });
   codeVerbs(board).merged(w1, "abc123", ["src/other.ts"]);
   assert.deepEqual((await waiting).full, []);
@@ -56,11 +56,11 @@ test("D7: a merge of another file wakes nobody of the agreement; the merger is n
 test("D8: a wait in a paused run does not return on a mention or a plain post; resume and urgent end it", async () => {
   const { members: [a, b], orchestrator } = setup("brainstorm", ["a", "b"]);
   board.pause(orchestrator, "hold");
-  board.deliver(a); // takes the pause
-  assert.deepEqual(await board.wait(a, { mentionsOnly: true, timeoutMs: 500 }), { full: [], lines: [] });
+  board.deliverMentions(a); // takes the pause
+  assert.deepEqual(await board.wait(a, { mentionsOnly: true, timeoutMs: 500 }), { full: [] });
   board.post(b, "@g/a are you there");
-  assert.deepEqual(await board.wait(a, { mentionsOnly: true, timeoutMs: 500 }), { full: [], lines: [] });
-  assert.deepEqual(await board.wait(a, { timeoutMs: 500 }), { full: [], lines: [] });
+  assert.deepEqual(await board.wait(a, { mentionsOnly: true, timeoutMs: 500 }), { full: [] });
+  assert.deepEqual(await board.wait(a, { timeoutMs: 500 }), { full: [] });
 
   const waiting = board.wait(a, { mentionsOnly: true, timeoutMs: 3000 });
   const urgent = board.post(orchestrator, "fire", { kind: "urgent" });
@@ -80,17 +80,6 @@ test("D8: a member waiting when the pause is posted wakes on it", async () => {
   assert.deepEqual((await waiting).full.map((m) => m.seq), [p.seq]);
 });
 
-test("G27: an agreement replying to the member's own post rides on its next answer, never waking it", () => {
-  const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
-  board.post(w3, "@g/w1 I change the helper in src/x.ts", { about: "src/x.ts" });
-  board.deliver(w1);
-  const agreed = board.post(w1, "@g/w3 w3 the helper, w1 the rest", { kind: "agreement", about: "src/x.ts" });
-  assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [], "no wake");
-  board.post(w1, "@g/w3 a question");
-  const next = board.deliverMentions(w3);
-  assert.ok(next.full.some((m) => m.seq === agreed.seq) || next.lines.some((l) => l.includes(`#${agreed.seq}`)), "rides on the next wake");
-});
-
 test("G27: an agreement about a file the member holds, not replying to its own post, still wakes it", () => {
   const { members: [w1, w3] } = setup("task", ["w1", "w3"]);
   codeVerbs(board).checkEdit(w3, "src/y.ts");
@@ -98,15 +87,3 @@ test("G27: an agreement about a file the member holds, not replying to its own p
   assert.deepEqual(board.deliverMentions(w3).full.map((m) => m.seq), [agreed.seq]);
 });
 
-test("G35: an endorsement is carried for the orchestrator, never waking it", () => {
-  const { members: [w1, w3], orchestrator } = setup("task", ["w1", "w3"]);
-  board.deliver(orchestrator);
-  // the orchestrator's own ruling, endorsed by a member: the endorsement names it
-  const ruled = board.post(orchestrator, "@g/w1 @g/w3 w1 first, then w3", { kind: "agreement", about: "src/z.ts" });
-  board.deliver(w1);
-  const endorsed = board.endorse(w3, ruled.seq);
-  assert.deepEqual(board.deliverMentions(orchestrator).full.map((m) => m.seq), [], "no wake");
-  board.post(w1, "@g/orchestrator merged");
-  const next = board.deliverMentions(orchestrator);
-  assert.ok([...next.full.map((m) => `#${m.seq}`), ...next.lines].some((l) => l.includes(`#${endorsed.seq}`)), "rides on the next wake");
-});

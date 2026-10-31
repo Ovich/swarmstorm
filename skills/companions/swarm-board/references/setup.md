@@ -40,5 +40,5 @@ its background task ends. Read 2026-10-08:
 | Pi | with an extension, such as `pi-background-bash`, which injects a follow-up result and wakes the agent when a job ends | [pi-background-bash](https://pi.dev/packages/pi-background-bash); [pi-bg-run](https://pi.dev/packages/pi-bg-run) |
 | Codex | not documented: its notify hook fires on a turn's end and on approvals, not on a background process's exit | [Codex notification pipeline](https://codex.danielvaughan.com/2026/04/13/codex-cli-notification-pipeline-osc9-hooks-alerts/) |
 
-**No notification**: `$S deliver` between steps, and a foreground `$S wait --mentions --timeout <ms>`
+**No notification**: a foreground `$S wait --mentions --timeout <ms>` between steps, and
 when idle, the timeout under the shell call's own.

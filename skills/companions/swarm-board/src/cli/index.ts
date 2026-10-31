@@ -8,7 +8,7 @@ import { openBoard, progressText, projectFolderName, type EditAllowed, type Edit
 import type { Flag, HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
-import { eventNames, FOREGROUND_WAIT_MS, eventOf, formatSubscriptions, parseSubscriptions, renamedIn, type Subscription } from "../board/events.ts";
+import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
 import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
@@ -39,7 +39,7 @@ const usageError = (what: string, usage: string, example: string): never => fail
 /** The --as a corrected form carries: the caller's own, else the placeholder. */
 const asWord = (): string => quoted(args.flag("--as") ?? "<group>/<seat>");
 
-const USAGE = coreUsage(CLI, eventNames());
+const USAGE = coreUsage(CLI);
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
 const CODE_USAGE = CODE_WORDING.usage(CLI);
@@ -52,7 +52,6 @@ const EXAMPLES: Record<string, (as: string) => string> = {
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
-  config: () => "config retention 30",
   worktree: () => "worktree prune",
   close: () => "close --run 3",
 };
@@ -235,8 +234,8 @@ const ago = (at: number | null): string => {
 };
 /** A member's state (swarm-relay D9) and the tool it is in or last ran: `busy (Bash npm test)`; with `ages`, its two
  *  ages after it (D38): `busy (Bash npm test)  progress 12s ago, link 0s ago`. */
-const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt" | "parked" | "parkedUntil">, ages = false): string =>
-  `${r.parked && r.parkedUntil ? WORDING.parkedUntil(r.parkedUntil) : r.state}${r.activity ? ` (${r.activity})` : ""}` +
+const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt">, ages = false): string =>
+  `${r.state}${r.activity ? ` (${r.activity})` : ""}` +
   (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 
 /** F27: a member's held files, the first few and how many more. */
@@ -259,9 +258,8 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
     .flatMap((f) => (holderOf(f) ? [`${f} (${holderOf(f)})`] : []));
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
-  const on = r.subscriptions.length ? `  on: ${formatSubscriptions(r.subscriptions)}` : "";
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}${on}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -288,14 +286,6 @@ const withNext = (me: Participant, d: Delivery, pausedMerging: string | null = n
 
 /** board-split V-36 (D71): the member's own step in a pause, its pack's (the merge lock's holder); null otherwise. */
 const pausedMergingLine = async (p: Participant): Promise<string | null> => (await situation(p)).pauseStep ?? null;
-
-const printDelivery = (d: Delivery & { full: (Message & { endorse?: string })[] }): void => {
-  for (const m of d.full) {
-    console.log(fullText(m));
-    if (m.endorse) console.log(m.endorse);
-  }
-  for (const l of d.lines) console.log(l);
-};
 
 /** Prints an answer of the cluster: its lines, or with --json the verb's own JSON with its phase and next. */
 const emitAnswer = (json: Record<string, unknown>, a: { lines: string[]; next: string | null; phase?: string | null; paused?: string }, withPhase = true): void =>
@@ -339,8 +329,6 @@ const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...sel
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
 const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
 const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";
-/** The step a member owing the run's open phase takes before any wait; the paused line in a pause; null when it owes none. */
-const owedLine = async (p: Participant, thread = true, brief = false): Promise<string | null> => rules.owedLine(await situation(p), { thread, brief });
 /** A member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
 const pausedLine = async (p: Participant): Promise<string | null> => rules.pausedLine(await situation(p));
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
@@ -508,7 +496,7 @@ function readSeats(file: string): SeatSpec[] {
   }
   const list = Array.isArray(raw) ? raw : (raw as { seats?: unknown }).seats;
   if (!Array.isArray(list)) return seatsFail(`${file}: expected an array of {id, role, area, blockers}`);
-  return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown; on?: unknown }) => {
+  return list.map((s: { id?: unknown; role?: unknown; area?: unknown; blockers?: unknown; link?: unknown }) => {
     if (typeof s.id !== "string") seatsFail(`${file}: a seat without an id`);
     // D24: the link finds each member's transcript; a seat row naming one is refused
     if ("title" in s) seatsFail(`${file}: unknown field title in ${s.id}; a seat has id, role, area`);
@@ -519,7 +507,6 @@ function readSeats(file: string): SeatSpec[] {
       ...(typeof s.area === "string" && s.area ? { area: s.area } : {}),
       blockers: Array.isArray(s.blockers) ? s.blockers.map(String) : [],
       link: typeof s.link === "string" && s.link ? s.link : null,
-      ...(Array.isArray(s.on) ? { on: s.on.map(String) } : {}),
     };
   });
 }
@@ -550,18 +537,6 @@ const POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a li
 
 /** The commands a member of a kind without worktree runs next, `--as` filled in (D21, D36). */
 const seatCommands = (as: string): string[] => WORDING.seatCommands(self().join(" "), shellWord(as), FOREGROUND_WAIT_MS);
-
-/** `--on`/`subscribe`'s events; an unknown name fails, listing the known ones (D59). */
-const subscriptionsArg = (spec: string): Subscription[] => {
-  // board-split D36: an old event name (gone, stale, quiet) is read as its new one, said once on stderr
-  const renamed = renamedIn(spec);
-  if (renamed.length) console.error(WORDING.eventRenamed(renamed));
-  try {
-    return parseSubscriptions(spec);
-  } catch (e) {
-    return fail((e as Error).message);
-  }
-};
 
 /** Main is gone (D12): the conversation is one, a mention says who is meant. */
 const NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW·SL3, @swarm)";
@@ -627,15 +602,6 @@ async function main(): Promise<void> {
     return;
   }
   switch (args.verb) {
-    case "config": {
-      const setting = args.positional[0];
-      if (setting !== "retention") fail(`config: the one setting is retention\n${verbHelp()}`);
-      const raw = args.positional[1];
-      const value = raw === undefined ? undefined : Number(raw);
-      const days = await board.setting("retention-days", value);
-      emit({ retention: days }, String(days));
-      break;
-    }
     case "open": {
       const { kind, group } = openKindAndGroup();
       const plan = group;
@@ -716,8 +682,6 @@ async function main(): Promise<void> {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
         const run = runArg();
-        const on = args.flag("--on");
-        if (on !== undefined) subscriptionsArg(on);
         const role = args.flag("--role");
         const area = args.flag("--area");
         const added = await board.addSeat(run, {
@@ -726,7 +690,6 @@ async function main(): Promise<void> {
           ...(area ? { area } : {}),
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null,
-          ...(on !== undefined ? { on: on.split(",").map((x) => x.trim()).filter(Boolean) } : {}),
         });
         emit({ run, seat: added }, `${id} added`);
         break;
@@ -771,7 +734,7 @@ async function main(): Promise<void> {
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
       // V-6 (D62): the members that still owed the phase this one replaces, named once
       const stillOwed = previous !== null && m.stillOwed.length ? WORDING.phaseStillOwed(previous, m.stillOwed) : null;
-      // the orchestrator's next step (rule 10): a done is carried to its next wake, a watched one wakes it; the board says when all are in
+      // the orchestrator's next step (rule 10): a watched done wakes it; the board says when all are in
       const cli = self().join(" ");
       const next = WORDING.phaseOpened(name, WORDING.phaseFor(only), WORDING.phaseHeard(watch), cli, shellWord(p.name), m.run);
       // the person follows from the session they talk to, not the board: a few lines there at every phase (rule 10)
@@ -781,51 +744,17 @@ async function main(): Promise<void> {
       // a seat whose member ended still owes this phase: all-done waits for it, so it is named with how to wake it
       const opened = await board.phaseProgress(m.run);
       const idleEnded = (opened?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
-      // V-34 (D70): a member parked until this phase, or named in its --for, stays parked: named with its unpark; no auto-unpark
       const seatOf = (member: string): string => member.slice(member.lastIndexOf("/") + 1);
-      const runRepo = (await board.runs()).find((r) => r.id === m.run)?.repo;
-      const parkedFor = runRepo === undefined ? [] : (await board.roster(runRepo)).filter((r) => r.run === m.run && r.parked === true && (r.parkedUntil === name || only.includes(r.seat)));
-      const parkedLines = parkedFor.map((r) => WORDING.phaseParkedMember(r.name, cli, shellWord(r.seat), shellWord(p.name)));
       // V-35: a member owing it whose agent is lost is named with the move it needs
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord(seatOf(member)), shellWord(p.name))));
       const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, parked: parkedLines, lost: lostLines, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
         console.log(seqLine(m));
         if (pausedLine) console.log(pausedLine);
         if (stillOwed) console.log(stillOwed);
-        for (const line of [...parkedLines, ...lostLines]) console.log(line);
+        for (const line of lostLines) console.log(line);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
-        console.log(next);
-      });
-      break;
-    }
-    case "park":
-    case "unpark": {
-      // board-split D30: the orchestrator parks a seat only it needs, or lifts the park
-      const p = await caller();
-      const seat = args.positional[0] ?? usageError(`${args.verb}: which seat?`, `${args.verb} <seat> --as <group>/orchestrator`, `${args.verb} w2 --as ${asWord()}`);
-      // --until <phase>: the phase the seat sleeps until, shown on its card (D34); the board keeps no list of phases
-      const m = args.verb === "park" ? await board.park(p, seat, args.flag("--until")) : await board.unpark(p, seat);
-      const member = `${p.plan}/${seat}`;
-      const next = args.verb === "park" ? WORDING.parked(member, self().join(" "), shellWord(seat), shellWord(p.name)) : WORDING.unparked(member);
-      emit({ seq: m.seq, run: m.run, member, parked: args.verb === "park", next }, () => {
-        console.log(seqLine(m));
-        console.log(next);
-      });
-      break;
-    }
-    case "block":
-    case "unblock": {
-      // board-split D44: the orchestrator badges a seat blocked on the person, or lifts it
-      const p = await caller();
-      const seat = args.positional[0] ?? usageError(`${args.verb}: which seat?`, `${args.verb} <seat>${args.verb === "block" ? " <reason>" : ""} --as <group>/orchestrator`, `${args.verb} w2${args.verb === "block" ? ' "the person picks the schema"' : ""} --as ${asWord()}`);
-      const reason = args.positional.slice(1).join(" ");
-      const m = args.verb === "block" ? await board.block(p, seat, reason) : await board.unblock(p, seat);
-      const member = `${p.plan}/${seat}`;
-      const next = args.verb === "block" ? WORDING.blockedSet(member, self().join(" "), shellWord(seat), shellWord(p.name)) : WORDING.unblockedSet(member);
-      emit({ seq: m.seq, run: m.run, member, blocked: args.verb === "block", next }, () => {
-        console.log(seqLine(m));
         console.log(next);
       });
       break;
@@ -888,8 +817,7 @@ async function main(): Promise<void> {
           : r.late
             ? WORDING.doneLate(name, open, r.owesNow)
             : WORDING.doneCounted(name, progressText(r.progress), r.all, r.progress.gone.length > 0);
-      // V-43: a parked member is not told to merge (merge-lock refuses it while parked)
-      const facts = unmerged && !(r.notOwed && "parked" in r.notOwed) ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
+      const facts = unmerged ? [CODE_WORDING.unmergedAtDone(CODE_WORDING.unmergedFact(unmerged.branch, unmerged.left), self().join(" "), shellWord(unmerged.onto ?? "<branch>"), shellWord(p.name))] : [];
       const a = answer({ verb: "done", phase: name, line, facts }, await situation(p));
       emitAnswer({ member: p.name, phase: name, done: r.progress.done, of: r.progress.of, gone: r.progress.gone, all: r.all, already: r.already, late: r.late, owes: r.owesNow }, a, false);
       break;
@@ -907,7 +835,6 @@ async function main(): Promise<void> {
         doing: need("--doing"),
         files: [...args.list("--files"), ...args.flags("--file")].map(parseFile),
         place: own?.path ?? worktreeOf(process.cwd()) ?? undefined,
-        ...(args.flag("--on") !== undefined ? { on: subscriptionsArg(args.flag("--on")!) } : {}),
       });
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: member.name, run: member.run });
@@ -945,19 +872,10 @@ async function main(): Promise<void> {
       emitAnswer({ member: member.name, nick: member.nick, roster: rosterNow, composition, ...(shared ? { as: member.name, commands } : {}), ...(own ? { worktree: own.path, branch: own.branch, as: member.name } : {}), ...(lockNotHeldLine ? { lockNotHeld: true } : {}), ...(drawing ? { drawing } : {}), link }, a);
       break;
     }
-    case "subscribe":
-    case "unsubscribe": {
-      const p = await caller();
-      if (await answeredGate(p)) break;
-      const subs = subscriptionsArg(args.positional.join(",") || fail(`${args.verb}: which events?`));
-      const after = args.verb === "subscribe" ? await board.subscribe(p, subs) : await board.unsubscribe(p, subs);
-      await emitHeard(p, { member: p.name, subscriptions: after }, `${p.name} wakes on: ${formatSubscriptions(after) || "mentions and urgent posts only"}`);
-      break;
-    }
     case "doing": {
       const p = await caller();
       if (await answeredGate(p)) break;
-      // D60: a parked member changes nothing it shows
+      // D65: a paused member changes nothing it shows
       if (await refusedPaused(p, "doing")) break;
       const text = args.positional.join(" ") || fail("doing: what?");
       await board.setDoing(p, text);
@@ -1011,61 +929,6 @@ async function main(): Promise<void> {
       await emitHeard(p, { seq: m.seq, endorses: m.endorses, run: m.run }, seqLine(m));
       break;
     }
-    case "read": {
-      const raw = (args.positional[0] ?? usageError("read: which seq?", "read <seq> [--as <member>]", `read 12 --as ${asWord()}`)).replace(/^#/, "");
-      const seq = Number(raw);
-      if (!Number.isInteger(seq)) usageError(`read takes a seq, got ${raw}`, "read <seq> [--as <member>]", `read 12 --as ${asWord()}`);
-      // a member's read is a call of its own (D66); a reader no member answers to reads all the same
-      let by: Participant | undefined;
-      try {
-        by = await caller();
-      } catch (e) {
-        if (!(e instanceof CliError)) throw e;
-      }
-      if (by && (await answeredGate(by))) break;
-      const m = await board.read(seq, by);
-      // the phase the message's run is in, first; a member owing the open phase is told to do it, last
-      if (by) emitAnswer({ ...m }, answer({ verb: "read", shown: { text: fullText(m) }, member: true }, await situation(by, true)));
-      else {
-        // a reader no member answers to: the message's run's phase, whole
-        const ph = await board.currentPhase(m.run);
-        const phase = ph ? WORDING.phaseWhole(ph.name, ph.text) : null;
-        emitAnswer({ ...m }, { lines: [fullText(m), ...(phase ? [phase] : [])], next: null, phase });
-      }
-      break;
-    }
-    case "thread": {
-      // --run: a run read from outside it, closed ones too, by no member (G30)
-      const outside = args.flag("--run");
-      if (outside !== undefined) {
-        const run = Number(outside);
-        if (!Number.isInteger(run)) usageError(`thread --run takes a run id, got ${outside}`, "thread --run <id> [<phase>]", "thread --run 3");
-        const name = args.positional[0];
-        const posts = await board.runThread(run, name);
-        emit({ run, posts }, () => {
-          if (!posts.length) console.log(`no post in run ${run}${name ? ` phase ${name}` : ""}`);
-          for (const m of posts) console.log(fullText(m));
-        });
-        break;
-      }
-      const me = await caller();
-      if (await answeredGate(me)) break;
-      const name = args.positional[0];
-      const posts = await board.thread(me, name);
-      emitAnswer({ posts }, answer({ verb: "thread", phase: name ?? null, shown: posts.map((m) => ({ text: fullText(m) })) }, await situation(me)));
-      break;
-    }
-    case "deliver": {
-      const me = await caller();
-      if (await answeredGate(me)) break;
-      // --mentions: only what is for the member (a mention, an urgent post, a subscribed event), never blocking
-      const mentionsOnly = args.has("--mentions");
-      const d = withNext(me, await (mentionsOnly ? board.deliverMentions(me) : board.deliver(me)), await pausedMergingLine(me));
-      // the run's phase heads every delivery that carries something; a member owing the open phase is told to do it, last
-      const a = answer({ verb: "deliver", mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(me, d.full.length > 0 || d.lines.length > 0));
-      emitAnswer({ ...d }, a);
-      break;
-    }
     case "wait": {
       const p = await caller();
       if (await answeredGate(p, true)) break;
@@ -1091,7 +954,7 @@ async function main(): Promise<void> {
       // every foreground re-arm holds 170000, under the 180 s a harness lets a foreground command run (F22), whatever the caller gave: an old 110000
       // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
       const foregroundAgain = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
-      if (!d.full.length && !d.lines.length) {
+      if (!d.full.length) {
         // a timeout: the line to run again (B7); the member ended: it says so, nothing to re-arm (G26)
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) {
@@ -1105,7 +968,7 @@ async function main(): Promise<void> {
         break;
       }
       const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
-      const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d), lines: d.lines }, await situation(p, true));
+      const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d) }, await situation(p, true));
       // F28: a background listener's end is also announced by the harness; the same event, already delivered here
       emit({ phase: a.phase, next: a.next, ...d, ...(a.lines.includes(WORDING.delivered) ? { delivered: WORDING.delivered } : {}) }, () => {
         for (const l of a.lines) console.log(l);
@@ -1324,7 +1187,7 @@ async function main(): Promise<void> {
       if (p.ended) break;
       // a mention landed since its last look: it reads it before it ends (the orchestrator ending a seat reads for it)
       const unread = endedSeat === undefined ? await board.unreadMentions(p) : 0;
-      if (unread > 0) fail(`you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${[...self(), "deliver", "--as", shellWord(p.name)].join(" ")}\` first`);
+      if (unread > 0) fail(WORDING.unreadBeforeEnd(unread, WORDING.wait(self().join(" "), shellWord(p.name))));
       // the board's worktree with work not merged: the pack refuses the end, naming it and the merge (beforeEnd)
       const base = (await runOf(p.run))?.base ?? null;
       const refusal = (await board.packCall(p, "beforeEnd", {})) as { reason: string; worktree: string; left: string } | null;
