@@ -153,7 +153,7 @@ test("V-23: the board's lock-freed notice for a lost holder is never taken for a
 });
 
 test("V-24: the no-phase stall's command points at the task, never at a phase", () => {
-  const m = { seq: 1, at: "", author: "g/orchestrator", body: "", about: null, kind: "event", mentions: [], event: "stalled", meta: { rule: "owing", member: "w1" } } as unknown as Parameters<typeof eventStep>[0];
+  const m = { seq: 1, at: "", author: "g/orchestrator", body: "", about: null, kind: "event", mentions: [], event: "stalled", meta: { rule: "silent", member: "w1" } } as unknown as Parameters<typeof eventStep>[0];
   const line = eventStep(m, { name: "g/orchestrator", seat: "orchestrator" } as never, "swarm") ?? "";
   assert.doesNotMatch(line, /your part of/);
   assert.match(line, /@w1 your task/);

@@ -163,13 +163,6 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       return m.mentions.includes(me.name) ? W.blockedWait : null;
     case "unblock":
       return m.mentions.includes(me.name) ? W.unblockedGoOn : null;
-    case "liveness": {
-      // idea 1, rule 4 (v1-b): a link lost while the transcript grows; the member restarts it with the command its join printed
-      const member = meta && "linkDown" in meta ? meta.linkDown : null;
-      if (!member || !orchestrator) return null;
-      const all = meta && "linkDowns" in meta && meta.linkDowns ? meta.linkDowns : [member];
-      return all.map((one) => W.restartLink(one, cli, m.run, shellWord(one))).join("; ");
-    }
     default:
       return codeEventStep(m, me, cli, event) ?? null;
   }
@@ -184,8 +177,8 @@ const tasksOf = (body: string, seat: string): string[] =>
     .filter(([, ...seats]) => seats.includes(seat))
     .map(([seq]) => seq);
 
-/** The move a `stalled` asks of the orchestrator, by the rule that badged its member stalled (idea 1, rule 6); a stalled
- *  stored before the rules gives the general move. */
+/** The move a `stalled` asks of the orchestrator, by its rule (simple-states: silent or lock); a stalled stored under
+ *  an older rule gives the general move. */
 function stalledMove(m: Message, cli: string, as: string): string {
   const meta = m.meta && "rule" in m.meta ? m.meta : null;
   // several members stalled at one tick: one line, each member's move after its name
@@ -193,18 +186,8 @@ function stalledMove(m: Message, cli: string, as: string): string {
     return W.stalledEach(meta.members.map((one) => ({ member: one.member, move: stalledMove({ ...m, meta: one.rule ? { ...one, rule: one.rule } : null }, cli, as) })));
   const id = meta?.member ?? "<member>";
   switch (meta?.rule) {
-    case "ended":
-      return W.stalledEnded;
-    case "in-turn":
-      return W.stalledInTurn;
-    case "background":
-      return W.stalledBackground(cli, shellWord(`@${id} …`), as);
-    case "call":
-      return W.stalledCall;
     case "silent":
       return W.stalledSilent(cli, shellWord(W.stalledAsk(id, meta.phase)), as);
-    case "owing":
-      return W.stalledOwing(cli, shellWord(W.stalledAsk(id, meta.phase)), as);
     case "lock":
       return W.stalledLock(meta.holder ?? "its holder", meta.lock ?? "<lock>", cli, shellWord(`@${meta.holder ?? "<holder>"} …`), as);
     default:

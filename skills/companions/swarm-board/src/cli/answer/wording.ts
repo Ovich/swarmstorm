@@ -164,17 +164,10 @@ export const WORDING = {
     `${renamed.map((r) => `${r.old} is now ${r.now}`).join(", ")}: trouble is a badge (stalled, lost, blocked), its event named for it; read as ${[...new Set(renamed.map((r) => r.now))].join(", ")}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
-  restartLink: (member: string, cli: Command, run: number, as: string) => `SendMessage ${member} to restart its link, in the background: ${cli} link --run ${run} --as ${as}`,
-  /** a stall's move, by the rule that badged its member stalled (idea 1, rule 6) */
-  stalledEnded: "a post does not wake it: SendMessage it, or dispatch it again",
-  stalledInTurn: "SendMessage it; if it does not answer, dispatch it again",
-  stalledBackground: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}, or SendMessage it if its turn ended`,
-  stalledCall: "SendMessage it to stop the call",
-  /** board-split D49: owing the phase out of a wait, no board call for the stall time */
+  /** simple-states: working, owing the phase or a task's report, no sign of progress for the stall window */
   stalledSilent: (cli: Command, post: string, as: string) => `ask it: ${cli} post ${post} --as ${as}; if its turn ended, SendMessage it or dispatch it again`,
   // V-24 (D64): with no phase open, the stalled member owes its task's report, never a phase
   stalledAsk: (id: string, phase: string | undefined) => (phase ? `@${id} your part of ${phase}` : `@${id} your task: your report?`),
-  stalledOwing: (cli: Command, post: string, as: string) => `${cli} post ${post} --as ${as}: its wait returns on it`,
   stalledLock: (holder: string, lock: string, cli: Command, post: string, as: string) => `ask ${holder} to unlock ${lock}, or to stop what it holds: ${cli} post ${post} --as ${as}`,
   stalledAny: (cli: Command, as: string) => `read the thread, then address the member who owes a move (${cli} post "@<member> <what you need>" --as ${as})`,
   /** several members stalled at one tick: each member's move after its name */

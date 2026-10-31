@@ -3,7 +3,7 @@ you are g/v1, <nick:v1>: @v1 or @<Nick:v1> mentions you
 orchestrator <nick:orchestrator>: working
 v1 <nick:v1>: working
 g/orchestrator  run 1  working  <n> unread  doing: -  on: ended, stalled, all-joined, done (carried), joined (carried), idle (carried)
-<nick:v1> · g/v1  run 1  working  doing: x  busy max: 300 s (non-shell calls)
+<nick:v1> · g/v1  run 1  working  doing: x
 pass --as g/v1 on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post
 node <cli> post --file <findings.md> --as g/v1    # your verdict and findings table, to @orchestrator
 node <cli> post "@<seat> <question>" --about <path> --as g/v1    # a question to a builder about a file

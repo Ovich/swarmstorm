@@ -9,7 +9,6 @@ import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
-import { codeVerbs } from "../src/packs/code/calls.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 
@@ -186,22 +185,6 @@ test("D53, D55: a link-less member whose transcript still grows, as its link las
   board.recordActivity(run.id, "a", { grewAt: base - 1000, tokens: 0, context: null, openTool: null, lastTool: null, finished: false }, new Date(base - 1000));
   tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   pins("g/a", "working", null);
-});
-
-test("D52: a merge lock held past LOCK_HELD_MS badges its holder stalled 'merging, holds the merge lock N min'", () => {
-  const { run, a } = setup();
-  codeVerbs(board).lockMerge(a);
-  assert.equal(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.fact, "merging");
-  pins("g/a", "idle", null);
-  const raw = openRawStore(path.join(dir, "swarm.sqlite"));
-  try {
-    raw.prepare("UPDATE merge_locks SET at = ?").run(new Date(Date.now() - 11 * 60_000).toISOString());
-  } finally {
-    raw.close();
-  }
-  tick2(board, run.id, new Date(), linked);
-  pins("g/a", "idle", "stalled");
-  assert.match(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.badge!.reason, /^merging, holds the merge lock 11 min$/);
 });
 
 test("roster: a parked member carries the phase it is parked until", () => {

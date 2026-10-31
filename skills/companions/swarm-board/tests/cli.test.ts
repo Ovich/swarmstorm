@@ -1537,7 +1537,7 @@ test("board-split#D28: open --authority stores the orchestrator's roles, read ba
   assert.notEqual(run("open", "--plan", "bad", "--title", "B", "--seats", seats, "--authority", "Tech Lead").status, 0);
 });
 
-test("gate G5: open --stall-ms under the 5 min floor is raised to it, said in one answer line after the run id", () => {
+test("gate G5: open --stall-ms under the 10 min floor is raised to it, said in one answer line after the run id", () => {
   const seats = path.join(toolRoot, "g5.seats.json");
   fs.writeFileSync(seats, SEATS);
   const outer: NodeJS.ProcessEnv = { ...env() };
@@ -1546,6 +1546,6 @@ test("gate G5: open --stall-ms under the 5 min floor is raised to it, said in on
   assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.split("\n");
   assert.match(lines[0].trim(), /^\d+$/);
-  assert.equal(lines[1], "--stall-ms 60000 is under the 300000 ms floor of the stall window: the run uses 300000");
+  assert.equal(lines[1], "--stall-ms 60000 is under the 600000 ms floor of the stall window: the run uses 600000");
   assert.equal(r.stdout.split("floor of the stall window").length, 2, "said once");
 });
