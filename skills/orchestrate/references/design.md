@@ -57,4 +57,5 @@ has no decision yet is an open row in Decisions.
 ```
 
 **A task quotes the entries it implements word for word**, and cites the decisions it carries
-(`<topic>.design#D3`, or the plan's `<topic>#D3`); an entry changed later is a new decision.
+(on the board, the section post `#<seq> §3` and `D3`; in a plan, `<topic>#D3`); an entry changed
+later is a new decision.
