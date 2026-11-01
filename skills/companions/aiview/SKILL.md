@@ -39,7 +39,7 @@ $A open "$F" --tag <topic>
 ## Registering a document
 
 - **File name `YYYY-MM-DD-<topic>.<kind>.md`**, flat in the project's folder.
-- **Kind is mandatory**, from the filename or `--kind`: `brainstorm`, `plan`, `task`, `module`, `reference`, `prototype`, `workbench`, `pr-analysis`, `report`, `pdf`, `roadmap` (one per project). A kind is a type of document; a topic is a tag.
+- **Kind is mandatory**, from the filename or `--kind`: `brainstorm`, `plan`, `task`, `module`, `reference`, `prototype`, `workbench`, `pr-analysis`, `report`, `pdf`, `long-horizon`, `roadmap` (one per project). A kind is a type of document; a topic is a tag.
 - **One `--group <slug>` per piece of work**, titled once with `--group-title`, at most one group per document.
 - **A plan takes its own group, `<topic>-plan`**, shared with its task documents and nothing else.
 - **`--started <ISO>` when the discussion began before the file existed.**

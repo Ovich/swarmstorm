@@ -65,6 +65,10 @@ designed on the board first, in the one design format, then the protocol runs: `
 the cap without it, pause and give the person the choice: one more iteration, a raised cap, or
 the close. Never an iteration the charter did not grant.
 
+**Work that must survive a stop and resume the next day keeps a long-horizon document** when
+the person or the charter asks for one (`long-horizon:` in the charter): the `long-horizon`
+skill, loaded with this one; its elements replace the run's findings kept in chat.
+
 ## Handing the run off
 
 **A run that builds code, or any run longer than a sitting, is handed to an orchestrator of its

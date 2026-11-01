@@ -19,6 +19,7 @@ or something else. A yes loads that skill; it takes over from there.
 | agreement on work that splits into parts or must be seen working, no plan needed | the `swarm` skill, **with the protocol filled in**: "Run it as build-verify: 3 builders, verifiers sized from the steps (2 here) each on its own instance, until ready (cap 5), effort low. Adjust or go?" | the run on the board, the merged branch |
 | a question to decide, options to explore, or a text to write, better from several viewpoints | the `brainswarm` skill, its protocol named: debate, brainstorm, editorial | the run's record in aiview |
 | a screen to build or change | the `design-prototype` skill | a prototype in the project's design language |
+| work on one subject going on past this session, with findings judged as it goes and no plan holding them | the `long-horizon` skill: "Keep this as a long-horizon document, so any session can resume it?" | the document in aiview: a summary and the elements, each with its status |
 | a project's conventions just decided, or about to be | the `write-conventions` skill | the rule in the conventions file |
 
 **At a run's close**, its follow-up: a brainstorm or a debate settled → a plan; a plan approved →
