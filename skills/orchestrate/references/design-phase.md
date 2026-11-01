@@ -4,7 +4,9 @@
 `design:`): the work is designed on the board before anyone builds, writes or walks it, in the one
 design format, and accepted by you. Then the protocol's own phases run, as many rounds as its loop
 says, every task quoting the design. Most fitting before code (`build-verify`, `idea-to-outcome`
-per idea); a plan has its design in the plan and needs none.
+per idea); a plan has its design in the plan and needs none. **The person can ask for one mid-run
+too**, before the next piece of work: it is a charter amendment (`references/charter.md`), and the
+design phase runs before that work's tasks are cut, the run going on from the accepted design.
 
 ## Who designs
 
