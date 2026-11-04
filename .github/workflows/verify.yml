@@ -38,6 +38,9 @@ jobs:
       # runner context is not available in a job-level env.
       - name: Scratch data home
         run: echo "SWARMSTORM_HOME=$RUNNER_TEMP/swarmstorm-home" >> "$GITHUB_ENV"
+      # The hosted Windows runner starts a board server from source slower than the 5 s a CLI waits by default.
+      - name: Longer server start wait
+        run: echo "SWARM_START_TIMEOUT_MS=30000" >> "$GITHUB_ENV"
 
       - name: swarm-board — install and build
         working-directory: skills/companions/swarm-board

@@ -14,8 +14,9 @@ import type { Binding } from "../link/transcripts.ts";
 export type RemoteBoard = { [K in RpcMethod]: (...a: Parameters<Board[K]>) => Promise<Awaited<ReturnType<Board[K]>>> };
 export type BoardMember = { name: string; run: RunId };
 
-/** How long a server or a link started here has to answer (D19). */
-const START_TIMEOUT_MS = 5000;
+/** How long a server or a link started here has to answer (D19): 5 s, unless SWARM_START_TIMEOUT_MS says otherwise
+ *  (a slow CI runner sets it; trust-adaptations T9). */
+const START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5000;
 const START_POLL_MS = 50;
 
 /** The entry this CLI runs from: what a server or a link is spawned as (D28); no node flag of the caller carried over. */
@@ -69,6 +70,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
   // D40: a live process holding the start lock is a server starting or running; never a second one
   const startedElsewhere = (): boolean => liveStartLockHolder(dataRoot) !== null;
   let exited: string | null = null;
+  const startedAt = Date.now();
   if (!startedElsewhere()) {
     let log: number | "ignore" = "ignore";
     try {
@@ -99,7 +101,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {}
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1000} s`;
-  throw new Error(`swarm: the board server did not start: ${reason}; run swarm serve to see it`);
+  throw new Error(`swarm: the board server did not start: ${reason} (waited ${Date.now() - startedAt} ms); run swarm serve to see it`);
 }
 
 /** The binding a member's link watches for (D29): the orchestrator's `open`, a member's `join`. */
