@@ -24,6 +24,7 @@ import { clearServerFiles, writeServerFiles } from "../core/serverstate.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { DocWatcher, type DataChangedEvent } from "../core/watcher.ts";
 import { mountBoard } from "./board.ts";
+import { makeGuard, newServerToken, tokenCookie } from "./guard.ts";
 import { createSseHub } from "./sse.ts";
 
 export interface ServeOptions {
@@ -45,7 +46,19 @@ export interface ServeOptions {
   /** Opens a new browser tab on a URL (board-split#D41: an agent's open or pointer on a project no tab shows).
    *  The system browser by default; tests pass their own. */
   openTab?: (url: string) => void;
+  /** The token every POST must carry (trust-adaptations#D4); a fresh random one by default. Tests pass their own. */
+  token?: string;
 }
+
+/** A raw HTML document runs in a sandbox of its own origin: it can never call aiview as the viewer (trust-adaptations#D22). */
+const RAW_HTML_CSP = "sandbox allow-scripts allow-forms allow-modals allow-popups";
+
+/** The origins of a UI dev server proxying to this one (`npm run dev`), comma-separated in AIVIEW_DEV_ORIGIN; none otherwise. */
+const devOriginsFromEnv = (): string[] =>
+  (process.env.AIVIEW_DEV_ORIGIN ?? "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 
 const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
@@ -76,7 +89,7 @@ export function servedBuild(distDir: string): string | null {
 
 export function startServer(
   index: Index,
-  { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser }: ServeOptions,
+  { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser, token = newServerToken() }: ServeOptions,
 ): http.Server {
   // the hello names the build dist/ serves now: a tab drawn by an older build reloads (app/lib/build.ts)
   const sse = createSseHub(heartbeatMs, () => {
@@ -114,8 +127,9 @@ export function startServer(
     body: string | Buffer,
     type = "application/json; charset=utf-8",
     cacheControl = "no-store",
+    extraHeaders: http.OutgoingHttpHeaders = {},
   ) => {
-    res.writeHead(status, { "content-type": type, "cache-control": cacheControl });
+    res.writeHead(status, { "content-type": type, "cache-control": cacheControl, ...extraHeaders });
     res.end(body);
   };
   const json = (res: http.ServerResponse, obj: unknown, status = 200) => send(res, status, JSON.stringify(obj));
@@ -161,10 +175,19 @@ export function startServer(
     }
     // index.html and the SPA fallback: revalidated on every load, so a plugin update's
     // new hashed bundle is picked up by the next load, never an old cached page.
-    return send(res, 200, fs.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
+    // the viewer's page alone hands over the token, as a cookie its same-origin POSTs carry (trust-adaptations#D4)
+    return send(res, 200, fs.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache", { "set-cookie": tokenCookie(token) });
   };
 
+  // made at the first request, once the port is known (a test's port 0 included)
+  let guard: ReturnType<typeof makeGuard> | null = null;
   const server = http.createServer((req, res) => {
+    guard ??= makeGuard({ port: (server.address() as { port: number }).port, token, devOrigins: devOriginsFromEnv() });
+    const refusal = guard.check(req);
+    if (refusal) {
+      req.resume();
+      return send(res, refusal.status, refusal.reason, "text/plain; charset=utf-8");
+    }
     const url = new URL(req.url ?? "/", "http://x");
     if (board.handle(req, res, url)) return;
     const p = url.pathname;
@@ -353,12 +376,9 @@ export function startServer(
       const doc = index.get(Number(r[1]));
       if (!doc || !fs.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
       watcher.ensureWatch(doc);
-      const type = isPdf(doc.file_path)
-        ? "application/pdf"
-        : isHtml(doc.file_path)
-          ? "text/html; charset=utf-8"
-          : "text/plain; charset=utf-8";
-      return send(res, 200, fs.readFileSync(doc.abs_path), type);
+      const html = isHtml(doc.file_path);
+      const type = isPdf(doc.file_path) ? "application/pdf" : html ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
+      return send(res, 200, fs.readFileSync(doc.abs_path), type, "no-store", html ? { "content-security-policy": RAW_HTML_CSP } : {});
     }
     const m = p.match(/^\/api\/document\/(\d+)$/);
     if (m) {
@@ -419,7 +439,7 @@ export function startServer(
   server.listen(port, "127.0.0.1", () => {
     const actualPort = (server.address() as { port: number }).port;
     if (writeState) {
-      writeServerFiles(actualPort, version);
+      writeServerFiles(actualPort, version, token);
       process.on("exit", clearServerFiles);
     }
     const url = `http://localhost:${actualPort}/${startDoc ? `#doc=${startDoc.id}` : ""}`;

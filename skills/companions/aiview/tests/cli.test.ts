@@ -719,3 +719,21 @@ test("serve --detach records the server's own pid, even over a stale pid file a 
   // the pid recorded was the one serving: once it is stopped, the port answers no more
   await assert.rejects(fetch(`http://127.0.0.1:${server.port}/api/documents`));
 });
+
+test("the CLI's POSTs reach a live server with the token it wrote (trust-adaptations#D4)", async () => {
+  const r = run("serve", "--detach", "--port", "0", "--json");
+  assert.equal(r.status, 0, r.stderr);
+  const { server } = JSON.parse(r.stdout) as { server: { port: number } };
+  const tokenFile = path.join(toolRoot, "aiview.token");
+  try {
+    assert.match(fs.readFileSync(tokenFile, "utf8"), /^[0-9a-f]{64}$/);
+    const opened = run("open", write("docs/t.spec.md", "# T\n"), "--json");
+    assert.equal(opened.status, 0, opened.stderr);
+    // the server answered /api/open: no tab on the project, so it says it opened one
+    assert.equal((JSON.parse(opened.stdout) as { opened: boolean }).opened, true);
+    const bare = await fetch(`http://127.0.0.1:${server.port}/api/index-changed`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(bare.status, 403, "without the token the same POST is refused");
+  } finally {
+    stopServer();
+  }
+});

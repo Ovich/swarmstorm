@@ -9,6 +9,10 @@ import type { AddressInfo } from "node:net";
 import type http from "node:http";
 import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
+
+/** The token this suite's server is started with; every POST carries it (trust-adaptations#D4). */
+const TOKEN = "test-token";
+const WRITE_HEADERS = { "content-type": "application/json", "x-aiview-token": TOKEN };
 import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
 import type { ShowResponse } from "../src/core/api.ts";
 
@@ -31,7 +35,7 @@ before(async () => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, "# X\n");
   docId = index.register(file, {}).id;
-  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, openTab: (url) => tabsOpened.push(url) });
+  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN, openTab: (url) => tabsOpened.push(url) });
   await new Promise<void>((r) => server.on("listening", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -55,7 +59,7 @@ async function tabOn(project: string) {
 }
 
 const post = async (route: string, body: unknown): Promise<ShowResponse> =>
-  (await (await fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as ShowResponse;
+  (await (await fetch(`${base}${route}`, { method: "POST", headers: WRITE_HEADERS, body: JSON.stringify(body) })).json()) as ShowResponse;
 
 test("two tabs on two projects: an open from alpha moves only alpha's tab; an open from gamma, none open there, opens a new one", async () => {
   const alpha = await tabOn("alpha");

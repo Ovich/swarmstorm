@@ -23,7 +23,8 @@ import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
 import { boardHash } from "../core/boardhash.ts";
 import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
-import { readServerStatus, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
 import { disciplineWarnings } from "../mermaid/discipline.ts";
@@ -85,13 +86,20 @@ function askServer(route: string, body: unknown): string | null {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
+  // the Host the server admits, and the token it wrote (trust-adaptations#D4)
+  const headers = {
+    host: `127.0.0.1:${st.port}`,
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(b),
+    [TOKEN_HEADER]: readServerToken() ?? "",
+  };
   const r = hiddenSpawnSync(
     process.execPath,
     [
       "-e",
       `const b=${JSON.stringify(b)};const q=require('node:http').request(
          {host:'127.0.0.1',port:${st.port},path:${JSON.stringify(route)},method:'POST',
-          headers:{'content-type':'application/json','content-length':Buffer.byteLength(b)}},
+          headers:${JSON.stringify(headers)}},
          r=>{r.pipe(process.stdout);r.on('end',()=>process.exitCode=r.statusCode===200?0:1)});
        q.on('error',()=>process.exit(1));q.end(b);`,
     ],
