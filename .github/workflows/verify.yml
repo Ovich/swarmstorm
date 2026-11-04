@@ -26,14 +26,16 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      # trust-adaptations#D24: the suites run on a scratch data home.
-      SWARMSTORM_HOME: ${{ runner.temp }}/swarmstorm-home
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+
+      # trust-adaptations#D24: the suites run on a scratch data home. Set from a step, as the
+      # runner context is not available in a job-level env.
+      - name: Scratch data home
+        run: echo "SWARMSTORM_HOME=$RUNNER_TEMP/swarmstorm-home" >> "$GITHUB_ENV"
 
       - name: swarm-board — install and build
         working-directory: skills/companions/swarm-board
