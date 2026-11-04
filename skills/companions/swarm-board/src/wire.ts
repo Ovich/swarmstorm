@@ -54,6 +54,10 @@ type Unlisted = Exclude<keyof Board, RpcMethod | ServerOnly>;
 const everyMethodPlaced: [Unlisted] extends [never] ? true : Unlisted = true;
 void everyMethodPlaced;
 
+/** The orchestrators board's group: one permanent run per project where every orchestrator registers. Known to the
+ *  server (its runs' `addSeat` and `closeRun` stay open, plan D5) and to the CLI's answers alike. */
+export const ORCHESTRATORS_GROUP = "orchestrators";
+
 export type MemberActivity = {
   /** last time the transcript grew */
   grewAt: number | null;
