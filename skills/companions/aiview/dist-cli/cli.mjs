@@ -104,9 +104,10 @@ function openBrowser(url) {
   const refused = browserRefusal();
   if (refused) {
     console.error(`aiview: no browser opened for ${url} (${refused})`);
-    return;
+    return refused;
   }
   launchBrowser(url);
+  return null;
 }
 var init_browser = __esm({
   "src/core/browser.ts"() {
@@ -9437,6 +9438,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
+  const startedAt = Date.now();
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
@@ -9466,7 +9468,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   } catch {
   }
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1e3} s`;
-  throw new Error(`swarm: the board server did not start: ${reason}; run swarm serve to see it`);
+  throw new Error(`swarm: the board server did not start: ${reason} (waited ${Date.now() - startedAt} ms); run swarm serve to see it`);
 }
 function bindingOf(member) {
   const [group, id] = splitMember(member.name);
@@ -9687,7 +9689,7 @@ var init_remote = __esm({
     init_proc2();
     init_wire();
     init_link();
-    START_TIMEOUT_MS = 5e3;
+    START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5e3;
     START_POLL_MS = 50;
     entry = () => [process.argv[1]];
     homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
@@ -10019,8 +10021,8 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
   const toProjectTabs = (project, event, hash) => {
     const tabs = sse.broadcastTo(project, event);
     if (tabs > 0) return { tabs, opened: false };
-    openTab(`http://localhost:${server.address().port}/#${hash}`);
-    return { tabs: 0, opened: true };
+    const browserRefusal2 = openTab(`http://localhost:${server.address().port}/#${hash}`);
+    return browserRefusal2 === null ? { tabs: 0, opened: true } : { tabs: 0, opened: false, browserRefusal: browserRefusal2 };
   };
   const distDir = path14.join(toolRoot, "dist");
   const useDist = fs12.existsSync(path14.join(distDir, "index.html"));
@@ -10894,7 +10896,12 @@ function agentProject(fallback) {
     index.close();
   }
 }
-var movedLine = (r, project, verb) => r.opened ? `no tab showed ${project}: opened a new one` : `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+var movedLine = (r, project, verb) => {
+  if (r.browserRefusal) return noBrowserLine(project, r.browserRefusal);
+  if (r.opened) return `no tab showed ${project}: opened a new one`;
+  return `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+};
+var noBrowserLine = (project, refusal) => `no tab showed ${project}, and no browser opened (${refusal}): give the person the link`;
 function resolveRef(ref) {
   const index = openIndex();
   try {
@@ -11031,7 +11038,7 @@ function cmdShow() {
   const project = agentProject(doc.project);
   const answer = askServer("/api/show", { ...pointer, project });
   const moved = answer === null ? null : JSON.parse(answer);
-  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false }, () => {
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, browserRefusal: moved?.browserRefusal ?? null }, () => {
     console.log(url);
     console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
   });
@@ -11309,10 +11316,20 @@ function cmdOpen() {
   const url = `http://localhost:${port}/#doc=${d.id}`;
   const answer = askServer("/api/open", { id: d.id, project });
   const moved = answer === null ? null : JSON.parse(answer);
-  if (!moved && args.has("--open")) {
-    openBrowser(url);
-  }
-  emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
+  const localRefusal = !moved && args.has("--open") ? openBrowser(url) : void 0;
+  const answerLine = moved ? movedLine(moved, project, "opened") : localRefusal ? noBrowserLine(project, localRefusal) : null;
+  emit(
+    {
+      id: d.id,
+      url,
+      project,
+      tabs: moved?.tabs ?? 0,
+      opened: moved?.opened ?? localRefusal === null,
+      browserRefusal: moved?.browserRefusal ?? localRefusal ?? null,
+      server: readServerStatus()
+    },
+    answerLine ? [url, answerLine].join("\n") : url
+  );
 }
 function cmdBoard() {
   const index = openIndex();

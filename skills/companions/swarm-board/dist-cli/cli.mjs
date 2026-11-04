@@ -7679,6 +7679,8 @@ async function runBoardServer(opts) {
   const serverSince = (/* @__PURE__ */ new Date()).toISOString();
   const speakers = /* @__PURE__ */ new Set();
   const calls = /* @__PURE__ */ new Map();
+  const callKey = (s, id) => `${s.bound ? `member ${s.bound.id}` : s.anonymousScope} ${id}`;
+  let connectionsSeen = 0;
   const links = /* @__PURE__ */ new Map();
   const memberOf = (name) => name.slice(name.lastIndexOf("/") + 1);
   const keepLink = (run3, member, link) => {
@@ -7725,24 +7727,25 @@ async function runBoardServer(opts) {
     if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
     void id;
   };
-  const dropWait = (id) => {
-    const rec = calls.get(id);
+  const dropWait = (key) => {
+    const rec = calls.get(key);
     if (!rec || rec.answer !== null) return;
-    calls.delete(id);
+    calls.delete(key);
     rec.cancelWait?.abort();
   };
   const run2 = (s, call) => {
     const args2 = Array.isArray(call.args) ? [...call.args] : [];
     const refusal = CALLABLE.has(call.method) ? authority.check(s.bound, call.method, args2) : null;
     if (refusal) return send(s, { type: "result", id: call.id, ok: false, error: refusal });
-    const known = calls.get(call.id);
+    const key = callKey(s, call.id);
+    const known = calls.get(key);
     if (known) {
       known.speaker = s;
       if (known.answer !== null) s.socket.send(known.answer);
       return;
     }
     const rec = { speaker: s, answer: null, answeredAt: 0, cancelWait: null };
-    calls.set(call.id, rec);
+    calls.set(key, rec);
     const fail2 = (error) => answer2(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail2(`unknown method ${String(call.method)}`);
     if (call.method === "wait") {
@@ -7756,14 +7759,14 @@ async function runBoardServer(opts) {
       return fail2(e.message);
     }
     const settle = (value) => {
-      if (calls.get(call.id) !== rec) return;
+      if (calls.get(key) !== rec) return;
       s.bound = authority.boundAfter(s.bound, call.method, value);
       answer2(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
       if (call.method === "closeRun") closed(Number(args2[0]));
       if (call.method === "end") ended(args2[0]?.name);
       if (call.method === "join") freshPresence(value);
     };
-    if (out instanceof Promise) out.then(settle, (e) => calls.get(call.id) === rec && fail2(e.message));
+    if (out instanceof Promise) out.then(settle, (e) => calls.get(key) === rec && fail2(e.message));
     else settle(out);
   };
   const closed = (run3) => {
@@ -7796,7 +7799,7 @@ async function runBoardServer(opts) {
   });
   const wss = new import_websocket_server.default({ server: httpServer });
   wss.on("connection", (socket) => {
-    const s = { socket, member: null, bound: null, lastPong: Date.now(), subscribed: false };
+    const s = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false };
     let welcomed = false;
     socket.on("pong", () => s.lastPong = Date.now());
     socket.on("message", (data) => {
@@ -7841,7 +7844,7 @@ async function runBoardServer(opts) {
         return send(s, { type: "welcome", version, ...seat?.place && against ? { watched: { dir: seat.place, against } } : {} });
       }
       if (f.type === "call") run2(s, f);
-      else if (f.type === "cancel") dropWait(f.id);
+      else if (f.type === "cancel") dropWait(callKey(s, f.id));
       else if (f.type === "bye") {
         s.closedBy = "member-closed";
         socket.close();
@@ -7858,7 +7861,7 @@ async function runBoardServer(opts) {
       speakers.delete(s);
       const m = s.member;
       if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : s.closedBy ?? "socket");
-      for (const [id, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(id);
+      for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
     });
   });
   const port = await listen(httpServer, host, opts.port ?? 0);
@@ -7999,7 +8002,7 @@ import fs9 from "node:fs";
 import net2 from "node:net";
 import os5 from "node:os";
 import path9 from "node:path";
-var START_TIMEOUT_MS = 5e3;
+var START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5e3;
 var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
 var homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
@@ -8034,6 +8037,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
+  const startedAt = Date.now();
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
@@ -8063,7 +8067,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   } catch {
   }
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1e3} s`;
-  throw new Error(`swarm: the board server did not start: ${reason}; run swarm serve to see it`);
+  throw new Error(`swarm: the board server did not start: ${reason} (waited ${Date.now() - startedAt} ms); run swarm serve to see it`);
 }
 function bindingOf(member) {
   const [group, id] = splitMember(member.name);
@@ -8717,6 +8721,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
     const rerun = words.map((w, i) => words[i - 1] === "--as" ? shellWord(owner) : w);
     return `--as ${as}: refused: the folder you run in is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
   },
+  /** trust-adaptations#D23 (v1-F1): a join naming another member than the live one whose folder the command runs in */
+  joinAsAnotherMember: (joining, owner) => `join: refused: the folder you run in is ${owner}'s, a live member, and a folder joins only as its own member. Join ${joining} from its own folder, or from the project's checkout`,
   /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
   orchestratorOnly: (verb, run2, caller2, rerun) => `${verb}: refused: only the orchestrator of run ${run2} may ${verb === "close" ? "close it" : "add a seat to it"}${caller2 ? `, and ${caller2} is not` : ""}. Run it as the orchestrator: ${rerun}`,
   closeRun: (cli, run2, as) => `${cli} close --run ${run2} --as ${as}`,
@@ -9255,6 +9261,11 @@ var runArg = () => {
 };
 var board;
 var linkToStart = null;
+var tellLinkToStart = (print) => {
+  if (!linkToStart) return;
+  print(startLinkLine(linkToStart));
+  linkToStart = null;
+};
 async function caller() {
   const p = await placedCaller() ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
@@ -9384,7 +9395,7 @@ var emitHeard = async (p, json, result) => {
   const a = answer({ verb: "heard", lines }, await situation(p));
   emit({ ...json, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
     for (const l of lines) console.log(l);
-    if (linkToStart) console.log(startLinkLine(linkToStart));
+    tellLinkToStart(console.log);
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
@@ -9701,6 +9712,10 @@ ${verbHelp()}`);
       const joinRun = await runOf(runArg());
       if (joinAs !== void 0 && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
         fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord2(joinRun.group), shellWord2(need("--doing")), shellWord2(joinedSeat()))));
+      const joinName = `${joinRun?.group ?? ""}/${joinedSeat()}`;
+      const here = worktreeOf(process.cwd());
+      const owner = joinRun && here ? await board.identify({ place: here }) : null;
+      if (owner && owner.name !== joinName) fail(WORDING.joinAsAnotherMember(joinName, owner.name));
       const own = await memberWorktree(runArg(), joinedSeat());
       const joined = await board.join({
         run: runArg(),
@@ -10070,7 +10085,7 @@ if (args.verb === "serve") {
     refuseOptionLikeRefs();
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    tellLinkToStart(asJson ? console.error : console.log);
   } catch (e) {
     const said = e.message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);
