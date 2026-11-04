@@ -26,9 +26,13 @@ command out of input.
 | `npm install` | `dependency-graph`, on its first run | installs `dependency-cruiser` and a matching `typescript` into `~/.cache/swarmstorm-depgraph/`. The TypeScript version it reads from your project must be plain semver. On Windows npm runs as `node npm-cli.js`, not `npm.cmd`. |
 | `gh` | `pr-review` (`pr <number>`), `recurring-review-findings` | your GitHub CLI, with its own login. See *Network*. |
 
-One exception to "no shell": if aiview's `dist/` is missing and its source is present (a
-development checkout, not an installed release), aiview runs `npm run build` once. On Windows that
-call goes through the shell, with fixed arguments.
+Two calls go through a shell, both on Windows only and both with fixed arguments, because npm
+there is a `.cmd` shim that only a shell starts:
+
+- If aiview's `dist/` is missing and its source is present (a development checkout, not an
+  installed release), aiview runs `npm run build` once.
+- The maintainers' `scripts/release-check.mjs` runs `npm ci` and `npm run build` in each
+  companion. It is not part of the plugin's runtime; you run it yourself to verify the bundles.
 
 ## Network
 
@@ -99,7 +103,7 @@ Every process that runs as your OS user is in one trust domain. The servers defe
 - other machines (loopback only);
 - web pages open in your browser (Host, Origin, JSON and token on aiview; the secret on the
   board);
-- an agent's mistake, such as acting under another member's name from that member's worktree.
+- an agent's mistake, such as acting under another member's name from its own worktree.
 
 They do not defend against a hostile process running as you. Such a process can read the data home
 (the tokens, the secret, the stores) and do anything you can.
