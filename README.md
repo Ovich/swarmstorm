@@ -89,7 +89,7 @@ What Swarmstorm does and does not do on your machine; the threat model and how t
 |---|---|
 | no MCP server | nothing is added to your agent's tools; the skills are files it reads |
 | no hooks, no settings writes | it acts only when one of its skills is in use, and never edits your harness's settings ([the allow rule](#the-allow-rule) is yours to add) |
-| nothing exposed to the network, no telemetry | its two servers, the viewer and the board, listen on `127.0.0.1` only, and nothing is sent anywhere |
+| no listener off your machine, no telemetry | its two servers, the viewer and the board, listen on `127.0.0.1` only; neither CLI contacts any host outside your machine. Four skills call out when an agent runs their script: `dependency-graph` (npm, first run), `roadmap` (RDAP, checking domains), `pr-review` and `recurring-review-findings` (GitHub, through your `gh`) |
 | bundles you can verify | `node scripts/release-check.mjs --dist` rebuilds them from source and compares; each release tag's bundles are attested (`gh attestation verify <file> --repo <owner>/<repo>`) |
 
 ## Live plans, prototypes and docs your team can review
