@@ -87,18 +87,26 @@ function browserRefusal(env = process.env, dataRoot = DATA_ROOT) {
   if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
   return null;
 }
+function browserCommand(url, platform = process.platform) {
+  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", url]];
+  if (platform === "darwin") return ["open", [url]];
+  return ["xdg-open", [url]];
+}
+function launchBrowser(url) {
+  const [program, argv] = browserCommand(url);
+  try {
+    spawn2(program, argv, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  } catch (e) {
+    console.error(`could not open browser: ${e.message}`);
+  }
+}
 function openBrowser(url) {
   const refused = browserRefusal();
   if (refused) {
     console.error(`aiview: no browser opened for ${url} (${refused})`);
     return;
   }
-  const [c, args2] = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-  try {
-    spawn2(c, args2, { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  } catch (e) {
-    console.error(`could not open browser: ${e.message}`);
-  }
+  launchBrowser(url);
 }
 var init_browser = __esm({
   "src/core/browser.ts"() {
@@ -8922,10 +8930,11 @@ var init_pointer = __esm({
 // src/core/serverstate.ts
 import fs5 from "node:fs";
 import path6 from "node:path";
-function writeServerFiles(port, version) {
+function writeServerFiles(port, version, token) {
   ensureHome();
   if (version === null) fs5.rmSync(VERSION_FILE, { force: true });
   else fs5.writeFileSync(VERSION_FILE, version);
+  fs5.writeFileSync(TOKEN_FILE, token, { mode: 384 });
   fs5.writeFileSync(PID_FILE, String(process.pid));
   fs5.writeFileSync(PORT_FILE, String(port));
 }
@@ -8935,6 +8944,7 @@ function clearServerFiles() {
       fs5.rmSync(PID_FILE, { force: true });
       fs5.rmSync(PORT_FILE, { force: true });
       fs5.rmSync(VERSION_FILE, { force: true });
+      fs5.rmSync(TOKEN_FILE, { force: true });
     } catch {
     }
   }
@@ -8948,7 +8958,7 @@ function readServerStatus() {
   if (!alive(pid)) return { running: false, pid, port, version, stale: true };
   return { running: true, pid, port, version, stale: false };
 }
-var PID_FILE, PORT_FILE, VERSION_FILE, readInt, alive, readText;
+var PID_FILE, PORT_FILE, VERSION_FILE, TOKEN_FILE, readInt, alive, readText, readServerToken;
 var init_serverstate = __esm({
   "src/core/serverstate.ts"() {
     "use strict";
@@ -8956,6 +8966,7 @@ var init_serverstate = __esm({
     PID_FILE = path6.join(DATA_ROOT, "aiview.pid");
     PORT_FILE = path6.join(DATA_ROOT, "aiview.port");
     VERSION_FILE = path6.join(DATA_ROOT, "aiview.version");
+    TOKEN_FILE = path6.join(DATA_ROOT, "aiview.token");
     readInt = (f) => {
       try {
         const n = Number(fs5.readFileSync(f, "utf8").trim());
@@ -8979,6 +8990,60 @@ var init_serverstate = __esm({
       } catch {
         return null;
       }
+    };
+    readServerToken = () => readText(TOKEN_FILE);
+  }
+});
+
+// src/server/guard.ts
+import crypto from "node:crypto";
+function makeGuard({ port, token, devOrigins = [] }) {
+  const hosts = /* @__PURE__ */ new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
+  const origins = /* @__PURE__ */ new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins]);
+  const isPost = (req) => req.method === "POST";
+  const checks = [
+    (req) => hosts.has((header(req, "host") ?? "").toLowerCase()) ? null : { status: 421, reason: "host not allowed" },
+    (req) => {
+      const origin = header(req, "origin");
+      return origin === void 0 || origins.has(origin) ? null : { status: 403, reason: "origin not allowed" };
+    },
+    (req) => !isPost(req) || (header(req, "content-type") ?? "").split(";")[0].trim().toLowerCase() === "application/json" ? null : { status: 415, reason: "a POST is application/json" },
+    (req) => !isPost(req) || sameToken(header(req, TOKEN_HEADER) ?? cookieToken(req), token) ? null : { status: 403, reason: "missing or wrong token" }
+  ];
+  return {
+    check(req) {
+      for (const check3 of checks) {
+        const refusal = check3(req);
+        if (refusal) return refusal;
+      }
+      return null;
+    }
+  };
+}
+var TOKEN_HEADER, TOKEN_COOKIE, newServerToken, tokenCookie, header, cookieToken, sameToken;
+var init_guard = __esm({
+  "src/server/guard.ts"() {
+    "use strict";
+    TOKEN_HEADER = "x-aiview-token";
+    TOKEN_COOKIE = "aiview_token";
+    newServerToken = () => crypto.randomBytes(32).toString("hex");
+    tokenCookie = (token) => `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`;
+    header = (req, name) => {
+      const v = req.headers[name];
+      return Array.isArray(v) ? v[0] : v;
+    };
+    cookieToken = (req) => {
+      for (const part of (header(req, "cookie") ?? "").split(";")) {
+        const eq = part.indexOf("=");
+        if (eq > 0 && part.slice(0, eq).trim() === TOKEN_COOKIE) return part.slice(eq + 1).trim();
+      }
+      return void 0;
+    };
+    sameToken = (given, token) => {
+      if (given === void 0) return false;
+      const a = Buffer.from(given);
+      const b = Buffer.from(token);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
     };
   }
 });
@@ -9132,7 +9197,7 @@ var init_mentions = __esm({
 });
 
 // ../swarm-board/src/wire.ts
-import crypto from "node:crypto";
+import crypto2 from "node:crypto";
 import fs8 from "node:fs";
 import path9 from "node:path";
 function encode(f) {
@@ -9156,7 +9221,7 @@ function bundleVersion(entry2) {
   const key = `${file}|${st.mtimeMs}|${st.size}`;
   let v = versionsByBuild.get(key);
   if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto2.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByBuild.set(key, v);
   }
   return v;
@@ -9301,11 +9366,11 @@ var init_transcripts = __esm({
 });
 
 // ../swarm-board/src/link/link.ts
-import crypto2 from "node:crypto";
+import crypto3 from "node:crypto";
 import os3 from "node:os";
 import path11 from "node:path";
 function linkPipe(dataRoot, run, member) {
-  const home = crypto2.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto3.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os3.tmpdir(), `${name}.sock`);
 }
@@ -9331,6 +9396,7 @@ __export(remote_exports, {
   LINK_DOWN_WAIT_MS: () => LINK_DOWN_WAIT_MS,
   bindingOf: () => bindingOf,
   connectBoard: () => connectBoard,
+  connectDirectBoard: () => connectDirectBoard,
   connectServer: () => connectServer,
   ensureServer: () => ensureServer,
   inHarnessSession: () => inHarnessSession,
@@ -9338,7 +9404,7 @@ __export(remote_exports, {
   linkVerbArgs: () => linkVerbArgs,
   openLinkPipe: () => openLinkPipe
 });
-import crypto3 from "node:crypto";
+import crypto4 from "node:crypto";
 import fs10 from "node:fs";
 import net from "node:net";
 import os4 from "node:os";
@@ -9487,7 +9553,7 @@ function callsOver(firstSend) {
   let send = firstSend;
   const pending = /* @__PURE__ */ new Map();
   let next = 0;
-  const callPrefix = crypto3.randomUUID();
+  const callPrefix = crypto4.randomUUID();
   let closed = null;
   return {
     call(method, args2) {
@@ -9521,14 +9587,14 @@ function callsOver(firstSend) {
     }
   };
 }
-async function connectServer(state) {
+async function connectServer(state, callsFor) {
   const ws = new WebSocket(`ws://127.0.0.1:${state.port}`);
   let handler = () => {
   };
   let closer = () => {
   };
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
@@ -9559,7 +9625,7 @@ async function connectBoard(opts) {
     const firstSock = await openLinkPipe(opts.dataRoot, member, linkWaitMs);
     if (firstSock) {
       let linkSock = firstSock;
-      const calls2 = callsOver((f) => linkSock.write(`${encode(f)}
+      const calls = callsOver((f) => linkSock.write(`${encode(f)}
 `));
       let direct = null;
       let closing = false;
@@ -9571,28 +9637,28 @@ async function connectBoard(opts) {
         }
         if (relaunched) {
           wireLink(relaunched);
-          calls2.reroute((f) => relaunched.write(`${encode(f)}
+          calls.reroute((f) => relaunched.write(`${encode(f)}
 `));
           return;
         }
-        const conn2 = await connectServer(await ensureServer(opts.dataRoot));
-        direct = conn2;
-        conn2.onFrame((f) => calls2.settle(f));
-        conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
-        calls2.reroute(conn2.send);
+        const conn = await connectServer(await ensureServer(opts.dataRoot), member);
+        direct = conn;
+        conn.onFrame((f) => calls.settle(f));
+        conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+        calls.reroute(conn.send);
       };
       const wireLink = (sock) => {
         linkSock = sock;
-        lineFrames(sock, (f) => calls2.settle(f));
+        lineFrames(sock, (f) => calls.settle(f));
         sock.on("close", () => {
           if (closing) return;
-          rerouteAfterLinkClosed().catch(() => calls2.fail(`swarm: ${member.name}'s link closed the pipe`));
+          rerouteAfterLinkClosed().catch(() => calls.fail(`swarm: ${member.name}'s link closed the pipe`));
         });
         sock.on("error", () => {
         });
       };
       wireLink(firstSock);
-      return Object.assign(asRemote(calls2.call), {
+      return Object.assign(asRemote(calls.call), {
         close: () => {
           closing = true;
           linkSock.destroy();
@@ -9602,11 +9668,17 @@ async function connectBoard(opts) {
       });
     }
   }
-  const conn = await connectServer(state);
+  return Object.assign(await serverBoard(state, opts.member), { linkMissing: !!opts.member });
+}
+async function connectDirectBoard(dataRoot, member) {
+  return Object.assign(await serverBoard(await ensureServer(dataRoot), member), { linkMissing: false });
+}
+async function serverBoard(state, member) {
+  const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
-  return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
+  return Object.assign(asRemote(calls.call), { close: conn.close });
 }
 var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
@@ -9901,7 +9973,7 @@ function servedBuild(distDir) {
     return null;
   }
 }
-function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser }) {
+function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser, token = newServerToken() }) {
   const sse = createSseHub(heartbeatMs, () => {
     const build = servedBuild(path14.join(toolRoot, "dist"));
     return build ? { build } : {};
@@ -9927,8 +9999,8 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     sse.broadcast({ type: "data-changed", id });
   });
   for (const d of index.all()) if (d.exists) watcher.ensureWatch(d);
-  const send = (res, status, body, type = "application/json; charset=utf-8", cacheControl = "no-store") => {
-    res.writeHead(status, { "content-type": type, "cache-control": cacheControl });
+  const send = (res, status, body, type = "application/json; charset=utf-8", cacheControl = "no-store", extraHeaders = {}) => {
+    res.writeHead(status, { "content-type": type, "cache-control": cacheControl, ...extraHeaders });
     res.end(body);
   };
   const json = (res, obj, status = 200) => send(res, status, JSON.stringify(obj));
@@ -9962,9 +10034,16 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       const mime = MIME[path14.extname(f).toLowerCase()] ?? "application/octet-stream";
       return send(res, 200, fs12.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
     }
-    return send(res, 200, fs12.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache");
+    return send(res, 200, fs12.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache", { "set-cookie": tokenCookie(token) });
   };
+  let guard = null;
   const server = http.createServer((req, res) => {
+    guard ??= makeGuard({ port: server.address().port, token, devOrigins: devOriginsFromEnv() });
+    const refusal = guard.check(req);
+    if (refusal) {
+      req.resume();
+      return send(res, refusal.status, refusal.reason, "text/plain; charset=utf-8");
+    }
     const url = new URL(req.url ?? "/", "http://x");
     if (board.handle(req, res, url)) return;
     const p = url.pathname;
@@ -10132,8 +10211,9 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       const doc = index.get(Number(r[1]));
       if (!doc || !fs12.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
       watcher.ensureWatch(doc);
-      const type = isPdf(doc.file_path) ? "application/pdf" : isHtml(doc.file_path) ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
-      return send(res, 200, fs12.readFileSync(doc.abs_path), type);
+      const html = isHtml(doc.file_path);
+      const type = isPdf(doc.file_path) ? "application/pdf" : html ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
+      return send(res, 200, fs12.readFileSync(doc.abs_path), type, "no-store", html ? { "content-security-policy": RAW_HTML_CSP } : {});
     }
     const m = p.match(/^\/api\/document\/(\d+)$/);
     if (m) {
@@ -10186,7 +10266,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
   server.listen(port, "127.0.0.1", () => {
     const actualPort = server.address().port;
     if (writeState) {
-      writeServerFiles(actualPort, version);
+      writeServerFiles(actualPort, version, token);
       process.on("exit", clearServerFiles);
     }
     const url = `http://localhost:${actualPort}/${startDoc ? `#doc=${startDoc.id}` : ""}`;
@@ -10196,7 +10276,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
   });
   return server;
 }
-var MIME;
+var RAW_HTML_CSP, devOriginsFromEnv, MIME;
 var init_server = __esm({
   async "src/server/index.ts"() {
     "use strict";
@@ -10210,7 +10290,10 @@ var init_server = __esm({
     init_collectionversion();
     init_watcher();
     await init_board();
+    init_guard();
     init_sse();
+    RAW_HTML_CSP = "sandbox allow-scripts allow-forms allow-modals allow-popups";
+    devOriginsFromEnv = () => (process.env.AIVIEW_DEV_ORIGIN ?? "").split(",").map((o) => o.trim()).filter(Boolean);
     MIME = {
       ".svg": "image/svg+xml",
       ".png": "image/png",
@@ -10252,6 +10335,7 @@ function boardHash(project, run) {
 // src/cli/index.ts
 init_home();
 init_serverstate();
+init_guard();
 init_collectionversion();
 
 // src/cli/args.ts
@@ -10587,20 +10671,20 @@ function readDecisions(lines) {
   const start = lines.findIndex((l) => DECISIONS.test(l));
   if (start < 0) return [];
   const out = [];
-  let header;
+  let header2;
   for (let i = start + 1; i < lines.length && !HEADING.test(lines[i]); i++) {
     const l = lines[i];
     if (!l.trim().startsWith("|")) {
-      if (header && out.length) break;
+      if (header2 && out.length) break;
       continue;
     }
     if (isRule(l)) continue;
     const row = cells(l);
-    if (!header) {
-      header = row.map((h) => h.toLowerCase());
+    if (!header2) {
+      header2 = row.map((h) => h.toLowerCase());
       continue;
     }
-    const at = (name) => row[header.indexOf(name)] ?? "";
+    const at = (name) => row[header2.indexOf(name)] ?? "";
     const id = at("id");
     if (id) out.push({ id, kind: at("kind").toLowerCase(), source: at("source"), line: i + 1 });
   }
@@ -10691,13 +10775,19 @@ function askServer(route, body) {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
+  const headers = {
+    host: `127.0.0.1:${st.port}`,
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(b),
+    [TOKEN_HEADER]: readServerToken() ?? ""
+  };
   const r = hiddenSpawnSync(
     process.execPath,
     [
       "-e",
       `const b=${JSON.stringify(b)};const q=require('node:http').request(
          {host:'127.0.0.1',port:${st.port},path:${JSON.stringify(route)},method:'POST',
-          headers:{'content-type':'application/json','content-length':Buffer.byteLength(b)}},
+          headers:${JSON.stringify(headers)}},
          r=>{r.pipe(process.stdout);r.on('end',()=>process.exitCode=r.statusCode===200?0:1)});
        q.on('error',()=>process.exit(1));q.end(b);`
     ],
