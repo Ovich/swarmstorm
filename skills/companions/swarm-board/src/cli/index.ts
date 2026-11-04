@@ -16,7 +16,7 @@ import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
-import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
+import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
@@ -68,6 +68,14 @@ const fail = (msg: string): never => {
   throw new CliError(msg);
 };
 
+/** trust-adaptations#D7: the refs a call hands git (`--onto`, merged's sha) refused before any git runs when git
+ *  could read one as an option. */
+function refuseOptionLikeRefs(): void {
+  const onto = args.flag("--onto");
+  if (onto !== undefined) refArg(onto, "--onto");
+  if (args.verb === "merged" && args.positional[0] !== undefined) refArg(args.positional[0], "merged: the sha");
+}
+
 const emit = (json: unknown, human: string | (() => void)): void => {
   if (asJson) console.log(JSON.stringify(json));
   else if (typeof human === "string") {
@@ -104,9 +112,9 @@ function changedIn(worktree: string): string[] {
 
 /** Paths the worktree's branch changed since it left `onto`, committed or not; a rename gives both (D59). */
 function branchChangedIn(worktree: string, onto: string): string[] {
-  const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
+  const base = git(worktree, "merge-base", "--end-of-options", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
   // --no-renames: a rename is its deletion and its addition, both paths
-  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [...new Set([...committed, ...changedIn(worktree)])];
@@ -387,7 +395,7 @@ const slashed = (s: string): string => s.replace(/\\/g, "/");
 const guidesHere = (p: Participant, onto?: string): Guide[] => {
   const root = p.place ?? worktreeOf(process.cwd());
   // with the branch merged into: its project guides too, the ones the rebase brings (G12)
-  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
+  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", "--end-of-options", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", "--end-of-options", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
 };
 
@@ -1043,9 +1051,9 @@ async function main(): Promise<void> {
       if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
       // V1: a sha git does not know was never merged
-      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", "--end-of-options", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.place)} rev-parse --short HEAD`);
-      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => path.resolve(f)), conflicts })) as Sharer[];
@@ -1235,6 +1243,7 @@ if (args.verb === "serve") {
   console.log(server.url);
 } else {
   try {
+    refuseOptionLikeRefs();
     // every verb reaches the board through the server, started on demand (D6, D19); the poller reads the store itself
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();

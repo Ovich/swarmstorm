@@ -6,10 +6,10 @@ import { gitAnswer } from "../../git.ts";
  *  (staged, unstaged, untracked, a conflict; a rename's both paths) and what its branch committed since the merge-base
  *  (a rename's both paths); ignored files never. Null when git fails: the caller keeps the last set. */
 export function changedSet(worktree: string, onto: string): string[] | null {
-  const base = gitAnswer(worktree, "merge-base", "HEAD", onto);
+  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
   const status = gitAnswer(worktree, "status", "--porcelain=v2", "-z", "--untracked-files=all");
-  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", base.stdout.trim(), "HEAD");
+  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base.stdout.trim(), "HEAD");
   if (status.status !== 0 || diff.status !== 0) return null;
   const set = new Set<string>();
   // porcelain v2 -z: one record per NUL; a rename record ("2 …") carries its original path as the next record
