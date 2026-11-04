@@ -1,0 +1,80 @@
+# Verifies every push and pull request on Ubuntu and Windows (trust-adaptations#D14).
+#
+# tests:   both companions' tests and typecheck, aiview's app tests, the skill scripts' tests,
+#          on bundles built from the source in this job.
+# bundles: node scripts/release-check.mjs --dist, so a committed bundle that the source does
+#          not build, on either OS, fails here before it can be tagged (trust-adaptations#D12).
+#
+# Every action is pinned by commit sha; the comment names the release it is.
+
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # trust-adaptations#D24: the suites run on a scratch data home.
+      SWARMSTORM_HOME: ${{ runner.temp }}/swarmstorm-home
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: swarm-board — install and build
+        working-directory: skills/companions/swarm-board
+        run: npm ci && npm run build
+      - name: aiview — install and build
+        working-directory: skills/companions/aiview
+        run: npm ci && npm run build
+
+      - name: swarm-board — tests
+        working-directory: skills/companions/swarm-board
+        run: npm test
+      - name: swarm-board — typecheck
+        working-directory: skills/companions/swarm-board
+        run: npm run typecheck
+      - name: aiview — tests
+        working-directory: skills/companions/aiview
+        run: npm test
+      - name: aiview — typecheck
+        working-directory: skills/companions/aiview
+        run: npm run typecheck
+      - name: aiview — app tests
+        working-directory: skills/companions/aiview
+        run: npm run test:app
+
+      - name: skill scripts — tests
+        run: |
+          node --test skills/plan/write-plan/scripts/decisions.test.mjs
+          node --test skills/review/pr-review/scripts/scope.test.mjs
+          node --test skills/project/write-conventions/scripts/rules.test.mjs
+          node --test "skills/workbench/create-workbench/scripts/*.test.mjs"
+
+  bundles:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: The committed bundles are what the source builds
+        run: node scripts/release-check.mjs --dist

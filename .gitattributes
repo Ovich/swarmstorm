@@ -1,0 +1,12 @@
+# Line endings are fixed, so a bundle builds byte-identical on every OS (trust-adaptations#D12):
+# sources, dist/ and dist-cli/ are LF in the index and in every checkout.
+* text=auto eol=lf
+
+# Never touched as text.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.wasm binary
