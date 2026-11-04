@@ -260,13 +260,14 @@ function callsOver(firstSend: (f: Frame) => void): Calls {
   };
 }
 
-/** The anonymous connection to the server: a Hello with no member, then calls. */
-export async function connectServer(state: ServerState): Promise<{ send: (f: Frame) => void; onFrame: (h: (f: Frame) => void) => void; onClose: (h: () => void) => void; close: () => void }> {
+/** The connection to the server: a Hello, then calls. Anonymous without `callsFor`; with it, declaring the member its calls
+ *  are for, `presence: false`: a direct connection, never the member's link (trust-adaptations#D5). */
+export async function connectServer(state: ServerState, callsFor?: BoardMember): Promise<{ send: (f: Frame) => void; onFrame: (h: (f: Frame) => void) => void; onClose: (h: () => void) => void; close: () => void }> {
   const ws = new WebSocket(`ws://127.0.0.1:${state.port}`);
   let handler: (f: Frame) => void = () => {};
   let closer: () => void = () => {};
   await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
@@ -325,7 +326,7 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
 `));
           return;
         }
-        const conn = await connectServer(await ensureServer(opts.dataRoot));
+        const conn = await connectServer(await ensureServer(opts.dataRoot), member);
         direct = conn;
         conn.onFrame((f) => calls.settle(f));
         conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
@@ -351,9 +352,19 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
       });
     }
   }
-  const conn = await connectServer(state);
+  return Object.assign(await serverBoard(state, opts.member), { linkMissing: !!opts.member });
+}
+
+/** A board straight to the server, with no link: for `member`'s calls when given (an ended member, a closed run, a
+ *  verb that must not ride the link), declared in its Hello without presence (trust-adaptations#D5); anonymous otherwise. */
+export async function connectDirectBoard(dataRoot: string, member?: BoardMember): Promise<ConnectedBoard> {
+  return Object.assign(await serverBoard(await ensureServer(dataRoot), member), { linkMissing: false });
+}
+
+async function serverBoard(state: ServerState, member?: BoardMember): Promise<RemoteBoard & { close(): void }> {
+  const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
-  return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
+  return Object.assign(asRemote(calls.call), { close: conn.close });
 }

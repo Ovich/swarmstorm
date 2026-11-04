@@ -48,6 +48,17 @@ export const WORDING = {
   /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
   endOrchestratorRefused: (run: number, cli: Command, as: string) =>
     `end --seat orchestrator: refused, run ${run} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run} --as ${as}`,
+  /** trust-adaptations#D23: `--as` naming another participant than the live member this worktree belongs to */
+  /** `words`: the verb and its arguments as given, each already a shell word; its --as value becomes the owner */
+  asAnotherMember: (cli: Command, words: string[], as: string, owner: string) => {
+    const rerun = words.map((w, i) => (words[i - 1] === "--as" ? shellWord(owner) : w));
+    return `--as ${as}: refused: this worktree is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
+  },
+  /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
+  orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
+    `${verb}: refused: only the orchestrator of run ${run} may ${verb === "close" ? "close it" : "add a seat to it"}${caller ? `, and ${caller} is not` : ""}. Run it as the orchestrator: ${rerun}`,
+  closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
+  seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
   /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
@@ -97,7 +108,7 @@ export const WORDING = {
       : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only: string[]) => (only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : ""),
   phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
-    `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
+    `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
   briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
   seatIdleEnded: (seat: string) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
   pausedAll: (run: number, person: string | null, cli: Command, as: string) =>
@@ -127,7 +138,7 @@ export const WORDING = {
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
-  openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run}`,
+  openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
   swarmStopped: (cli: Command, as: string) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
@@ -166,7 +177,7 @@ export const WORDING = {
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli: Command, seat: string, as: string) =>
     `seat: --state is gone: a seat is ready, running or done as its member is. Finished: ${cli} end --seat ${seat} --as ${as}`,
-  forgottenRun: (days: number, cli: Command, run: number) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run}`,
+  forgottenRun: (days: number, cli: Command, run: number, orchestrator: string) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run} --as ${orchestrator}`,
 
   // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──
   orchestratorsOpen: (cli: Command, title: string, seatsFile: string): Command => `${cli} open --kind brainstorm --group orchestrators --title ${title} --seats ${seatsFile}`,
@@ -207,9 +218,9 @@ export const WORDING = {
   openFailedUndone: (why: string, run: number) => `open: failed (${why}); run ${run} it began is closed again, no run is left: open again`,
   /** An open that failed and whose run could not be closed again: how to close it by hand. */
   openFailedLeft: (why: string, group: string, cli: Command) =>
-    `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run>), then open again`,
+    `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run> --as ${group}/orchestrator), then open again`,
   groupAlreadyOpen: (group: string, run: number, cli: Command) =>
-    `open: refused: group ${group} already has run ${run} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run}), or open under another --group`,
+    `open: refused: group ${group} already has run ${run} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run} --as ${group}/orchestrator), or open under another --group`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli: Command, run: number, group: string, doing: string, seat = "<seat>"): Command => `${cli} join --run ${run} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,

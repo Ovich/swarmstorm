@@ -87,7 +87,9 @@ export type MemberActivity = {
 };
 
 // up: a link (or a CLI with no member) to the server
-export type Hello = { type: "hello"; version: string; secret: string; member?: { name: string; run: number }; supersede?: boolean };
+/** `presence: false` (trust-adaptations#D5): a direct or fallback connection carrying a member's calls, not its link:
+ *  bound to the member, writing no presence, superseding nothing, open to an ended member or a closed run. */
+export type Hello = { type: "hello"; version: string; secret: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
 export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[] };
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };

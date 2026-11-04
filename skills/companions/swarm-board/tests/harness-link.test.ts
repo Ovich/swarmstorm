@@ -120,7 +120,7 @@ test("in a harness session with no link started, the verb answers within 10 s th
 
 test("in a harness session, on a closed run, no verb prints the link line: end prints the summary prompt the closed line promised (S62, validation 2)", () => {
   const h = joinedInHarness();
-  h.r.cli(h.r.repo, "close", "--run", String(h.run));
+  h.r.cli(h.r.repo, "close", "--run", String(h.run), "--as", "harness-plan/orchestrator");
   for (const argv of [["post", "still here?"], ["end"], ["end"]]) {
     // a closed run's member is named: its worktree no longer identifies it
     const r = spawnSync(process.execPath, [CLI, ...argv, "--as", h.member.name], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });

@@ -261,10 +261,10 @@ test("--json on every verb parses", () => {
     ["wait", "--mentions", "--timeout", "200", "--as", "review-tool/S5"],
     ["wait", "--as", "review-tool/S5", "--timeout", "50"],
     ["roster"],
-    ["seat", "add", "S9", "--run", id],
+    ["seat", "add", "S9", "--run", id, "--as", "review-tool/orchestrator"],
     ["status"],
     ["end", "--seat", "S3", "--as", "review-tool/orchestrator"],
-    ["close", "--run", id],
+    ["close", "--run", id, "--as", "review-tool/orchestrator"],
   ];
   for (const argv of verbs) {
     const r = run(...argv, "--json");
@@ -835,16 +835,16 @@ test("--help prints the core verbs, --help code the merge verbs; no verb the cor
 // SL12: subscriptions (D59) and seats added mid-run (D60)
 test("seat add adds a seat mid-run that can be joined; a duplicate id and a closed run exit 1", () => {
   const id = openRun();
-  const a = run("seat", "add", "S7", "--run", String(id), "--role", "worker", "--blockers", "S3");
+  const a = run("seat", "add", "S7", "--run", String(id), "--role", "worker", "--blockers", "S3", "--as", "review-tool/orchestrator");
   assert.equal(a.status, 0, a.stderr);
   assert.match(a.stdout, /^S7 added$/m);
   const j = run("join", "--run", String(id), "--seat", "S7", "--doing", "late");
   assert.equal(j.status, 0, j.stderr);
-  const dup = run("seat", "add", "S7", "--run", String(id), "--role", "worker");
+  const dup = run("seat", "add", "S7", "--run", String(id), "--role", "worker", "--as", "review-tool/orchestrator");
   assert.equal(dup.status, 1);
   assert.match(dup.stderr, /already in run/);
-  run("close", "--run", String(id));
-  const closed = run("seat", "add", "S8", "--run", String(id), "--role", "x");
+  run("close", "--run", String(id), "--as", "review-tool/orchestrator");
+  const closed = run("seat", "add", "S8", "--run", String(id), "--role", "x", "--as", "review-tool/orchestrator");
   assert.equal(closed.status, 1);
   assert.match(closed.stderr, /is closed/);
 });
@@ -967,7 +967,7 @@ test("end on an ended member exits 0 and says nothing; on a closed run it prints
   const again = run("end", "--seat", "S3", "--as", "review-tool/orchestrator");
   assert.deepEqual([again.status, again.stdout, again.stderr], [0, "", ""]);
   assert.equal(run("join", "--run", String(id), "--seat", "S5", "--doing", "x").status, 0);
-  run("close", "--run", String(id));
+  run("close", "--run", String(id), "--as", "review-tool/orchestrator");
   const closed = run("end", "--as", "review-tool/S5");
   assert.deepEqual([closed.status, closed.stdout, closed.stderr], [0, `run ${id} closed: review-tool/S5 ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)\n`, ""]);
   assert.doesNotMatch(closed.stdout + closed.stderr, /start your link now/);
@@ -977,7 +977,7 @@ test("once its run is closed, a member's wait, roster, post and done answer the 
   const id = openBrainstorm();
   assert.equal(joinSeat(id, "architect").status, 0);
   const seq = seqOf(run("post", "a thought", "--as", "idea/architect").stdout);
-  run("close", "--run", String(id));
+  run("close", "--run", String(id), "--as", "idea/orchestrator");
   const line = new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect; your link and listener background tasks end on their own now, and their end notices are not news$`);
   const calls = [
     ["wait", "--mentions", "--timeout", "5000"],
@@ -1006,7 +1006,7 @@ test("a wait pending when its run closes returns the closed line, exit 0", async
   child.stdout.on("data", (b) => (out += b));
   const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
   await new Promise((r) => setTimeout(r, 1500)); // the child is up and listening
-  run("close", "--run", String(id));
+  run("close", "--run", String(id), "--as", "idea/orchestrator");
   assert.equal(await exited, 0);
   assert.match(out.trimEnd(), new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect; your link and listener background tasks end on their own now, and their end notices are not news$`));
 });
@@ -1293,7 +1293,7 @@ test("a seat that waits in the foreground is told no wait after a post or a doin
 test("the closing line tells the member its link and listener tasks end on their own (F6, D9)", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
-  run("close", "--run", String(id));
+  run("close", "--run", String(id), "--as", "idea/orchestrator");
   const w = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "1000");
   assert.match(w.stdout, /your link and listener background tasks end on their own now, and their end notices are not news/);
 });

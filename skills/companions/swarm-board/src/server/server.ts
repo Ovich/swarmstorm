@@ -25,7 +25,9 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 
 /** `subscribed`: a reader that sent `subscribe`, told `changed` after each commit (D23). */
 /** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
+/** `member`: the link's member, whose presence this connection is; `callsFor`: the member a `presence: false` connection
+ *  carries calls for, never its presence (trust-adaptations#D5). */
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; callsFor?: Hello["member"]; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
 /** A call running or answered, keyed by its id, whatever connection sent it. */
 type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
 
@@ -293,6 +295,14 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
           const refusedMember = f.member;
           if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
+        }
+        // trust-adaptations#D5: a direct connection declaring its member is no link: no closed refusal, no supersede,
+        // no presence; the board's own rules decide what an ended member may still do
+        if (f.member && f.presence === false) {
+          s.callsFor = f.member;
+          welcomed = true;
+          speakers.add(s);
+          return send(s, { type: "welcome", version });
         }
         // break-flow V-30: a link started for a closed run, or for a member that has ended, is told so at once
         const known = f.member ? board.participant(f.member.name) : null;

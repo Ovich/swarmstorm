@@ -10,7 +10,7 @@ import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
-import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
+import { bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
@@ -46,13 +46,13 @@ const CODE_USAGE = CODE_WORDING.usage(CLI);
 /** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
 const EXAMPLES: Record<string, (as: string) => string> = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat add w1 --run 3",
+  seat: () => "seat add w1 --run 3 --as my-team/orchestrator",
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
   worktree: () => "worktree prune",
-  close: () => "close --run 3",
+  close: () => "close --run 3 --as my-team/orchestrator",
 };
 /** V9: the usage of the verb being called alone, from the help's own lines, and one corrected form; never the whole help. */
 const verbHelp = (verb = args.verb ?? ""): string => {
@@ -131,6 +131,9 @@ const undoOpen = async (repo: string, group: string, why: string): Promise<strin
     board = await connectBoard({ dataRoot: DATA_ROOT });
     const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
     if (!begun) return null;
+    // trust-adaptations#D5: closed by the orchestrator the open created, declared on its own connection
+    board.close();
+    board = await connectDirectBoard(DATA_ROOT, { name: `${group}/orchestrator`, run: begun.id });
     await board.closeRun(begun.id);
     return WORDING.openFailedUndone(why, begun.id);
   } catch {
@@ -192,21 +195,42 @@ let linkToStart: BoardMember | null = null;
 /** The caller: --as names it; otherwise the member that joined from this worktree, asked of the server
  *  directly (D29). From then on the verb's calls go through that member's link. */
 async function caller(): Promise<Participant> {
-  const as = args.flag("--as");
-  const wt = as ? null : worktreeOf(process.cwd());
-  const p = as
-    ? ((await board.participant(as, placeRepoOf(process.cwd()))) ?? fail(`unknown member ${as}`))
-    : ((wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
+  const p = (await placedCaller()) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
   if (p.place && fs.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   // S62: a member ended, or of a closed run, has no link: its verb stays on the server, waits for no link and never
-  // prints the link line; it answers the closed line, or end its summary prompt
-  if (p.ended || !(await direct.runs()).some((r) => r.id === p.run)) return p;
-  board = await connectBoard({ dataRoot: DATA_ROOT, member });
+  // prints the link line; it answers the closed line, or end its summary prompt. Its calls still declare it (D5).
+  board = p.ended || !(await direct.runs()).some((r) => r.id === p.run) ? await connectDirectBoard(DATA_ROOT, member) : await connectBoard({ dataRoot: DATA_ROOT, member });
   if (board.linkMissing) linkToStart = member;
   direct.close();
   return p;
+}
+
+/** Who is calling, from --as and from the worktree the command runs in (trust-adaptations#D23): a live member's worktree
+ *  acts only as that member; `identify` never returns an ended one, so a fresh agent taking a seat back passes. Null:
+ *  no --as, and no member joined from here. */
+async function placedCaller(): Promise<Participant | null> {
+  const as = args.flag("--as");
+  const wt = worktreeOf(process.cwd());
+  const owner = wt ? await board.identify({ place: wt }) : null;
+  if (!as) return owner;
+  const p = (await board.participant(as, placeRepoOf(process.cwd()))) ?? fail(`unknown member ${as}`);
+  if (owner && owner.name !== p.name) fail(WORDING.asAnotherMember(self().join(" "), process.argv.slice(2).map(shellWord), as, owner.name));
+  return p;
+}
+
+/** `close` and `seat add` (trust-adaptations#D5): the run's orchestrator alone, its calls declared on a direct connection
+ *  (a closing run's link is told to stop); the orchestrators board stays open to every team orchestrator. */
+async function orchestratorOf(verb: "close" | "seat add", run: number, rerun: (as: string) => string): Promise<void> {
+  const group = (await board.runs()).find((r) => r.id === run)?.group ?? null;
+  if (group === ORCHESTRATORS_GROUP) return;
+  const orchestrator = group ? `${group}/orchestrator` : "<group>/orchestrator";
+  const p = await placedCaller();
+  if (!p || p.seat !== "orchestrator" || p.run !== run) fail(WORDING.orchestratorOnly(verb, run, p?.name ?? null, rerun(orchestrator)));
+  const direct = board;
+  board = await connectDirectBoard(DATA_ROOT, { name: p!.name, run });
+  direct.close();
 }
 
 /** How long ago an ms epoch was, short: `12s`, `4m`, `2h`; `never` for null. */
@@ -644,6 +668,7 @@ async function main(): Promise<void> {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
         const run = runArg();
+        await orchestratorOf("seat add", run, (as) => WORDING.seatAdd(self().join(" "), shellWord(id), run, as));
         const role = args.flag("--role");
         const area = args.flag("--area");
         const added = await board.addSeat(run, {
@@ -667,6 +692,7 @@ async function main(): Promise<void> {
       const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
       // the orchestrators board is permanent: closed only on purpose
       if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run));
+      await orchestratorOf("close", run, (as) => WORDING.closeRun(self().join(" "), run, as));
       const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
@@ -1108,7 +1134,7 @@ async function main(): Promise<void> {
       // V-40: the orchestrator ending a live seat is answered as the orchestrator: the branch, who merges it, or the close
       if (refusal && !lostSeat && endedSeat !== undefined) {
         const live = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string } | null;
-        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), `${self().join(" ")} close --run ${p.run}`));
+        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), WORDING.closeRun(self().join(" "), p.run, shellWord(asker.name))));
       }
       if (refusal && !lostSeat) {
         const { worktree: mine, left } = refusal;
@@ -1179,7 +1205,7 @@ async function main(): Promise<void> {
           }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
-            console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id));
+            console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id, shellWord(`${r.plan}/orchestrator`)));
         }
         for (const line of orchestrators) console.log(line);
       });
