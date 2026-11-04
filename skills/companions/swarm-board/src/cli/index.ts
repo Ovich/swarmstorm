@@ -191,6 +191,12 @@ const runArg = (): number => {
 let board!: ConnectedBoard;
 /** The caller whose link did not answer in a harness session: the verb ends on the line that starts it (D39). */
 let linkToStart: BoardMember | null = null;
+/** The link line, printed once per answer wherever it first fits (v1-F6), then forgotten. */
+const tellLinkToStart = (print: (line: string) => void): void => {
+  if (!linkToStart) return;
+  print(startLinkLine(linkToStart));
+  linkToStart = null;
+};
 
 /** The caller: --as names it; otherwise the member that joined from this worktree, asked of the server
  *  directly (D29). From then on the verb's calls go through that member's link. */
@@ -407,7 +413,7 @@ const emitHeard = async (p: Participant, json: object, result: string | string[]
   emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
-    if (linkToStart) console.log(startLinkLine(linkToStart));
+    tellLinkToStart(console.log);
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
@@ -816,6 +822,12 @@ async function main(): Promise<void> {
       const joinRun = await runOf(runArg());
       if (joinAs !== undefined && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
         fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord(joinRun.group), shellWord(need("--doing")), shellWord(joinedSeat()))));
+      // trust-adaptations#D23 (v1-F1): a live member's worktree joins only as that member; taking a seat back from its
+      // own worktree (its member ended, or the same one) or from the checkout stays open
+      const joinName = `${joinRun?.group ?? ""}/${joinedSeat()}`;
+      const here = worktreeOf(process.cwd());
+      const owner = joinRun && here ? await board.identify({ place: here }) : null;
+      if (owner && owner.name !== joinName) fail(WORDING.joinAsAnotherMember(joinName, owner.name));
       const own = await memberWorktree(runArg(), joinedSeat());
       const joined = await board.join({
         run: runArg(),
@@ -1275,7 +1287,7 @@ if (args.verb === "serve") {
     await main();
     // D39: the call went straight to the server; the agent starts its own link (on stderr under --json, which stays
     // parseable). On every call while the link is down: unseen, the member reads away or lost while it works
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    tellLinkToStart(asJson ? console.error : console.log);
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);

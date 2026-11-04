@@ -54,6 +54,9 @@ export const WORDING = {
     const rerun = words.map((w, i) => (words[i - 1] === "--as" ? shellWord(owner) : w));
     return `--as ${as}: refused: the folder you run in is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
   },
+  /** trust-adaptations#D23 (v1-F1): a join naming another member than the live one whose folder the command runs in */
+  joinAsAnotherMember: (joining: string, owner: string) =>
+    `join: refused: the folder you run in is ${owner}'s, a live member, and a folder joins only as its own member. Join ${joining} from its own folder, or from the project's checkout`,
   /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
   orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
     `${verb}: refused: only the orchestrator of run ${run} may ${verb === "close" ? "close it" : "add a seat to it"}${caller ? `, and ${caller} is not` : ""}. Run it as the orchestrator: ${rerun}`,

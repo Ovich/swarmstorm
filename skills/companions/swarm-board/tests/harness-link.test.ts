@@ -120,6 +120,13 @@ test("in a harness session with no link started, the verb answers within 10 s th
   const again = spawnSync(process.execPath, [CLI, "doing", "still the client"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   assert.equal(again.status, 0, again.stderr);
   assert.match(again.stdout, /start your link now/);
+  // v1-F6: one link line per answer, never two
+  const linkLines = (out: string): number => out.split(/\r?\n/).filter((l) => l.startsWith("start your link now")).length;
+  assert.equal(linkLines(r.stdout), 1, r.stdout);
+  assert.equal(linkLines(again.stdout), 1, again.stdout);
+  const posted = spawnSync(process.execPath, [CLI, "post", "hello"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
+  assert.equal(posted.status, 0, posted.stderr);
+  assert.equal(linkLines(posted.stdout), 1, posted.stdout);
 });
 
 test("in a harness session, on a closed run, no verb prints the link line: end prints the summary prompt the closed line promised (S62, validation 2)", () => {
