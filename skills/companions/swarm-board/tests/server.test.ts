@@ -99,7 +99,10 @@ test("a hello with the secret and this version is welcomed; a wrong secret or ve
 });
 
 test("a second hello for the same member with supersede refuses the older connection", async () => {
-  const member = { name: "p/S1", run: 1 };
+  const opener = await welcomed();
+  const run = await value(opener, "openRun", { repo: REPO, group: "p", title: "T", seats: SEATS });
+  await value(await welcomed(), "join", { run: run.id, seat: "S1", doing: "x", files: [] });
+  const member = { name: "p/S1", run: run.id };
   const old = await welcomed({ member });
   await welcomed({ member, supersede: true });
   assert.deepEqual(await old.next(), { type: "refused", reason: "superseded" });
@@ -108,29 +111,32 @@ test("a second hello for the same member with supersede refuses the older connec
 test("every method answers over the wire what the Board answers in process; an unknown one names itself", async () => {
   const c = await welcomed();
   const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
-  const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
-  const s2 = (await value(c, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
-  await value(c, "post", s1, "hello @S2");
+  // each member on its own connection, which its join binds (trust-adaptations#D5)
+  const c1 = await welcomed();
+  const c2 = await welcomed();
+  const s1 = (await value(c1, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  const s2 = (await value(c2, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
+  await value(c1, "post", s1, "hello @S2");
   // the same store opened in process reads what the wire answered
   const local = await openBoard(path.join(dir, "swarm.sqlite"));
   try {
-    const same: [string, unknown[]][] = [
-      ["runs", []],
-      ["roster", [REPO]],
-      ["participant", [s1.name]],
-      ["heldBy", [s1]],
-      ["currentPhase", [run.id]],
-      ["pausedOf", [run.id]],
-      ["phaseProgress", [run.id]],
-      ["lastActivity", [run.id]],
-      ["owedPhase", [s2]],
-      ["endedMembers", [REPO]],
-      ["packCall", [s1, "held-merge-lock", {}]],
-      ["repos", []],
-      ["snapshot", [REPO]],
+    const same: [string, unknown[], Client][] = [
+      ["runs", [], c],
+      ["roster", [REPO], c],
+      ["participant", [s1.name], c],
+      ["heldBy", [s1], c1],
+      ["currentPhase", [run.id], c],
+      ["pausedOf", [run.id], c],
+      ["phaseProgress", [run.id], c],
+      ["lastActivity", [run.id], c],
+      ["owedPhase", [s2], c2],
+      ["endedMembers", [REPO], c],
+      ["packCall", [s1, "held-merge-lock", {}], c1],
+      ["repos", [], c],
+      ["snapshot", [REPO], c],
     ];
-    for (const [m, args] of same) {
-      const wire = await value(c, m, ...args);
+    for (const [m, args, over] of same) {
+      const wire = await value(over, m, ...args);
       const here = JSON.parse(JSON.stringify((local as any)[m](...args) ?? null));
       // a read counts a call: compared on the fields a call does not move
       if (m === "snapshot" || m === "roster" || m === "runs" || m === "repos" || m === "lastActivity") assert.equal(typeof wire, typeof here, m);
@@ -140,23 +146,23 @@ test("every method answers over the wire what the Board answers in process; an u
     local.close();
   }
   // writes answer as in process
-  assert.equal((await value(c, "deliverMentions", s2)).full.length, 1);
-  assert.notEqual(await value(c, "packCall", s1, "held-merge-lock", {}), undefined, "a pack verb answers over the wire");
+  assert.equal((await value(c2, "deliverMentions", s2)).full.length, 1);
+  assert.notEqual(await value(c1, "packCall", s1, "held-merge-lock", {}), undefined, "a pack verb answers over the wire");
   const unknown = await call(c, "markStaleRuns");
   assert.deepEqual(unknown.type === "result" && !unknown.ok && unknown.error, "unknown method markStaleRuns");
-  const thrown = await call(c, "endorse", s1, 99999);
+  const thrown = await call(c1, "endorse", s1, 99999);
   assert.ok(thrown.type === "result" && !thrown.ok && /unknown message/.test(thrown.error));
 });
 
 test("a resent call is answered from the cache: one post in the store, not two", async () => {
+  const run = await value(await welcomed(), "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const c = await welcomed();
-  const run = await value(c, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const s1 = (await value(c, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
   const frame: Frame = { type: "call", id: "post-once", method: "post", args: [s1, "only once"] };
   c.send(frame);
   const first = await c.next();
-  // reconnected, the same call resent
-  const again = await welcomed();
+  // reconnected as the same member, the same call resent
+  const again = await welcomed({ member: { name: s1.name, run: run.id } });
   again.send(frame);
   assert.deepEqual(await again.next(), first);
   const local = await openBoard(path.join(dir, "swarm.sqlite"));
@@ -169,12 +175,13 @@ test("a resent call is answered from the cache: one post in the store, not two",
 });
 
 test("a wait returns within 200 ms of a post on another connection", async () => {
+  const run = await value(await welcomed(), "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const a = await welcomed();
-  const run = await value(a, "openRun", { repo: REPO, group: "g", title: "T", seats: SEATS });
   const s1 = (await value(a, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
-  const s2 = (await value(a, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
+  const joinsS2 = await welcomed();
+  const s2 = (await value(joinsS2, "join", { run: run.id, seat: "S2", doing: "y", files: [] })).member;
   await value(a, "deliverMentions", s1);
-  await value(a, "deliverMentions", s2);
+  await value(joinsS2, "deliverMentions", s2);
   const b = await welcomed({ member: { name: s2.name, run: run.id } });
   b.send({ type: "call", id: "w7", method: "wait", args: [s2, { mentionsOnly: true }] });
   await new Promise((r) => setTimeout(r, 100));

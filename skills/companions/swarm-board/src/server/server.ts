@@ -6,6 +6,7 @@ import http from "node:http";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { openBoard, type Board, type LinkDropCause, type LinkFact, type Presence } from "../board/board.ts";
+import { makeAuthority, type Bound } from "./authority.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLockHolder, serverLogFile, serverStartLock, serverStateFile, SERVER_STARTER_ENV, type Call, type Frame, type Hello, type RpcMethod, type ServerState } from "../wire.ts";
 
 /** A resent call is answered from this cache for this long (D4). */
@@ -25,9 +26,9 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 
 /** `subscribed`: a reader that sent `subscribe`, told `changed` after each commit (D23). */
 /** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
-/** `member`: the link's member, whose presence this connection is; `callsFor`: the member a `presence: false` connection
- *  carries calls for, never its presence (trust-adaptations#D5). */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; callsFor?: Hello["member"]; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
+/** `member`: the member whose link this is, its presence written; `bound`: the member its calls are judged for
+ *  (trust-adaptations#D5), a link's and a direct connection's alike. */
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
 /** A call running or answered, keyed by its id, whatever connection sent it. */
 type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
 
@@ -131,6 +132,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => new Date());
   const board: Board = await openBoard(path.join(opts.dataRoot, "swarm.sqlite"));
+  const authority = makeAuthority(board);
   const secret = crypto.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const serverSince = new Date().toISOString();
@@ -204,6 +206,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   };
 
   const run = (s: Speaker, call: Call): void => {
+    const args = Array.isArray(call.args) ? [...call.args] : [];
+    // D5: judged for this connection's member before anything, a resent call included; a refusal is never cached
+    const refusal = CALLABLE.has(call.method) ? authority.check(s.bound, call.method, args) : null;
+    if (refusal) return send(s, { type: "result", id: call.id, ok: false, error: refusal });
     const known = calls.get(call.id);
     if (known) {
       // resent after a reconnect: answered once, from the cache or when the running call ends (D4)
@@ -215,7 +221,6 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     calls.set(call.id, rec);
     const fail = (error: string): void => answer(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail(`unknown method ${String(call.method)}`);
-    const args = Array.isArray(call.args) ? [...call.args] : [];
     if (call.method === "wait") {
       rec.cancelWait = new AbortController();
       args[1] = { ...((args[1] as object | undefined) ?? {}), signal: rec.cancelWait.signal };
@@ -228,6 +233,8 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     }
     const settle = (value: unknown): void => {
       if (calls.get(call.id) !== rec) return; // cancelled meanwhile
+      // D5: a successful openRun or join binds the unbound connection that made it, without presence
+      s.bound = authority.boundAfter(s.bound, call.method, value);
       answer(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === undefined ? null : value }));
       if (call.method === "closeRun") closed(Number(args[0]));
       // V-17 (D56): an ended member's link is told so, and exits 0 on its own before its worktree goes
@@ -273,7 +280,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const wss = new WebSocketServer({ server: httpServer });
 
   wss.on("connection", (socket) => {
-    const s: Speaker = { socket, member: null, lastPong: Date.now(), subscribed: false };
+    const s: Speaker = { socket, member: null, bound: null, lastPong: Date.now(), subscribed: false };
     let welcomed = false;
     socket.on("pong", () => (s.lastPong = Date.now()));
     socket.on("message", (data) => {
@@ -296,18 +303,16 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
           if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
-        // trust-adaptations#D5: a direct connection declaring its member is no link: no closed refusal, no supersede,
-        // no presence; the board's own rules decide what an ended member may still do
-        if (f.member && f.presence === false) {
-          s.callsFor = f.member;
-          welcomed = true;
-          speakers.add(s);
-          return send(s, { type: "welcome", version });
-        }
+        // D5: a direct or fallback connection (`presence: false`) is bound, and writes no presence: no closed refusal
+        // (the board's own rules decide what an ended member may still do), no supersede, no linked, no drop
+        const isLink = f.presence !== false;
         // break-flow V-30: a link started for a closed run, or for a member that has ended, is told so at once
-        const known = f.member ? board.participant(f.member.name) : null;
+        const known = isLink && f.member ? board.participant(f.member.name) : null;
         if (known && (known.ended || !board.runs().some((r) => r.id === known.run))) return refuse(s, "closed");
-        if (f.member) {
+        const bound = authority.bind(f);
+        if (bound === "unknown member") return refuse(s, "member");
+        s.bound = bound;
+        if (isLink && f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
               // board-split D55: the old link's drop is the new one's take-over, never a loss
@@ -320,7 +325,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
         welcomed = true;
         speakers.add(s);
         // spec §7: a member's link reads its worktree's changes against the branch its run merges into
-        const seat = f.member ? board.participant(f.member.name) : null;
+        const seat = s.member ? board.participant(s.member.name) : null;
         const against = seat ? board.runs().find((r) => r.id === seat.run)?.base : null;
         return send(s, { type: "welcome", version, ...(seat?.place && against ? { watched: { dir: seat.place, against } } : {}) });
       }

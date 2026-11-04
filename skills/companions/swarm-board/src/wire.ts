@@ -91,8 +91,9 @@ export type MemberActivity = {
 };
 
 // up: a link (or a CLI with no member) to the server
-/** `presence: false` (trust-adaptations#D5): a direct or fallback connection carrying a member's calls, not its link:
- *  bound to the member, writing no presence, superseding nothing, open to an ended member or a closed run. */
+/** `member`: who the connection speaks for, bound by the server (trust-adaptations#D5). `presence: false`: a direct or
+ *  fallback connection carrying a member's calls, not its link: bound to the member, writing no presence, superseding
+ *  nothing, open to an ended member or a closed run. */
 export type Hello = { type: "hello"; version: string; secret: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
 export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[] };
 /** a wait whose CLI went away */
@@ -109,7 +110,8 @@ export type Subscribe = { type: "subscribe" };
 /** `watched`: the member's folder and the branch it is read against, for its link's changes (spec §7); absent for none */
 export type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
 export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
-export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" };
+/** `member`: the Hello names a member that run does not have (trust-adaptations#D5). */
+export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" | "member" };
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
 
