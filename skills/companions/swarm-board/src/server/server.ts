@@ -28,8 +28,9 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 /** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
 /** `member`: the member whose link this is, its presence written; `bound`: the member its calls are judged for
  *  (trust-adaptations#D5), a link's and a direct connection's alike. */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
-/** A call running or answered, keyed by its id, whatever connection sent it. */
+/** `anonymousScope`: the scope of its calls' ids while it is bound to no member, its own alone. */
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
+/** A call running or answered, keyed by its scope and its id (callKey): a resend reaches it only from the same member. */
 type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
 
 /** How long an ended member's link must carry no call before the server tells it so (T53b); under stopLinks' grace. */
@@ -138,6 +139,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const serverSince = new Date().toISOString();
   const speakers = new Set<Speaker>();
   const calls = new Map<string, CallRecord>();
+  /** v1-F4: a call id is the caller's own: scoped by the bound member (its link and its direct connections share it, so a
+   *  resend after a reconnect finds its call), else by the connection; never shared across callers. */
+  const callKey = (s: Speaker, id: string): string => `${s.bound ? `member ${s.bound.id}` : s.anonymousScope} ${id}`;
+  let connectionsSeen = 0;
   /** Per run, per member (its seat id): its link's facts (board-split D55), mirrored in the store. */
   const links = new Map<number, Map<string, LinkFact>>();
   const memberOf = (name: string): string => name.slice(name.lastIndexOf("/") + 1);
@@ -197,11 +202,11 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     void id;
   };
 
-  const dropWait = (id: string): void => {
-    const rec = calls.get(id);
+  const dropWait = (key: string): void => {
+    const rec = calls.get(key);
     if (!rec || rec.answer !== null) return;
     // a cancelled wait is never cached: resent, it runs again
-    calls.delete(id);
+    calls.delete(key);
     rec.cancelWait?.abort();
   };
 
@@ -210,7 +215,8 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     // D5: judged for this connection's member before anything, a resent call included; a refusal is never cached
     const refusal = CALLABLE.has(call.method) ? authority.check(s.bound, call.method, args) : null;
     if (refusal) return send(s, { type: "result", id: call.id, ok: false, error: refusal });
-    const known = calls.get(call.id);
+    const key = callKey(s, call.id);
+    const known = calls.get(key);
     if (known) {
       // resent after a reconnect: answered once, from the cache or when the running call ends (D4)
       known.speaker = s;
@@ -218,7 +224,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       return;
     }
     const rec: CallRecord = { speaker: s, answer: null, answeredAt: 0, cancelWait: null };
-    calls.set(call.id, rec);
+    calls.set(key, rec);
     const fail = (error: string): void => answer(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail(`unknown method ${String(call.method)}`);
     if (call.method === "wait") {
@@ -232,7 +238,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       return fail((e as Error).message);
     }
     const settle = (value: unknown): void => {
-      if (calls.get(call.id) !== rec) return; // cancelled meanwhile
+      if (calls.get(key) !== rec) return; // cancelled meanwhile
       // D5: a successful openRun or join binds the unbound connection that made it, without presence
       s.bound = authority.boundAfter(s.bound, call.method, value);
       answer(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === undefined ? null : value }));
@@ -241,7 +247,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (call.method === "end") ended((args[0] as { name?: string } | undefined)?.name);
       if (call.method === "join") freshPresence(value as { member: { run: number; seat: string } });
     };
-    if (out instanceof Promise) out.then(settle, (e: Error) => calls.get(call.id) === rec && fail(e.message));
+    if (out instanceof Promise) out.then(settle, (e: Error) => calls.get(key) === rec && fail(e.message));
     else settle(out);
   };
 
@@ -280,7 +286,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const wss = new WebSocketServer({ server: httpServer });
 
   wss.on("connection", (socket) => {
-    const s: Speaker = { socket, member: null, bound: null, lastPong: Date.now(), subscribed: false };
+    const s: Speaker = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false };
     let welcomed = false;
     socket.on("pong", () => (s.lastPong = Date.now()));
     socket.on("message", (data) => {
@@ -330,7 +336,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
         return send(s, { type: "welcome", version, ...(seat?.place && against ? { watched: { dir: seat.place, against } } : {}) });
       }
       if (f.type === "call") run(s, f);
-      else if (f.type === "cancel") dropWait(f.id);
+      else if (f.type === "cancel") dropWait(callKey(s, f.id));
       else if (f.type === "bye") {
         s.closedBy = "member-closed";
         socket.close();
@@ -350,7 +356,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       const m = s.member;
       if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : (s.closedBy ?? "socket"));
       // D16: a wait whose link went is cancelled at once; resent after a reconnect, it runs again
-      for (const [id, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(id);
+      for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
     });
   });
 

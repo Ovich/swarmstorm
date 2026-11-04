@@ -207,3 +207,30 @@ test("a hello naming a member that run does not have is refused", async () => {
   assert.deepEqual((await hello({ member: { name: members.A.member.name, run: run + 100 } })).reply, { type: "refused", reason: "member" });
   assert.deepEqual((await hello({ member: { name: members.A.member.name, run }, presence: false })).reply.type, "welcome");
 });
+
+test("v1-F4: a call id is its caller's own: another connection's same id runs its own call, never gets that answer or takes that call", async () => {
+  const { members } = await openWithMembers("g");
+  // v1's repro: two anonymous connections, one id
+  const first = await welcomed();
+  const second = await welcomed();
+  first.send({ type: "call", id: "2", method: "participant", args: [members.A.member.name] });
+  const asked = await first.next();
+  assert.ok(asked.type === "result" && asked.ok && (asked.value as Member).name === "g/A", JSON.stringify(asked));
+  second.send({ type: "call", id: "2", method: "roster", args: [REPO] });
+  const own = await second.next();
+  assert.ok(own.type === "result" && own.ok && Array.isArray(own.value), `the roster answered, not the other's participant: ${JSON.stringify(own)}`);
+  // a member's running wait is not taken over by another member sending the same id
+  const { c: a, member: memberA } = members.A;
+  const { c: b, member: memberB } = members.B;
+  a.send({ type: "call", id: "w", method: "wait", args: [memberA, { mentionsOnly: true, timeoutMs: 3000 }] });
+  b.send({ type: "call", id: "w", method: "wait", args: [memberB, { mentionsOnly: true, timeoutMs: 100 }] });
+  const bAnswer = await b.next();
+  assert.ok(bAnswer.type === "result" && bAnswer.id === "w" && bAnswer.ok, JSON.stringify(bAnswer));
+  await value(b, "post", memberB, "@A wake");
+  const aAnswer = await a.next();
+  assert.ok(aAnswer.type === "result" && aAnswer.id === "w" && aAnswer.ok && (aAnswer.value as { full: unknown[] }).full.length === 1, `A's own wait reached A: ${JSON.stringify(aAnswer)}`);
+  // the same member resending its id, over another connection of its own, is answered from its call
+  const again = await welcomed({ member: { name: memberA.name, run: memberA.run }, presence: false });
+  again.send({ type: "call", id: "w", method: "wait", args: [memberA, { mentionsOnly: true }] });
+  assert.deepEqual(await again.next(), aAnswer);
+});
