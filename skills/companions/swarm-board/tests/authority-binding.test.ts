@@ -136,7 +136,12 @@ test("the orchestrator's end and packCall for a seat pass on its own run, are re
   // the orchestrator's other acting calls stay its own
   await refused(one.orchestrator, "post", one.members.B.member, "as B");
   const member = one.members.B;
-  assert.match(await refused(member.c, "phase", member.member, "build", "go"), /phase is the orchestrator's/);
+  // as the orchestrator: refused by the authority; as itself: refused by the board's own rule
+  const asOrchestrator = (await value(member.c, "participant", "g/orchestrator")) as Member;
+  assert.match(await refused(member.c, "phase", asOrchestrator, "build", "go"), /acts for g\/orchestrator; this connection is g\/B/);
+  await refused(member.c, "pause", asOrchestrator, "stop");
+  const asItself = await call(member.c, "phase", member.member, "build", "go");
+  assert.ok(!asItself.ok && /only the orchestrator opens a phase/.test(asItself.error), JSON.stringify(asItself));
   const anonymous = await welcomed();
   await refused(anonymous, "closeRun", one.run);
   await refused(two.orchestrator, "closeRun", one.run);

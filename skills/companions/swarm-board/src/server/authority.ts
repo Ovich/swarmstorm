@@ -59,12 +59,6 @@ export function makeAuthority(board: Board): Authority {
     const target = args[0] as Target;
     return isSelf(bound, target) || isSeatOfOwnRun(bound, target) ? null : actsFor(method, bound, target);
   };
-  /** Orchestrator-only with the orchestrator as `args[0]` (phase, pause, resume): itself, bound as the orchestrator. */
-  const orchestratorItself: Rule = (bound, args, method) => {
-    const target = args[0] as Target;
-    if (bound?.seat === ORCHESTRATOR_SEAT && isSelf(bound, target)) return null;
-    return bound === null ? actsFor(method, bound, target) : `refused: ${method} is the orchestrator's; this connection is ${bound.name}`;
-  };
   /** Orchestrator-only on the run `runAt` reads from the args; the orchestrators board stays open to every orchestrator. */
   const runsOrchestrator =
     (runAt: (args: unknown[]) => unknown): Rule =>
@@ -113,10 +107,11 @@ export function makeAuthority(board: Board): Authority {
     heldBy: self,
     end: selfOrOwnRunsOrchestrator,
     packCall,
-    // orchestrator-only
-    phase: orchestratorItself,
-    pause: orchestratorItself,
-    resume: orchestratorItself,
+    // orchestrator-only: acting for the orchestrator itself; that it is the orchestrator is the board's own rule
+    // (board.ts phase, pause, resume), whose refusal the CLI words
+    phase: self,
+    pause: self,
+    resume: self,
     closeRun: runsOrchestrator((args) => args[0]),
     addSeat: runsOrchestrator((args) => args[0]),
     // open: no actor, or read-only

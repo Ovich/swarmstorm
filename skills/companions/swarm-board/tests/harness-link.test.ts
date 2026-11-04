@@ -10,7 +10,7 @@ import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectBoard } from "../src/client/remote.ts";
+import { connectBoard, connectDirectBoard } from "../src/client/remote.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { linkPipe } from "../src/link/link.ts";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
@@ -160,6 +160,8 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
   // and timed on the server's own clock, from when it saw the link lost to the event's time: never by how fast this
   // loaded machine runs the test's reads (S31, T14)
   const reader = await connectBoard({ dataRoot: h.r.home });
+  // the member's own calls, straight to the server: declared, without presence (trust-adaptations#D5)
+  const memberDirect = await connectDirectBoard(h.r.home, h.member);
   let gone: { at: string } | undefined;
   let state = "";
   let aliveAt: number | null = null;
@@ -170,7 +172,7 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
     let calledAt = 0;
     for (const end = Date.now() + 80_000; !gone && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
       if (Date.now() - calledAt >= 5_000) {
-        await reader.setDoing(me, "still calling, its link dead");
+        await memberDirect.setDoing(me, "still calling, its link dead");
         calledAt = Date.now();
       }
       gone = (await reader.snapshot(repo)).events.find((e) => e.event === "lost" && e.body.startsWith("lost harness-plan/S3"));
@@ -181,6 +183,7 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
     aliveAt = entry?.aliveAt ?? null;
   } finally {
     reader.close();
+    memberDirect.close();
   }
   assert.ok(gone, "the server's tick posted lost harness-plan/S3");
   assert.equal(state, "lost");
