@@ -9,13 +9,12 @@ import path from "node:path";
 import { DATA_ROOT } from "../../board/home.ts";
 import { baseRef, git } from "../../git.ts";
 import { stopLinks } from "../../link/link.ts";
-import { worktreeOf } from "../../place/place.ts";
+import { canonicalPath, worktreeOf } from "../../place/place.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
 const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
 
-const CASELESS = process.platform === "win32" || process.platform === "darwin";
-const fold = (s: string): string => (CASELESS ? path.resolve(s).toLowerCase() : path.resolve(s));
+const fold = canonicalPath;
 const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 // the run id keeps two runs apart: group a-b seat c and group a seat b-c never share a folder or a branch

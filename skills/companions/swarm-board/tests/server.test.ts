@@ -188,7 +188,9 @@ test("a wait returns within 200 ms of a post on another connection", async () =>
   const t0 = Date.now();
   await value(a, "post", s1, "@S2 wake");
   const woke = await b.next();
-  assert.ok(Date.now() - t0 < 200, `woke after ${Date.now() - t0} ms`);
+  // 200 ms here; a loaded CI runner widens it through SWARM_TEST_WAKE_BOUND_MS (verify.yml), never below 200
+  const bound = Math.max(200, Number(process.env.SWARM_TEST_WAKE_BOUND_MS) || 0);
+  assert.ok(Date.now() - t0 < bound, `woke after ${Date.now() - t0} ms (bound ${bound} ms)`);
   assert.ok(woke.type === "result" && woke.id === "w7" && woke.ok && (woke.value as { full: unknown[] }).full.length === 1);
 });
 

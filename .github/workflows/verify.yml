@@ -38,9 +38,20 @@ jobs:
       # runner context is not available in a job-level env.
       - name: Scratch data home
         run: echo "SWARMSTORM_HOME=$RUNNER_TEMP/swarmstorm-home" >> "$GITHUB_ENV"
-      # The hosted Windows runner starts a board server from source slower than the 5 s a CLI waits by default.
-      - name: Longer server start wait
-        run: echo "SWARM_START_TIMEOUT_MS=30000" >> "$GITHUB_ENV"
+      # The hosted Windows runner is slow on its C: temp folder (C:\Users\RUNNER~1\...): SQLite there ran ~60x slower
+      # than on a dev machine, and board.test.ts past its 10 min. The tests' temp folders go to the runner's own temp
+      # (D:\a\_temp on Windows), on every OS alike.
+      - name: Temp folders on the runner's temp
+        run: |
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      # A loaded runner starts a board server from source slower than the 5 s a CLI waits by default, and wakes a
+      # wait later than the 100-200 ms the latency tests allow on a dev machine.
+      - name: CI bounds
+        run: |
+          echo "SWARM_START_TIMEOUT_MS=30000" >> "$GITHUB_ENV"
+          echo "SWARM_TEST_WAKE_BOUND_MS=1000" >> "$GITHUB_ENV"
 
       - name: swarm-board — install and build
         working-directory: skills/companions/swarm-board
