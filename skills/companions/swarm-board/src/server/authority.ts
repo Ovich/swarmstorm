@@ -65,13 +65,13 @@ export function makeAuthority(board: Board): Authority {
     if (bound?.seat === ORCHESTRATOR_SEAT && isSelf(bound, target)) return null;
     return bound === null ? actsFor(method, bound, target) : `refused: ${method} is the orchestrator's; this connection is ${bound.name}`;
   };
-  /** Orchestrator-only on the run given at `args[runAt]`; the orchestrators board stays open to every orchestrator. */
+  /** Orchestrator-only on the run `runAt` reads from the args; the orchestrators board stays open to every orchestrator. */
   const runsOrchestrator =
-    (runAt: (args: unknown[]) => unknown, openOnOrchestratorsBoard: boolean): Rule =>
+    (runAt: (args: unknown[]) => unknown): Rule =>
     (bound, args, method) => {
       const run = runAt(args);
       if (typeof run !== "number") return `refused: ${method} names no run`;
-      if (openOnOrchestratorsBoard && groupOf(run) === ORCHESTRATORS_GROUP) return null;
+      if (groupOf(run) === ORCHESTRATORS_GROUP) return null;
       return bound?.seat === ORCHESTRATOR_SEAT && bound.run === run ? null : orchestratorOnly(method, run, bound);
     };
   const open: Rule = () => null;
@@ -87,7 +87,7 @@ export function makeAuthority(board: Board): Authority {
     // a read of the runs' seat folders
     worktrees: open, // AGENTS EXCEPTION (D24): the code pack's verb name, as packCall receives it
     // writes run state: the run's own orchestrator, or anyone on the orchestrators board (closed with close --force)
-    close: runsOrchestrator((args) => (args[2] as { run?: unknown } | undefined)?.run, true),
+    close: runsOrchestrator((args) => (args[2] as { run?: unknown } | undefined)?.run),
   };
   const packCall: Rule = (bound, args, method) => {
     if (args[0] != null) return selfOrOwnRunsOrchestrator(bound, args, method);
@@ -117,8 +117,8 @@ export function makeAuthority(board: Board): Authority {
     phase: orchestratorItself,
     pause: orchestratorItself,
     resume: orchestratorItself,
-    closeRun: runsOrchestrator((args) => args[0], true),
-    addSeat: runsOrchestrator((args) => args[0], true),
+    closeRun: runsOrchestrator((args) => args[0]),
+    addSeat: runsOrchestrator((args) => args[0]),
     // open: no actor, or read-only
     openRun: open,
     join: open,
