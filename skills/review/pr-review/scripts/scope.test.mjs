@@ -86,3 +86,18 @@ test("path and all: the tree with the skip list, no line counts", () => {
   assert.equal(run(d, "branch", "nope").status, 2);
   assert.equal(run(d, "bogus").status, 2);
 });
+
+test("pr takes only a number, branch refuses a base starting with -, before git or gh runs (D11)", () => {
+  const { d } = repo();
+  for (const n of ["12a", "-x", "https://github.com/o/r/pull/1", "1;id", "feat"]) {
+    const r = run(d, "pr", n);
+    assert.equal(r.status, 2, n);
+    assert.match(r.err, /is not a number/, n);
+  }
+  const dash = run(d, "branch", "-x");
+  assert.equal(dash.status, 2);
+  assert.match(dash.err, /starts with "-"/);
+  const output = run(d, "branch", "-output=/tmp/x");
+  assert.equal(output.status, 2);
+  assert.match(output.err, /starts with "-"/);
+});

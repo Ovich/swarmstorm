@@ -11,6 +11,27 @@ export function browserRefusal(env: NodeJS.ProcessEnv = process.env, dataRoot: s
   return null;
 }
 
+/**
+ * The program and argv that open `url` on `platform`. The URL is always one argv element, untouched: on Windows
+ * no `cmd` ever parses it (trust-adaptations#D9: `cmd /c start` split the board link at its `&`), so the shell
+ * protocol handler takes it whole.
+ */
+export function browserCommand(url: string, platform: NodeJS.Platform = process.platform): [program: string, argv: string[]] {
+  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", url]];
+  if (platform === "darwin") return ["open", [url]];
+  return ["xdg-open", [url]];
+}
+
+/** Spawns the browser on `url`, detached, with no refusal check: `openBrowser` is the guarded entry. */
+export function launchBrowser(url: string): void {
+  const [program, argv] = browserCommand(url);
+  try {
+    spawn(program, argv, { detached: true, stdio: "ignore", windowsHide: true }).unref(); // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
+  } catch (e) {
+    console.error(`could not open browser: ${(e as Error).message}`);
+  }
+}
+
 /** Opens `url` in the person's browser, when `browserRefusal` allows it. */
 export function openBrowser(url: string): void {
   const refused = browserRefusal();
@@ -18,11 +39,5 @@ export function openBrowser(url: string): void {
     console.error(`aiview: no browser opened for ${url} (${refused})`);
     return;
   }
-  const [c, args] =
-    process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
-  try {
-    spawn(c, args as string[], { detached: true, stdio: "ignore", windowsHide: true }).unref(); // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point
-  } catch (e) {
-    console.error(`could not open browser: ${(e as Error).message}`);
-  }
+  launchBrowser(url);
 }

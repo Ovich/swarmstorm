@@ -89,6 +89,8 @@ if (mode === "diff") {
 } else if (mode === "branch") {
   const base = positional[1] ?? defaultBranch();
   if (!base) { console.error("scope: no base branch found; pass one"); process.exit(2); }
+  // trust-adaptations#D11: a base git would read as an option never reaches it
+  if (base.startsWith("-")) { console.error(`scope: the base ${base} starts with "-"; pass a branch name`); process.exit(2); }
   const mb = tryGit("merge-base", base, "HEAD");
   if (!mb) { console.error(`scope: no merge-base between ${base} and HEAD (is ${base} a branch here?)`); process.exit(2); }
   result.base = `${base} @ ${mb.slice(0, 10)}`; result.head = `HEAD @ ${git("rev-parse", "--short", "HEAD")}`;
@@ -96,7 +98,8 @@ if (mode === "diff") {
   if (layers) result.intent = intentFromCommits(mb);
 } else if (mode === "pr") {
   const n = positional[1];
-  if (!n) { console.error("scope: pr <number>"); process.exit(2); }
+  // trust-adaptations#D11: gh is given a PR number only, never a URL, a branch or an option
+  if (!n || !/^\d+$/.test(n)) { console.error(`scope: pr <number>${n ? `; ${n} is not a number` : ""}`); process.exit(2); }
   const meta = JSON.parse(execFileSync("gh", ["pr", "view", n, "--json", "number,title,body,baseRefName,headRefName,headRefOid,commits,closingIssuesReferences,url"], { encoding: "utf8" }));
   result.base = meta.baseRefName; result.head = `${meta.headRefName} @ ${String(meta.headRefOid).slice(0, 10)}`; result.url = meta.url;
   const diff = execFileSync("gh", ["pr", "diff", n, "--name-only"], { encoding: "utf8" }).split("\n").filter(Boolean);
