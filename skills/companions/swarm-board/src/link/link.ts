@@ -301,11 +301,17 @@ export async function runLink(opts: {
         }
         wasWelcomed ||= welcomed;
       };
-      ws.onclose = () => {
+      // Node 22's WebSocket fires only `error` on a refused connection, never `close`; Node 24 fires both.
+      // Whichever comes first ends this connection, once: a late `close` must not clear the next one's `welcomed`.
+      let ended = false;
+      const endConnection = () => {
+        if (ended) return;
+        ended = true;
         welcomed = false;
         resolve(wasWelcomed);
       };
-      ws.onerror = () => {};
+      ws.onclose = endConnection;
+      ws.onerror = endConnection;
     });
 
   /** Connects, and after each drop reconnects (re-reading the state file: a restarted server has a

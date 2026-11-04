@@ -6,6 +6,8 @@
 #          not build, on either OS, fails here before it can be tagged (trust-adaptations#D12).
 #
 # Every action is pinned by commit sha; the comment names the release it is.
+# Each test step has a timeout-minutes, and the companions' npm test a --test-timeout of 10 min (on Node 22
+# it bounds each test file, the log then naming the file and the tests it finished), so a hang fails.
 
 name: verify
 
@@ -45,22 +47,28 @@ jobs:
         run: npm ci && npm run build
 
       - name: swarm-board — tests
+        timeout-minutes: 25
         working-directory: skills/companions/swarm-board
         run: npm test
       - name: swarm-board — typecheck
+        timeout-minutes: 5
         working-directory: skills/companions/swarm-board
         run: npm run typecheck
       - name: aiview — tests
+        timeout-minutes: 15
         working-directory: skills/companions/aiview
         run: npm test
       - name: aiview — typecheck
+        timeout-minutes: 5
         working-directory: skills/companions/aiview
         run: npm run typecheck
       - name: aiview — app tests
+        timeout-minutes: 10
         working-directory: skills/companions/aiview
         run: npm run test:app
 
       - name: skill scripts — tests
+        timeout-minutes: 5
         run: |
           node --test skills/plan/write-plan/scripts/decisions.test.mjs
           node --test skills/review/pr-review/scripts/scope.test.mjs
