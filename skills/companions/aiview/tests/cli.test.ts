@@ -319,7 +319,7 @@ test("unknown verb prints usage and fails", () => {
 });
 
 test("project add creates the record and its docs directory; list shows it", () => {
-  const covered = path.join("C:", path.sep, "CIIP");
+  const covered = path.resolve(path.sep, "CIIP"); // absolute on this OS
   const added = run("project", "add", "CIIP", "--title", "CIIP", "--path", covered, "--json");
   assert.equal(added.status, 0, added.stderr);
   const p = JSON.parse(added.stdout);
