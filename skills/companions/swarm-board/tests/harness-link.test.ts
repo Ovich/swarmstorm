@@ -52,9 +52,13 @@ function joinedInHarness(): { r: Repo; run: number; member: { name: string; run:
   return { r, run, member: { name: "harness-plan/S3", run }, env, linkArgv: [entry, ...verb.split(" ")] };
 }
 
+/** The real spawn, held before any test mocks it: the agent's own link is the test's spawn, never one the client made.
+ *  Through the mocked one it was counted as the client's wherever the printed entry equals CLI byte for byte (Linux). */
+const spawnUncounted = spawn;
+
 /** The agent's own link, its background task. */
 function startAgentLink(h: ReturnType<typeof joinedInHarness>): ChildProcess {
-  const link = spawn(process.execPath, h.linkArgv, { cwd: h.r.wtA, env: h.env, stdio: "ignore" });
+  const link = spawnUncounted(process.execPath, h.linkArgv, { cwd: h.r.wtA, env: h.env, stdio: "ignore" });
   links.push(link);
   return link;
 }
