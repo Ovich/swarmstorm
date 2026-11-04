@@ -1325,7 +1325,7 @@ test("board-split D30, D38: a member's own end is refused while its run is open;
 
 test("seat is the verb; slice is its silent alias, accepted but never shown in --help (AGENTS rule 12)", () => {
   const id = String(openRun());
-  const added = run("slice", "add", "S9", "--run", id);
+  const added = run("slice", "add", "S9", "--run", id, "--as", "review-tool/orchestrator");
   assert.equal(added.status, 0, added.stderr);
   assert.match(added.stdout, /S9 added/);
   // board-split D36: a seat's state is derived; setting it is refused, by either name, with one answer-module line

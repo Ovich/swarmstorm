@@ -21,7 +21,7 @@ test("--as naming another member from a member's worktree is refused, with the c
   const { r, id } = twoRunners();
   const other = r.swarm(r.wtA, ["doing", "x", "--as", "review-tool/S5"]);
   assert.equal(other.status, 1);
-  assert.match(other.stderr, /^--as review-tool\/S5: refused: this worktree is review-tool\/S3's, and a member acts only as itself\. Run it as review-tool\/S3: node \S+ doing x --as review-tool\/S3$/m);
+  assert.match(other.stderr, /^--as review-tool\/S5: refused: the folder you run in is review-tool\/S3's, and a member acts only as itself\. Run it as review-tool\/S3: node \S+ doing x --as review-tool\/S3$/m);
   // the orchestrator's name, from a worker's worktree, is another member too
   assert.equal(r.swarm(r.wtA, ["post", "hi", "--as", "review-tool/orchestrator"]).status, 1);
   assert.match(r.cli(r.wtA, "doing", "mine", "--as", "review-tool/S3"), /review-tool\/S3 doing: mine/);

@@ -64,7 +64,9 @@ test("G26 repro: a live member's wait --mentions that times out says what to do;
 });
 
 test("G26: a wait --mentions of a member that has ended says so, never exits 0 silent", () => {
-  assert.equal(run("end", "--seat", "S3", "--as", "p/orchestrator").status, 0);
+  // trust-adaptations#D23: the orchestrator calls from the checkout, never from its worker's worktree
+  const ended = spawnSync(process.execPath, [CLI, "end", "--seat", "S3", "--as", "p/orchestrator"], { cwd: path.join(toolRoot, "repo"), encoding: "utf8", env: env() });
+  assert.equal(ended.status, 0, ended.stderr);
   const r = run("wait", "--mentions", "--timeout", "500", "--as", "p/S3");
   assert.equal(r.status, 0, r.stderr);
   // the one silent path found: the member ended, nothing to re-arm; it now says so and how to come back

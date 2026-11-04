@@ -48,11 +48,11 @@ export const WORDING = {
   /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
   endOrchestratorRefused: (run: number, cli: Command, as: string) =>
     `end --seat orchestrator: refused, run ${run} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run} --as ${as}`,
-  /** trust-adaptations#D23: `--as` naming another participant than the live member this worktree belongs to */
+  /** trust-adaptations#D23: `--as` naming another participant than the live member whose folder the command runs in */
   /** `words`: the verb and its arguments as given, each already a shell word; its --as value becomes the owner */
   asAnotherMember: (cli: Command, words: string[], as: string, owner: string) => {
     const rerun = words.map((w, i) => (words[i - 1] === "--as" ? shellWord(owner) : w));
-    return `--as ${as}: refused: this worktree is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
+    return `--as ${as}: refused: the folder you run in is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
   },
   /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
   orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
