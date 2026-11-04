@@ -82,6 +82,56 @@ var init_home = __esm({
   }
 });
 
+// src/place/place.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
+function canonicalPath(p) {
+  const resolved = real(path2.resolve(p));
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
+}
+function repoOf(dir) {
+  const common = gitOut(dir, "rev-parse", "--git-common-dir");
+  return common ? real(path2.resolve(dir, common)) : null;
+}
+function worktreeOf(dir) {
+  const top = gitOut(dir, "rev-parse", "--show-toplevel");
+  return top ? path2.resolve(top) : null;
+}
+function resolveIn(root, spec, opts = {}) {
+  if (path2.isAbsolute(spec)) return { abs: spec, missing: [] };
+  const cwd = opts.cwd ?? process.cwd();
+  const here = root && !inside(root, cwd) ? path2.resolve(root, spec) : path2.resolve(cwd, spec);
+  if (fs2.existsSync(here)) return { abs: here, missing: [] };
+  const fromRoot = root ? path2.resolve(root, spec) : null;
+  if (fromRoot && fs2.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
+  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
+}
+function relativeIn(root, abs) {
+  return (root ? path2.relative(root, abs) : abs).split(path2.sep).join("/");
+}
+var gitOut, real, inside;
+var init_place = __esm({
+  "src/place/place.ts"() {
+    "use strict";
+    init_proc();
+    gitOut = (cwd, ...argv) => {
+      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
+      return r.status === 0 ? r.stdout.trim() : null;
+    };
+    real = (p) => {
+      try {
+        return fs2.realpathSync.native(p);
+      } catch {
+        return p;
+      }
+    };
+    inside = (root, dir) => {
+      const rel = path2.relative(path2.resolve(root), path2.resolve(dir));
+      return !rel.startsWith("..") && !path2.isAbsolute(rel);
+    };
+  }
+});
+
 // src/board/mentions.ts
 function planCode(plan) {
   const words = plan.split(/[-_\s.]+/).filter((w) => w && !/^\d+$/.test(w));
@@ -760,8 +810,8 @@ var init_changes = __esm({
 
 // src/wire.ts
 import crypto from "node:crypto";
-import fs2 from "node:fs";
-import path2 from "node:path";
+import fs3 from "node:fs";
+import path3 from "node:path";
 function encode(f) {
   return JSON.stringify(f);
 }
@@ -772,34 +822,34 @@ function decode(text) {
   return f;
 }
 function builtCliOf(entry2) {
-  const file = path2.resolve(entry2);
-  const bundle = path2.join(path2.dirname(file), "dist-cli", "cli.mjs");
-  return fs2.existsSync(bundle) ? bundle : file;
+  const file = path3.resolve(entry2);
+  const bundle = path3.join(path3.dirname(file), "dist-cli", "cli.mjs");
+  return fs3.existsSync(bundle) ? bundle : file;
 }
 function bundleVersion(entry2) {
   if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
   const file = builtCliOf(entry2);
-  const st = fs2.statSync(file);
+  const st = fs3.statSync(file);
   const key = `${file}|${st.mtimeMs}|${st.size}`;
   let v = versionsByBuild.get(key);
   if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs2.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto.createHash("sha256").update(fs3.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByBuild.set(key, v);
   }
   return v;
 }
 function serverStateFile(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.json");
+  return path3.join(dataRoot, "swarm-server.json");
 }
 function serverLogFile(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.log");
+  return path3.join(dataRoot, "swarm-server.log");
 }
 function serverStartLock(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.lock");
+  return path3.join(dataRoot, "swarm-server.lock");
 }
 function serverLockHolder(dataRoot) {
   try {
-    const pid = Number(fs2.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    const pid = Number(fs3.readFileSync(serverStartLock(dataRoot), "utf8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
@@ -809,11 +859,11 @@ function liveStartLockHolder(dataRoot) {
   const holder = serverLockHolder(dataRoot);
   if (holder === null || !isAlive(holder)) return null;
   try {
-    if (JSON.parse(fs2.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+    if (JSON.parse(fs3.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
   } catch {
   }
   try {
-    return Date.now() - fs2.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+    return Date.now() - fs3.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
   }
@@ -874,9 +924,9 @@ var init_wire = __esm({
 });
 
 // src/link/transcripts.ts
-import fs3 from "node:fs";
+import fs4 from "node:fs";
 import os2 from "node:os";
-import path3 from "node:path";
+import path4 from "node:path";
 function callWordsOf(input) {
   const fields = input && typeof input === "object" ? input : {};
   const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
@@ -954,7 +1004,7 @@ function commandRunsBinding(command, binding, backslashEscapes = true) {
 function transcriptRunsBinding(file, binding) {
   let text;
   try {
-    text = fs3.readFileSync(file, "utf8");
+    text = fs4.readFileSync(file, "utf8");
   } catch {
     return false;
   }
@@ -1075,7 +1125,7 @@ function awaitedBackground(cursor) {
   let outputGrewAt = null;
   if (oldest.output) {
     try {
-      outputGrewAt = fs3.statSync(oldest.output).mtimeMs;
+      outputGrewAt = fs4.statSync(oldest.output).mtimeMs;
     } catch {
     }
   }
@@ -1094,15 +1144,15 @@ function observe(transcript, from, binding) {
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
-    const fd = fs3.openSync(transcript, "r");
+    const fd = fs4.openSync(transcript, "r");
     try {
-      const stat = fs3.fstatSync(fd);
+      const stat = fs4.fstatSync(fd);
       mtime = stat.mtimeMs;
       if (stat.size < cursor.offset) cursor = freshCursor();
       chunk = Buffer.alloc(stat.size - cursor.offset);
-      fs3.readSync(fd, chunk, 0, chunk.length, cursor.offset);
+      fs4.readSync(fd, chunk, 0, chunk.length, cursor.offset);
     } finally {
-      fs3.closeSync(fd);
+      fs4.closeSync(fd);
     }
   } catch {
     cursor = freshCursor();
@@ -1226,7 +1276,7 @@ var init_transcripts = __esm({
     metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
     mtimeOf = (file) => {
       try {
-        return fs3.statSync(file).mtimeMs;
+        return fs4.statSync(file).mtimeMs;
       } catch {
         return 0;
       }
@@ -1236,24 +1286,24 @@ var init_transcripts = __esm({
       locate(binding, env) {
         const session = env.CLAUDE_CODE_SESSION_ID;
         if (!session) return null;
-        const root = env.SWARM_TRANSCRIPTS_ROOT || path3.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
+        const root = env.SWARM_TRANSCRIPTS_ROOT || path4.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
         let projects;
         try {
-          projects = fs3.readdirSync(root);
+          projects = fs4.readdirSync(root);
         } catch {
           return null;
         }
         const candidates = [];
         for (const project of projects) {
-          const main2 = path3.join(root, project, `${session}.jsonl`);
-          if (fs3.existsSync(main2)) candidates.push(main2);
-          const subagents = path3.join(root, project, session, "subagents");
+          const main2 = path4.join(root, project, `${session}.jsonl`);
+          if (fs4.existsSync(main2)) candidates.push(main2);
+          const subagents = path4.join(root, project, session, "subagents");
           let names = [];
           try {
-            names = fs3.readdirSync(subagents);
+            names = fs4.readdirSync(subagents);
           } catch {
           }
-          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path3.join(subagents, n));
+          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path4.join(subagents, n));
         }
         const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
         for (const { file } of newestFirst) {
@@ -1265,7 +1315,7 @@ var init_transcripts = __esm({
       finished(transcript) {
         let text;
         try {
-          text = fs3.readFileSync(metaFileOf(transcript), "utf8");
+          text = fs4.readFileSync(metaFileOf(transcript), "utf8");
         } catch {
           return null;
         }
@@ -1313,21 +1363,21 @@ var init_transcripts = __esm({
 
 // src/link/link.ts
 import crypto2 from "node:crypto";
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import net from "node:net";
 import os3 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 function linkPipe(dataRoot, run2, member) {
-  const home = crypto2.createHash("sha256").update(path4.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto2.createHash("sha256").update(path5.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path4.join(os3.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path5.join(os3.tmpdir(), `${name}.sock`);
 }
 function linkPidFile(dataRoot, run2, member) {
-  return path4.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
+  return path5.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
 }
 function readServerState(dataRoot) {
   try {
-    return JSON.parse(fs4.readFileSync(serverStateFile(dataRoot), "utf8"));
+    return JSON.parse(fs5.readFileSync(serverStateFile(dataRoot), "utf8"));
   } catch {
     return null;
   }
@@ -1344,7 +1394,7 @@ function sayStop(dataRoot, member, stop, toServerLog) {
   const state = toServerLog ? readServerState(dataRoot) : null;
   if (!state || !isAlive(state.pid)) return;
   try {
-    fs4.appendFileSync(serverLogFile(dataRoot), line + "\n");
+    fs5.appendFileSync(serverLogFile(dataRoot), line + "\n");
   } catch {
   }
 }
@@ -1358,7 +1408,7 @@ async function listenOnPipe(pipe, onPipe) {
   const first = await tryListen();
   if (first !== "taken") return first;
   if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
-  fs4.rmSync(pipe, { force: true });
+  fs5.rmSync(pipe, { force: true });
   const second = await tryListen();
   return second === "taken" ? null : second;
 }
@@ -1566,13 +1616,13 @@ async function runLink(opts) {
   if (!pipeServer) return pipeTaken();
   const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
   try {
-    fs4.mkdirSync(path4.dirname(pidFile), { recursive: true });
-    fs4.writeFileSync(pidFile, String(process.pid));
+    fs5.mkdirSync(path5.dirname(pidFile), { recursive: true });
+    fs5.writeFileSync(pidFile, String(process.pid));
   } catch {
   }
   const dropPid = () => {
     try {
-      if (fs4.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs4.rmSync(pidFile);
+      if (fs5.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs5.rmSync(pidFile);
     } catch {
     }
   };
@@ -1602,13 +1652,13 @@ function stopLinks(runId, members) {
     const file = linkPidFile(DATA_ROOT, runId, member);
     let pid;
     try {
-      pid = Number(fs4.readFileSync(file, "utf8").trim());
+      pid = Number(fs5.readFileSync(file, "utf8").trim());
     } catch {
       continue;
     }
     if (isProcessId(pid) && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
-      fs4.rmSync(file);
+      fs5.rmSync(file);
     } catch {
     }
   }
@@ -1650,52 +1700,6 @@ var init_link = __esm({
     };
     isProcessId = (pid) => typeof pid === "number" && Number.isInteger(pid) && pid > 0;
     OWN_EXIT_GRACE_MS = 3e3;
-  }
-});
-
-// src/place/place.ts
-import fs5 from "node:fs";
-import path5 from "node:path";
-function repoOf(dir) {
-  const common = gitOut(dir, "rev-parse", "--git-common-dir");
-  return common ? real(path5.resolve(dir, common)) : null;
-}
-function worktreeOf(dir) {
-  const top = gitOut(dir, "rev-parse", "--show-toplevel");
-  return top ? path5.resolve(top) : null;
-}
-function resolveIn(root, spec, opts = {}) {
-  if (path5.isAbsolute(spec)) return { abs: spec, missing: [] };
-  const cwd = opts.cwd ?? process.cwd();
-  const here = root && !inside(root, cwd) ? path5.resolve(root, spec) : path5.resolve(cwd, spec);
-  if (fs5.existsSync(here)) return { abs: here, missing: [] };
-  const fromRoot = root ? path5.resolve(root, spec) : null;
-  if (fromRoot && fs5.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
-  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
-}
-function relativeIn(root, abs) {
-  return (root ? path5.relative(root, abs) : abs).split(path5.sep).join("/");
-}
-var gitOut, real, inside;
-var init_place = __esm({
-  "src/place/place.ts"() {
-    "use strict";
-    init_proc();
-    gitOut = (cwd, ...argv) => {
-      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-      return r.status === 0 ? r.stdout.trim() : null;
-    };
-    real = (p) => {
-      try {
-        return fs5.realpathSync.native(p);
-      } catch {
-        return p;
-      }
-    };
-    inside = (root, dir) => {
-      const rel = path5.relative(path5.resolve(root), path5.resolve(dir));
-      return !rel.startsWith("..") && !path5.isAbsolute(rel);
-    };
   }
 });
 
@@ -1822,7 +1826,7 @@ function sweepAll(repos, recordOf) {
     return { worktree: dir, ...sweep(dir, w.repo, w.base) };
   });
 }
-var worktreesRoot, CASELESS, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
+var worktreesRoot, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
 var init_worktrees = __esm({
   "src/packs/code/worktrees.ts"() {
     "use strict";
@@ -1832,8 +1836,7 @@ var init_worktrees = __esm({
     init_link();
     init_place();
     worktreesRoot = (repo) => path6.join(repo, "swarm", "worktrees");
-    CASELESS = process.platform === "win32" || process.platform === "darwin";
-    fold = (s) => CASELESS ? path6.resolve(s).toLowerCase() : path6.resolve(s);
+    fold = canonicalPath;
     safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
     worktreeDir = (repo, run2, seat) => path6.join(worktreesRoot(repo), String(run2), safe(seat));
     branchFor = (run2, group, seat) => `swarm/${run2}-${group}/${seat}`;
@@ -2601,7 +2604,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fresh;
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
-  const fold2 = (s) => CASELESS2 ? s.toLowerCase() : s;
+  const fold2 = (s) => CASELESS ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
@@ -3167,10 +3170,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
     },
     identify({ place }) {
       if (!place) return null;
-      const here = fold2(path8.resolve(place));
+      const here = canonicalPath(place);
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
         (r) => {
-          const root = fold2(String(r.place));
+          const root = canonicalPath(String(r.place));
           return here === root || here.startsWith(root.endsWith(path8.sep) ? root : root + path8.sep);
         }
       );
@@ -3801,11 +3804,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   board2.wait = counted("wait", board2.wait);
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS2;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
     init_home();
+    init_place();
     init_mentions();
     init_kinds();
     init_registry();
@@ -3847,7 +3851,7 @@ var init_board = __esm({
     RETENTION_DAYS = 30;
     DAY_MS = 24 * 60 * 60 * 1e3;
     EVENTS_SHOWN = 500;
-    CASELESS2 = process.platform === "win32";
+    CASELESS = process.platform === "win32";
   }
 });
 
