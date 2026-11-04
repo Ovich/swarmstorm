@@ -32,12 +32,13 @@ export function launchBrowser(url: string): void {
   }
 }
 
-/** Opens `url` in the person's browser, when `browserRefusal` allows it. */
-export function openBrowser(url: string): void {
+/** Opens `url` in the person's browser, when `browserRefusal` allows it; answers the refusal, or null once launched. */
+export function openBrowser(url: string): string | null {
   const refused = browserRefusal();
   if (refused) {
     console.error(`aiview: no browser opened for ${url} (${refused})`);
-    return;
+    return refused;
   }
   launchBrowser(url);
+  return null;
 }

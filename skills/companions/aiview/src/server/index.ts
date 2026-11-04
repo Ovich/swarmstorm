@@ -44,8 +44,8 @@ export interface ServeOptions {
   /** The swarm launcher a board server is started from when none answers; beside aiview's by default. */
   swarmEntry?: string;
   /** Opens a new browser tab on a URL (board-split#D41: an agent's open or pointer on a project no tab shows).
-   *  The system browser by default; tests pass their own. */
-  openTab?: (url: string) => void;
+   *  The system browser by default; tests pass their own. Answers why no tab opened, or null when one did. */
+  openTab?: (url: string) => string | null;
   /** The token every POST must carry (trust-adaptations#D4); a fresh random one by default. Tests pass their own. */
   token?: string;
 }
@@ -151,11 +151,11 @@ export function startServer(
     return null;
   }
   /** Moves the tabs on `project` (D41), or, none open there, opens a new tab at `hash`; the tabs that heard it. */
-  const toProjectTabs = (project: string, event: unknown, hash: string): { tabs: number; opened: boolean } => {
+  const toProjectTabs = (project: string, event: unknown, hash: string): ShowResponse => {
     const tabs = sse.broadcastTo(project, event);
     if (tabs > 0) return { tabs, opened: false };
-    openTab(`http://localhost:${(server.address() as { port: number }).port}/#${hash}`);
-    return { tabs: 0, opened: true };
+    const browserRefusal = openTab(`http://localhost:${(server.address() as { port: number }).port}/#${hash}`);
+    return browserRefusal === null ? { tabs: 0, opened: true } : { tabs: 0, opened: false, browserRefusal };
   };
 
   // Static UI: the built app in dist/. The CLI's ensureDist builds it before serve/open.

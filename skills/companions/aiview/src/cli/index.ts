@@ -245,9 +245,17 @@ function agentProject(fallback: string): string {
   }
 }
 
-/** What the agent reads of a move sent to its project's tabs (D41). */
-const movedLine = (r: ShowResponse, project: string, verb: string): string =>
-  r.opened ? `no tab showed ${project}: opened a new one` : `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+/** What the agent reads of a move sent to its project's tabs (D41); a browser the server may not open says why
+ *  (trust-adaptations v1-F5). */
+const movedLine = (r: ShowResponse, project: string, verb: string): string => {
+  if (r.browserRefusal) return noBrowserLine(project, r.browserRefusal);
+  if (r.opened) return `no tab showed ${project}: opened a new one`;
+  return `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+};
+
+/** What the agent reads when no tab shows `project` and no browser may open: the reason, and the link to hand over. */
+const noBrowserLine = (project: string, refusal: string): string =>
+  `no tab showed ${project}, and no browser opened (${refusal}): give the person the link`;
 
 function resolveRef(ref: string): Document | undefined {
   const index = openIndex();
@@ -411,7 +419,7 @@ function cmdShow(): void {
   const project = agentProject(doc.project);
   const answer = askServer("/api/show", { ...pointer, project });
   const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
-  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false }, () => {
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, browserRefusal: moved?.browserRefusal ?? null }, () => {
     console.log(url);
     console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
   });
@@ -725,10 +733,21 @@ function cmdOpen(): void {
   // the tabs on the agent's project go to it; none there, the server opens one (D41)
   const answer = askServer("/api/open", { id: d.id, project });
   const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
-  if (!moved && args.has("--open")) {
-    openBrowser(url);
-  }
-  emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
+  // no server answered: --open opens the browser from here, under the same refusal
+  const localRefusal = !moved && args.has("--open") ? openBrowser(url) : undefined;
+  const answerLine = moved ? movedLine(moved, project, "opened") : localRefusal ? noBrowserLine(project, localRefusal) : null;
+  emit(
+    {
+      id: d.id,
+      url,
+      project,
+      tabs: moved?.tabs ?? 0,
+      opened: moved?.opened ?? localRefusal === null,
+      browserRefusal: moved?.browserRefusal ?? localRefusal ?? null,
+      server: readServerStatus(),
+    },
+    answerLine ? [url, answerLine].join("\n") : url,
+  );
 }
 
 /** The project's board, aiview's /board page: `--repo` adds a repository to it (what

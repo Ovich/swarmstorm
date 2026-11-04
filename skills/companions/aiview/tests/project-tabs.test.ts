@@ -22,6 +22,8 @@ let server: http.Server;
 let base: string;
 let docId: number;
 const tabsOpened: string[] = [];
+/** Why this suite's server may open no browser, or null when it may (v1-F5); a test sets it and puts it back. */
+let browserRefused: string | null = null;
 
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiview-tabs-"));
@@ -35,7 +37,12 @@ before(async () => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, "# X\n");
   docId = index.register(file, {}).id;
-  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN, openTab: (url) => tabsOpened.push(url) });
+  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN, openTab: (url) => {
+      if (browserRefused !== null) return browserRefused;
+      tabsOpened.push(url);
+      return null;
+    },
+  });
   await new Promise<void>((r) => server.on("listening", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -78,6 +85,18 @@ test("two tabs on two projects: an open from alpha moves only alpha's tab; an op
   } finally {
     alpha.close();
     beta.close();
+  }
+});
+
+test("no tab on the project and no browser allowed: the answer says none opened, and why (v1-F5)", async () => {
+  browserRefused = "AIVIEW_NO_BROWSER=1";
+  try {
+    const before = tabsOpened.length;
+    assert.deepEqual(await post("/api/open", { id: docId, project: "gamma" }), { tabs: 0, opened: false, browserRefusal: "AIVIEW_NO_BROWSER=1" });
+    assert.deepEqual(await post("/api/show", { id: docId, components: ["Pill"], project: "gamma" }), { tabs: 0, opened: false, browserRefusal: "AIVIEW_NO_BROWSER=1" });
+    assert.equal(tabsOpened.length, before);
+  } finally {
+    browserRefused = null;
   }
 });
 
