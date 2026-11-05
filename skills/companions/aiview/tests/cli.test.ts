@@ -625,42 +625,6 @@ test("components: what a prototype offers and pulls; check: whether a host resol
   assert.equal(run("components", write("docs/x.md", "# md")).status, 1);
 });
 
-test("mermaid-check: every block of a document parsed, failures with their line, exit 1", () => {
-  const md = write(
-    "docs/JOBS/plan.plan.md",
-    "# Plan\n\n```mermaid\nflowchart TB\n  A --> B\n```\n\ntext\n\n```mermaid\nsequenceDiagram\n  A->>B: hi\n```\n\n```mermaid\nflowchart TB\n  A --->> B[[\n```\n",
-  );
-  const r = run("mermaid-check", md);
-  assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stdout, /ok\s+line 3\s+flowchart-v2/);
-  assert.match(r.stdout, /ok\s+line 10\s+sequence/);
-  assert.match(r.stdout, /FAIL\s+line 15\s+Parse error/);
-  assert.match(r.stdout, /3 blocks, 1 failed/);
-  const j = JSON.parse(run("mermaid-check", md, "--json").stdout);
-  assert.equal(j.blocks, 3);
-  assert.equal(j.failed, 1);
-  assert.deepEqual(j.results.map((x: { ok: boolean }) => x.ok), [true, true, false]);
-
-  const good = write("docs/JOBS/ok.spec.md", "```mermaid\nstateDiagram-v2\n  [*] --> S\n```\n");
-  assert.equal(run("mermaid-check", good).status, 0);
-  const bare = write("docs/JOBS/d.mmd", "classDiagram\n  A <|-- B\n");
-  assert.match(run("mermaid-check", bare).stdout, /ok\s+line 1\s+classDiagram/);
-  assert.match(run("mermaid-check", write("docs/JOBS/none.md", "# nothing\n")).stdout, /no mermaid block/);
-});
-
-test("mermaid-check: discipline warnings do not fail the run", () => {
-  const md = write("docs/JOBS/warn.plan.md", "# Plan\n\n```mermaid\nflowchart TB\n  A --> B\n  A --> C\n```\n\nPhasing: what ships first.\n\n```mermaid\nflowchart TB\n  A -->|x| B\n  A -->|y| C\n```\n");
-  const r = run("mermaid-check", md);
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /warn\s+line 3\s+no caption above the fence/);
-  assert.match(r.stdout, /warn\s+line 3\s+A branches \(2 arrows\) and none carries a label/);
-  assert.doesNotMatch(r.stdout, /warn\s+line 11/);
-  assert.match(r.stdout, /2 blocks, 0 failed, 2 warnings/);
-  const j = JSON.parse(run("mermaid-check", md, "--json").stdout);
-  assert.equal(j.warnings, 2);
-  assert.equal(j.results[1].warnings.length, 0);
-});
-
 test("plan check: warns on unconfirmed agent defaults, never fails the run", () => {
   const head = (status: string) =>
     `# p, plan\n\n> **Status**: ${status}\n\n## 8. Decisions\n| id | Kind | Decision | Status | Source | Slice |\n|---|---|---|---|---|---|\n| D1 | contract | x | agreed | agent default | 1 |\n`;

@@ -32,7 +32,7 @@ description: "Use when a document produced in this collection (board, plan, repo
 - **Colours as eight-digit hex, never `rgba(...)`**; the commas inside `rgba()` split a `classDef` and the definition fails silently.
 - **Translucent over opaque** (`#7f7f7f1a`); a translucent fill works in both themes, an opaque light fill burns a white slab into a dark page.
 - **Meaning carried by styling is in the label too**, a glyph or a word, so it survives grayscale, dark mode and a colour-blind reader.
-- **Run `aiview mermaid-check <file>` after every edit to a diagram.** It parses every block as the viewer will, names the line of each failure, and warns on a fence with no caption and on a branching node with an unlabeled arrow.
+- **Look at the diagram in aiview after every edit.** A block that fails to parse shows `mermaid failed` and its source in place.
 
 ## Red flags
 

@@ -110,9 +110,6 @@ In Codex, `codex plugin marketplace upgrade swarmstorm`, then a new session. In 
 - swarm builds its CLI only: `skills/companions/swarm-board/dist-cli/cli.mjs` is committed; it has no
   page and no server. The board's page is aiview's, so a release that changes swarm's board
   reader or the board's page rebuilds aiview too, or ships the old board.
-- `aiview mermaid-check` is its own bundle, `dist-cli/mermaid-check.mjs`, about 3.5 MB,
-  built by `npm run build` with the CLI. It is versioned like the CLI bundle, for the
-  same reason.
 - The data home (`$SWARMSTORM_HOME`, or `swarmstorm_appdata` in the OS home) is never
   touched by an update. Documents and the index survive every release.
 - Dropping `version` from every manifest is the alternative delivery model: git sources

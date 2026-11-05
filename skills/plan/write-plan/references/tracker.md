@@ -1,8 +1,8 @@
 # The tracker
 
 The **tracker** is the plan's phasing diagram and the single record of where the work stands.
-Run `aiview mermaid-check <plan>` and `aiview tracker check <plan>` after every edit; Mermaid
-fails quietly. A new tracker starts from `references/tracker-skeleton.md`.
+Run `aiview tracker check <plan>` after every edit, and look at the tracker in aiview: a block
+that fails to parse shows `mermaid failed` there. A new tracker starts from `references/tracker-skeleton.md`.
 
 ## Markers
 

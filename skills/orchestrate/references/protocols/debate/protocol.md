@@ -31,8 +31,8 @@ is there.
 
 - **An agreement the skeptic endorsed**: its row `agreed`, `Source` the agreement's `#<seq>`;
   a table it names promoted into the row's section as posted; a diagram it names promoted to
-  *Diagrams* through the `write-diagrams` skill, its caption line above the fence, then
-  `aiview mermaid-check` with no warning; the human part refreshed.
+  *Diagrams* through the `write-diagrams` skill, its caption line above the fence, each
+  rendering in aiview; the human part refreshed.
 - **N exchanges on one question without one**: an escalation. With `arbiter: orchestrator`,
   post the ruling and its reason on the thread; it stands only once the skeptic endorses it,
   and is marked `ruled (by orchestrator)` in the row. With `arbiter: none`,
