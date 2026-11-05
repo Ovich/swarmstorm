@@ -144,9 +144,9 @@ export const codePack: Pack = {
   },
 
   onEnded(member, ctx) {
-    // a held lock released by the end frees whoever was refused it (D65); its claims go with it
+    // a held lock released by the end frees whoever was refused it (D65); its claims stay, ended, until the phase ends
     const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
-    tablesOf(ctx).releaseAll(member.id);
+    tablesOf(ctx).releaseLockOf(member.id);
     return {
       note: waiters.length ? `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}` : null,
       mentions: waiters,

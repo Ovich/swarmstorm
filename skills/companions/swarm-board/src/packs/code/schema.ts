@@ -7,7 +7,7 @@ import type { DatabaseSync } from "node:sqlite";
 export const SHARES_SINCE = "shares-since";
 
 /** The code tables keyed by member (`participant`), every row of a pruned member deleted. */
-const MEMBER_TABLES = ["claim_log", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "claim_requests", "flag_posts", "lock_requests"];
+const MEMBER_TABLES = ["drift_notices", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "claim_requests", "flag_posts", "lock_requests"];
 
 /** Creates the code tables a store lacks and brings an older store's up to date. */
 export function migrateCodeTables(db: DatabaseSync): void {
@@ -15,22 +15,26 @@ export function migrateCodeTables(db: DatabaseSync): void {
   const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === undefined;
   db.exec(`
     -- claims are global by repository-relative path, across every run on a repository (D12, D20);
-    -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed
+    -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed.
+    -- A claim lasts its run's phase (claims-phase): from the member's first change of the path until the next phase
+    -- opens or the run closes; state 'active' or 'merged' (sha: the merge's), 'ended' read from the member;
+    -- in_changes: the path is in the member's worktree changes as its link last read them
     CREATE TABLE IF NOT EXISTS claims (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
       participant INTEGER NOT NULL,
       kind TEXT NOT NULL DEFAULT 'inside',
       since_seq INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'active',
+      sha TEXT,
+      in_changes INTEGER NOT NULL DEFAULT 1,
       PRIMARY KEY (repo, path, participant)
     );
-    -- every claim made, kept past its release: who held a path during a run (D63), and whether as an
-    -- interface: widened to 'interface' when the claim is made or widened so, never narrowed (D42)
-    CREATE TABLE IF NOT EXISTS claim_log (
+    -- a member told that a path merged this phase is not in its branch: once per member and path per phase
+    CREATE TABLE IF NOT EXISTS drift_notices (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
       participant INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'inside',
       PRIMARY KEY (repo, path, participant)
     );
     -- a claim granted beside a live holder of the path, kept past both claims' release: who held a path
@@ -99,8 +103,9 @@ export function migrateCodeTables(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- board-fixes#D14: the roster reads every member's claimed paths; by participant, never a scan of the whole log
-    CREATE INDEX IF NOT EXISTS claim_log_by_participant ON claim_log (participant);
+    -- claims-phase: the kept claims replace the claim log; an older store's goes
+    DROP INDEX IF EXISTS claim_log_by_participant;
+    DROP TABLE IF EXISTS claim_log;
   `);
   if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, new Date().toISOString());
   const upkeep = (table: string, column: string, ddl: string): void => {
@@ -109,8 +114,6 @@ export function migrateCodeTables(db: DatabaseSync): void {
   };
   // 1 once the member has called `merged` since it joined: what `end` writes as its doing (D66); on the core's members
   upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
-  // a claim's kind kept past its release, so a closed run read live still knows its interfaces (D42)
-  upkeep("claim_log", "kind", "kind TEXT NOT NULL DEFAULT 'inside'");
   // the branch a merge lands in, named by merge-lock --onto (D9)
   upkeep("merge_locks", "onto", "onto TEXT");
   // the guides merge-lock listed for the branch, JSON; merged refuses until each is settled
@@ -136,6 +139,10 @@ export function migrateCodeTables(db: DatabaseSync): void {
       COMMIT;
     `);
   }
+  // claims-phase: a claim's state, its merge's sha, and whether its path is still in the member's changes
+  upkeep("claims", "state", "state TEXT NOT NULL DEFAULT 'active'");
+  upkeep("claims", "sha", "sha TEXT");
+  upkeep("claims", "in_changes", "in_changes INTEGER NOT NULL DEFAULT 1");
 }
 
 /** Deletes a pruned member's code rows, of every table, either side of a share or a notice. */

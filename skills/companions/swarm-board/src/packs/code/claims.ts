@@ -5,7 +5,9 @@ import type { DatabaseSync } from "node:sqlite";
 import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
 import type { DriftedFile, Flag, MemberWorktree, MergedMeta } from "./types.ts";
 import type { EventName } from "../../board/events.ts";
+import type { PackMessageMeta } from "../registry.ts";
 import { CODE_EVENTS } from "./events.ts";
+import { CODE_WORDING } from "../../cli/answer/code-wording.ts";
 
 export interface ClaimsDeps {
   db: DatabaseSync;
@@ -15,7 +17,7 @@ export interface ClaimsDeps {
   lastSeq(): number;
   participantById(id: number): Participant;
   isLive(id: number): boolean;
-  insertMessage(p: Participant, body: string, about: string | null, kind: MessageKind, named?: string[], extra?: { event?: EventName; meta?: MergedMeta }): Message;
+  insertMessage(p: Participant, body: string, about: string | null, kind: MessageKind, named?: string[], extra?: { event?: EventName; meta?: PackMessageMeta }): Message;
   relPath(repo: string, file: string): string | null;
   fold(s: string): string;
   slashes(rel: string): string;
@@ -24,8 +26,11 @@ export interface ClaimsDeps {
 }
 
 export interface Claims {
-  /** spec §7: `p`'s holdings become `files`, its worktree's changed set as its link read it (new paths held, gone ones
-   *  released); each new path another member holds is posted once to both, unless they agreed on it. */
+  /** spec §7, claims-phase: `files` is `p`'s worktree's changed set as its link read it: a new path is held, active, until
+   *  the phase ends (a path leaving the set keeps its claim); a merged path changed again after it left the set is active
+   *  again. Each new active path another member actively holds is posted once to both, unless they agreed on it.
+   *  `drifted`: paths of `files` its target changed past its branch; one merged this phase by another member is told
+   *  to `p` once per path and phase, to rebase. */
   setHoldings(p: Participant, files: string[], drifted?: DriftedFile[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
@@ -39,8 +44,13 @@ export interface Claims {
   seated(p: Participant): void;
   /** `p` called `merged` since it joined (D66). */
   mergedSinceJoin(participant: number): boolean;
-  /** end, closeRun, seat done */
+  /** closeRun: every claim, the merge lock and the claim requests of `participant` go. */
   releaseAll(participant: number): void;
+  /** At `p`'s end: the merge lock it holds and its claim requests go; its claims stay, read as ended, until the phase ends. */
+  releaseLockOf(participant: number): void;
+  /** claims-phase: a phase of `run` opens: every claim of its members goes, with its flags, overlap posts and drift notices;
+   *  their links claim again from their worktrees' changes. */
+  phaseOpened(run: RunId): void;
   clearFlags(): void;
   /** board-fixes#D8: `author` agreed with `parties` (names) about `about`: their flags and notices on its paths go. */
   settleOverlaps(author: Participant, parties: string[], about: string): void;
@@ -51,11 +61,9 @@ export interface Claims {
   lockWaitersFreedBy(p: Participant): string[];
   /** The path `m` asks `me` about, when `me` held it before `m` and its author did not (D62). */
   askedAbout(me: Participant, author: number, m: Message): string | null;
-  /** `rel` is held, or was held during the run, by a member of a run other than `p`'s. */
-  heldInOtherRun(p: Participant, rel: string): boolean;
-  /** `p` holds a claim or the merge lock now: mid-work, never idle. */
+  /** `p` holds the merge lock, or an active claim on a path still in its changes: mid-work, never idle. */
   holdsAny(p: Participant): boolean;
-  /** The live holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
+  /** The active holders of `about` (a path, or its tail), as `<plan>/<seat>`. */
   holderNames(repo: string, about: string): string[];
   /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
   seatWorktrees(run?: RunId): MemberWorktree[];
@@ -71,39 +79,61 @@ type ClaimRow = { participant: number; kind: string; since: number };
 export function claimsOf(deps: ClaimsDeps): Claims {
   const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack } = deps;
 
-  /** A flag lives while a claim on its path does; a notice while both its holders' claims do. */
+  /** claims-phase: a claim `c` (the alias) its holder still works on: active, its member not ended. */
+  const ACTIVE = "c.state = 'active' AND EXISTS (SELECT 1 FROM participants q WHERE q.id = c.participant AND q.ended_at IS NULL)";
+  /** A flag lives while an active claim on its path does; a notice while both its holders' active claims do. */
   const clearFlags = (): void => {
-    db.prepare("DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path)").run();
+    db.prepare(`DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path AND ${ACTIVE})`).run();
     db.prepare(
-      `DELETE FROM notices WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.participant)
-         OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.other)`,
+      `DELETE FROM notices WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.participant AND ${ACTIVE})
+         OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.other AND ${ACTIVE})`,
     ).run();
   };
 
-  /** Every live holder of `rel`, in claim order: of the path itself, or of a directory it is under (G42). */
-  const holdersOf = (repo: string, rel: string): ClaimRow[] =>
+  /** Every active, live holder of `rel`, in claim order: of the path itself, or of a directory it is under (G42). */
+  const activeHoldersOf = (repo: string, rel: string): ClaimRow[] =>
     (
       db
-        .prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid")
+        .prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid")
         .all(repo, rel, rel) as Row[]
     )
       .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
       .filter((c) => isLive(c.participant));
-  /** `p` holds `rel` (alongside whoever else does). True when the claim was made here. */
+  /** `p`'s worktree changes `rel`: held, active. True when the claim is new, or a merged one made active again because
+   *  the path had left the changes since the merge (a frame read before the merge and sent after never reopens it). */
   const hold = (p: Participant, rel: string): boolean =>
     transaction(() => {
-      const r = db
-        .prepare(
-          `INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`,
-        )
+      const made = db
+        .prepare(`INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`)
         .run(p.repo, rel, p.id, lastSeq());
-      db.prepare(
-        "INSERT INTO claim_log (repo, path, participant) VALUES (?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING",
-      ).run(p.repo, rel, p.id);
-      if (Number(r.changes) === 0) return false;
+      const reopened =
+        Number(made.changes) === 0 &&
+        Number(
+          db
+            .prepare("UPDATE claims SET state = 'active', sha = NULL, since_seq = ? WHERE repo = ? AND path = ? AND participant = ? AND state = 'merged' AND in_changes = 0")
+            .run(lastSeq(), p.repo, rel, p.id).changes,
+        ) > 0;
+      db.prepare("UPDATE claims SET in_changes = 1 WHERE repo = ? AND path = ? AND participant = ? AND in_changes = 0").run(p.repo, rel, p.id);
+      if (Number(made.changes) === 0 && !reopened) return false;
       bump(p.repo);
       return true;
     });
+  /** claims-phase: `p`'s branch lacks the target's change to `rel`; when another member merged `rel` this phase, `p` is
+   *  told once per path and phase to rebase. The merger is not told. */
+  const tellDrift = (p: Participant, rel: string, drifted: DriftedFile): void => {
+    const merges = db
+      .prepare("SELECT participant, sha FROM claims WHERE repo = ? AND path = ? AND state = 'merged' AND participant != ? ORDER BY rowid DESC")
+      .all(p.repo, rel, p.id) as Row[];
+    if (!merges.length) return;
+    // the merge whose commit is the target's last change to the path, else the latest claim merged
+    const merge = merges.find((m) => String(m.sha) === drifted.sha) ?? merges[0];
+    if (Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(p.repo, rel, p.id).changes) === 0) return;
+    const sha = String(merge.sha);
+    insertMessage(p, CODE_WORDING.driftNotice(p.name, rel, participantById(Number(merge.participant)).name, sha), rel, "event", [p.name], {
+      event: CODE_EVENTS.drift.name,
+      meta: { sha },
+    });
+  };
   /** An agreement about `rel` between `a` and `b`, made by either and naming the other. */
   const agreedOn = (a: Participant, b: Participant, rel: string): boolean =>
     (db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND author IN (?, ?)").all(a.repo, a.id, b.id) as Row[]).some((r) => {
@@ -116,8 +146,17 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
     const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
     db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
+    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
     clearFlags();
     if (owner && claims + locks > 0) bump(String(owner.repo));
+  };
+  const releaseLockOf = (id: number): void => {
+    const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
+    db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id);
+    db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
+    // its claims are no longer active: the flags and notices on them go
+    clearFlags();
+    if (owner) bump(String(owner.repo));
   };
   /** The live members refused the lock since its holder took it, as mentions name them; the record is cleared (D65). */
   const takeLockWaiters = (repo: string): string[] => {
@@ -153,6 +192,16 @@ export function claimsOf(deps: ClaimsDeps): Claims {
   return {
     clearFlags,
     releaseAll,
+    releaseLockOf,
+
+    phaseOpened(run) {
+      const owner = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run) as Row | undefined;
+      let dropped = 0;
+      for (const table of ["claims", "drift_notices", "flag_posts"])
+        dropped += Number(db.prepare(`DELETE FROM ${table} WHERE participant IN (SELECT id FROM participants WHERE run = ?)`).run(run).changes);
+      clearFlags();
+      if (owner && dropped > 0) bump(String(owner.repo));
+    },
 
     settleOverlaps(author, parties, about) {
       const want = fold(relPath(author.repo, about) ?? slashes(about));
@@ -203,47 +252,37 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       return theirs ? null : rel;
     },
 
-    heldInOtherRun(p, rel) {
-      const f = fold(rel);
-      const rows = db
-        .prepare("SELECT l.path FROM claim_log l JOIN participants q ON q.id = l.participant WHERE l.repo = ? AND q.run != ?")
-        .all(p.repo, p.run) as Row[];
-      return rows.some((r) => {
-        const x = fold(String(r.path));
-        return x === f || x.endsWith(`/${f}`);
-      });
-    },
-
     holderNames(repo, about) {
       const f = fold(relPath(repo, about) ?? slashes(about));
       if (!f) return [];
-      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo) as Row[];
+      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ? AND state = 'active'").all(repo) as Row[];
       return [...new Set(rows
         .filter((r) => { const x = fold(String(r.path)); return x === f || x.endsWith(`/${f}`); })
         .map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
 
     holdsAny(p) {
-      return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id, p.id) !== undefined;
+      return (
+        db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? AND state = 'active' AND in_changes = 1 LIMIT 1").get(p.id, p.id) !==
+        undefined
+      );
     },
 
-    setHoldings(me, files) {
+    setHoldings(me, files, drifted = []) {
       return transaction(() => {
-        const now = new Set(files.map((f) => relPath(me.repo, f) ?? slashes(f)));
-        const had = new Set((db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(me.repo, me.id) as Row[]).map((r) => String(r.path)));
-        const gone = [...had].filter((x) => !now.has(x));
-        const fresh = [...now].filter((x) => !had.has(x));
-        for (const x of gone) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
-        for (const x of fresh) hold(me, x);
-        if (gone.length) {
-          clearFlags();
-          bump(me.repo);
-        }
+        const relOf = (f: string): string => relPath(me.repo, f) ?? slashes(f);
+        const now = new Set(files.map(relOf));
+        // a path out of the changes keeps its claim (claims-phase): only its in_changes falls
+        const inChanges = (db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ? AND in_changes = 1").all(me.repo, me.id) as Row[]).map((r) => String(r.path));
+        const left = inChanges.filter((x) => !now.has(x));
+        for (const x of left) db.prepare("UPDATE claims SET in_changes = 0 WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
+        if (left.length) bump(me.repo);
+        const fresh = [...now].filter((x) => hold(me, x));
         // once per path and pair (flag_posts); the post mentions the other holder, then the member (the flag's order, D10)
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
         const overlaps: Flag[] = [];
         for (const rel of fresh)
-          for (const c of holdersOf(me.repo, rel).filter((c) => c.participant !== me.id)) {
+          for (const c of activeHoldersOf(me.repo, rel).filter((c) => c.participant !== me.id)) {
             const other = participantById(c.participant);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
             const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
@@ -251,6 +290,10 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             });
             overlaps.push({ path: rel, holder: other.name, seq: m.seq });
           }
+        for (const d of drifted) {
+          const rel = relOf(d.path);
+          if (now.has(rel)) tellDrift(me, rel, d);
+        }
         return overlaps;
       });
     },
@@ -322,9 +365,9 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           if (turn) db.prepare("UPDATE lock_requests SET merged_at = ? WHERE rowid = ?").run(now(), Number(turn.id));
           waiters = takeLockWaiters(me.repo).filter((n) => n !== me.name);
         });
-        // every holder of a merged path, a shared one included (D40)
+        // every active holder of a merged path, a shared one included (D40)
         for (const rel of rels) {
-          for (const c of holdersOf(me.repo, rel)) {
+          for (const c of activeHoldersOf(me.repo, rel)) {
             if (c.participant !== me.id) told.add(participantById(c.participant).name);
           }
         }
@@ -355,13 +398,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
-        // whom to tell of a resolved conflict (D63): a holder from any run, or one of this run that held it;
-        // once the conflicts are known, of a conflicted path only (D5)
+        // whom to tell of a resolved conflict (D63): an active holder from any run, or one of this run that held it this
+        // phase; once the conflicts are known, of a conflicted path only (D5)
         for (const rel of rels) {
           if (conflicted && !conflicted.has(fold(rel))) continue;
-          const ids = new Set(holdersOf(me.repo, rel).map((c) => c.participant));
+          const ids = new Set(activeHoldersOf(me.repo, rel).map((c) => c.participant));
           const held = db
-            .prepare("SELECT l.participant FROM claim_log l JOIN participants p ON p.id = l.participant WHERE l.repo = ? AND l.path = ? AND p.run = ? ORDER BY l.rowid")
+            .prepare("SELECT c.participant FROM claims c JOIN participants p ON p.id = c.participant WHERE c.repo = ? AND c.path = ? AND p.run = ? ORDER BY c.rowid")
             .all(me.repo, rel, me.run) as Row[];
           for (const r of held) ids.add(Number(r.participant));
           ids.delete(me.id);
@@ -369,9 +412,13 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...(waiters.length ? { free: waiters } : {}) };
         insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters])], { event: CODE_EVENTS.merged.name, meta });
-        // S28: the merged files are no longer the merger's to hold; its other claims stay for the work still open
-        const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
-        for (const rel of rels) release.run(me.repo, rel, me.id);
+        // claims-phase: the merger's claims on the merged files are merged, with the sha, kept until the phase ends;
+        // a merged file it never claimed is claimed so, for the drift notice
+        const markMerged = db.prepare(
+          `INSERT INTO claims (repo, path, participant, since_seq, state, sha) VALUES (?, ?, ?, ?, 'merged', ?)
+             ON CONFLICT (repo, path, participant) DO UPDATE SET state = 'merged', sha = excluded.sha`,
+        );
+        for (const rel of rels) markMerged.run(me.repo, rel, me.id, lastSeq(), sha);
         clearFlags();
       });
       return sharers;

@@ -37,7 +37,7 @@ test("a store from before T12: the member's worktree reads as its place, its old
   assert.equal(entry.worktree, WORKTREE);
   assert.deepEqual(entry.held, [{ path: "src/api.ts" }]);
   const snap = b.snapshot(REPO);
-  assert.deepEqual(snap.files, [{ path: "src/api.ts", holders: ["old-plan/S1"] }]);
+  assert.deepEqual(snap.files, [{ path: "src/api.ts", holders: ["old-plan/S1"], past: [] }]);
   assert.deepEqual([snap.lock, snap.lockHistory, snap.flags], [null, [], []]);
   assert.deepEqual(snap.roster.find((m) => m.member === "old-plan/S1")?.files, [{ path: "src/api.ts", shared: false }]);
 

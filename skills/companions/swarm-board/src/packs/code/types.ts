@@ -16,6 +16,8 @@ export type DriftedFile = { path: string; sha: string };
  *  of a conflicted path only once the conflicts are known (D5). */
 /** `free` (V-49): the members refused the merge lock, told it is free by this merge, as its body says. */
 export type MergedMeta = { rebase: string[]; tell: string[]; free?: string[] };
+/** What a drift event carries (claims-phase): the sha of the merge the member's branch lacks. */
+export type DriftMeta = { sha: string };
 
 /** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
 export interface MemberWorktree {

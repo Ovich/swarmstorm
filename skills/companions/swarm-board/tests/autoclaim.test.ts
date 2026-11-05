@@ -69,7 +69,7 @@ test("changedSet: a worktree switched to another commit (a base to compare again
   assert.deepEqual(changedSet(repo, "main"), ["a.ts"]);
 });
 
-test("the board sets holdings to the set, releases what left it, and posts an overlap once to both, never when they agreed", async () => {
+test("the board sets holdings to the set, keeps what left it (claims-phase), and posts an overlap once to both, never when they agreed", async () => {
   board = await openBoard(path.join(dir, "swarm.sqlite"));
   try {
     const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2", "w3"].map((id) => ({ id, blockers: [] })) });
@@ -79,7 +79,7 @@ test("the board sets holdings to the set, releases what left it, and posts an ov
     code.changes(w1, ["src/a.ts", "src/b.ts"]);
     assert.deepEqual(board.heldBy(w1).sort(), ["src/a.ts", "src/b.ts"]);
     code.changes(w1, ["src/a.ts"]);
-    assert.deepEqual(board.heldBy(w1), ["src/a.ts"], "a path that left the set is released");
+    assert.deepEqual(board.heldBy(w1).sort(), ["src/a.ts", "src/b.ts"], "a path that left the set is kept until the phase ends");
     // w2 changes a.ts too: one post to both, about the path, each told the agree command with the other
     code.changes(w2, ["src/a.ts"]);
     code.changes(w2, ["src/a.ts"]);

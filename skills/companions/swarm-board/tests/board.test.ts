@@ -268,12 +268,12 @@ const claimed = () => {
 };
 const holdersOf = (rel: string): string[] => board.snapshot(REPO).files.find((f) => f.path === rel)?.holders ?? [];
 
-test("spec §7: changes set the holdings, new paths held and gone ones released; a new path another holds is posted once to both", () => {
+test("spec §7: changes set the holdings, new paths held and gone ones kept until the phase ends (claims-phase); a new path another holds is posted once to both", () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(codeVerbs(board).changes(s5, ["src/b.ts", "src/c.ts"]), []);
   assert.deepEqual(holdersOf("src/c.ts"), ["review-tool/S5"]);
   codeVerbs(board).changes(s5, ["src/c.ts"]);
-  assert.deepEqual(holdersOf("src/b.ts"), [], "a path gone from the set is released");
+  assert.deepEqual(holdersOf("src/b.ts"), ["review-tool/S5"], "a path gone from the set is kept (claims-phase)");
   // S5's worktree now changes src/a.ts too, which S3 holds: one overlap, to both
   const overlaps = codeVerbs(board).changes(s5, ["src/c.ts", "src/a.ts"]);
   assert.deepEqual(overlaps.map((o) => [o.path, o.holder]), [["src/a.ts", "review-tool/S3"]]);
@@ -794,7 +794,7 @@ test("a store from before channels opens: a row with run null reads as its autho
   assert.equal(m.run, 1);
   assert.deepEqual(old.deliverMentions(s5).full.map((x) => x.seq), [m.seq]);
   codeVerbs(old).changes(s3, ["src/a.ts"]);
-  assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"] }]);
+  assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"], past: [] }]);
 });
 
 // D59: the wake rule; D60: a seat added mid-run

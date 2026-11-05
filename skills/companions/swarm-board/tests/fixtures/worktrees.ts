@@ -138,7 +138,6 @@ function holdAs(store: string, plan: string, seat: string, rel: string): void {
   try {
     const p = db.prepare("SELECT p.id, r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE r.plan = ? AND p.seat = ? AND p.ended_at IS NULL").get(plan, seat) as { id: number; repo: string };
     db.prepare("INSERT OR IGNORE INTO claims (repo, path, participant, kind, since_seq) VALUES (?, ?, ?, 'inside', 0)").run(p.repo, rel, p.id);
-    db.prepare("INSERT OR IGNORE INTO claim_log (repo, path, participant, kind) VALUES (?, ?, ?, 'inside')").run(p.repo, rel, p.id);
   } finally {
     db.close();
   }
