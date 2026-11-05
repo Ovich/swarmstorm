@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard } from "../src/board/board.ts";
-import { startBoardServer, stopBoardServer } from "../src/server/server.ts";
+import { silentTooLong, startBoardServer, stopBoardServer } from "../src/server/server.ts";
 import { decode, encode, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type Hello, type MemberActivity, type RpcMethod, type ServerState } from "../src/wire.ts";
 
 const REPO = "/repos/one/.git";
@@ -488,3 +488,12 @@ test("board-fixes#D1: a link's socket killed is logged with its member, its caus
   await new Promise((r) => setTimeout(r, 100));
   assert.match((await logLines()).at(-1) ?? "", /close: p\/S1, cause superseded, 0 call\(s\) open$/);
 });
+
+test("board-fixes#D1: a ping round cuts a socket silent past 25 s only when the round ran on time, never after the server's loop was blocked", () => {
+  const now = 100_000;
+  assert.equal(silentTooLong(now, now - 10_000, now - 26_000), true);
+  assert.equal(silentTooLong(now, now - 10_000, now - 5_000), false);
+  // the round ran 30 s late: the loop was blocked, the pongs it held back are not read yet
+  assert.equal(silentTooLong(now, now - 40_000, now - 40_000), false);
+});
+

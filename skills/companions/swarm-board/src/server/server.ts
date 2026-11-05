@@ -16,6 +16,8 @@ const UPKEEP_LOOK_MS = 1000;
 /** The ping that keeps a link's socket honest (D10). */
 const PING_EVERY_MS = 10 * 1000;
 const PONG_WITHIN_MS = 25 * 1000;
+/** A ping round this much later than due means the server's loop was blocked (board-fixes#D1). */
+const LOOP_LAG_FORGIVEN_MS = 2 * 1000;
 /** `serve stop` asks the running server here, over HTTP, the secret in a header (D27). */
 const STOP_PATH = "/stop";
 const SECRET_HEADER = "x-swarm-secret";
@@ -28,8 +30,10 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 /** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
 /** `member`: the member whose link this is, its presence written; `bound`: the member its calls are judged for
  *  (trust-adaptations#D5), a link's and a direct connection's alike. */
+/** `lastPong`: when it was last heard from, any frame or pong (board-fixes#D1); `readAt`: when its socket's last bytes
+ *  came in, the arrival a call queued behind others is timed from. */
 /** `anonymousScope`: the scope of its calls' ids while it is bound to no member, its own alone. */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean; closeCause?: ClosedForLog };
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean; closeCause?: ClosedForLog; readAt: number };
 /** Why a socket closed, as swarm-server.log says it (board-fixes#D1): finer than the stored drop cause. */
 type ClosedForLog = "ping timeout" | "link ended" | "run closed" | `error: ${string}`;
 /** A call running or answered, keyed by its scope and its id (callKey): a resend reaches it only from the same member. */
@@ -42,6 +46,13 @@ const SLOW_CALL_MS = 10 * 1000;
 const ENDED_LINK_QUIET_MS = 1000;
 
 type ServerOptions = { dataRoot: string; host?: string; port?: number; now?: () => Date };
+
+/** board-fixes#D1: whether a ping round at `now` cuts a socket last heard from at `heardAt`: silent past PONG_WITHIN_MS,
+ *  and the round on time (one run late after `lastRound` finds the server's own loop was blocked, the pongs unread). */
+export function silentTooLong(now: number, lastRound: number, heardAt: number): boolean {
+  const loopBlocked = now - lastRound > PING_EVERY_MS + LOOP_LAG_FORGIVEN_MS;
+  return !loopBlocked && now - heardAt > PONG_WITHIN_MS;
+}
 
 /** Starts the board server of `opts.dataRoot`, its start lock taken first (D40): while another live
  *  server holds it, this one refuses to start; a lock left by a dead process is replaced. */
@@ -250,7 +261,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (known.answer !== null) s.socket.send(known.answer);
       return;
     }
-    const rec: CallRecord = { speaker: s, method: String(call.method), startedAt: Date.now(), answer: null, answeredAt: 0, cancelWait: null };
+    const rec: CallRecord = { speaker: s, method: String(call.method), startedAt: s.readAt, answer: null, answeredAt: 0, cancelWait: null };
     calls.set(key, rec);
     const fail = (error: string): void => answer(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail(`unknown method ${String(call.method)}`);
@@ -317,12 +328,15 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   });
   const wss = new WebSocketServer({ server: httpServer });
 
-  wss.on("connection", (socket) => {
-    const s: Speaker = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false };
+  wss.on("connection", (socket, upgrade) => {
+    const s: Speaker = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false, readAt: Date.now() };
+    // ahead of ws's own reader: the time the bytes came in, before the calls queued in them are run one by one
+    upgrade.socket.prependListener("data", () => (s.readAt = Date.now()));
     let welcomed = false;
     socket.on("error", (e) => (s.closeCause = `error: ${e.message}`));
     socket.on("pong", () => (s.lastPong = Date.now()));
     socket.on("message", (data) => {
+      s.lastPong = Date.now();
       let f: Frame;
       try {
         f = decode(String(data));
@@ -418,10 +432,15 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     const t = Date.now();
     for (const [id, rec] of calls) if (rec.answer !== null && t - rec.answeredAt > RESULT_CACHE_MS) calls.delete(id);
   }, UPKEEP_LOOK_MS);
+  let lastPingRound = Date.now();
   const ping = setInterval(() => {
     const t = Date.now();
+    // board-fixes#D1: a round run late finds this server's own loop was blocked; the pongs it held back are not read
+    // yet, so no one is cut for that silence this round
+    const lastRound = lastPingRound;
+    lastPingRound = t;
     for (const s of speakers) {
-      if (t - s.lastPong > PONG_WITHIN_MS) {
+      if (silentTooLong(t, lastRound, s.lastPong)) {
         s.closeCause = "ping timeout";
         s.socket.terminate();
       }

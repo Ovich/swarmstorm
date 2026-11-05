@@ -870,10 +870,17 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     kindPack: kindPackOf(String(r.kind ?? "plan")),
   });
 
+  /** One read per participant for the length of one call: a caller turning many messages reads each author once. */
+  const memoizedParticipants = (): ((id: number) => Participant) => {
+    const read = new Map<number, Participant>();
+    return (id) => read.get(id) ?? read.set(id, participantById(id)).get(id)!;
+  };
+
   const participantById = (id: number): Participant => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id) as Row);
 
-  const toMessage = (r: Row): Message => {
-    const author = participantById(Number(r.author));
+  /** `authorOf`: how its author is read; a caller turning many rows passes one memo, each author read once (board-fixes#D1). */
+  const toMessage = (r: Row, authorOf: (id: number) => Participant = participantById): Message => {
+    const author = authorOf(Number(r.author));
     return {
     seq: Number(r.seq),
     repo: String(r.repo),
@@ -1040,13 +1047,16 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   /** How many undelivered messages wake `me`: a message to it, an urgent post (swarm-relay D43). */
   const unreadOf = (id: number): number => {
     const me = participantById(id);
-    return unseenRows(me).filter((r) => wakes(toMessage(r), me)).length;
+    const authorOf = memoizedParticipants();
+    return unseenRows(me).filter((r) => wakes(toMessage(r, authorOf), me)).length;
   };
 
   /** `fromWait`: a wait's own look, not a call of the member's. Only what wakes `p` is taken and marked (a message to
    *  it, an urgent post); the rest stays, never delivered. */
   const deliverTo = (p: Participant, fromWait: boolean): Delivery => {
     const me = participantById(p.id);
+    const authorOf = memoizedParticipants();
+    const asMessage = (r: Row): Message => toMessage(r, authorOf);
     // a mention, or what the caller's pack says is for it too (the code pack: an agreement about a path it holds)
     const pack = packOf(me);
     const named = (m: Message): boolean => mentionsMe(m, me) || (pack?.alsoFor?.(me, m, packCtxOf(me)) ?? false);
@@ -1060,10 +1070,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const silentWhilePaused = runRow(me.run).paused != null;
       const woken = (r: Row): boolean =>
         silentWhilePaused
-          ? eventOf(toMessage(r)) === "urgent" || (me.seat !== ORCHESTRATOR && eventOf(toMessage(r)) === "pause")
-          : named(toMessage(r)) || wakes(toMessage(r), me);
+          ? eventOf(asMessage(r)) === "urgent" || (me.seat !== ORCHESTRATOR && eventOf(asMessage(r)) === "pause")
+          : named(asMessage(r)) || wakes(asMessage(r), me);
       // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone
-      const rows = !unseen.some(woken) ? [] : unseen.filter((r) => woken(r) || (!(silentWhilePaused && fromWait) && ownPost(toMessage(r))));
+      const rows = !unseen.some(woken) ? [] : unseen.filter((r) => woken(r) || (!(silentWhilePaused && fromWait) && ownPost(asMessage(r))));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
       for (const r of rows) mark.run(me.id, Number(r.seq), now());
       // a delivery is a call to the board: the member's last call (D31)
@@ -1083,7 +1093,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         if (Number(r.changes) > 0) bump(me.repo);
       }
       return rows.map((r) => {
-        const m = toMessage(r);
+        const m = asMessage(r);
         const rel = r.by_board || m.kind !== "msg" || !m.about || !named(m) ? null : packTables.askedAbout(me, Number(r.author), m);
         // the asker named by --with (`<group>/<seat>`, so across runs too): the agreement's party is the member that asked
         return rel ? { ...m, answer: `answer with an agreement on who changes what: swarm agree "<who changes what in ${rel}>" --about ${rel} --with ${m.from}` } : m;
@@ -1850,7 +1860,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // line each, and is delivered with it
         const me = participantById(fresh.id);
         const held = unseenRows(me)
-          .map(toMessage)
+          .map((r) => toMessage(r))
           .filter((m) => m.run === me.run && wakes(m, me));
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const m of held) mark.run(me.id, m.seq, now());

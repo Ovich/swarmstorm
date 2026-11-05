@@ -105,6 +105,8 @@ const tookMs = Date.now() - started;
 const dropped = outcomes.filter((o) => o.dropped || o.ok === false);
 const slow = outcomes.filter((o) => (o.ms ?? 0) >= SLOW_MS);
 console.log(`board-load: ${LINKS} links x ${CALLS_PER_LINK} calls = ${outcomes.length} calls in ${tookMs} ms`);
+// the server answers one call at a time: the burst's wall time over its calls is what one call costs it
+console.log(`per call: ${(tookMs / outcomes.length).toFixed(1)} ms of the server's time`);
 console.log(`dropped: ${dropped.length}${dropped.length ? ` (${[...new Set(dropped.map((o) => o.dropped ?? o.error))].join("; ")})` : ""}`);
 console.log(`>= 10 s: ${slow.length}; slowest ${Math.max(...outcomes.map((o) => o.ms ?? 0))} ms`);
 
@@ -112,9 +114,11 @@ for (const link of links) link.close();
 opener.close();
 await new Promise((r) => setTimeout(r, 300));
 const serverGone = new Promise((r) => server.once("exit", r));
-server.kill();
+// asked to stop, as `serve stop` does, so the server ends its own way (a --cpu-prof profile is written)
+spawn(process.execPath, [boardCli, "serve", "stop"], { env: { ...process.env, SWARMSTORM_HOME: scratchHome }, stdio: "ignore", windowsHide: true });
 await serverGone;
 const logged = fs.readFileSync(path.join(scratchHome, "swarm-server.log"), "utf8").split(/\r?\n/).filter((l) => / (close|slow): /.test(l));
+console.log(`ping-timeout closes: ${logged.filter((l) => l.includes("cause ping timeout")).length}`);
 console.log(`server log (${scratchHome}): ${logged.length} close/slow line(s)`);
 for (const line of logged) console.log(`  ${line}`);
 try {
