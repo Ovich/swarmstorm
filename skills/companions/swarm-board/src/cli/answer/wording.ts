@@ -131,6 +131,8 @@ export const WORDING = {
       ? `the done of ${watch.join(", ")} wakes you; the board tells you once every member is done`
       : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only: string[]) => (only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : ""),
+  circling: (kind: string, passes: number) =>
+    `${kind} pass ${passes} since the run began or last reflected: closer to the goal, or circling? When the same kinds of fault keep coming back, a reflect phase may serve better than another pass (the orchestrate skill's references/reflect-phase.md).`,
   phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
     `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
   briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
@@ -223,6 +225,7 @@ export const WORDING = {
   doneCounted: (phase: string, progress: string, all: boolean, lost: boolean) =>
     `done ${phase}: ${progress}${all ? (lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done") : ""}`,
   /** V-44: `phase --for` with no seat in it */
+  phaseNoKind: (name: string) => `phase ${name}: a phase's name opens on its kind, a word (build, verify, simplify, reflect, or any other), then anything after it: verify-3, build-desk`,
   phaseForEmpty: (name: string) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
   /** V-35: a member owing the phase just opened whose agent is lost */
   phaseLostMember: (member: string, move: string) => `${member} owes this phase and is lost: ${move}`,

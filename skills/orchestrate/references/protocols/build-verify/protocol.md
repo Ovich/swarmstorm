@@ -94,6 +94,9 @@ the goal (with its cap), N iterations, or unbounded.
 - **The judged table**: the verifiers' tables merged into one (ids kept, prefixed when several
   verifiers), judged as the `orchestrate` skill's `references/findings.md` says, ending on the
   goal's state, posted before any build is opened.
+- **From the third judged table on, closer or circling?**: the same kinds of fault coming back
+  are answered by a reflect phase, not one more build (the `orchestrate` skill's
+  `references/reflect-phase.md`).
 - **At the cap without the goal**, pause: the judged table to the person, with one more
   iteration, a raised cap, or the close; never a silent extra round.
 
