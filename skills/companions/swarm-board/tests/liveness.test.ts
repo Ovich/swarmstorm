@@ -7,12 +7,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
-import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
+import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { eventStep } from "../src/cli/answer/rules.ts";
 import { tick2 } from "./fixtures/tick2.ts";
-const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -71,12 +69,6 @@ const setup = () => {
   return { run, a, b, orchestrator };
 };
 /** Each member's own task, a post, delivered. */
-const taskTo = (orchestrator: Participant, ...members: Participant[]) => {
-  for (const m of members) {
-    board.post(orchestrator, `@${m.name.slice(m.name.indexOf("/") + 1)} your part`);
-    board.deliverMentions(m);
-  }
-};
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
 const at = (base: number, s: number): Date => new Date(base + s * 1000);
 // board-split D55: a badge shows once two ticks confirmed it, so a read at `t` is the server having ticked there
@@ -158,7 +150,7 @@ test("states: waiting is the open call the link read as the board's own wait, it
 });
 
 test("states (board-split D49, D55): a finished transcript or silence is no badge; a link lost LOST_MS on a member owing its task is lost", () => {
-  const { run, b, orchestrator } = setup();
+  const { run, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go", { for: ["b"] });
   const base = Date.now() + 60_000;
   // the links are up from the start (U-F3: a member never linked is lost 30 s after its join)
@@ -177,7 +169,7 @@ test("states (board-split D49, D55): a finished transcript or silence is no badg
 });
 
 test("lost (board-split D49, D55): a finished transcript draws none; a link lost LOST_MS on a member owing its task draws one, once; never for an ended member (US3, D12)", () => {
-  const { run, a, b, orchestrator } = setup();
+  const { run, a, orchestrator } = setup();
   board.phase(orchestrator, "p1", "go", { for: ["b"] });
   const base = Date.now() + 60_000;
   board.recordActivity(run.id, "a", act({ grewAt: base, finished: true }), at(base, 0));

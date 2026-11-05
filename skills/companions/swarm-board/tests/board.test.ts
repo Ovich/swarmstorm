@@ -253,7 +253,6 @@ test("an agreement is a message of kind agreement", () => {
 
 // ── claims, reconcile, the merge lock (Seat 2) ──────────────────────────────────
 
-const CHECKOUT = path.resolve("/repos/one");
 const wt = (name: string): string => path.resolve(`/worktrees/${name}`);
 
 /** S3 holds src/a.ts, S5 holds src/b.ts, as their links' changes set them (spec §7); each in its own worktree. */
@@ -291,7 +290,7 @@ test("spec §7: changes set the holdings, new paths held and gone ones released;
 });
 
 test("spec §7: an agreement between the two about the path: no overlap post", () => {
-  const { s3, s5 } = claimed();
+  const { s3 } = claimed();
   board.post(s3, "@S5 S3 first, then S5", { about: "src/b.ts", kind: "agreement" });
   assert.deepEqual(codeVerbs(board).changes(s3, ["src/a.ts", "src/b.ts"]), []);
   assert.deepEqual(holdersOf("src/b.ts"), ["review-tool/S5", "review-tool/S3"]);
@@ -836,7 +835,7 @@ const SEATS = [
 ];
 
 test("the board's events store their name; an agreement maps by kind, with no name stored", () => {
-  const { s3, s5 } = twoRunners();
+  const { s3 } = twoRunners();
   const agreement = board.post(s3, "we agree", { kind: "agreement", with: ["orchestrator"] });
   assert.equal(agreement.event, null);
   board.end(s3);

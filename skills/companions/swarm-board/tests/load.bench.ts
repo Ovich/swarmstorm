@@ -8,7 +8,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard } from "../src/board/board.ts";
-import type { RpcMethod } from "../src/wire.ts";
 import { connectMember, serveBoard, type CallOutcome, type ServedBoard } from "./fixtures/wire-client.ts";
 
 const REPO = "/repos/load/.git";

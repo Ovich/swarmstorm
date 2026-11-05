@@ -7,8 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { BADGE_CONFIRM_MS, STALL_MS_DEFAULT } from "../src/board/liveness.ts";
-import { answer, eventStep, lostMentionLines } from "../src/cli/answer/index.ts";
+import { STALL_MS_DEFAULT } from "../src/board/liveness.ts";
+import { answer, lostMentionLines } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
 import type { MemberActivity } from "../src/wire.ts";
@@ -36,16 +36,6 @@ const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null
 const events = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);
 
 /** A task run, no phase, one worker `a` handed a task now, its link spoken. */
-const taskedNoPhase = () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
-  const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;
-  const orch = board.participant("g/orchestrator")!;
-  const task = board.post(orch, "@a your task");
-  for (const p of [a, orch]) board.deliverMentions(p);
-  board.recordActivity(run.id, "a", act(), new Date());
-  return { run: run.id, a, orch, taskSeq: task.seq };
-};
-
 test("V-8: the stopped line names a question to the orchestrator left unanswered", () => {
   const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "g", seats: [{ id: "a", blockers: [] }] });
   const a = board.join({ run: run.id, seat: "a", doing: "x", files: [] }).member;

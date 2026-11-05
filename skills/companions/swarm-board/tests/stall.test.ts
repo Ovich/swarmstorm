@@ -7,8 +7,6 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { wakes } from "../src/board/events.ts";
-import type { Message } from "../src/board/board.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 

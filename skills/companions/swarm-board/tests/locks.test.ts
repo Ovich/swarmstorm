@@ -7,13 +7,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
-import { STALL_MS_DEFAULT } from "../src/board/liveness.ts";
+import { openBoard, type Board } from "../src/board/board.ts";
 import { observe } from "../src/link/transcripts.ts";
 import type { MemberActivity } from "../src/wire.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
-import { tick2 } from "./fixtures/tick2.ts";
 const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 let dir: string;
@@ -29,13 +27,10 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-let links: Map<string, { connected: boolean; lostAt: number | null }>;
-const presence: Presence = (m) => links.get(m) ?? { connected: true, lostAt: null };
 const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null, tokens: 0, context: null, openTool: null, lastTool: null, finished: false, ...o });
 
 /** Two task runs in two repositories on one store: A (members a1, a2) and B (b1). */
 const setup = () => {
-  links = new Map();
   const runA = board.openRun({ repo: "/repos/a/.git", kind: "task", group: "ga", title: "A", seats: [{ id: "a1", blockers: [] }, { id: "a2", blockers: [] }] });
   const runB = board.openRun({ repo: "/repos/b/.git", kind: "task", group: "gb", title: "B", seats: [{ id: "b1", blockers: [] }] });
   const a1 = board.join({ run: runA.id, seat: "a1", doing: "x", files: [] }).member;
@@ -46,11 +41,9 @@ const setup = () => {
   for (const p of [a1, a2, b1, oA, oB]) board.deliverMentions(p);
   return { runA, runB, a1, a2, b1, oA, oB };
 };
-const waitOf = (p: Participant, ms = 300) => board.wait(p, { mentionsOnly: true, timeoutMs: ms });
-const bodies = (p: Participant) => board.deliverMentions(p).full.map((m) => m.body);
 
 test("D5: the link reads a kill by name or pattern as a breach, once per command; by PID never; by port only without its lock", () => {
-  const { runA, a1 } = setup();
+  const { runA } = setup();
   const kills = (lines: string[]) => {
     const file = writeSubagent(dir, "C--repos-a", "44444444-aaaa-bbbb-cccc-000000000004", `k${Math.random().toString(36).slice(2)}`, lines.map((c, i) => toolCall(/^(Get-|Stop-)/.test(c) ? "PowerShell" : "Bash", { command: c }, `toolu_k${i}`, new Date().toISOString())), {});
     return observe(file, null).activity.breach ?? null;
