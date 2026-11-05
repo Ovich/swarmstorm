@@ -194,6 +194,7 @@ export async function runLink(opts: {
     sentChanges = key;
     sendUp({ type: "changes", files, drifted });
   };
+  const resendChanges = () => ((sentChanges = null), watchChanges());
 
   let transcript: string | null = null;
   let cursor: TranscriptCursor | null = null;
@@ -246,14 +247,12 @@ export async function runLink(opts: {
       welcomed = true;
       // spec §7: the worktree whose changes this link sends; a new connection sends the set afresh
       watched = f.watched ?? null;
-      sentChanges = null;
-      watchChanges();
+      resendChanges();
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache
       flushActivity();
     } else if (f.type === "reclaim") {
       // claims-phase (v1-2): the phase open dropped the claims; the set goes up again, even unchanged, at once
-      sentChanges = null;
-      watchChanges();
+      resendChanges();
     } else if (f.type === "refused") {
       // U-F14: refused for its version, the link re-reads the state file and tries once more: a server replaced between
       // its read and its hello is met again; a second refusal, or a state of another version, ends it
