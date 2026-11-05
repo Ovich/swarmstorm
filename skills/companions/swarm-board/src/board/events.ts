@@ -15,9 +15,9 @@ export interface EventDef<N extends string = EventName> {
   toAuthor?: boolean;
 }
 
-/** A foreground wait's hold, under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
-export const FOREGROUND_WAIT_MS = 170_000;
-export const FOREGROUND_NOTE = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
+/** board-fixes#D2: a foreground wait's hold, 30 s under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
+export const FOREGROUND_WAIT_MS = 150_000;
+export const FOREGROUND_NOTE = "it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
 /** The core's events; `eventDef` and `isEvent` read these and every pack's. */
 export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   // a seat backs another member's agreement (D36): the answer module tells a seat to back it

@@ -7,7 +7,7 @@ import { heardStep, joinStep, nextStep, owedLine, owesNothingLine, phaseHeaders,
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedConnectionHint, closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
+export { closedConnectionHint, closedLine, foregroundBound, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";
@@ -103,7 +103,7 @@ function answerOf(r: VerbResult, s: Situation): Answer {
     }
     case "heard": {
       // D9: the result first, then the member's step: none while its listener runs
-      // simple-states: a post is often a question, so it never ends the member's turn; done and merged do
+      // board-fixes#D3: one next step per answer; owing nothing, heardStep gives none (done and merged end the turn)
       const next = heardStep(s);
       return { lines: [...r.lines, ...(next ? [next] : [])], next, phase: null };
     }

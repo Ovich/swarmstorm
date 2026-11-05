@@ -11,13 +11,15 @@ const worker: Situation = {
 };
 const END_TURN = "you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task";
 
-test("a post never ends the member's turn, a question to the orchestrator included; done does, owing nothing", () => {
-  assert.equal(answer({ verb: "heard", lines: ["#5"] }, worker).next, null);
+test("board-fixes#D3: owing nothing, a post gives no step (never the listener line); done ends the turn", () => {
+  assert.deepEqual(answer({ verb: "heard", lines: ["#5"] }, worker).lines, ["#5"]);
+  assert.deepEqual(answer({ verb: "heard", lines: ["#5"] }, { ...worker, listenerRunning: false }).lines, ["#5"], "no listener line");
+  assert.match(answer({ verb: "heard", lines: ["#5"] }, { ...worker, listenerRunning: false, owesNothing: false }).next ?? "", /^start your listener now/, "owing: its listener");
   assert.equal(answer({ verb: "done", phase: "build", line: "done build: 1/1 done" }, worker).next, END_TURN);
 });
 
 test("an idle wait ends the turn of a member owing nothing; one owing waits again", () => {
-  const empty = { verb: "wait", outcome: "empty", idle: true, again: "swarm wait --mentions --as g/w1", foregroundAgain: "swarm wait --mentions --as g/w1 --timeout 170000" } as const;
+  const empty = { verb: "wait", outcome: "empty", idle: true, again: "swarm wait --mentions --as g/w1", foregroundAgain: "swarm wait --mentions --as g/w1 --timeout 150000" } as const;
   assert.equal(answer(empty, worker).next, END_TURN);
   assert.match(answer(empty, { ...worker, owesNothing: false }).next ?? "", /^nothing for you now; .*wait again/);
 });

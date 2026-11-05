@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { scene, type Answer } from "./golden.ts";
 
 const O = "g/orchestrator";
-const WAIT = (as: string) => `node <cli> wait --mentions --as ${as} --timeout 170000`;
-const FOREGROUND = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
+const WAIT = (as: string) => `node <cli> wait --mentions --as ${as} --timeout 150000`;
+const FOREGROUND = "it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
 const REARM = (as: string) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND}): ${WAIT(as)}`;
 const SHOW = process.env.GOLDEN_SHOW === "1";
 

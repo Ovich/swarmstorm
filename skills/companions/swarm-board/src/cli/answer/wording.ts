@@ -66,6 +66,12 @@ export const WORDING = {
   orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
     `${verb}: refused: only the orchestrator of run ${run} may ${verb === "close" ? "close it" : "add a seat to it"}${caller ? `, and ${caller} is not` : ""}. Run it as the orchestrator: ${rerun}`,
   closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
+  /** board-fixes#D6: the second step of a close, the one that closes */
+  closeConfirm: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --confirm --as ${as}`,
+  closeWaitRunning: (run: number, owing: string[]) =>
+    `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (merged, reported, done), then run close again`,
+  closeSteps: (run: number, confirm: Command) =>
+    `close: one step first. Post the closing table to the run, written from status: one row per task, | task | seat | state | merge sha |, then the next steps (what is left, what follows). Then close run ${run}: ${confirm}`,
   seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
@@ -155,8 +161,7 @@ export const WORDING = {
   doingAge: (ms: number, stale: boolean) => ` (${Math.max(0, Math.floor(ms / 60_000))} min${stale ? ", stale" : ""})`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
-  breachOwn: "stop only the PIDs you started: machine.md",
-  breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
+  breachKill: "you ran a kill by pattern: stop only PIDs you started, and say what you stopped in your report",
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
   lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */

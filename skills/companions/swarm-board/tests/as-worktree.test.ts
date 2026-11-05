@@ -68,7 +68,7 @@ test("close and seat add refuse anyone but the run's orchestrator, naming the co
   assert.match(worker.stderr, /, and review-tool\/S3 is not\./);
   assert.match(worker.stderr, asOrchestrator("seat add"));
   assert.match(r.cli(r.repo, "seat", "add", "S9", "--run", id, "--as", "review-tool/orchestrator"), /S9 added/);
-  assert.match(r.cli(r.repo, "close", "--run", id, "--as", "review-tool/orchestrator"), new RegExp(`run ${id} closed`));
+  assert.match(r.cli(r.repo, "close", "--run", id, "--confirm", "--as", "review-tool/orchestrator"), new RegExp(`run ${id} closed`));
 });
 
 test("on the orchestrators board, seat add needs no --as and close --force closes it", () => {

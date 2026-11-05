@@ -38,8 +38,8 @@ export const CODE_WORDING = {
   /** S4: the --guides form filled with this merge's guides, as merged takes it */
   guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
   mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
-    // board-split D52: the full suite ran before the lock; under it only rebase, quick check, fast-forward
-    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+    // board-fixes#D11: the tests the task asked for ran before the lock; under it only rebase, quick check, fast-forward
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>); corrected: --guides ${corrected}`,
   /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */

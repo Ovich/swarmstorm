@@ -415,6 +415,8 @@ export interface Board {
   roster(repo: string): RosterEntry[];
   /** Members of the project's open runs who have ended, as `<plan>/<seat>`: a mention of one reaches nobody. */
   endedMembers(repo: string): string[];
+  /** board-fixes#D6: the run's members (never the orchestrator) that owe work now, `<plan>/<seat>`: what a first `close` lists. */
+  owingMembers(run: RunId): string[];
   /** The repository-relative paths `p` holds a claim on now. */
   heldBy(p: Participant): string[];
 
@@ -1968,7 +1970,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           member,
         );
         db.prepare("INSERT INTO token_readings (run, member, t, tokens) VALUES (?, ?, ?, ?)").run(run, member, at.toISOString(), act.tokens);
-        // idea 4: a kill the link saw, by name, pattern or port: to the orchestrator alone, once per distinct command per member
+        // idea 4: a kill the link saw, by name, pattern or port: to the member itself, once per distinct command per member
         const kill = act.breach ?? null;
         const me = kill ? (db.prepare("SELECT id, joined_at FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member) as Row) : null;
         // G2: only a kill after the member joined (the orchestrator: after the open) is judged; the transcript's earlier lines are not the run's
@@ -1977,9 +1979,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           const breached = kill.kind === "pattern" || ports.length > 0;
           const command = kill.command.slice(0, 120);
           if (breached && Number(db.prepare("INSERT OR IGNORE INTO liveness_warned (run, member, cond) VALUES (?, ?, ?)").run(run, member, `breach ${command}`).changes) === 1) {
-            const orch = orchestratorIn(run);
+            // board-fixes#D7: no orchestrator post; the event, in the member's name and to it alone, is its next answer's line
+            const self = participantById(Number(me.id));
             const onPorts = kill.kind === "port" ? ` (port ${ports.join(", ")})` : "";
-            insertMessage(orch, `breach ${String(r.plan)}/${member}: ${command}${onPorts}`, null, "event", [orch.name], { event: EVENTS.breach.name, meta: { breach: `${String(r.plan)}/${member}` } });
+            insertMessage(self, `breach ${self.name}: ${command}${onPorts}`, null, "event", [self.name], { event: EVENTS.breach.name, meta: { breach: self.name } });
           }
         }
         bump(String(r.repo));
@@ -2064,6 +2067,13 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     endedMembers(repo) {
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NOT NULL`).all(repo) as Row[];
       return [...new Set(rows.map((r) => `${r.plan}/${r.seat}`))];
+    },
+
+    owingMembers(run) {
+      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      if (!r) return [];
+      const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND seat != ? ORDER BY id").all(run, ORCHESTRATOR) as Row[];
+      return live.filter((p) => owesOf(p, r)).map((p) => `${String(r.plan)}/${String(p.seat)}`);
     },
 
     heldBy(p) {

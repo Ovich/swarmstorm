@@ -264,7 +264,7 @@ test("--json on every verb parses", () => {
     ["seat", "add", "S9", "--run", id, "--as", "review-tool/orchestrator"],
     ["status"],
     ["end", "--seat", "S3", "--as", "review-tool/orchestrator"],
-    ["close", "--run", id, "--as", "review-tool/orchestrator"],
+    ["close", "--run", id, "--confirm", "--as", "review-tool/orchestrator"],
   ];
   for (const argv of verbs) {
     const r = run(...argv, "--json");
@@ -314,14 +314,14 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   const script = CLI.replace(/\\/g, "/");
   assert.equal(
     hint,
-    `start this listener again, in the background while you work, in the foreground when you are waiting (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 170000`,
+    `start this listener again, in the background while you work, in the foreground when you are waiting (it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 150000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
   // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the
-  // line to run again, always at the foreground --timeout 170000 whatever the caller gave (v1-c)
+  // line to run again, always at the foreground --timeout 150000 whatever the caller gave (v1-c)
   const again = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50");
   assert.equal(again.status, 0, again.stderr);
-  assert.equal(again.stdout, `nothing yet; wait, in the foreground (it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 170000\n`);
+  assert.equal(again.stdout, `nothing yet; wait, in the foreground (it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 150000\n`);
 });
 
 const LISTEN = (member: string): string =>
@@ -494,7 +494,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   assert.equal(await exited, 0);
-  assert.match(out, /^start this listener again[^\n]* \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 170000\n/);
+  assert.match(out, /^start this listener again[^\n]* \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 150000\n/);
   assert.match(out, /@S5 your turn/);
   // a join is no message to the member: it neither wakes it nor rides on its wake
   assert.equal(out.split("joined:").length - 1, 0, out);
@@ -726,7 +726,7 @@ test("a seat joining from the shared checkout is told its --as and its next comm
   assert.doesNotMatch(r.stdout, /slice/);
   // a seat waits in the foreground, never a background listener
   assert.equal(lines.at(-2), START_LINK("idea/architect", String(id)));
-  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is lost; it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
+  assert.match(lines.at(-1)!, /^wait now, in the foreground \(never a background listener: a seat that ends its turn is lost; it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 150000$/);
   const json = JSON.parse(run("join", "--run", String(id), "--seat", "skeptic", "--doing", "doubting", "--json").stdout);
   assert.equal(json.as, "idea/skeptic");
   assert.equal(json.commands.length, 4);
@@ -843,7 +843,7 @@ test("seat add adds a seat mid-run that can be joined; a duplicate id and a clos
   const dup = run("seat", "add", "S7", "--run", String(id), "--role", "worker", "--as", "review-tool/orchestrator");
   assert.equal(dup.status, 1);
   assert.match(dup.stderr, /already in run/);
-  run("close", "--run", String(id), "--as", "review-tool/orchestrator");
+  run("close", "--run", String(id), "--confirm", "--as", "review-tool/orchestrator");
   const closed = run("seat", "add", "S8", "--run", String(id), "--role", "x", "--as", "review-tool/orchestrator");
   assert.equal(closed.status, 1);
   assert.match(closed.stderr, /is closed/);
@@ -967,7 +967,7 @@ test("end on an ended member exits 0 and says nothing; on a closed run it prints
   const again = run("end", "--seat", "S3", "--as", "review-tool/orchestrator");
   assert.deepEqual([again.status, again.stdout, again.stderr], [0, "", ""]);
   assert.equal(run("join", "--run", String(id), "--seat", "S5", "--doing", "x").status, 0);
-  run("close", "--run", String(id), "--as", "review-tool/orchestrator");
+  run("close", "--run", String(id), "--confirm", "--as", "review-tool/orchestrator");
   const closed = run("end", "--as", "review-tool/S5");
   assert.deepEqual([closed.status, closed.stdout, closed.stderr], [0, `run ${id} closed: review-tool/S5 ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)\n`, ""]);
   assert.doesNotMatch(closed.stdout + closed.stderr, /start your link now/);
@@ -977,7 +977,7 @@ test("once its run is closed, a member's wait, roster, post and done answer the 
   const id = openBrainstorm();
   assert.equal(joinSeat(id, "architect").status, 0);
   const seq = seqOf(run("post", "a thought", "--as", "idea/architect").stdout);
-  run("close", "--run", String(id), "--as", "idea/orchestrator");
+  run("close", "--run", String(id), "--confirm", "--as", "idea/orchestrator");
   const line = new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect; your link and listener background tasks end on their own now, and their end notices are not news$`);
   const calls = [
     ["wait", "--mentions", "--timeout", "5000"],
@@ -1006,7 +1006,7 @@ test("a wait pending when its run closes returns the closed line, exit 0", async
   child.stdout.on("data", (b) => (out += b));
   const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
   await new Promise((r) => setTimeout(r, 1500)); // the child is up and listening
-  run("close", "--run", String(id), "--as", "idea/orchestrator");
+  run("close", "--run", String(id), "--confirm", "--as", "idea/orchestrator");
   assert.equal(await exited, 0);
   assert.match(out.trimEnd(), new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect; your link and listener background tasks end on their own now, and their end notices are not news$`));
 });
@@ -1018,7 +1018,7 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   run("wait", "--mentions", "--timeout", "200", "--as", "idea/orchestrator");
   run("post", "@architect a question", "--as", "idea/orchestrator");
   const seat = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000").stdout;
-  assert.match(seat, /^wait again, in the foreground \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node .* wait --mentions --as idea\/architect/);
+  assert.match(seat, /^wait again, in the foreground \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node .* wait --mentions --as idea\/architect/);
   assert.doesNotMatch(seat, /background/);
   run("post", "@orchestrator an answer", "--as", "idea/architect");
   const orch = run("wait", "--mentions", "--as", "idea/orchestrator", "--timeout", "3000").stdout;
@@ -1114,7 +1114,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   const early = joinSeat(id, "architect");
   assert.equal(early.status, 0, early.stderr);
   assert.doesNotMatch(early.stdout, /is open and asks/);
-  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
+  assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*empty\): node \S+ wait --mentions --as idea\/architect --timeout 150000$/);
 
   run("phase", "ping", "say", "hi", "--as", "idea/orchestrator");
   const owed = /^phase ping is open and asks: say hi\. Do your part now, then mark it done: node \S+ done ping --as idea\/skeptic$/m;
@@ -1123,7 +1123,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.equal(late.status, 0, late.stderr);
   const lines = late.stdout.trimEnd().split("\n");
   assert.match(lines.at(-2)!, owed);
-  assert.match(lines.at(-1)!, /^only then wait, in the foreground .*empty\): node \S+ wait --mentions --as idea\/skeptic --timeout 170000$/);
+  assert.match(lines.at(-1)!, /^only then wait, in the foreground .*empty\): node \S+ wait --mentions --as idea\/skeptic --timeout 150000$/);
   const posted = run("post", "hello", "--as", "idea/skeptic");
   // S21: a verb that heard from the member names the phase it owes, its text not again
   assert.match(posted.stdout, /^you owe phase ping: do your part, then mark it done: node \S+ done ping --as idea\/skeptic$/m);
@@ -1189,12 +1189,12 @@ test("a printed wait line ends on its bare command, and that command, run as cop
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const empty = run("wait", "--as", "review-tool/S5", "--mentions", "--timeout", "50").stdout.trimEnd();
-  assert.match(empty, /^nothing yet; wait, in the foreground \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node /);
+  assert.match(empty, /^nothing yet; wait, in the foreground \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node /);
   const command = empty.slice(empty.lastIndexOf(": ") + 2);
   assert.doesNotMatch(command, /[()]/, "no prose after the command");
-  assert.match(command, / --timeout 170000$/, "v1-c: the foreground re-arm, whatever the caller gave");
+  assert.match(command, / --timeout 150000$/, "v1-c: the foreground re-arm, whatever the caller gave");
   // run as copied, its timeout shortened for the test only
-  const words = command.replace(/--timeout 170000$/, "--timeout 50").split(" ");
+  const words = command.replace(/--timeout 150000$/, "--timeout 50").split(" ");
   assert.equal(words[0], "node");
   const copied = spawnSync(process.execPath, words.slice(1), { cwd: repo, env: env(), encoding: "utf8" });
   assert.equal(copied.status, 0, copied.stderr);
@@ -1272,14 +1272,14 @@ test("post --urgent is the orchestrator's: a member is refused, the orchestrator
   assert.equal(run("agree", "x", "--urgent", "--as", "idea/orchestrator").status, 1);
 });
 
-test("a foreground re-arm holds 170 s and says why; the wait return has no preamble (F22, D9)", () => {
+test("a foreground re-arm holds 150 s and says why; the wait return has no preamble (F22, D9)", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
   joinSeat(id, "skeptic");
   run("post", "@architect hi", "--as", "idea/skeptic");
   const woken = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "3000");
   const first = woken.stdout.split("\n")[0];
-  assert.match(first, /^wait again, in the foreground \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 170000$/);
+  assert.match(first, /^wait again, in the foreground \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node \S+ wait --mentions --as idea\/architect --timeout 150000$/);
   assert.doesNotMatch(woken.stdout, /answer on the thread/);
 });
 
@@ -1293,7 +1293,7 @@ test("a seat that waits in the foreground is told no wait after a post or a doin
 test("the closing line tells the member its link and listener tasks end on their own (F6, D9)", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
-  run("close", "--run", String(id), "--as", "idea/orchestrator");
+  run("close", "--run", String(id), "--confirm", "--as", "idea/orchestrator");
   const w = run("wait", "--mentions", "--as", "idea/architect", "--timeout", "1000");
   assert.match(w.stdout, /your link and listener background tasks end on their own now, and their end notices are not news/);
 });
@@ -1316,7 +1316,7 @@ test("board-split D30, D38: a member's own end is refused while its run is open;
   run("wait", "--mentions", "--timeout", "200", "--as", "review-tool/S3");
   const refused = run("end", "--as", "review-tool/S3");
   assert.equal(refused.status, 1);
-  assert.match(refused.stderr, /end: refused, run \d+ is open: a member never ends itself; your seat stays, wait in the foreground for your next task .*: .* wait --mentions --as review-tool\/S3 --timeout 170000/);
+  assert.match(refused.stderr, /end: refused, run \d+ is open: a member never ends itself; your seat stays, wait in the foreground for your next task .*: .* wait --mentions --as review-tool\/S3 --timeout 150000/);
   const notYours = run("end", "--seat", "S3", "--as", "review-tool/S3");
   assert.match(notYours.stderr, /end --seat: only the orchestrator ends a seat/);
   assert.equal(run("end", "--seat", "S3", "--as", "review-tool/orchestrator").status, 0);
@@ -1473,4 +1473,20 @@ test("gate G5: open --stall-ms under the 10 min floor is raised to it, said in o
   assert.match(lines[0].trim(), /^\d+$/);
   assert.equal(lines[1], "--stall-ms 60000 is under the 600000 ms floor of the stall window: the run uses 600000");
   assert.equal(r.stdout.split("floor of the stall window").length, 2, "said once");
+});
+
+test("board-fixes#D6: close takes two steps: the first lists who owes, or gives the closing steps; --confirm closes", () => {
+  const id = String(openRun());
+  const as = ["--as", "review-tool/orchestrator"];
+  assert.equal(run("join", "--run", id, "--seat", "S3", "--doing", "x").status, 0);
+  assert.equal(run("phase", "build", "build it", ...as).status, 0);
+  const owing = run("close", "--run", id, ...as);
+  assert.equal(owing.status, 1);
+  assert.match(owing.stderr, new RegExp(`close: not yet, run ${id} has members still owing work: review-tool/S3\. Post no new task`));
+  assert.equal(run("done", "build", "--as", "review-tool/S3").status, 0);
+  const steps = run("close", "--run", id, ...as);
+  assert.equal(steps.status, 1);
+  assert.match(steps.stderr, /Post the closing table .*\| task \| seat \| state \| merge sha \|/);
+  assert.match(steps.stderr, new RegExp(`close --run ${id} --confirm --as review-tool/orchestrator$`, "m"));
+  assert.match(run("close", "--run", id, "--confirm", ...as).stdout, new RegExp(`run ${id} closed`));
 });

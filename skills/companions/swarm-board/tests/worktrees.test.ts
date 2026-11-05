@@ -117,7 +117,7 @@ test("close removes the run's clean merged worktrees and names those it kept; wo
   fs.writeFileSync(path.join(wt(run, "w2"), "dirty.txt"), "d\n");
   const other = open("plan", "p", ["S1"]);
   join(other, "p", "S1");
-  const closed = ok("close", "--run", run, "--as", "g/orchestrator");
+  const closed = ok("close", "--run", run, "--confirm", "--as", "g/orchestrator");
   assert.match(closed, /1 worktree removed/);
   assert.match(closed, /kept .*w2 \(g\/w2\): 1 uncommitted change; .*worktree prune/);
   assert.equal(fs.existsSync(wt(run, "w1")), false);
@@ -196,7 +196,7 @@ test("golden V-7 (D63): done with commits not merged is accepted, naming the bra
   const thread = (db.prepare("SELECT body FROM messages WHERE event = 'done'").all() as { body: string }[]).map((m) => m.body).join(" ");
   db.close();
   assert.ok(thread.includes(`done build (1/1); unmerged swarm/${run}-g/w1`), thread);
-  const closed = ok("close", "--run", run, "--as", "g/orchestrator");
+  const closed = ok("close", "--run", run, "--confirm", "--as", "g/orchestrator");
   assert.ok(closed.includes(`(g/w1): branch swarm/${run}-g/w1 has 1 commit not merged into main`), closed);
 });
 
@@ -242,7 +242,7 @@ test("golden V-45: close while a member holds the merge lock names it: its merge
   commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
   git(repo, "branch", "-f", "trunk", "main");
   ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
-  const closed = ok("close", "--run", run, "--as", "g/orchestrator");
+  const closed = ok("close", "--run", run, "--confirm", "--as", "g/orchestrator");
   assert.ok(closed.includes("g/w1 held the merge lock: its merge did not land; the lock is released, its branch keeps the work"), closed);
 });
 
@@ -254,6 +254,6 @@ test("golden V-50 (D63): a run opened on no branch names its base as a commit, a
   fs.writeFileSync(path.join(wt(run, "w1"), "c.txt"), "c\n");
   git(wt(run, "w1"), "add", ".");
   git(wt(run, "w1"), "commit", "-q", "-m", "c");
-  const closed = ok("close", "--run", run, "--as", "g/orchestrator");
+  const closed = ok("close", "--run", run, "--confirm", "--as", "g/orchestrator");
   assert.ok(closed.includes(`has 1 commit not merged into commit ${base.slice(0, 8)} (the run's base; it was opened on no branch)`), closed);
 });
