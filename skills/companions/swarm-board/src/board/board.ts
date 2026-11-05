@@ -1436,6 +1436,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open = run.phase === phase;
     return { open, forSeats: open && run.phase_for != null ? (JSON.parse(String(run.phase_for)) as string[]) : null };
   };
+  /** The seq of the `phase` event that opened `run`'s current phase (0 before any): the one "since the phase opened". */
+  const phaseOpenedSeqOf = (run: RunId): number => Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(run, EVENTS.phase.name) as Row).seq ?? 0);
   /** The declared seats of `run` with no member yet that the orchestrator posted to (`@<seat>`) since `phase` opened,
    *  `phase` being the run's open one: each owes its done before it joins, so all-done waits for it. A declared seat
    *  with no task in the phase is left out, so an unused seat never holds a phase. */
@@ -1447,15 +1449,14 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       db
         .prepare(
           `SELECT s.id AS seat FROM seats s
-           WHERE s.run = ? AND s.id != '${ORCHESTRATOR}'
+           WHERE s.run = ? AND s.id != ?
              AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)
              AND EXISTS (
-               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = '${ORCHESTRATOR}', json_each(m.mentions) j
-               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id
-                 AND m.seq > (SELECT COALESCE(MAX(seq), 0) FROM messages WHERE run = s.run AND event = '${EVENTS.phase.name}'))
+               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = ?, json_each(m.mentions) j
+               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id AND m.seq > ?)
            ORDER BY s.ord`,
         )
-        .all(run, plan) as Row[]
+        .all(run, ORCHESTRATOR, ORCHESTRATOR, plan, phaseOpenedSeqOf(run)) as Row[]
     ).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
   };
   /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them
@@ -1524,10 +1525,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const r = runRow(p.run);
     const watch = r.phase_watch == null ? [] : (JSON.parse(String(r.phase_watch)) as string[]);
     if (watch.includes(p.seat)) return "watched";
-    const opened = Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(p.run, EVENTS.phase.name) as Row).seq ?? 0);
-    const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
+    const orch =db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
     if (orch) {
-      const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), opened) as Row[]).find(
+      const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), phaseOpenedSeqOf(p.run)) as Row[]).find(
         (m) => (JSON.parse(String(m.mentions)) as string[]).includes(p.name),
       );
       if (asked) {
@@ -1878,8 +1878,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const phase = phaseOf(runRow(fresh.run));
       if (!phase) return null;
       // the phase is "shown" per opening: the phase event's seq, so a phase opened again is shown in full once more
-      const opened = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row;
-      const key = `${phase.name}#${opened.seq ?? 0}`;
+      const key = `${phase.name}#${phaseOpenedSeqOf(fresh.run)}`;
       const shown = db.prepare("SELECT phase_shown FROM participants WHERE id = ?").get(fresh.id) as Row;
       if (shown.phase_shown === key) return { phase, first: false };
       db.prepare("UPDATE participants SET phase_shown = ? WHERE id = ?").run(key, fresh.id);
