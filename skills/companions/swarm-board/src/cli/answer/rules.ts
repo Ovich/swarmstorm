@@ -44,6 +44,10 @@ export const openTaskLine = (s: Situation): string | null =>
  *  pause first; null while it owes, and for the orchestrator. */
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
 
+/** Whether a post's stored mentions reach `name` (`<group>/<seat>`): by name, or by its group (`@swarm`, `@<CODE>` are stored as `<group>/*`). */
+export const mentionReaches = (mentions: readonly string[], name: string): boolean =>
+  mentions.includes(name) || mentions.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
+
 /** simple-states: what the orchestrator's post tells it of a member it mentions whose link is down, by its board state. */
 export const unreachedMentionLines = (targets: { name: string; state: string }[]): string[] =>
   targets.flatMap((t) => (t.state === "away" ? [W.postToAway(t.name)] : t.state === "lost" ? [W.postToLost(t.name)] : []));

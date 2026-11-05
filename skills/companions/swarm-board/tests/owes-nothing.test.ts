@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { answer } from "../src/cli/answer/index.ts";
-import { unreachedMentionLines } from "../src/cli/answer/rules.ts";
+import { mentionReaches, unreachedMentionLines } from "../src/cli/answer/rules.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 
 const worker: Situation = {
@@ -29,4 +29,10 @@ test("a post names how an away or a lost member is reached, nothing for one whos
     "g/w1 is away: resume it by message so it reads this post",
     "g/w2 is lost: dispatch a fresh agent into its seat",
   ]);
+});
+
+test("a group mention (@swarm, stored as <group>/*) reaches every member of the group, so each away one is named", () => {
+  assert.equal(mentionReaches(["g/*"], "g/w1"), true);
+  assert.equal(mentionReaches(["g/w2"], "g/w1"), false);
+  assert.equal(mentionReaches(["h/*"], "g/w1"), false, "another group's mention does not reach it");
 });

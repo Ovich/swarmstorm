@@ -9199,6 +9199,7 @@ var owedLine = (s, opts = {}) => {
 };
 var openTaskLine = (s) => pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? WORDING.taskStillOpen(s.openTask, WORDING.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
 var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? WORDING.owesNothingEndTurn : null);
+var mentionReaches = (mentions2, name) => mentions2.includes(name) || mentions2.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
 var unreachedMentionLines = (targets) => targets.flatMap((t) => t.state === "away" ? [WORDING.postToAway(t.name)] : t.state === "lost" ? [WORDING.postToLost(t.name)] : []);
 var listenNow = (s, afterPhase = false) => s.listens === "foreground" ? WORDING.waitNow(afterPhase, waitCommand(s, true)) : WORDING.listenerStart(waitCommand(s));
 var nextStep = (s, brief = false) => {
@@ -10080,7 +10081,7 @@ ${verbHelp()}`);
         ...args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}
       });
       const unmatched = await unmatchedLines(p, body);
-      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => m.mentions.includes(r.name)) : [];
+      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.name !== p.name && mentionReaches(m.mentions, r.name)) : [];
       const unreached = unreachedMentionLines(named);
       const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(unreached.length && r.state === "lost")).map((r) => r.name);
       const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord2(p.name)), ...unreached];
