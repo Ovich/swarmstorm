@@ -70,7 +70,7 @@ When you and the agent keep spending turns agreeing on how to do something that 
 
 ![An AI bench built for one project: the cache share of a live run, predicted against billed, and when each model call ran](assets/workbench-ai-bench.png)
 
-## Open source, nothing installed at runtime
+## Open source, its dependencies bundled
 
 **Your tools, in your hands.**
 
@@ -79,7 +79,18 @@ When you and the agent keep spending turns agreeing on how to do something that 
 
 AI coding agents add a new way in: they import packages that don't exist, often the same invented names every time, and an attacker can register those names first ([USENIX Security 2025, via the Cloud Security Alliance](https://labs.cloudsecurityalliance.org/research/csa-research-note-slopsquatting-ai-supply-chain-20260419/)). Meanwhile most teams install a whole tool to use a small slice of it.
 
-**A bench built for your need is your code, in your repository**, with nothing extra to install and nothing loaded from the internet. Swarmstorm itself installs no packages when it runs: its few dependencies are bundled into each release, it's MIT-licensed and readable, and it changes only when you update it.
+**A bench built for your need is your code, in your repository**, with nothing extra to install and nothing loaded from the internet. Swarmstorm itself installs nothing when it runs but one tool: on its first run, the `dependency-graph` skill installs `dependency-cruiser`, with the TypeScript version your project uses, into a user cache (`~/.cache/swarmstorm-depgraph/`). Its other few dependencies are bundled into each release, it's MIT-licensed and readable, and it changes only when you update it.
+
+## Security at a glance
+
+What Swarmstorm does and does not do on your machine; the threat model and how to report a flaw are in [SECURITY.md](SECURITY.md).
+
+| Swarmstorm has | So |
+|---|---|
+| no MCP server | nothing is added to your agent's tools; the skills are files it reads |
+| no hooks, no settings writes | it acts only when one of its skills is in use, and never edits your harness's settings ([the allow rule](#the-allow-rule) is yours to add) |
+| no listener off your machine, no telemetry | its two servers, the viewer and the board, listen on `127.0.0.1` only; neither CLI contacts any host outside your machine. Four skills call out when an agent runs their script: `dependency-graph` (npm, first run), `roadmap` (RDAP, checking domains), `pr-review` and `recurring-review-findings` (GitHub, through your `gh`) |
+| bundles you can verify | `node scripts/release-check.mjs --dist` rebuilds them from source and compares; each release tag's bundles are attested (`gh attestation verify <file> --repo <owner>/<repo>`) |
 
 ## Live plans, prototypes and docs your team can review
 
@@ -176,7 +187,7 @@ A worker can't answer a permission prompt. In a session that prompts before shel
 { "permissions": { "allow": ["Bash(node ~/.claude/plugins/cache/swarmstorm/swarmstorm/<version>/skills/companions/swarm-board/swarm.mjs:*)"] } }
 ```
 
-The path contains the plugin's version, so the rule needs rewriting after each update.
+It grants one command, the board's CLI, `swarm.mjs`, with any arguments, and nothing else: every member posts, waits and merges through it, so without it each call stops on a prompt no worker can answer. The path contains the plugin's version, so the rule needs rewriting after each update.
 
 <details>
 <summary><b>Codex and Cursor</b></summary>

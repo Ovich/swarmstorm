@@ -1,0 +1,104 @@
+# Verifies every push and pull request on Ubuntu and Windows (trust-adaptations#D14).
+#
+# tests:   both companions' tests and typecheck, aiview's app tests, the skill scripts' tests,
+#          on bundles built from the source in this job.
+# bundles: node scripts/release-check.mjs --dist, so a committed bundle that the source does
+#          not build, on either OS, fails here before it can be tagged (trust-adaptations#D12).
+#
+# Every action is pinned by commit sha; the comment names the release it is.
+# Each test step has a timeout-minutes, and the companions' npm test a --test-timeout of 10 min (on Node 22
+# it bounds each test file, the log then naming the file and the tests it finished), so a hang fails.
+
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      # trust-adaptations#D24: the suites run on a scratch data home. Set from a step, as the
+      # runner context is not available in a job-level env.
+      - name: Scratch data home
+        run: echo "SWARMSTORM_HOME=$RUNNER_TEMP/swarmstorm-home" >> "$GITHUB_ENV"
+      # The hosted Windows runner is slow on its C: temp folder (C:\Users\RUNNER~1\...): SQLite there ran ~60x slower
+      # than on a dev machine, and board.test.ts past its 10 min. The tests' temp folders go to the runner's own temp
+      # (D:\a\_temp on Windows), on every OS alike.
+      - name: Temp folders on the runner's temp
+        run: |
+          echo "TEMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMP=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      # A loaded runner starts a board server from source slower than the 5 s a CLI waits by default, and wakes a
+      # wait later than the 100-200 ms the latency tests allow on a dev machine.
+      - name: CI bounds
+        run: |
+          echo "SWARM_START_TIMEOUT_MS=30000" >> "$GITHUB_ENV"
+          echo "SWARM_TEST_WAKE_BOUND_MS=1000" >> "$GITHUB_ENV"
+
+      - name: swarm-board — install and build
+        working-directory: skills/companions/swarm-board
+        run: npm ci && npm run build
+      - name: aiview — install and build
+        working-directory: skills/companions/aiview
+        run: npm ci && npm run build
+
+      - name: swarm-board — tests
+        timeout-minutes: 25
+        working-directory: skills/companions/swarm-board
+        run: npm test
+      - name: swarm-board — typecheck
+        timeout-minutes: 5
+        working-directory: skills/companions/swarm-board
+        run: npm run typecheck
+      - name: aiview — tests
+        timeout-minutes: 15
+        working-directory: skills/companions/aiview
+        run: npm test
+      - name: aiview — typecheck
+        timeout-minutes: 5
+        working-directory: skills/companions/aiview
+        run: npm run typecheck
+      - name: aiview — app tests
+        timeout-minutes: 10
+        working-directory: skills/companions/aiview
+        run: npm run test:app
+
+      - name: skill scripts — tests
+        timeout-minutes: 5
+        run: |
+          node --test skills/plan/write-plan/scripts/decisions.test.mjs
+          node --test skills/review/pr-review/scripts/scope.test.mjs
+          node --test skills/project/write-conventions/scripts/rules.test.mjs
+          node --test "skills/workbench/create-workbench/scripts/*.test.mjs"
+
+  bundles:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: The committed bundles are what the source builds
+        run: node scripts/release-check.mjs --dist

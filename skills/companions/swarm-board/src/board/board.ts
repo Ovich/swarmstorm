@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
+import { canonicalPath } from "../place/place.ts";
 import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
@@ -1662,10 +1663,10 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     identify({ place }) {
       if (!place) return null;
-      const here = fold(path.resolve(place));
+      const here = canonicalPath(place);
       const rows = (db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all() as Row[]).filter(
         (r) => {
-          const root = fold(String(r.place));
+          const root = canonicalPath(String(r.place));
           return here === root || here.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
         },
       );

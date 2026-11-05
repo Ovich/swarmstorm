@@ -9,13 +9,12 @@ import path from "node:path";
 import { DATA_ROOT } from "../../board/home.ts";
 import { baseRef, git } from "../../git.ts";
 import { stopLinks } from "../../link/link.ts";
-import { worktreeOf } from "../../place/place.ts";
+import { canonicalPath, worktreeOf } from "../../place/place.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
 const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");
 
-const CASELESS = process.platform === "win32" || process.platform === "darwin";
-const fold = (s: string): string => (CASELESS ? path.resolve(s).toLowerCase() : path.resolve(s));
+const fold = canonicalPath;
 const safe = (s: string): string => s.replace(/[^A-Za-z0-9._-]/g, "_");
 
 // the run id keeps two runs apart: group a-b seat c and group a seat b-c never share a folder or a branch
@@ -47,7 +46,7 @@ function inLinkedWorktree(cwd: string): boolean {
 }
 
 const branchExists = (cwd: string, branch: string): boolean => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
-const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
+const isAncestor = (cwd: string, ref: string, of: string): boolean => run(cwd, "merge-base", "--is-ancestor", "--end-of-options", ref, of).ok;
 
 /** The seat's worktree, made from `base` or reused when it is there; `cwd` is any checkout of the repository. */
 function ensureWorktree(cwd: string, repo: string, runId: number, group: string, seat: string, base: string): { path: string; branch: string; reused: boolean } {
@@ -61,7 +60,7 @@ function ensureWorktree(cwd: string, repo: string, runId: number, group: string,
   fs.mkdirSync(path.dirname(at), { recursive: true });
   // a branch left by an earlier worktree of the seat: reset to the base when merged, kept as it is when not
   const from = baseRef(cwd, base);
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, "--end-of-options", at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, "--end-of-options", at, from] : ["--end-of-options", at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
@@ -70,7 +69,7 @@ function ensureWorktree(cwd: string, repo: string, runId: number, group: string,
 /** V-50 (D63): the run's target as a reader names it: the branch; a commit only when the run was opened on no branch,
  *  said so. */
 function targetName(cwd: string, into: string): string {
-  if (git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", `refs/remotes/origin/${into}`) !== null) return into;
+  if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", `refs/remotes/origin/${into}`) !== null) return into;
   return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
 }
 
@@ -85,7 +84,7 @@ function leftover(wt: string, into: string | null): string | null {
   const intoRef = baseRef(wt, into);
   if (!isAncestor(wt, "HEAD", intoRef)) {
     // board-split D63: the branch by name and how many commits, never a bare sha
-    const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
+    const n = Number(git(wt, "rev-list", "--count", "--end-of-options", `${intoRef}..HEAD`) ?? 0);
     return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${targetName(wt, into)}`;
   }
   return null;

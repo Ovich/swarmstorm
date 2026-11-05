@@ -8,6 +8,8 @@ import { DATA_ROOT, ensureHome } from "./home.ts";
 export const PID_FILE = path.join(DATA_ROOT, "aiview.pid");
 export const PORT_FILE = path.join(DATA_ROOT, "aiview.port");
 export const VERSION_FILE = path.join(DATA_ROOT, "aiview.version");
+/** The running server's token (trust-adaptations#D4): every POST carries it; the CLI reads it here. */
+export const TOKEN_FILE = path.join(DATA_ROOT, "aiview.token");
 
 export interface ServerStatus {
   running: boolean;
@@ -47,11 +49,12 @@ const readText = (f: string): string | null => {
   }
 };
 
-/** The version is written first: a reader that finds this pid and port finds its version too. */
-export function writeServerFiles(port: number, version: string | null): void {
+/** The version and the token are written first: a reader that finds this pid and port finds them too. */
+export function writeServerFiles(port: number, version: string | null, token: string): void {
   ensureHome();
   if (version === null) fs.rmSync(VERSION_FILE, { force: true });
   else fs.writeFileSync(VERSION_FILE, version);
+  fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
   fs.writeFileSync(PID_FILE, String(process.pid));
   fs.writeFileSync(PORT_FILE, String(port));
 }
@@ -63,9 +66,13 @@ export function clearServerFiles(): void {
       fs.rmSync(PID_FILE, { force: true });
       fs.rmSync(PORT_FILE, { force: true });
       fs.rmSync(VERSION_FILE, { force: true });
+      fs.rmSync(TOKEN_FILE, { force: true });
     } catch {}
   }
 }
+
+/** The token of the server the files name; null when none was written. */
+export const readServerToken = (): string | null => readText(TOKEN_FILE);
 
 export function readServerStatus(): ServerStatus {
   const pid = readInt(PID_FILE);

@@ -319,7 +319,7 @@ test("unknown verb prints usage and fails", () => {
 });
 
 test("project add creates the record and its docs directory; list shows it", () => {
-  const covered = path.join("C:", path.sep, "CIIP");
+  const covered = path.resolve(path.sep, "CIIP"); // absolute on this OS
   const added = run("project", "add", "CIIP", "--title", "CIIP", "--path", covered, "--json");
   assert.equal(added.status, 0, added.stderr);
   const p = JSON.parse(added.stdout);
@@ -718,4 +718,29 @@ test("serve --detach records the server's own pid, even over a stale pid file a 
   }
   // the pid recorded was the one serving: once it is stopped, the port answers no more
   await assert.rejects(fetch(`http://127.0.0.1:${server.port}/api/documents`));
+});
+
+test("the CLI's POSTs reach a live server with the token it wrote (trust-adaptations#D4)", async () => {
+  const r = run("serve", "--detach", "--port", "0", "--json");
+  assert.equal(r.status, 0, r.stderr);
+  const { server } = JSON.parse(r.stdout) as { server: { port: number } };
+  const tokenFile = path.join(toolRoot, "aiview.token");
+  try {
+    assert.match(fs.readFileSync(tokenFile, "utf8"), /^[0-9a-f]{64}$/);
+    const opened = run("open", write("docs/t.spec.md", "# T\n"), "--json");
+    assert.equal(opened.status, 0, opened.stderr);
+    // the server answered /api/open: no tab on the project, and under the suite's AIVIEW_NO_BROWSER=1 it may open
+    // no browser, so it says so and why (v1-F5), never that a tab opened
+    const answer = JSON.parse(opened.stdout) as { opened: boolean; browserRefusal: string | null };
+    assert.equal(answer.opened, false);
+    assert.match(answer.browserRefusal ?? "", /AIVIEW_NO_BROWSER=1/);
+    const told = run("open", write("docs/t.spec.md", "# T\n"));
+    assert.equal(told.status, 0, told.stderr);
+    assert.match(told.stdout, /no tab showed [^\n]+, and no browser opened \(AIVIEW_NO_BROWSER=1\): give the person the link/);
+    assert.doesNotMatch(told.stdout, /opened a new one/);
+    const bare = await fetch(`http://127.0.0.1:${server.port}/api/index-changed`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    assert.equal(bare.status, 403, "without the token the same POST is refused");
+  } finally {
+    stopServer();
+  }
 });

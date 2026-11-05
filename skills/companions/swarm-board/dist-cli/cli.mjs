@@ -82,6 +82,56 @@ var init_home = __esm({
   }
 });
 
+// src/place/place.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
+function canonicalPath(p) {
+  const resolved = real(path2.resolve(p));
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
+}
+function repoOf(dir) {
+  const common = gitOut(dir, "rev-parse", "--git-common-dir");
+  return common ? real(path2.resolve(dir, common)) : null;
+}
+function worktreeOf(dir) {
+  const top = gitOut(dir, "rev-parse", "--show-toplevel");
+  return top ? path2.resolve(top) : null;
+}
+function resolveIn(root, spec, opts = {}) {
+  if (path2.isAbsolute(spec)) return { abs: spec, missing: [] };
+  const cwd = opts.cwd ?? process.cwd();
+  const here = root && !inside(root, cwd) ? path2.resolve(root, spec) : path2.resolve(cwd, spec);
+  if (fs2.existsSync(here)) return { abs: here, missing: [] };
+  const fromRoot = root ? path2.resolve(root, spec) : null;
+  if (fromRoot && fs2.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
+  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
+}
+function relativeIn(root, abs) {
+  return (root ? path2.relative(root, abs) : abs).split(path2.sep).join("/");
+}
+var gitOut, real, inside;
+var init_place = __esm({
+  "src/place/place.ts"() {
+    "use strict";
+    init_proc();
+    gitOut = (cwd, ...argv) => {
+      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
+      return r.status === 0 ? r.stdout.trim() : null;
+    };
+    real = (p) => {
+      try {
+        return fs2.realpathSync.native(p);
+      } catch {
+        return p;
+      }
+    };
+    inside = (root, dir) => {
+      const rel = path2.relative(path2.resolve(root), path2.resolve(dir));
+      return !rel.startsWith("..") && !path2.isAbsolute(rel);
+    };
+  }
+});
+
 // src/board/mentions.ts
 function planCode(plan) {
   const words = plan.split(/[-_\s.]+/).filter((w) => w && !/^\d+$/.test(w));
@@ -183,6 +233,10 @@ var init_kinds = __esm({
 });
 
 // src/git.ts
+function refArg(value, what) {
+  if (value.startsWith("-")) throw new Error(`${what} cannot start with "-": ${value}`);
+  return value;
+}
 var gitAnswer, git, worktreeHolding, baseAt, baseRef;
 var init_git = __esm({
   "src/git.ts"() {
@@ -212,7 +266,7 @@ var init_git = __esm({
       return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
     };
     baseRef = (cwd, base) => {
-      for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+      for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", ref) !== null) return ref;
       return base;
     };
   }
@@ -722,10 +776,10 @@ var init_liveness = __esm({
 
 // src/packs/code/changes.ts
 function changedSet(worktree, onto) {
-  const base = gitAnswer(worktree, "merge-base", "HEAD", onto);
+  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
   const status = gitAnswer(worktree, "status", "--porcelain=v2", "-z", "--untracked-files=all");
-  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", base.stdout.trim(), "HEAD");
+  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base.stdout.trim(), "HEAD");
   if (status.status !== 0 || diff.status !== 0) return null;
   const set = /* @__PURE__ */ new Set();
   const records = status.stdout.split("\0");
@@ -756,8 +810,8 @@ var init_changes = __esm({
 
 // src/wire.ts
 import crypto from "node:crypto";
-import fs2 from "node:fs";
-import path2 from "node:path";
+import fs3 from "node:fs";
+import path3 from "node:path";
 function encode(f) {
   return JSON.stringify(f);
 }
@@ -768,34 +822,34 @@ function decode(text) {
   return f;
 }
 function builtCliOf(entry2) {
-  const file = path2.resolve(entry2);
-  const bundle = path2.join(path2.dirname(file), "dist-cli", "cli.mjs");
-  return fs2.existsSync(bundle) ? bundle : file;
+  const file = path3.resolve(entry2);
+  const bundle = path3.join(path3.dirname(file), "dist-cli", "cli.mjs");
+  return fs3.existsSync(bundle) ? bundle : file;
 }
 function bundleVersion(entry2) {
   if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
   const file = builtCliOf(entry2);
-  const st = fs2.statSync(file);
+  const st = fs3.statSync(file);
   const key = `${file}|${st.mtimeMs}|${st.size}`;
   let v = versionsByBuild.get(key);
   if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs2.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto.createHash("sha256").update(fs3.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByBuild.set(key, v);
   }
   return v;
 }
 function serverStateFile(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.json");
+  return path3.join(dataRoot, "swarm-server.json");
 }
 function serverLogFile(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.log");
+  return path3.join(dataRoot, "swarm-server.log");
 }
 function serverStartLock(dataRoot) {
-  return path2.join(dataRoot, "swarm-server.lock");
+  return path3.join(dataRoot, "swarm-server.lock");
 }
 function serverLockHolder(dataRoot) {
   try {
-    const pid = Number(fs2.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    const pid = Number(fs3.readFileSync(serverStartLock(dataRoot), "utf8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
@@ -805,11 +859,11 @@ function liveStartLockHolder(dataRoot) {
   const holder = serverLockHolder(dataRoot);
   if (holder === null || !isAlive(holder)) return null;
   try {
-    if (JSON.parse(fs2.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+    if (JSON.parse(fs3.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
   } catch {
   }
   try {
-    return Date.now() - fs2.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+    return Date.now() - fs3.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
   }
@@ -822,7 +876,7 @@ function isAlive(pid) {
     return e.code === "EPERM";
   }
 }
-var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var RPC_METHODS, ORCHESTRATORS_GROUP, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
 var init_wire = __esm({
   "src/wire.ts"() {
     "use strict";
@@ -861,6 +915,7 @@ var init_wire = __esm({
       "snapshot",
       "composition"
     ];
+    ORCHESTRATORS_GROUP = "orchestrators";
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
@@ -869,9 +924,9 @@ var init_wire = __esm({
 });
 
 // src/link/transcripts.ts
-import fs3 from "node:fs";
+import fs4 from "node:fs";
 import os2 from "node:os";
-import path3 from "node:path";
+import path4 from "node:path";
 function callWordsOf(input) {
   const fields = input && typeof input === "object" ? input : {};
   const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
@@ -949,7 +1004,7 @@ function commandRunsBinding(command, binding, backslashEscapes = true) {
 function transcriptRunsBinding(file, binding) {
   let text;
   try {
-    text = fs3.readFileSync(file, "utf8");
+    text = fs4.readFileSync(file, "utf8");
   } catch {
     return false;
   }
@@ -1070,7 +1125,7 @@ function awaitedBackground(cursor) {
   let outputGrewAt = null;
   if (oldest.output) {
     try {
-      outputGrewAt = fs3.statSync(oldest.output).mtimeMs;
+      outputGrewAt = fs4.statSync(oldest.output).mtimeMs;
     } catch {
     }
   }
@@ -1089,15 +1144,15 @@ function observe(transcript, from, binding) {
   let chunk = Buffer.alloc(0);
   let mtime = Date.now();
   try {
-    const fd = fs3.openSync(transcript, "r");
+    const fd = fs4.openSync(transcript, "r");
     try {
-      const stat = fs3.fstatSync(fd);
+      const stat = fs4.fstatSync(fd);
       mtime = stat.mtimeMs;
       if (stat.size < cursor.offset) cursor = freshCursor();
       chunk = Buffer.alloc(stat.size - cursor.offset);
-      fs3.readSync(fd, chunk, 0, chunk.length, cursor.offset);
+      fs4.readSync(fd, chunk, 0, chunk.length, cursor.offset);
     } finally {
-      fs3.closeSync(fd);
+      fs4.closeSync(fd);
     }
   } catch {
     cursor = freshCursor();
@@ -1221,7 +1276,7 @@ var init_transcripts = __esm({
     metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
     mtimeOf = (file) => {
       try {
-        return fs3.statSync(file).mtimeMs;
+        return fs4.statSync(file).mtimeMs;
       } catch {
         return 0;
       }
@@ -1231,24 +1286,24 @@ var init_transcripts = __esm({
       locate(binding, env) {
         const session = env.CLAUDE_CODE_SESSION_ID;
         if (!session) return null;
-        const root = env.SWARM_TRANSCRIPTS_ROOT || path3.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
+        const root = env.SWARM_TRANSCRIPTS_ROOT || path4.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
         let projects;
         try {
-          projects = fs3.readdirSync(root);
+          projects = fs4.readdirSync(root);
         } catch {
           return null;
         }
         const candidates = [];
         for (const project of projects) {
-          const main2 = path3.join(root, project, `${session}.jsonl`);
-          if (fs3.existsSync(main2)) candidates.push(main2);
-          const subagents = path3.join(root, project, session, "subagents");
+          const main2 = path4.join(root, project, `${session}.jsonl`);
+          if (fs4.existsSync(main2)) candidates.push(main2);
+          const subagents = path4.join(root, project, session, "subagents");
           let names = [];
           try {
-            names = fs3.readdirSync(subagents);
+            names = fs4.readdirSync(subagents);
           } catch {
           }
-          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path3.join(subagents, n));
+          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path4.join(subagents, n));
         }
         const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
         for (const { file } of newestFirst) {
@@ -1260,7 +1315,7 @@ var init_transcripts = __esm({
       finished(transcript) {
         let text;
         try {
-          text = fs3.readFileSync(metaFileOf(transcript), "utf8");
+          text = fs4.readFileSync(metaFileOf(transcript), "utf8");
         } catch {
           return null;
         }
@@ -1308,21 +1363,21 @@ var init_transcripts = __esm({
 
 // src/link/link.ts
 import crypto2 from "node:crypto";
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import net from "node:net";
 import os3 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 function linkPipe(dataRoot, run2, member) {
-  const home = crypto2.createHash("sha256").update(path4.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto2.createHash("sha256").update(path5.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path4.join(os3.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path5.join(os3.tmpdir(), `${name}.sock`);
 }
 function linkPidFile(dataRoot, run2, member) {
-  return path4.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
+  return path5.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
 }
 function readServerState(dataRoot) {
   try {
-    return JSON.parse(fs4.readFileSync(serverStateFile(dataRoot), "utf8"));
+    return JSON.parse(fs5.readFileSync(serverStateFile(dataRoot), "utf8"));
   } catch {
     return null;
   }
@@ -1339,7 +1394,7 @@ function sayStop(dataRoot, member, stop, toServerLog) {
   const state = toServerLog ? readServerState(dataRoot) : null;
   if (!state || !isAlive(state.pid)) return;
   try {
-    fs4.appendFileSync(serverLogFile(dataRoot), line + "\n");
+    fs5.appendFileSync(serverLogFile(dataRoot), line + "\n");
   } catch {
   }
 }
@@ -1353,7 +1408,7 @@ async function listenOnPipe(pipe, onPipe) {
   const first = await tryListen();
   if (first !== "taken") return first;
   if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
-  fs4.rmSync(pipe, { force: true });
+  fs5.rmSync(pipe, { force: true });
   const second = await tryListen();
   return second === "taken" ? null : second;
 }
@@ -1491,12 +1546,15 @@ async function runLink(opts) {
       }
       wasWelcomed ||= welcomed;
     };
-    ws.onclose = () => {
+    let ended = false;
+    const endConnection = () => {
+      if (ended) return;
+      ended = true;
       welcomed = false;
       resolve(wasWelcomed);
     };
-    ws.onerror = () => {
-    };
+    ws.onclose = endConnection;
+    ws.onerror = endConnection;
   });
   let versionRetried = false;
   const connectionLoop = async () => {
@@ -1558,13 +1616,13 @@ async function runLink(opts) {
   if (!pipeServer) return pipeTaken();
   const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
   try {
-    fs4.mkdirSync(path4.dirname(pidFile), { recursive: true });
-    fs4.writeFileSync(pidFile, String(process.pid));
+    fs5.mkdirSync(path5.dirname(pidFile), { recursive: true });
+    fs5.writeFileSync(pidFile, String(process.pid));
   } catch {
   }
   const dropPid = () => {
     try {
-      if (fs4.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs4.rmSync(pidFile);
+      if (fs5.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs5.rmSync(pidFile);
     } catch {
     }
   };
@@ -1584,6 +1642,7 @@ async function runLink(opts) {
   return finished;
 }
 function commandLine(pid) {
+  if (!isProcessId(pid)) return null;
   const r = process.platform === "win32" ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true }) : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
   return (r.stdout ?? "").trim() || null;
 }
@@ -1593,13 +1652,13 @@ function stopLinks(runId, members) {
     const file = linkPidFile(DATA_ROOT, runId, member);
     let pid;
     try {
-      pid = Number(fs4.readFileSync(file, "utf8").trim());
+      pid = Number(fs5.readFileSync(file, "utf8").trim());
     } catch {
       continue;
     }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
+    if (isProcessId(pid) && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
-      fs4.rmSync(file);
+      fs5.rmSync(file);
     } catch {
     }
   }
@@ -1614,7 +1673,7 @@ function stopLinks(runId, members) {
   }
   for (let i = 0; i < 40 && left.some(alive); i++) pauseSync(50);
 }
-var CHANGES_EVERY_MS, DEFAULT_TIMING, pause, pipeAnswers, alive, OWN_EXIT_GRACE_MS;
+var CHANGES_EVERY_MS, DEFAULT_TIMING, pause, pipeAnswers, alive, isProcessId, OWN_EXIT_GRACE_MS;
 var init_link = __esm({
   "src/link/link.ts"() {
     "use strict";
@@ -1639,53 +1698,8 @@ var init_link = __esm({
         return false;
       }
     };
+    isProcessId = (pid) => typeof pid === "number" && Number.isInteger(pid) && pid > 0;
     OWN_EXIT_GRACE_MS = 3e3;
-  }
-});
-
-// src/place/place.ts
-import fs5 from "node:fs";
-import path5 from "node:path";
-function repoOf(dir) {
-  const common = gitOut(dir, "rev-parse", "--git-common-dir");
-  return common ? real(path5.resolve(dir, common)) : null;
-}
-function worktreeOf(dir) {
-  const top = gitOut(dir, "rev-parse", "--show-toplevel");
-  return top ? path5.resolve(top) : null;
-}
-function resolveIn(root, spec, opts = {}) {
-  if (path5.isAbsolute(spec)) return { abs: spec, missing: [] };
-  const cwd = opts.cwd ?? process.cwd();
-  const here = root && !inside(root, cwd) ? path5.resolve(root, spec) : path5.resolve(cwd, spec);
-  if (fs5.existsSync(here)) return { abs: here, missing: [] };
-  const fromRoot = root ? path5.resolve(root, spec) : null;
-  if (fromRoot && fs5.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
-  return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
-}
-function relativeIn(root, abs) {
-  return (root ? path5.relative(root, abs) : abs).split(path5.sep).join("/");
-}
-var gitOut, real, inside;
-var init_place = __esm({
-  "src/place/place.ts"() {
-    "use strict";
-    init_proc();
-    gitOut = (cwd, ...argv) => {
-      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-      return r.status === 0 ? r.stdout.trim() : null;
-    };
-    real = (p) => {
-      try {
-        return fs5.realpathSync.native(p);
-      } catch {
-        return p;
-      }
-    };
-    inside = (root, dir) => {
-      const rel = path5.relative(path5.resolve(root), path5.resolve(dir));
-      return !rel.startsWith("..") && !path5.isAbsolute(rel);
-    };
   }
 });
 
@@ -1711,13 +1725,13 @@ function ensureWorktree(cwd, repo, runId, group, seat, base) {
   run(cwd, "worktree", "prune");
   fs6.mkdirSync(path6.dirname(at), { recursive: true });
   const from = baseRef(cwd, base);
-  const argv = !branchExists(cwd, branch) ? ["-b", branch, at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, at, from] : [at, branch];
+  const argv = !branchExists(cwd, branch) ? ["-b", branch, "--end-of-options", at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, "--end-of-options", at, from] : ["--end-of-options", at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
   if (!r.ok) throw new Error(`git worktree add ${argv.join(" ")} failed: ${r.err}`);
   return { path: at, branch, reused: false };
 }
 function targetName(cwd, into) {
-  if (git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", `refs/remotes/origin/${into}`) !== null) return into;
+  if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", `refs/heads/${into}`) !== null || git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", `refs/remotes/origin/${into}`) !== null) return into;
   return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
 }
 function leftover(wt, into) {
@@ -1729,7 +1743,7 @@ function leftover(wt, into) {
   if (!into) return "no base branch recorded for its run";
   const intoRef = baseRef(wt, into);
   if (!isAncestor(wt, "HEAD", intoRef)) {
-    const n = Number(git(wt, "rev-list", "--count", `${intoRef}..HEAD`) ?? 0);
+    const n = Number(git(wt, "rev-list", "--count", "--end-of-options", `${intoRef}..HEAD`) ?? 0);
     return `branch ${git(wt, "rev-parse", "--abbrev-ref", "HEAD") ?? "HEAD"} has ${n} commit${n === 1 ? "" : "s"} not merged into ${targetName(wt, into)}`;
   }
   return null;
@@ -1812,7 +1826,7 @@ function sweepAll(repos, recordOf) {
     return { worktree: dir, ...sweep(dir, w.repo, w.base) };
   });
 }
-var worktreesRoot, CASELESS, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
+var worktreesRoot, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
 var init_worktrees = __esm({
   "src/packs/code/worktrees.ts"() {
     "use strict";
@@ -1822,8 +1836,7 @@ var init_worktrees = __esm({
     init_link();
     init_place();
     worktreesRoot = (repo) => path6.join(repo, "swarm", "worktrees");
-    CASELESS = process.platform === "win32" || process.platform === "darwin";
-    fold = (s) => CASELESS ? path6.resolve(s).toLowerCase() : path6.resolve(s);
+    fold = canonicalPath;
     safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
     worktreeDir = (repo, run2, seat) => path6.join(worktreesRoot(repo), String(run2), safe(seat));
     branchFor = (run2, group, seat) => `swarm/${run2}-${group}/${seat}`;
@@ -1834,7 +1847,7 @@ var init_worktrees = __esm({
     };
     same = (a, b) => fold(a) === fold(b);
     branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
-    isAncestor = (cwd, ref, of) => run(cwd, "merge-base", "--is-ancestor", ref, of).ok;
+    isAncestor = (cwd, ref, of) => run(cwd, "merge-base", "--is-ancestor", "--end-of-options", ref, of).ok;
     LEGACY_ROOT = path6.join(DATA_ROOT, "worktrees");
     LEGACY_SWEPT = path6.join(LEGACY_ROOT, ".swept");
     sweepLegacy = () => sweepLegacyRoot();
@@ -2591,7 +2604,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fresh;
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
-  const fold2 = (s) => CASELESS2 ? s.toLowerCase() : s;
+  const fold2 = (s) => CASELESS ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
@@ -3157,10 +3170,10 @@ async function openBoard(dbPath = SQLITE_PATH) {
     },
     identify({ place }) {
       if (!place) return null;
-      const here = fold2(path8.resolve(place));
+      const here = canonicalPath(place);
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
         (r) => {
-          const root = fold2(String(r.place));
+          const root = canonicalPath(String(r.place));
           return here === root || here.startsWith(root.endsWith(path8.sep) ? root : root + path8.sep);
         }
       );
@@ -3791,11 +3804,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   board2.wait = counted("wait", board2.wait);
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS2;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, TO_AUTHOR, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
     init_home();
+    init_place();
     init_mentions();
     init_kinds();
     init_registry();
@@ -3837,7 +3851,7 @@ var init_board = __esm({
     RETENTION_DAYS = 30;
     DAY_MS = 24 * 60 * 60 * 1e3;
     EVENTS_SHOWN = 500;
-    CASELESS2 = process.platform === "win32";
+    CASELESS = process.platform === "win32";
   }
 });
 
@@ -7461,6 +7475,125 @@ var init_wrapper = __esm({
   }
 });
 
+// src/server/authority.ts
+function makeAuthority(board2) {
+  const repoOf3 = (run2) => board2.runs().find((r) => r.id === run2)?.repo ?? board2.repos().find((summary) => summary.runs.some((r) => r.run === run2))?.repo ?? null;
+  const groupOf = (run2) => board2.runs().find((r) => r.id === run2)?.group ?? board2.repos().flatMap((summary) => summary.runs).find((r) => r.run === run2)?.group ?? null;
+  const participantOf = (run2, name) => {
+    const repo = repoOf3(run2);
+    const found = repo === null ? null : board2.participant(name, repo);
+    return found && found.run === run2 ? found : null;
+  };
+  const boundTo = (p) => ({ id: p.id, name: p.name, run: p.run, seat: p.seat });
+  const who = (bound) => bound ? bound.name : "an anonymous connection";
+  const targetName2 = (target) => typeof target?.name === "string" ? target.name : `participant ${String(target?.id)}`;
+  const isSelf = (bound, target) => bound !== null && typeof target?.id === "number" && target.id === bound.id;
+  const isSeatOfOwnRun = (bound, target) => {
+    if (bound?.seat !== ORCHESTRATOR_SEAT || typeof target?.name !== "string" || typeof target.id !== "number") return false;
+    return participantOf(bound.run, target.name)?.id === target.id;
+  };
+  const actsFor = (method, bound, target) => bound === null ? `refused: ${method} acts for ${targetName2(target)}, and this connection names no member` : `refused: ${method} acts for ${targetName2(target)}; this connection is ${bound.name}`;
+  const orchestratorOnly = (method, run2, bound) => `refused: ${method} on run ${String(run2)} is its orchestrator's; this connection is ${who(bound)}`;
+  const self2 = (bound, args2, method) => isSelf(bound, args2[0]) ? null : actsFor(method, bound, args2[0]);
+  const selfOrOwnRunsOrchestrator = (bound, args2, method) => {
+    const target = args2[0];
+    return isSelf(bound, target) || isSeatOfOwnRun(bound, target) ? null : actsFor(method, bound, target);
+  };
+  const runsOrchestrator = (runAt) => (bound, args2, method) => {
+    const run2 = runAt(args2);
+    if (typeof run2 !== "number") return `refused: ${method} names no run`;
+    if (groupOf(run2) === ORCHESTRATORS_GROUP) return null;
+    return bound?.seat === ORCHESTRATOR_SEAT && bound.run === run2 ? null : orchestratorOnly(method, run2, bound);
+  };
+  const open = () => null;
+  const PACK_VERBS_WITHOUT_MEMBER = {
+    // before a join: where the joining seat's folder goes
+    place: open,
+    // at every CLI start: the folders left by an older layout
+    legacy: open,
+    // with no run: every repository's folders judged
+    prune: open,
+    // a read of the runs' seat folders
+    worktrees: open,
+    // AGENTS EXCEPTION (D24): the code pack's verb name, as packCall receives it
+    // writes run state: the run's own orchestrator, or anyone on the orchestrators board (closed with close --force)
+    close: runsOrchestrator((args2) => args2[2]?.run)
+  };
+  const packCall = (bound, args2, method) => {
+    if (args2[0] != null) return selfOrOwnRunsOrchestrator(bound, args2, method);
+    const verb = String(args2[1]);
+    const rule = Object.hasOwn(PACK_VERBS_WITHOUT_MEMBER, verb) ? PACK_VERBS_WITHOUT_MEMBER[verb] : null;
+    return rule ? rule(bound, args2, method) : `refused: packCall ${verb} needs a member`;
+  };
+  const METHOD_RULES = {
+    // acting
+    setDoing: self2,
+    post: self2,
+    endorse: self2,
+    wait: self2,
+    deliverMentions: self2,
+    done: self2,
+    idle: self2,
+    unreadMentions: self2,
+    guidesUntold: self2,
+    showPhase: self2,
+    owedPhase: self2,
+    heldBy: self2,
+    end: selfOrOwnRunsOrchestrator,
+    packCall,
+    // orchestrator-only: acting for the orchestrator itself; that it is the orchestrator is the board's own rule
+    // (board.ts phase, pause, resume), whose refusal the CLI words
+    phase: self2,
+    pause: self2,
+    resume: self2,
+    closeRun: runsOrchestrator((args2) => args2[0]),
+    addSeat: runsOrchestrator((args2) => args2[0]),
+    // open: no actor, or read-only
+    openRun: open,
+    join: open,
+    participant: open,
+    identify: open,
+    currentPhase: open,
+    pausedOf: open,
+    phaseProgress: open,
+    lastActivity: open,
+    runs: open,
+    roster: open,
+    endedMembers: open,
+    repos: open,
+    snapshot: open,
+    composition: open
+  };
+  return {
+    bind(hello) {
+      if (!hello.member) return null;
+      const found = participantOf(hello.member.run, hello.member.name);
+      return found ? boundTo(found) : "unknown member";
+    },
+    check(bound, method, args2) {
+      return METHOD_RULES[method](bound, args2, method);
+    },
+    boundAfter(bound, method, value) {
+      if (bound !== null) return bound;
+      if (method === "openRun") {
+        const opened = value;
+        const orchestrator = participantOf(opened.id, `${opened.group}/${ORCHESTRATOR_SEAT}`);
+        return orchestrator ? boundTo(orchestrator) : null;
+      }
+      if (method === "join") return boundTo(value.member);
+      return null;
+    }
+  };
+}
+var ORCHESTRATOR_SEAT;
+var init_authority = __esm({
+  "src/server/authority.ts"() {
+    "use strict";
+    init_wire();
+    ORCHESTRATOR_SEAT = "orchestrator";
+  }
+});
+
 // src/server/server.ts
 var server_exports = {};
 __export(server_exports, {
@@ -7544,11 +7677,14 @@ async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
   const board2 = await openBoard(path12.join(opts.dataRoot, "swarm.sqlite"));
+  const authority = makeAuthority(board2);
   const secret = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const serverSince = (/* @__PURE__ */ new Date()).toISOString();
   const speakers = /* @__PURE__ */ new Set();
   const calls = /* @__PURE__ */ new Map();
+  const callKey = (s, id) => `${s.bound ? `member ${s.bound.id}` : s.anonymousScope} ${id}`;
+  let connectionsSeen = 0;
   const links = /* @__PURE__ */ new Map();
   const memberOf = (name) => name.slice(name.lastIndexOf("/") + 1);
   const keepLink = (run3, member, link) => {
@@ -7595,24 +7731,27 @@ async function runBoardServer(opts) {
     if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
     void id;
   };
-  const dropWait = (id) => {
-    const rec = calls.get(id);
+  const dropWait = (key) => {
+    const rec = calls.get(key);
     if (!rec || rec.answer !== null) return;
-    calls.delete(id);
+    calls.delete(key);
     rec.cancelWait?.abort();
   };
   const run2 = (s, call) => {
-    const known = calls.get(call.id);
+    const args2 = Array.isArray(call.args) ? [...call.args] : [];
+    const refusal = CALLABLE.has(call.method) ? authority.check(s.bound, call.method, args2) : null;
+    if (refusal) return send(s, { type: "result", id: call.id, ok: false, error: refusal });
+    const key = callKey(s, call.id);
+    const known = calls.get(key);
     if (known) {
       known.speaker = s;
       if (known.answer !== null) s.socket.send(known.answer);
       return;
     }
     const rec = { speaker: s, answer: null, answeredAt: 0, cancelWait: null };
-    calls.set(call.id, rec);
+    calls.set(key, rec);
     const fail2 = (error) => answer2(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail2(`unknown method ${String(call.method)}`);
-    const args2 = Array.isArray(call.args) ? [...call.args] : [];
     if (call.method === "wait") {
       rec.cancelWait = new AbortController();
       args2[1] = { ...args2[1] ?? {}, signal: rec.cancelWait.signal };
@@ -7624,13 +7763,14 @@ async function runBoardServer(opts) {
       return fail2(e.message);
     }
     const settle = (value) => {
-      if (calls.get(call.id) !== rec) return;
+      if (calls.get(key) !== rec) return;
+      s.bound = authority.boundAfter(s.bound, call.method, value);
       answer2(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
       if (call.method === "closeRun") closed(Number(args2[0]));
       if (call.method === "end") ended(args2[0]?.name);
       if (call.method === "join") freshPresence(value);
     };
-    if (out instanceof Promise) out.then(settle, (e) => calls.get(call.id) === rec && fail2(e.message));
+    if (out instanceof Promise) out.then(settle, (e) => calls.get(key) === rec && fail2(e.message));
     else settle(out);
   };
   const closed = (run3) => {
@@ -7663,7 +7803,7 @@ async function runBoardServer(opts) {
   });
   const wss = new import_websocket_server.default({ server: httpServer });
   wss.on("connection", (socket) => {
-    const s = { socket, member: null, lastPong: Date.now(), subscribed: false };
+    const s = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false };
     let welcomed = false;
     socket.on("pong", () => s.lastPong = Date.now());
     socket.on("message", (data) => {
@@ -7686,9 +7826,13 @@ async function runBoardServer(opts) {
           if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
           return refuse(s, "version");
         }
-        const known = f.member ? board2.participant(f.member.name) : null;
+        const isLink = f.presence !== false;
+        const known = isLink && f.member ? board2.participant(f.member.name) : null;
         if (known && (known.ended || !board2.runs().some((r) => r.id === known.run))) return refuse(s, "closed");
-        if (f.member) {
+        const bound = authority.bind(f);
+        if (bound === "unknown member") return refuse(s, "member");
+        s.bound = bound;
+        if (isLink && f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
               other.superseded = true;
@@ -7699,12 +7843,12 @@ async function runBoardServer(opts) {
         }
         welcomed = true;
         speakers.add(s);
-        const seat = f.member ? board2.participant(f.member.name) : null;
+        const seat = s.member ? board2.participant(s.member.name) : null;
         const against = seat ? board2.runs().find((r) => r.id === seat.run)?.base : null;
         return send(s, { type: "welcome", version, ...seat?.place && against ? { watched: { dir: seat.place, against } } : {} });
       }
       if (f.type === "call") run2(s, f);
-      else if (f.type === "cancel") dropWait(f.id);
+      else if (f.type === "cancel") dropWait(callKey(s, f.id));
       else if (f.type === "bye") {
         s.closedBy = "member-closed";
         socket.close();
@@ -7721,7 +7865,7 @@ async function runBoardServer(opts) {
       speakers.delete(s);
       const m = s.member;
       if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : s.closedBy ?? "socket");
-      for (const [id, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(id);
+      for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
     });
   });
   const port = await listen(httpServer, host, opts.port ?? 0);
@@ -7823,6 +7967,7 @@ var init_server = __esm({
     "use strict";
     init_wrapper();
     init_board();
+    init_authority();
     init_wire();
     RESULT_CACHE_MS = 10 * 60 * 1e3;
     UPKEEP_LOOK_MS = 1e3;
@@ -7861,7 +8006,7 @@ import fs9 from "node:fs";
 import net2 from "node:net";
 import os5 from "node:os";
 import path9 from "node:path";
-var START_TIMEOUT_MS = 5e3;
+var START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5e3;
 var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
 var homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
@@ -7896,6 +8041,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
+  const startedAt = Date.now();
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
@@ -7925,7 +8071,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   } catch {
   }
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1e3} s`;
-  throw new Error(`swarm: the board server did not start: ${reason}; run swarm serve to see it`);
+  throw new Error(`swarm: the board server did not start: ${reason} (waited ${Date.now() - startedAt} ms); run swarm serve to see it`);
 }
 function bindingOf(member) {
   const [group, id] = splitMember(member.name);
@@ -8051,14 +8197,14 @@ function callsOver(firstSend) {
     }
   };
 }
-async function connectServer(state) {
+async function connectServer(state, callsFor) {
   const ws = new WebSocket(`ws://127.0.0.1:${state.port}`);
   let handler = () => {
   };
   let closer = () => {
   };
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
@@ -8089,7 +8235,7 @@ async function connectBoard(opts) {
     const firstSock = await openLinkPipe(opts.dataRoot, member, linkWaitMs);
     if (firstSock) {
       let linkSock = firstSock;
-      const calls2 = callsOver((f) => linkSock.write(`${encode(f)}
+      const calls = callsOver((f) => linkSock.write(`${encode(f)}
 `));
       let direct = null;
       let closing = false;
@@ -8101,28 +8247,28 @@ async function connectBoard(opts) {
         }
         if (relaunched) {
           wireLink(relaunched);
-          calls2.reroute((f) => relaunched.write(`${encode(f)}
+          calls.reroute((f) => relaunched.write(`${encode(f)}
 `));
           return;
         }
-        const conn2 = await connectServer(await ensureServer(opts.dataRoot));
-        direct = conn2;
-        conn2.onFrame((f) => calls2.settle(f));
-        conn2.onClose(() => calls2.fail("swarm: the board server closed the connection"));
-        calls2.reroute(conn2.send);
+        const conn = await connectServer(await ensureServer(opts.dataRoot), member);
+        direct = conn;
+        conn.onFrame((f) => calls.settle(f));
+        conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+        calls.reroute(conn.send);
       };
       const wireLink = (sock) => {
         linkSock = sock;
-        lineFrames(sock, (f) => calls2.settle(f));
+        lineFrames(sock, (f) => calls.settle(f));
         sock.on("close", () => {
           if (closing) return;
-          rerouteAfterLinkClosed().catch(() => calls2.fail(`swarm: ${member.name}'s link closed the pipe`));
+          rerouteAfterLinkClosed().catch(() => calls.fail(`swarm: ${member.name}'s link closed the pipe`));
         });
         sock.on("error", () => {
         });
       };
       wireLink(firstSock);
-      return Object.assign(asRemote(calls2.call), {
+      return Object.assign(asRemote(calls.call), {
         close: () => {
           closing = true;
           linkSock.destroy();
@@ -8132,11 +8278,17 @@ async function connectBoard(opts) {
       });
     }
   }
-  const conn = await connectServer(state);
+  return Object.assign(await serverBoard(state, opts.member), { linkMissing: !!opts.member });
+}
+async function connectDirectBoard(dataRoot, member) {
+  return Object.assign(await serverBoard(await ensureServer(dataRoot), member), { linkMissing: false });
+}
+async function serverBoard(state, member) {
+  const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
-  return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
+  return Object.assign(asRemote(calls.call), { close: conn.close });
 }
 
 // src/cli/args.ts
@@ -8442,7 +8594,7 @@ function conflictsOf(worktree, onto, reflogMark) {
     const before = reflog[start + 1];
     const target = reflog[start].commit || onto;
     if (!before || !target) return { unknown: "no-reflog" };
-    const r = gitAnswer(worktree, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", before.commit, target);
+    const r = gitAnswer(worktree, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "--end-of-options", before.commit, target);
     if (r.status === 0) return { files: [] };
     if (r.status !== 1) return { unknown: "no-reflog" };
     const [, ...paths] = r.stdout.split("\0").filter(Boolean);
@@ -8567,6 +8719,18 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   wasLost: (reason) => `lost (${reason})`,
   /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
   endOrchestratorRefused: (run2, cli, as) => `end --seat orchestrator: refused, run ${run2} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run2} --as ${as}`,
+  /** trust-adaptations#D23: `--as` naming another participant than the live member whose folder the command runs in */
+  /** `words`: the verb and its arguments as given, each already a shell word; its --as value becomes the owner */
+  asAnotherMember: (cli, words, as, owner) => {
+    const rerun = words.map((w, i) => words[i - 1] === "--as" ? shellWord(owner) : w);
+    return `--as ${as}: refused: the folder you run in is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
+  },
+  /** trust-adaptations#D23 (v1-F1): a join naming another member than the live one whose folder the command runs in */
+  joinAsAnotherMember: (joining, owner) => `join: refused: the folder you run in is ${owner}'s, a live member, and a folder joins only as its own member. Join ${joining} from its own folder, or from the project's checkout`,
+  /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
+  orchestratorOnly: (verb, run2, caller2, rerun) => `${verb}: refused: only the orchestrator of run ${run2} may ${verb === "close" ? "close it" : "add a seat to it"}${caller2 ? `, and ${caller2} is not` : ""}. Run it as the orchestrator: ${rerun}`,
+  closeRun: (cli, run2, as) => `${cli} close --run ${run2} --as ${as}`,
+  seatAdd: (cli, seat, run2, as) => `${cli} seat add ${seat} --run ${run2} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member) => `${member}'s link already runs: nothing to start`,
   /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
@@ -8606,7 +8770,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the orchestrator's verbs ──
   phaseHeard: (watch) => watch.length ? `the done of ${watch.join(", ")} wakes you; the board tells you once every member is done` : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only) => only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "",
-  phaseOpened: (name, forWhom, heard, cli, as, run2) => `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run2}`,
+  phaseOpened: (name, forWhom, heard, cli, as, run2) => `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run2} --as ${as}`,
   briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
   seatIdleEnded: (seat) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
   pausedAll: (run2, person, cli, as) => `every member of run ${run2} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
@@ -8627,7 +8791,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   unreadBeforeEnd: (unread, wait) => `you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${wait}\` first`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run2, wait) => `end: refused, run ${run2} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
-  openNextPhase: (cli, as, run2) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run2}`,
+  openNextPhase: (cli, as, run2) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run2} --as ${as}`,
   swarmStopped: (cli, as) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
   allJoined: (cli, as) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli, as) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
@@ -8663,7 +8827,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   ],
   // ── board-split D36: a seat's state is derived, never set ──
   seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Finished: ${cli} end --seat ${seat} --as ${as}`,
-  forgottenRun: (days, cli, run2) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run2}`,
+  forgottenRun: (days, cli, run2, orchestrator) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run2} --as ${orchestrator}`,
   // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──
   orchestratorsOpen: (cli, title, seatsFile) => `${cli} open --kind brainstorm --group orchestrators --title ${title} --seats ${seatsFile}`,
   orchestratorsSeatAdd: (cli, run2, seat, roles) => `${cli} seat add ${seat} --run ${run2}${roles ? ` --role ${roles}` : ""}`,
@@ -8694,8 +8858,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** An open that failed after the board began the run: the run closed again, so none is left half-opened. */
   openFailedUndone: (why, run2) => `open: failed (${why}); run ${run2} it began is closed again, no run is left: open again`,
   /** An open that failed and whose run could not be closed again: how to close it by hand. */
-  openFailedLeft: (why, group, cli) => `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run>), then open again`,
-  groupAlreadyOpen: (group, run2, cli) => `open: refused: group ${group} already has run ${run2} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run2}), or open under another --group`,
+  openFailedLeft: (why, group, cli) => `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run> --as ${group}/orchestrator), then open again`,
+  groupAlreadyOpen: (group, run2, cli) => `open: refused: group ${group} already has run ${run2} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run2} --as ${group}/orchestrator), or open under another --group`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli, run2, group, doing, seat = "<seat>") => `${cli} join --run ${run2} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
@@ -8851,7 +9015,7 @@ async function readSituation(board2, me, opts) {
 }
 
 // src/cli/answer/orchestrators.ts
-var ORCHESTRATORS_GROUP = "orchestrators";
+init_wire();
 var seatOf = (r) => ({ id: r.group, ...r.authority?.length ? { role: r.authority.join(",") } : {}, blockers: [] });
 function orchestratorsLines(runs, cli, writeSeats, only) {
   const byRepo = /* @__PURE__ */ new Map();
@@ -8894,13 +9058,13 @@ var coreUsage = (cli) => [
   `          # --stall-ms: a working member with no sign of progress this long posts stalled, default and floor ${STALL_MS_DEFAULT} ms; ends on the command that starts your link`,
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>"}]',
-  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>]   # adds a seat mid-run (orchestrator)",
+  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--as <member>]   # adds a seat mid-run (orchestrator; any team orchestrator on the orchestrators board)",
   "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
   `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person it waits on the person, the text its reason (orchestrator)`,
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  `  close   --run <id> [--force]                                    # (orchestrator; --force for the orchestrators board, else refused); ${CODE_IN_CORE_HELP.closeRemoves}`,
+  `  close   --run <id> [--force] [--as <member>]                    # (orchestrator; --force for the orchestrators board, else refused); ${CODE_IN_CORE_HELP.closeRemoves}`,
   `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
   "  doing   [--as <member>] <text>",
   "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent]   # prints the seq; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
@@ -8987,13 +9151,13 @@ var USAGE = coreUsage(CLI);
 var CODE_USAGE = CODE_WORDING.usage(CLI);
 var EXAMPLES = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat add w1 --run 3",
+  seat: () => "seat add w1 --run 3 --as my-team/orchestrator",
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
   worktree: () => "worktree prune",
-  close: () => "close --run 3"
+  close: () => "close --run 3 --as my-team/orchestrator"
 };
 var verbHelp = (verb = args.verb ?? "") => {
   const line = [...USAGE.split("\n"), ...CODE_USAGE.split("\n")].find((l) => l.startsWith(`  ${verb} `));
@@ -9008,6 +9172,11 @@ var CliError = class extends Error {
 var fail = (msg) => {
   throw new CliError(msg);
 };
+function refuseOptionLikeRefs() {
+  const onto = args.flag("--onto");
+  if (onto !== void 0) refArg(onto, "--onto");
+  if (args.verb === "merged" && args.positional[0] !== void 0) refArg(args.positional[0], "merged: the sha");
+}
 var emit = (json, human) => {
   if (asJson) console.log(JSON.stringify(json));
   else if (typeof human === "string") {
@@ -9036,8 +9205,8 @@ function changedIn(worktree) {
   return out;
 }
 function branchChangedIn(worktree, onto) {
-  const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
-  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const base = git(worktree, "merge-base", "--end-of-options", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
+  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
@@ -9049,6 +9218,8 @@ var undoOpen = async (repo, group, why) => {
     board = await connectBoard({ dataRoot: DATA_ROOT });
     const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
     if (!begun) return null;
+    board.close();
+    board = await connectDirectBoard(DATA_ROOT, { name: `${group}/orchestrator`, run: begun.id });
     await board.closeRun(begun.id);
     return WORDING.openFailedUndone(why, begun.id);
   } catch {
@@ -9094,18 +9265,39 @@ var runArg = () => {
 };
 var board;
 var linkToStart = null;
+var tellLinkToStart = (print) => {
+  if (!linkToStart) return;
+  print(startLinkLine(linkToStart));
+  linkToStart = null;
+};
 async function caller() {
-  const as = args.flag("--as");
-  const wt = as ? null : worktreeOf(process.cwd());
-  const p = as ? await board.participant(as, repoOf(process.cwd())) ?? fail(`unknown member ${as}`) : (wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
+  const p = await placedCaller() ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
   if (p.place && fs13.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
-  if (p.ended || !(await direct.runs()).some((r) => r.id === p.run)) return p;
-  board = await connectBoard({ dataRoot: DATA_ROOT, member });
+  board = p.ended || !(await direct.runs()).some((r) => r.id === p.run) ? await connectDirectBoard(DATA_ROOT, member) : await connectBoard({ dataRoot: DATA_ROOT, member });
   if (board.linkMissing) linkToStart = member;
   direct.close();
   return p;
+}
+async function placedCaller() {
+  const as = args.flag("--as");
+  const wt = worktreeOf(process.cwd());
+  const owner = wt ? await board.identify({ place: wt }) : null;
+  if (!as) return owner;
+  const p = await board.participant(as, repoOf(process.cwd())) ?? fail(`unknown member ${as}`);
+  if (owner && owner.name !== p.name) fail(WORDING.asAnotherMember(self().join(" "), process.argv.slice(2).map(shellWord2), as, owner.name));
+  return p;
+}
+async function orchestratorOf(verb, run2, rerun) {
+  const group = (await board.runs()).find((r) => r.id === run2)?.group ?? null;
+  if (group === ORCHESTRATORS_GROUP) return;
+  const orchestrator = group ? `${group}/orchestrator` : "<group>/orchestrator";
+  const p = await placedCaller();
+  if (!p || p.seat !== "orchestrator" || p.run !== run2) fail(WORDING.orchestratorOnly(verb, run2, p?.name ?? null, rerun(orchestrator)));
+  const direct = board;
+  board = await connectDirectBoard(DATA_ROOT, { name: p.name, run: run2 });
+  direct.close();
 }
 var ago = (at) => {
   if (at == null) return "never";
@@ -9207,14 +9399,14 @@ var emitHeard = async (p, json, result) => {
   const a = answer({ verb: "heard", lines }, await situation(p));
   emit({ ...json, ...a.next ? { next: a.next } : {}, ...a.paused ? { paused: a.paused } : {} }, () => {
     for (const l of lines) console.log(l);
-    if (linkToStart) console.log(startLinkLine(linkToStart));
+    tellLinkToStart(console.log);
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
 var slashed2 = (s) => s.replace(/\\/g, "/");
 var guidesHere = (p, onto) => {
   const root = p.place ?? worktreeOf(process.cwd());
-  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
+  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", "--end-of-options", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", "--end-of-options", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
 };
 var DELIVERED_LINE = WORDING.delivered;
@@ -9404,6 +9596,7 @@ ${verbHelp()}`);
         const id2 = args.positional[1] ?? fail(`seat add: which id?
 ${verbHelp()}`);
         const run2 = runArg();
+        await orchestratorOf("seat add", run2, (as) => WORDING.seatAdd(self().join(" "), shellWord2(id2), run2, as));
         const role = args.flag("--role");
         const area = args.flag("--area");
         const added = await board.addSeat(run2, {
@@ -9425,6 +9618,7 @@ ${verbHelp()}`);
       const run2 = runArg();
       const plan = (await board.runs()).find((r) => r.id === run2)?.plan ?? null;
       if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run2));
+      await orchestratorOf("close", run2, (as) => WORDING.closeRun(self().join(" "), run2, as));
       const lockHolder = plan ? (await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null : null;
       await board.closeRun(run2);
       const swept = await board.packCall(null, "close", { run: run2 }) ?? [];
@@ -9522,6 +9716,10 @@ ${verbHelp()}`);
       const joinRun = await runOf(runArg());
       if (joinAs !== void 0 && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
         fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord2(joinRun.group), shellWord2(need("--doing")), shellWord2(joinedSeat()))));
+      const joinName = `${joinRun?.group ?? ""}/${joinedSeat()}`;
+      const here = worktreeOf(process.cwd());
+      const owner = joinRun && here ? await board.identify({ place: here }) : null;
+      if (owner && owner.name !== joinName) fail(WORDING.joinAsAnotherMember(joinName, owner.name));
       const own = await memberWorktree(runArg(), joinedSeat());
       const joined = await board.join({
         run: runArg(),
@@ -9732,9 +9930,9 @@ ${verbHelp()}`);
       if (settled.missing.length)
         fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
       if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
-      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", "--end-of-options", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed2(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed2(p.place)} rev-parse --short HEAD`);
-      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed2(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : void 0;
       const sharers = await packVerb(p, "merged", { sha, files: files.map((f) => path13.resolve(f)), conflicts });
@@ -9774,7 +9972,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const unmergedKept = lostSeat ? await board.packCall(p, "unmerged", {}) : null;
       if (refusal && !lostSeat && endedSeat !== void 0) {
         const live = await board.packCall(p, "unmerged", {});
-        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), `${self().join(" ")} close --run ${p.run}`));
+        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), WORDING.closeRun(self().join(" "), p.run, shellWord2(asker.name))));
       }
       if (refusal && !lostSeat) {
         const { worktree: mine2, left } = refusal;
@@ -9837,7 +10035,7 @@ ${verbHelp()}`);
           }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
-            console.log(WORDING.forgottenRun(Math.floor(idle / 864e5), cli, r.id));
+            console.log(WORDING.forgottenRun(Math.floor(idle / 864e5), cli, r.id, shellWord2(`${r.plan}/orchestrator`)));
         }
         for (const line of orchestrators) console.log(line);
       });
@@ -9888,9 +10086,10 @@ if (args.verb === "serve") {
   console.log(server.url);
 } else {
   try {
+    refuseOptionLikeRefs();
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    tellLinkToStart(asJson ? console.error : console.log);
   } catch (e) {
     const said = e.message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);

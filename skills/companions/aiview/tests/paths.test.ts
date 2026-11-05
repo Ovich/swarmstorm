@@ -41,8 +41,9 @@ test("toStored/toAbs round-trip inside the root, posix-stored", () => {
 });
 
 test("toStored keeps paths outside the root absolute", () => {
-  const root = "C:\\repo";
-  const outside = "C:\\elsewhere\\doc.md";
+  // absolute on this OS: a Windows literal is a relative name on Linux
+  const root = path.resolve(path.sep, "repo");
+  const outside = path.resolve(path.sep, "elsewhere", "doc.md");
   assert.equal(toStored(outside, root), outside);
   assert.equal(toAbs(outside, root), outside);
 });

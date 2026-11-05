@@ -120,7 +120,7 @@ test("a merger with no worktree merges, no tell line (D33)", () => {
   const plain = path.join(r.home, "plain");
   fs.mkdirSync(plain);
   assert.notEqual(spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: plain }).status, 0, "setup: the folder is no worktree");
-  r.cli(r.repo, "seat", "add", "S7", "--run", String(id), "--title", "the docs");
+  r.cli(r.repo, "seat", "add", "S7", "--run", String(id), "--title", "the docs", "--as", "review-tool/orchestrator");
   r.cli(plain, "join", "--run", String(id), "--seat", "S7", "--doing", "the docs");
   r.cli(plain, "merge-lock", "--onto", "main", "--as", "review-tool/S7");
   const out = r.cli(plain, "merged", "--report", "-", "abc123", "--files", path.join(r.repo, "src", "a.ts"), "--as", "review-tool/S7");

@@ -7,6 +7,10 @@ import type { AddressInfo } from "node:net";
 import type http from "node:http";
 import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
+
+/** The token this suite's server is started with; every POST carries it (trust-adaptations#D4). */
+const TOKEN = "test-token";
+const WRITE_HEADERS = { "content-type": "application/json", "x-aiview-token": TOKEN };
 import { collectionVersion } from "../src/core/collectionversion.ts";
 import type { DocumentsResponse, DocumentResponse, ShowResponse } from "../src/core/api.ts";
 
@@ -37,7 +41,7 @@ before(async () => {
   boardId = index.register(board, { tags: ["t1"] }).id;
   pdfId = index.register(write("out/cv.pdf", "%PDF-1.4"), { kind: "pdf" }).id;
 
-  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp });
+  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN });
   await new Promise<void>((r) => server.on("listening", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -111,7 +115,7 @@ test("dist/ takes over static serving with SPA fallback", async () => {
   fs.writeFileSync(path.join(tmp, "dist", "index.html"), "<title>new app</title>");
   fs.writeFileSync(path.join(tmp, "dist", "assets", "app.js"), "console.log(1)");
   // new server instance: dist presence is read at startup
-  const s2 = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp });
+  const s2 = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN });
   await new Promise<void>((r) => s2.on("listening", () => r()));
   const b2 = `http://127.0.0.1:${(s2.address() as AddressInfo).port}`;
   try {
@@ -164,13 +168,13 @@ test("POST /api/recent-project records the project for the next new tab and move
 
   const post = await fetch(`${base}/api/recent-project`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: WRITE_HEADERS,
     body: JSON.stringify({ project: "CIIP" }),
   });
   assert.equal(post.status, 200);
   assert.deepEqual(await post.json(), { project: "CIIP" });
   // nothing is broadcast: the next frame is a later event, never a project switch
-  void fetch(`${base}/api/index-changed`, { method: "POST" });
+  void fetch(`${base}/api/index-changed`, { method: "POST", headers: WRITE_HEADERS, body: "{}" });
   const frame = new TextDecoder().decode((await reader.read()).value);
   assert.doesNotMatch(frame, /"type":"project"/);
   await reader.cancel();
@@ -182,7 +186,7 @@ test("POST /api/recent-project records the project for the next new tab and move
 
 test("POST /api/recent-project rejects an unknown project, All projects and bad input; /api/active is gone", async () => {
   const post = (body: string, route = "/api/recent-project") =>
-    fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json" }, body });
+    fetch(`${base}${route}`, { method: "POST", headers: WRITE_HEADERS, body });
   assert.equal((await post(JSON.stringify({ project: "Ghost" }))).status, 404);
   assert.equal((await post(JSON.stringify({ project: "*" }))).status, 404);
   assert.equal((await post(JSON.stringify({}))).status, 400);
@@ -202,7 +206,7 @@ test("POST /api/index-changed tells open tabs the document list moved", async ()
 
   const post = await fetch(`${base}/api/index-changed`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: WRITE_HEADERS,
     body: "{}",
   });
   assert.equal(post.status, 200);
@@ -218,7 +222,7 @@ test("POST /api/show moves every open tab to the components, and says how many h
   await reader.read(); // hello
 
   const post = (body: unknown) =>
-    fetch(`${base}/api/show`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    fetch(`${base}/api/show`, { method: "POST", headers: WRITE_HEADERS, body: JSON.stringify(body) });
 
   const ok = await post({ id: boardId, components: ["Pill", "Dock"], variant: "step-2" });
   assert.equal(ok.status, 200);
@@ -226,7 +230,7 @@ test("POST /api/show moves every open tab to the components, and says how many h
   const frame = new TextDecoder().decode((await reader.read()).value);
   assert.match(frame, /"type":"show"/);
   assert.match(frame, /"components":\["Pill","Dock"\],"variant":"step-2"/);
-  const done = await fetch(`${base}/api/show-done`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  const done = await fetch(`${base}/api/show-done`, { method: "POST", headers: WRITE_HEADERS, body: "{}" });
   assert.equal(done.status, 200);
   assert.match(new TextDecoder().decode((await reader.read()).value), /"type":"show-done"/, "the tabs are told the question is answered");
   await reader.cancel();

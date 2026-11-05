@@ -17,8 +17,8 @@ test("aiview reads a run through the reader", async () => {
     const { writer } = board;
     const repo = "/repos/one/.git";
     const run = await writer.openRun({ repo, group: "review-tool", title: "Review tool", seats: [{ id: "S1", blockers: [] }] });
-    const s1 = (await writer.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
-    await writer.post(s1, "@orchestrator the schema is in");
+    const s1 = await board.seat({ run: run.id, seat: "S1", doing: "the schema", files: [] });
+    await s1.client.post(s1.member, "@orchestrator the schema is in");
 
     const [summary] = await reader.repos();
     assert.equal(summary.repo, repo);

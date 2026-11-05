@@ -43,7 +43,7 @@ test("golden rest: open, and its argument errors", async () => {
     fs.writeFileSync(seats, JSON.stringify([{ id: "w9", blockers: [] }]));
     const noId = path.join(dir, "no-id.json");
     fs.writeFileSync(noId, JSON.stringify([{ blockers: [] }]));
-    const clean = (a: { status: number | null; text: string }) => ({ ...a, text: a.text.split(dir.split("\\").join("/")).join("<seats>").split(dir).join("<seats>") });
+    const clean = (a: { status: number | null; text: string }) => ({ ...a, text: a.text.split(dir.split("\\").join("/")).join("<seats>").split(dir).join("<seats>").split("<seats>\\").join("<seats>/") });
     pin("rest.open.task", clean(s.call("open", "--kind", "task", "--group", "h", "--title", "T", "--seats", seats, "--onto", "main")));
     pin("rest.open.no-id", clean(s.call("open", "--kind", "task", "--group", "h2", "--title", "T", "--seats", noId, "--onto", "main")));
     pin("rest.open.no-group", clean(s.call("open", "--kind", "task", "--title", "T", "--seats", seats)));

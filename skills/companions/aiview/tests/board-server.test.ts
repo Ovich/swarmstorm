@@ -166,13 +166,13 @@ test("with no server running, the reader starts it: 404 with no repository named
 
 test("a post is heard as board-changed", async () => {
   const run = (await writer.runs()).find((x) => x.repo === REPO)!;
-  const s3 = (await writer.join({ run: run.id, seat: "S3", doing: "page", files: [] })).member;
+  const s3 = await board.seat({ run: run.id, seat: "S3", doing: "page", files: [] });
   await new Promise((r) => setTimeout(r, 300)); // let that join's change go by before listening
   let posted = 0;
   const seen = listen((ev) => ev.some((e) => e.type === "board-changed") && ev.some((e) => e.type === "ping"), 5000);
   setTimeout(() => {
     posted = Date.now();
-    void writer.post(s3, "@S5 committed on the server");
+    void s3.client.post(s3.member, "@S5 committed on the server");
   }, 300);
   const events = await seen;
   const latency = Date.now() - posted;

@@ -10,7 +10,7 @@ import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectBoard } from "../src/client/remote.ts";
+import { connectBoard, connectDirectBoard } from "../src/client/remote.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { linkPipe } from "../src/link/link.ts";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
@@ -52,9 +52,13 @@ function joinedInHarness(): { r: Repo; run: number; member: { name: string; run:
   return { r, run, member: { name: "harness-plan/S3", run }, env, linkArgv: [entry, ...verb.split(" ")] };
 }
 
+/** The real spawn, held before any test mocks it: the agent's own link is the test's spawn, never one the client made.
+ *  Through the mocked one it was counted as the client's wherever the printed entry equals CLI byte for byte (Linux). */
+const spawnUncounted = spawn;
+
 /** The agent's own link, its background task. */
 function startAgentLink(h: ReturnType<typeof joinedInHarness>): ChildProcess {
-  const link = spawn(process.execPath, h.linkArgv, { cwd: h.r.wtA, env: h.env, stdio: "ignore" });
+  const link = spawnUncounted(process.execPath, h.linkArgv, { cwd: h.r.wtA, env: h.env, stdio: "ignore" });
   links.push(link);
   return link;
 }
@@ -116,11 +120,18 @@ test("in a harness session with no link started, the verb answers within 10 s th
   const again = spawnSync(process.execPath, [CLI, "doing", "still the client"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   assert.equal(again.status, 0, again.stderr);
   assert.match(again.stdout, /start your link now/);
+  // v1-F6: one link line per answer, never two
+  const linkLines = (out: string): number => out.split(/\r?\n/).filter((l) => l.startsWith("start your link now")).length;
+  assert.equal(linkLines(r.stdout), 1, r.stdout);
+  assert.equal(linkLines(again.stdout), 1, again.stdout);
+  const posted = spawnSync(process.execPath, [CLI, "post", "hello"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
+  assert.equal(posted.status, 0, posted.stderr);
+  assert.equal(linkLines(posted.stdout), 1, posted.stdout);
 });
 
 test("in a harness session, on a closed run, no verb prints the link line: end prints the summary prompt the closed line promised (S62, validation 2)", () => {
   const h = joinedInHarness();
-  h.r.cli(h.r.repo, "close", "--run", String(h.run));
+  h.r.cli(h.r.repo, "close", "--run", String(h.run), "--as", "harness-plan/orchestrator");
   for (const argv of [["post", "still here?"], ["end"], ["end"]]) {
     // a closed run's member is named: its worktree no longer identifies it
     const r = spawnSync(process.execPath, [CLI, ...argv, "--as", h.member.name], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
@@ -160,6 +171,8 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
   // and timed on the server's own clock, from when it saw the link lost to the event's time: never by how fast this
   // loaded machine runs the test's reads (S31, T14)
   const reader = await connectBoard({ dataRoot: h.r.home });
+  // the member's own calls, straight to the server: declared, without presence (trust-adaptations#D5)
+  const memberDirect = await connectDirectBoard(h.r.home, h.member);
   let gone: { at: string } | undefined;
   let state = "";
   let aliveAt: number | null = null;
@@ -170,7 +183,7 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
     let calledAt = 0;
     for (const end = Date.now() + 80_000; !gone && Date.now() < end; await new Promise((res) => setTimeout(res, 250))) {
       if (Date.now() - calledAt >= 5_000) {
-        await reader.setDoing(me, "still calling, its link dead");
+        await memberDirect.setDoing(me, "still calling, its link dead");
         calledAt = Date.now();
       }
       gone = (await reader.snapshot(repo)).events.find((e) => e.event === "lost" && e.body.startsWith("lost harness-plan/S3"));
@@ -181,6 +194,7 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
     aliveAt = entry?.aliveAt ?? null;
   } finally {
     reader.close();
+    memberDirect.close();
   }
   assert.ok(gone, "the server's tick posted lost harness-plan/S3");
   assert.equal(state, "lost");

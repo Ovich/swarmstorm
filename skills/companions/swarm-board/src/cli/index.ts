@@ -10,13 +10,13 @@ import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
-import { bindingOf, connectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
+import { bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
-import { baseAt, baseRef, git, gitAnswer, worktreeHolding } from "../git.ts";
+import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
@@ -46,13 +46,13 @@ const CODE_USAGE = CODE_WORDING.usage(CLI);
 /** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
 const EXAMPLES: Record<string, (as: string) => string> = {
   open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat add w1 --run 3",
+  seat: () => "seat add w1 --run 3 --as my-team/orchestrator",
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
   merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
   worktree: () => "worktree prune",
-  close: () => "close --run 3",
+  close: () => "close --run 3 --as my-team/orchestrator",
 };
 /** V9: the usage of the verb being called alone, from the help's own lines, and one corrected form; never the whole help. */
 const verbHelp = (verb = args.verb ?? ""): string => {
@@ -67,6 +67,14 @@ class CliError extends Error {}
 const fail = (msg: string): never => {
   throw new CliError(msg);
 };
+
+/** trust-adaptations#D7: the refs a call hands git (`--onto`, merged's sha) refused before any git runs when git
+ *  could read one as an option. */
+function refuseOptionLikeRefs(): void {
+  const onto = args.flag("--onto");
+  if (onto !== undefined) refArg(onto, "--onto");
+  if (args.verb === "merged" && args.positional[0] !== undefined) refArg(args.positional[0], "merged: the sha");
+}
 
 const emit = (json: unknown, human: string | (() => void)): void => {
   if (asJson) console.log(JSON.stringify(json));
@@ -104,9 +112,9 @@ function changedIn(worktree: string): string[] {
 
 /** Paths the worktree's branch changed since it left `onto`, committed or not; a rename gives both (D59). */
 function branchChangedIn(worktree: string, onto: string): string[] {
-  const base = git(worktree, "merge-base", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
+  const base = git(worktree, "merge-base", "--end-of-options", onto, "HEAD") ?? fail(`no merge base between ${onto} and HEAD in ${worktree}: is --onto the branch you merge into?`);
   // --no-renames: a rename is its deletion and its addition, both paths
-  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${base}..HEAD`], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [...new Set([...committed, ...changedIn(worktree)])];
@@ -123,6 +131,9 @@ const undoOpen = async (repo: string, group: string, why: string): Promise<strin
     board = await connectBoard({ dataRoot: DATA_ROOT });
     const begun = (await board.runs()).find((r) => r.repo === repo && r.group === group);
     if (!begun) return null;
+    // trust-adaptations#D5: closed by the orchestrator the open created, declared on its own connection
+    board.close();
+    board = await connectDirectBoard(DATA_ROOT, { name: `${group}/orchestrator`, run: begun.id });
     await board.closeRun(begun.id);
     return WORDING.openFailedUndone(why, begun.id);
   } catch {
@@ -180,25 +191,52 @@ const runArg = (): number => {
 let board!: ConnectedBoard;
 /** The caller whose link did not answer in a harness session: the verb ends on the line that starts it (D39). */
 let linkToStart: BoardMember | null = null;
+/** The link line, printed once per answer wherever it first fits (v1-F6), then forgotten. */
+const tellLinkToStart = (print: (line: string) => void): void => {
+  if (!linkToStart) return;
+  print(startLinkLine(linkToStart));
+  linkToStart = null;
+};
 
 /** The caller: --as names it; otherwise the member that joined from this worktree, asked of the server
  *  directly (D29). From then on the verb's calls go through that member's link. */
 async function caller(): Promise<Participant> {
-  const as = args.flag("--as");
-  const wt = as ? null : worktreeOf(process.cwd());
-  const p = as
-    ? ((await board.participant(as, placeRepoOf(process.cwd()))) ?? fail(`unknown member ${as}`))
-    : ((wt ? await board.identify({ place: wt }) : null) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>"));
+  const p = (await placedCaller()) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
   const direct = board;
   if (p.place && fs.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   // S62: a member ended, or of a closed run, has no link: its verb stays on the server, waits for no link and never
-  // prints the link line; it answers the closed line, or end its summary prompt
-  if (p.ended || !(await direct.runs()).some((r) => r.id === p.run)) return p;
-  board = await connectBoard({ dataRoot: DATA_ROOT, member });
+  // prints the link line; it answers the closed line, or end its summary prompt. Its calls still declare it (D5).
+  board = p.ended || !(await direct.runs()).some((r) => r.id === p.run) ? await connectDirectBoard(DATA_ROOT, member) : await connectBoard({ dataRoot: DATA_ROOT, member });
   if (board.linkMissing) linkToStart = member;
   direct.close();
   return p;
+}
+
+/** Who is calling, from --as and from the worktree the command runs in (trust-adaptations#D23): a live member's worktree
+ *  acts only as that member; `identify` never returns an ended one, so a fresh agent taking a seat back passes. Null:
+ *  no --as, and no member joined from here. */
+async function placedCaller(): Promise<Participant | null> {
+  const as = args.flag("--as");
+  const wt = worktreeOf(process.cwd());
+  const owner = wt ? await board.identify({ place: wt }) : null;
+  if (!as) return owner;
+  const p = (await board.participant(as, placeRepoOf(process.cwd()))) ?? fail(`unknown member ${as}`);
+  if (owner && owner.name !== p.name) fail(WORDING.asAnotherMember(self().join(" "), process.argv.slice(2).map(shellWord), as, owner.name));
+  return p;
+}
+
+/** `close` and `seat add` (trust-adaptations#D5): the run's orchestrator alone, its calls declared on a direct connection
+ *  (a closing run's link is told to stop); the orchestrators board stays open to every team orchestrator. */
+async function orchestratorOf(verb: "close" | "seat add", run: number, rerun: (as: string) => string): Promise<void> {
+  const group = (await board.runs()).find((r) => r.id === run)?.group ?? null;
+  if (group === ORCHESTRATORS_GROUP) return;
+  const orchestrator = group ? `${group}/orchestrator` : "<group>/orchestrator";
+  const p = await placedCaller();
+  if (!p || p.seat !== "orchestrator" || p.run !== run) fail(WORDING.orchestratorOnly(verb, run, p?.name ?? null, rerun(orchestrator)));
+  const direct = board;
+  board = await connectDirectBoard(DATA_ROOT, { name: p!.name, run });
+  direct.close();
 }
 
 /** How long ago an ms epoch was, short: `12s`, `4m`, `2h`; `never` for null. */
@@ -375,7 +413,7 @@ const emitHeard = async (p: Participant, json: object, result: string | string[]
   emit({ ...json, ...(a.next ? { next: a.next } : {}), ...(a.paused ? { paused: a.paused } : {}) }, () => {
     for (const l of lines) console.log(l);
     // S29: a member whose link does not run yet starts it before its listener, as join orders them
-    if (linkToStart) console.log(startLinkLine(linkToStart));
+    tellLinkToStart(console.log);
     for (const l of a.lines.slice(lines.length)) console.log(l);
   });
 };
@@ -387,7 +425,7 @@ const slashed = (s: string): string => s.replace(/\\/g, "/");
 const guidesHere = (p: Participant, onto?: string): Guide[] => {
   const root = p.place ?? worktreeOf(process.cwd());
   // with the branch merged into: its project guides too, the ones the rebase brings (G12)
-  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", `${onto}:.claude/skills`)) : [];
+  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", "--end-of-options", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", "--end-of-options", `${onto}:.claude/skills`)) : [];
   return discoverGuides(toolRoot(), root, ofOnto);
 };
 
@@ -636,6 +674,7 @@ async function main(): Promise<void> {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
         const run = runArg();
+        await orchestratorOf("seat add", run, (as) => WORDING.seatAdd(self().join(" "), shellWord(id), run, as));
         const role = args.flag("--role");
         const area = args.flag("--area");
         const added = await board.addSeat(run, {
@@ -659,6 +698,7 @@ async function main(): Promise<void> {
       const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
       // the orchestrators board is permanent: closed only on purpose
       if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run));
+      await orchestratorOf("close", run, (as) => WORDING.closeRun(self().join(" "), run, as));
       const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
@@ -782,6 +822,12 @@ async function main(): Promise<void> {
       const joinRun = await runOf(runArg());
       if (joinAs !== undefined && joinRun && joinAs !== `${joinRun.group}/${joinedSeat()}`)
         fail(WORDING.joinAsOtherGroup(joinAs, joinRun.id, joinRun.group, WORDING.seatJoin(self().join(" "), joinRun.id, shellWord(joinRun.group), shellWord(need("--doing")), shellWord(joinedSeat()))));
+      // trust-adaptations#D23 (v1-F1): a live member's worktree joins only as that member; taking a seat back from its
+      // own worktree (its member ended, or the same one) or from the checkout stays open
+      const joinName = `${joinRun?.group ?? ""}/${joinedSeat()}`;
+      const here = worktreeOf(process.cwd());
+      const owner = joinRun && here ? await board.identify({ place: here }) : null;
+      if (owner && owner.name !== joinName) fail(WORDING.joinAsAnotherMember(joinName, owner.name));
       const own = await memberWorktree(runArg(), joinedSeat());
       const joined = await board.join({
         run: runArg(),
@@ -1043,9 +1089,9 @@ async function main(): Promise<void> {
       if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
       // V1: a sha git does not know was never merged
-      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", `${sha}^{commit}`))
+      if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", "--end-of-options", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.place)} rev-parse --short HEAD`);
-      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", sha, lock.onto).status !== 0)
+      if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
       const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => path.resolve(f)), conflicts })) as Sharer[];
@@ -1100,7 +1146,7 @@ async function main(): Promise<void> {
       // V-40: the orchestrator ending a live seat is answered as the orchestrator: the branch, who merges it, or the close
       if (refusal && !lostSeat && endedSeat !== undefined) {
         const live = (await board.packCall(p, "unmerged", {})) as { branch: string; left: string } | null;
-        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), `${self().join(" ")} close --run ${p.run}`));
+        fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), WORDING.closeRun(self().join(" "), p.run, shellWord(asker.name))));
       }
       if (refusal && !lostSeat) {
         const { worktree: mine, left } = refusal;
@@ -1171,7 +1217,7 @@ async function main(): Promise<void> {
           }
           const idle = open[i].idleMs;
           if (idle >= FORGOTTEN_MS)
-            console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id));
+            console.log(WORDING.forgottenRun(Math.floor(idle / 86400000), cli, r.id, shellWord(`${r.plan}/orchestrator`)));
         }
         for (const line of orchestrators) console.log(line);
       });
@@ -1235,12 +1281,13 @@ if (args.verb === "serve") {
   console.log(server.url);
 } else {
   try {
+    refuseOptionLikeRefs();
     // every verb reaches the board through the server, started on demand (D6, D19); the poller reads the store itself
     if (args.verb !== "poll") board = await connectBoard({ dataRoot: DATA_ROOT });
     await main();
     // D39: the call went straight to the server; the agent starts its own link (on stderr under --json, which stays
     // parseable). On every call while the link is down: unseen, the member reads away or lost while it works
-    if (linkToStart) (asJson ? console.error : console.log)(startLinkLine(linkToStart));
+    tellLinkToStart(asJson ? console.error : console.log);
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);

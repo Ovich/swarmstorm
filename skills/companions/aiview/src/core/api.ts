@@ -99,8 +99,10 @@ export interface OpenEventPayload {
 
 /** What `POST /api/show` and `POST /api/open` answer: how many tabs heard it, so the agent knows whether
  *  the person is looking or has to be handed the link; `opened`, sent to a project, when no tab showed it and a new
- *  one was opened (D41). */
+ *  one was opened (D41); `browserRefusal`, in its place, when no tab showed it and the server may open no browser
+ *  (trust-adaptations v1-F5: a refused data home or AIVIEW_NO_BROWSER), the reason. */
 export interface ShowResponse {
   tabs: number;
   opened?: boolean;
+  browserRefusal?: string;
 }

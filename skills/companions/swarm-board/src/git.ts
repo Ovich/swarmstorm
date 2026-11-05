@@ -11,6 +11,13 @@ export const gitAnswer = (cwd: string, ...argv: string[]): GitAnswer => {
   return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
 };
 
+/** A ref, sha or base taken from input, refused when git could read it as an option (trust-adaptations#D7); the
+ *  git calls taking revisions also put `--end-of-options` before them. */
+export function refArg(value: string, what: string): string {
+  if (value.startsWith("-")) throw new Error(`${what} cannot start with "-": ${value}`);
+  return value;
+}
+
 /** The trimmed output of a git command that exits 0; null otherwise. */
 export const git = (cwd: string, ...argv: string[]): string | null => {
   const r = gitAnswer(cwd, ...argv);
@@ -41,6 +48,6 @@ export const baseAt = (cwd: string): string | null => {
  *  (a commit). A bare branch name that exists only on origin makes `git worktree add -b <seat> <dir> <base>` create and
  *  check out the base itself instead of the seat branch. */
 export const baseRef = (cwd: string, base: string): string => {
-  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", ref) !== null) return ref;
+  for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", ref) !== null) return ref;
   return base;
 };

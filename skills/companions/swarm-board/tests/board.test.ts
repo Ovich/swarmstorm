@@ -140,7 +140,9 @@ test("wait resolves within 100 ms of a post for it", async () => {
   const d = await board.wait(s5, { timeoutMs: 5000 });
   const latency = Date.now() - posted;
   assert.equal(d.full.length, 1);
-  assert.ok(latency < 100, `woke after ${latency} ms`);
+  // 100 ms here; a loaded CI runner widens it through SWARM_TEST_WAKE_BOUND_MS (verify.yml), never below 100
+  const bound = Math.max(100, Number(process.env.SWARM_TEST_WAKE_BOUND_MS) || 0);
+  assert.ok(latency < bound, `woke after ${latency} ms (bound ${bound} ms)`);
 });
 
 test("wait resolves empty on timeout", async () => {

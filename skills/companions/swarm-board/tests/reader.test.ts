@@ -26,6 +26,8 @@ const SLICES = [
 let dir: string;
 let server: { close(): Promise<void> } | null;
 let writer: RemoteBoard & { close(): void };
+/** S1's own connection: its join binds it, so its posts are its own (trust-adaptations#D5). */
+let seatBoard: (RemoteBoard & { close(): void }) | null = null;
 let reader: BoardReader | null;
 
 beforeEach(async () => {
@@ -38,6 +40,8 @@ beforeEach(async () => {
 afterEach(async () => {
   reader?.close();
   writer.close();
+  seatBoard?.close();
+  seatBoard = null;
   await server?.close();
   stopServerOf(dir); // a server the reader started, if any
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
@@ -45,8 +49,9 @@ afterEach(async () => {
 
 const aRunWithARunner = async () => {
   const run = await writer.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
-  const s1 = (await writer.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
-  return { run, s1 };
+  seatBoard = await connectBoard({ dataRoot: dir });
+  const s1 = (await seatBoard.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
+  return { run, s1, seat: seatBoard };
 };
 
 /** Every repository heard within `ms`. */
@@ -65,8 +70,8 @@ const firstHeard = (r: BoardReader, ms: number): Promise<string | null> =>
   });
 
 test("repos and snapshot answer what the server's board answers", async () => {
-  const { run, s1 } = await aRunWithARunner();
-  await writer.post(s1, "@orchestrator the schema is in", { about: "src/schema.ts" });
+  const { run, s1, seat } = await aRunWithARunner();
+  await seat.post(s1, "@orchestrator the schema is in", { about: "src/schema.ts" });
   const repos = await reader!.repos();
   assert.deepEqual(repos, await writer.repos());
   assert.deepEqual(repos[0].runs.map((r) => r.run), [run.id]);
@@ -75,9 +80,9 @@ test("repos and snapshot answer what the server's board answers", async () => {
 });
 
 test("a post committed on the server reaches the reader as changed within 1 s", async () => {
-  const { s1 } = await aRunWithARunner();
+  const { s1, seat } = await aRunWithARunner();
   const listening = firstHeard(reader!, 1000);
-  await writer.post(s1, "progress: half way");
+  await seat.post(s1, "progress: half way");
   assert.equal(await listening, REPO);
 });
 
@@ -103,11 +108,11 @@ test("with no server running, the reader starts it", async () => {
 });
 
 test("close stops the listening", async () => {
-  const { s1 } = await aRunWithARunner();
+  const { s1, seat } = await aRunWithARunner();
   const repos: string[] = [];
   reader!.onChange((repo) => repos.push(repo));
   reader!.close();
-  await writer.post(s1, "after the reader closed");
+  await seat.post(s1, "after the reader closed");
   await new Promise((r) => setTimeout(r, 500));
   assert.deepEqual(repos, []);
 });

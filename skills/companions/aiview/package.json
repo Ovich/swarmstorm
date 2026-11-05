@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build && node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.app.json",
-    "test": "node --import ./tests/no-browser.preload.ts --test \"tests/**/*.test.ts\"",
+    "test": "node --import ./tests/no-browser.preload.ts --test --test-timeout=600000 \"tests/**/*.test.ts\"",
     "test:app": "vitest run"
   },
   "devDependencies": {
@@ -38,7 +38,7 @@
     "react-dom": "19.2.8",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
-    "shiki": "^4.4.3",
+    "shiki": "4.4.3",
     "tailwind-merge": "3.6.0"
   }
 }

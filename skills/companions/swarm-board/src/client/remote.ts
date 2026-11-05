@@ -14,8 +14,9 @@ import type { Binding } from "../link/transcripts.ts";
 export type RemoteBoard = { [K in RpcMethod]: (...a: Parameters<Board[K]>) => Promise<Awaited<ReturnType<Board[K]>>> };
 export type BoardMember = { name: string; run: RunId };
 
-/** How long a server or a link started here has to answer (D19). */
-const START_TIMEOUT_MS = 5000;
+/** How long a server or a link started here has to answer (D19): 5 s, unless SWARM_START_TIMEOUT_MS says otherwise
+ *  (a slow CI runner sets it; trust-adaptations T9). */
+const START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5000;
 const START_POLL_MS = 50;
 
 /** The entry this CLI runs from: what a server or a link is spawned as (D28); no node flag of the caller carried over. */
@@ -69,6 +70,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
   // D40: a live process holding the start lock is a server starting or running; never a second one
   const startedElsewhere = (): boolean => liveStartLockHolder(dataRoot) !== null;
   let exited: string | null = null;
+  const startedAt = Date.now();
   if (!startedElsewhere()) {
     let log: number | "ignore" = "ignore";
     try {
@@ -99,7 +101,7 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {}
   const reason = said || exited || `it did not answer within ${START_TIMEOUT_MS / 1000} s`;
-  throw new Error(`swarm: the board server did not start: ${reason}; run swarm serve to see it`);
+  throw new Error(`swarm: the board server did not start: ${reason} (waited ${Date.now() - startedAt} ms); run swarm serve to see it`);
 }
 
 /** The binding a member's link watches for (D29): the orchestrator's `open`, a member's `join`. */
@@ -260,13 +262,14 @@ function callsOver(firstSend: (f: Frame) => void): Calls {
   };
 }
 
-/** The anonymous connection to the server: a Hello with no member, then calls. */
-export async function connectServer(state: ServerState): Promise<{ send: (f: Frame) => void; onFrame: (h: (f: Frame) => void) => void; onClose: (h: () => void) => void; close: () => void }> {
+/** The connection to the server: a Hello, then calls. Anonymous without `callsFor`; with it, declaring the member its calls
+ *  are for, `presence: false`: a direct connection, never the member's link (trust-adaptations#D5). */
+export async function connectServer(state: ServerState, callsFor?: BoardMember): Promise<{ send: (f: Frame) => void; onFrame: (h: (f: Frame) => void) => void; onClose: (h: () => void) => void; close: () => void }> {
   const ws = new WebSocket(`ws://127.0.0.1:${state.port}`);
   let handler: (f: Frame) => void = () => {};
   let closer: () => void = () => {};
   await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
@@ -325,7 +328,7 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
 `));
           return;
         }
-        const conn = await connectServer(await ensureServer(opts.dataRoot));
+        const conn = await connectServer(await ensureServer(opts.dataRoot), member);
         direct = conn;
         conn.onFrame((f) => calls.settle(f));
         conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
@@ -351,9 +354,19 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
       });
     }
   }
-  const conn = await connectServer(state);
+  return Object.assign(await serverBoard(state, opts.member), { linkMissing: !!opts.member });
+}
+
+/** A board straight to the server, with no link: for `member`'s calls when given (an ended member, a closed run, a
+ *  verb that must not ride the link), declared in its Hello without presence (trust-adaptations#D5); anonymous otherwise. */
+export async function connectDirectBoard(dataRoot: string, member?: BoardMember): Promise<ConnectedBoard> {
+  return Object.assign(await serverBoard(await ensureServer(dataRoot), member), { linkMissing: false });
+}
+
+async function serverBoard(state: ServerState, member?: BoardMember): Promise<RemoteBoard & { close(): void }> {
+  const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
   conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
-  return Object.assign(asRemote(calls.call), { close: conn.close, linkMissing: !!opts.member });
+  return Object.assign(asRemote(calls.call), { close: conn.close });
 }

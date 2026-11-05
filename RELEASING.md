@@ -58,26 +58,26 @@ the old viewer.** Run the build before tagging, every time, and commit what it p
 ## The sequence
 
 ```bash
-cd skills/companions/aiview && npm install && npm run build && npm test && npm run test:app && cd ../../..   # the one page and server: dist/ + dist-cli/
-cd skills/companions/swarm-board && npm install && npm run build && npm test && cd ../../..   # the board's CLI: dist-cli/ only
-node --test skills/plan/write-plan/scripts/decisions.test.mjs     # the decision ids check
-node --test skills/review/pr-review/scripts/scope.test.mjs            # the review scope script
-node --test skills/project/write-conventions/scripts/rules.test.mjs # the conventions rules script
-node --test "skills/workbench/create-workbench/scripts/*.test.mjs" # the workbench page, writer and loader
 # bump "version" to the SAME value in all four:
 #   .claude-plugin/plugin.json
 #   .claude-plugin/marketplace.json
 #   .codex-plugin/plugin.json
 #   .cursor-plugin/plugin.json
-claude plugin validate .                        # manifests, skills, commands
+node scripts/release-check.mjs                  # builds both companions from their locks, then: committed bundles
+                                                # match the build, the four versions agree, every test passes
 git add -A && git commit -m "release: v<version>"
+node scripts/release-check.mjs                  # again, if the first run named a bundle: it passes once committed
+claude plugin validate .                        # manifests, skills, commands
 git push                                        # the tag is created for you
 ```
 
 The tag is not yours to make. `.github/workflows/tag-release.yml` watches the four
 manifests on `main`; when the version they agree on has no `swarmstorm--v<version>` tag,
 it creates and pushes one. A push that touches those files without changing the version
-is a no-op, so editing a description or a keyword costs nothing. The workflow fails loudly
+is a no-op, so editing a description or a keyword costs nothing. Before tagging, it runs
+`node scripts/release-check.mjs --dist` again, so a bundle that is not what the source
+builds is never tagged, and it attests the bundles of each tag it makes (`gh attestation
+verify <file> --repo <owner>/<repo>`). The workflow fails loudly
 on the one case that would otherwise ship silently wrong — the manifests disagreeing,
 where `plugin.json` wins at install time while the catalogue advertises the other number.
 

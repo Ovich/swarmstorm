@@ -18,6 +18,14 @@ const real = (p: string): string => {
   }
 };
 
+/** The one form two spellings of a folder compare in (trust-adaptations T16): its real path, so an 8.3 short name
+ *  (`C:\Users\RUNNER~1`) and its long name are one, case-folded where the file system ignores case. A path not on
+ *  disk keeps its resolved spelling. */
+export function canonicalPath(p: string): string {
+  const resolved = real(path.resolve(p));
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
+}
+
 /** The repository `dir` is in: its common git dir, real path; null outside a repository. */
 export function repoOf(dir: string): string | null {
   const common = gitOut(dir, "rev-parse", "--git-common-dir");

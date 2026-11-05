@@ -301,11 +301,17 @@ export async function runLink(opts: {
         }
         wasWelcomed ||= welcomed;
       };
-      ws.onclose = () => {
+      // Node 22's WebSocket fires only `error` on a refused connection, never `close`; Node 24 fires both.
+      // Whichever comes first ends this connection, once: a late `close` must not clear the next one's `welcomed`.
+      let ended = false;
+      const endConnection = () => {
+        if (ended) return;
+        ended = true;
         welcomed = false;
         resolve(wasWelcomed);
       };
-      ws.onerror = () => {};
+      ws.onclose = endConnection;
+      ws.onerror = endConnection;
     });
 
   /** Connects, and after each drop reconnects (re-reading the state file: a restarted server has a
@@ -412,8 +418,13 @@ const alive = (pid: number): boolean => {
   }
 };
 
-/** The command line of a live process; null when it is gone or cannot be read. */
-function commandLine(pid: number): string | null {
+/** A value that may enter a process query as a pid: a positive whole number, nothing else (trust-adaptations#D8). */
+export const isProcessId = (pid: unknown): pid is number => typeof pid === "number" && Number.isInteger(pid) && pid > 0;
+
+/** The command line of a live process; null when it is gone or cannot be read, and for anything but a pid, which
+ *  never reaches the PowerShell command (trust-adaptations#D8). */
+export function commandLine(pid: number): string | null {
+  if (!isProcessId(pid)) return null;
   const r =
     process.platform === "win32"
       ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
@@ -438,7 +449,7 @@ export function stopLinks(runId: number, members: string[]): void {
     } catch {
       continue;
     }
-    if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
+    if (isProcessId(pid) && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
       fs.rmSync(file);
     } catch {}

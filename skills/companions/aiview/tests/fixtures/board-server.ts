@@ -5,22 +5,34 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectBoard, type RemoteBoard } from "../../../swarm-board/src/client/remote.ts";
+import { connectBoard, type ConnectedBoard, type RemoteBoard } from "../../../swarm-board/src/client/remote.ts";
 import { startBoardServer } from "../../../swarm-board/src/server/server.ts";
 
 /** swarm's CLI entry: what a board server is started and versioned from in a test. */
 export const SWARM_CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "swarm-board", "src", "cli", "index.ts");
 process.argv[1] = SWARM_CLI;
 
-export type TestBoard = { writer: RemoteBoard; close(): Promise<void> };
+type JoinInput = Parameters<RemoteBoard["join"]>[0];
+type Seated = { member: Awaited<ReturnType<RemoteBoard["join"]>>["member"]; client: RemoteBoard };
+
+/** `writer`: the run's opener, bound to its orchestrator; `seat`: a member joined on a connection of its own, which its
+ *  join binds, so its posts are its own (trust-adaptations#D5). */
+export type TestBoard = { writer: RemoteBoard; seat(input: JoinInput): Promise<Seated>; close(): Promise<void> };
 
 /** The board server of `dataRoot`, in this process, and a client writing to it. */
 export async function startTestBoard(dataRoot: string): Promise<TestBoard> {
   const server = await startBoardServer({ dataRoot });
   const writer = await connectBoard({ dataRoot });
+  const seats: ConnectedBoard[] = [];
   return {
     writer,
+    async seat(input) {
+      const client = await connectBoard({ dataRoot });
+      seats.push(client);
+      return { member: (await client.join(input)).member, client };
+    },
     async close() {
+      for (const client of seats.splice(0)) client.close();
       writer.close();
       await server.close();
     },

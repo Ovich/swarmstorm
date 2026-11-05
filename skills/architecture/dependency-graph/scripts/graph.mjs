@@ -12,9 +12,10 @@
 // Prints one JSON line: the output file, the node and edge counts, the time taken. Without --out, the Mermaid
 // goes to stdout. dependency-cruiser and the project's TypeScript are installed once, together, into a cache.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { npmInstallArgs, npmInvocation, projectTypescriptVersion } from "./cruiser-install.mjs";
 
 const cruiserVersion = "18.5.0";
 const core =
@@ -35,27 +36,18 @@ const root = resolve(option("root") ?? ".");
 if (!existsSync(join(root, "package.json")) && !existsSync(join(root, "tsconfig.json")))
   fail(`no package.json or tsconfig.json in ${root}`, "--root <the folder of the package to graph>");
 
-/** The project's own TypeScript version, so the parse matches its compiler; 5.x when it has none. */
-const typescriptVersion = () => {
-  for (let dir = root; ; dir = resolve(dir, "..")) {
-    const pkg = join(dir, "node_modules", "typescript", "package.json");
-    if (existsSync(pkg)) return JSON.parse(readFileSync(pkg, "utf8")).version;
-    if (resolve(dir, "..") === dir) return "5";
-  }
-};
-
 const cruiser = () => {
-  const ts = typescriptVersion();
-  const cache = join(homedir(), ".cache", "swarmstorm-depgraph", `${cruiserVersion}-ts${ts}`);
+  const ts = projectTypescriptVersion(root);
+  if (ts.refused) fail(ts.refused, "fix or reinstall the project's typescript package, then run again");
+  const cache = join(homedir(), ".cache", "swarmstorm-depgraph", `${cruiserVersion}-ts${ts.version}`);
   const bin = join(cache, "node_modules", "dependency-cruiser", "bin", "dependency-cruiser.mjs");
   if (!existsSync(bin)) {
+    const installArgs = npmInstallArgs(cache, cruiserVersion, ts.version);
+    const npm = npmInvocation(installArgs);
+    if (npm.refused) fail(`could not find npm to install dependency-cruiser: ${npm.refused}`, `install it by hand, then run again: npm ${installArgs.join(" ")}`);
     mkdirSync(cache, { recursive: true });
     try {
-      execFileSync(
-        process.platform === "win32" ? "npm.cmd" : "npm",
-        ["install", "--silent", "--no-audit", "--no-fund", "--prefix", cache, `dependency-cruiser@${cruiserVersion}`, `typescript@${ts}`],
-        { stdio: ["ignore", "ignore", "pipe"], shell: process.platform === "win32" },
-      );
+      execFileSync(npm.program, npm.argv, { stdio: ["ignore", "ignore", "pipe"] });
     } catch (error) {
       fail(`could not install dependency-cruiser: ${String(error.stderr ?? error).split("\n")[0]}`, "check the network, then run again");
     }

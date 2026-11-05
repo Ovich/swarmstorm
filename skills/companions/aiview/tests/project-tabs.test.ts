@@ -9,6 +9,10 @@ import type { AddressInfo } from "node:net";
 import type http from "node:http";
 import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
+
+/** The token this suite's server is started with; every POST carries it (trust-adaptations#D4). */
+const TOKEN = "test-token";
+const WRITE_HEADERS = { "content-type": "application/json", "x-aiview-token": TOKEN };
 import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
 import type { ShowResponse } from "../src/core/api.ts";
 
@@ -18,6 +22,8 @@ let server: http.Server;
 let base: string;
 let docId: number;
 const tabsOpened: string[] = [];
+/** Why this suite's server may open no browser, or null when it may (v1-F5); a test sets it and puts it back. */
+let browserRefused: string | null = null;
 
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aiview-tabs-"));
@@ -31,7 +37,12 @@ before(async () => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, "# X\n");
   docId = index.register(file, {}).id;
-  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, openTab: (url) => tabsOpened.push(url) });
+  server = startServer(index, { port: 0, open: false, startDoc: null, toolRoot: tmp, writeState: false, boardDataRoot: tmp, token: TOKEN, openTab: (url) => {
+      if (browserRefused !== null) return browserRefused;
+      tabsOpened.push(url);
+      return null;
+    },
+  });
   await new Promise<void>((r) => server.on("listening", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -55,7 +66,7 @@ async function tabOn(project: string) {
 }
 
 const post = async (route: string, body: unknown): Promise<ShowResponse> =>
-  (await (await fetch(`${base}${route}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as ShowResponse;
+  (await (await fetch(`${base}${route}`, { method: "POST", headers: WRITE_HEADERS, body: JSON.stringify(body) })).json()) as ShowResponse;
 
 test("two tabs on two projects: an open from alpha moves only alpha's tab; an open from gamma, none open there, opens a new one", async () => {
   const alpha = await tabOn("alpha");
@@ -74,6 +85,18 @@ test("two tabs on two projects: an open from alpha moves only alpha's tab; an op
   } finally {
     alpha.close();
     beta.close();
+  }
+});
+
+test("no tab on the project and no browser allowed: the answer says none opened, and why (v1-F5)", async () => {
+  browserRefused = "AIVIEW_NO_BROWSER=1";
+  try {
+    const before = tabsOpened.length;
+    assert.deepEqual(await post("/api/open", { id: docId, project: "gamma" }), { tabs: 0, opened: false, browserRefusal: "AIVIEW_NO_BROWSER=1" });
+    assert.deepEqual(await post("/api/show", { id: docId, components: ["Pill"], project: "gamma" }), { tabs: 0, opened: false, browserRefusal: "AIVIEW_NO_BROWSER=1" });
+    assert.equal(tabsOpened.length, before);
+  } finally {
+    browserRefused = null;
   }
 });
 

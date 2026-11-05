@@ -59,7 +59,7 @@ export function conflictsOf(worktree: string, onto: string, reflogMark: number):
     const before = reflog[start + 1];
     const target = reflog[start].commit || onto;
     if (!before || !target) return { unknown: "no-reflog" };
-    const r = gitAnswer(worktree, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", before.commit, target);
+    const r = gitAnswer(worktree, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", "--end-of-options", before.commit, target);
     if (r.status === 0) return { files: [] };
     if (r.status !== 1) return { unknown: "no-reflog" };
     // -z: the tree's oid, then each conflicted path, NUL-separated

@@ -23,7 +23,8 @@ import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
 import { boardHash } from "../core/boardhash.ts";
 import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
-import { readServerStatus, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
 import { disciplineWarnings } from "../mermaid/discipline.ts";
@@ -85,13 +86,20 @@ function askServer(route: string, body: unknown): string | null {
   const st = readServerStatus();
   if (!st.running || st.port === null) return null;
   const b = JSON.stringify(body);
+  // the Host the server admits, and the token it wrote (trust-adaptations#D4)
+  const headers = {
+    host: `127.0.0.1:${st.port}`,
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(b),
+    [TOKEN_HEADER]: readServerToken() ?? "",
+  };
   const r = hiddenSpawnSync(
     process.execPath,
     [
       "-e",
       `const b=${JSON.stringify(b)};const q=require('node:http').request(
          {host:'127.0.0.1',port:${st.port},path:${JSON.stringify(route)},method:'POST',
-          headers:{'content-type':'application/json','content-length':Buffer.byteLength(b)}},
+          headers:${JSON.stringify(headers)}},
          r=>{r.pipe(process.stdout);r.on('end',()=>process.exitCode=r.statusCode===200?0:1)});
        q.on('error',()=>process.exit(1));q.end(b);`,
     ],
@@ -237,9 +245,17 @@ function agentProject(fallback: string): string {
   }
 }
 
-/** What the agent reads of a move sent to its project's tabs (D41). */
-const movedLine = (r: ShowResponse, project: string, verb: string): string =>
-  r.opened ? `no tab showed ${project}: opened a new one` : `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+/** What the agent reads of a move sent to its project's tabs (D41); a browser the server may not open says why
+ *  (trust-adaptations v1-F5). */
+const movedLine = (r: ShowResponse, project: string, verb: string): string => {
+  if (r.browserRefusal) return noBrowserLine(project, r.browserRefusal);
+  if (r.opened) return `no tab showed ${project}: opened a new one`;
+  return `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+};
+
+/** What the agent reads when no tab shows `project` and no browser may open: the reason, and the link to hand over. */
+const noBrowserLine = (project: string, refusal: string): string =>
+  `no tab showed ${project}, and no browser opened (${refusal}): give the person the link`;
 
 function resolveRef(ref: string): Document | undefined {
   const index = openIndex();
@@ -403,7 +419,7 @@ function cmdShow(): void {
   const project = agentProject(doc.project);
   const answer = askServer("/api/show", { ...pointer, project });
   const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
-  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false }, () => {
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, browserRefusal: moved?.browserRefusal ?? null }, () => {
     console.log(url);
     console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
   });
@@ -717,10 +733,21 @@ function cmdOpen(): void {
   // the tabs on the agent's project go to it; none there, the server opens one (D41)
   const answer = askServer("/api/open", { id: d.id, project });
   const moved: ShowResponse | null = answer === null ? null : (JSON.parse(answer) as ShowResponse);
-  if (!moved && args.has("--open")) {
-    openBrowser(url);
-  }
-  emit({ id: d.id, url, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, server: readServerStatus() }, moved ? [url, movedLine(moved, project, "opened")].join("\n") : url);
+  // no server answered: --open opens the browser from here, under the same refusal
+  const localRefusal = !moved && args.has("--open") ? openBrowser(url) : undefined;
+  const answerLine = moved ? movedLine(moved, project, "opened") : localRefusal ? noBrowserLine(project, localRefusal) : null;
+  emit(
+    {
+      id: d.id,
+      url,
+      project,
+      tabs: moved?.tabs ?? 0,
+      opened: moved?.opened ?? localRefusal === null,
+      browserRefusal: moved?.browserRefusal ?? localRefusal ?? null,
+      server: readServerStatus(),
+    },
+    answerLine ? [url, answerLine].join("\n") : url,
+  );
 }
 
 /** The project's board, aiview's /board page: `--repo` adds a repository to it (what
