@@ -27,6 +27,9 @@ designed on the board first, in the one design format, then the protocol runs: `
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.
+**Any with a cycle, of any kind, can add a reflect phase** when the loop circles instead of converging, on the
+person's ask or your judgment: the work paused, every voice asked once, the person deciding how to
+go on: `references/reflect-phase.md`.
 
 - **The project's own come first**: its `protocol-<name>` skills in its local skills folder
   (`.claude/skills/` when it has no other), and its older `brainswarm-<name>` skills.

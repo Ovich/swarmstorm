@@ -339,7 +339,7 @@ export interface Board {
    *  body `phase <name>: <text>`, mentioning `<group>/*` so every member of the run wakes; sets the run's
    *  current phase and clears its done marks. Refused to anyone else and on a closed run, whatever the kind.
    *  `stillOwed`: the members that owed the phase it replaces, not done (board-split D62, V-6). */
-  phase(p: Participant, name: string, text: string, opts?: { watch?: string[]; for?: string[] }): Message & { stillOwed: string[] };
+  phase(p: Participant, name: string, text: string, opts?: { watch?: string[]; for?: string[] }): Message & { stillOwed: string[]; earlier: string[] };
   /** True when `p`, a member, has nothing to do: its last two `wait --mentions` in a row returned empty on their hold,
    *  and it owes no phase part and holds no claim (an unread mention would have ended the wait). */
   idle(p: Participant): boolean;
@@ -1857,13 +1857,15 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           const scope = phaseScopeOf(before, String(before.phase));
           return phaseMembersOf(fresh.run, String(before.phase)).filter((m) => owesPhase(m, scope)).map((m) => m.member);
         })();
+        // the names of the run's phases opened before this one, in order: the answer reads a loop from them
+        const earlier = (db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(fresh.run, EVENTS.phase.name) as Row[]).map((r) => String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""));
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         // D41: its all-done told once per opening
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed };
+        return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed, earlier };
       });
     },
 
