@@ -489,6 +489,25 @@ test("board-fixes#D1: a link's socket killed is logged with its member, its caus
   assert.match((await logLines()).at(-1) ?? "", /close: p\/S1, cause superseded, 0 call\(s\) open$/);
 });
 
+test("board-fixes#D1: a call answered 10 s or more after it came in is logged slow, with its member, method and time", async () => {
+  const opener = await welcomed();
+  const run = await value(opener, "openRun", { repo: REPO, group: "p", title: "T", seats: SEATS });
+  const joiner = await welcomed();
+  await value(joiner, "join", { run: run.id, seat: "S1", doing: "x", files: [] });
+  const link = await welcomed({ member: { name: "p/S1", run: run.id } });
+  // the clock read when the server answers runs 11 s ahead: the call took that long, without the test sleeping
+  const realNow = Date.now;
+  Date.now = () => realNow() + (new Error().stack?.includes("at answer ") ? 11_000 : 0);
+  try {
+    await value(link, "runs");
+  } finally {
+    Date.now = realNow;
+  }
+  const slow = fs.readFileSync(serverLogFile(dir), "utf8").split(/\r?\n/).filter((l) => l.includes(" slow: "));
+  assert.equal(slow.length, 1, slow.join("\n"));
+  assert.match(slow[0], /^\S+ slow: p\/S1, runs answered in 110\d\d ms$/);
+});
+
 test("board-fixes#D1: a ping round cuts a socket silent past 25 s only when the round ran on time, never after the server's loop was blocked", () => {
   const now = 100_000;
   assert.equal(silentTooLong(now, now - 10_000, now - 26_000), true);
