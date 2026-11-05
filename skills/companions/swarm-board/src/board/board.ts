@@ -890,7 +890,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const participantById = (id: number): Participant => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id) as Row);
 
   /** `authorOf`: how its author is read; a caller turning many rows passes one memo, each author read once (board-fixes#D1). */
-  const toMessage = (r: Row, authorOf: (id: number) => Participant = participantById): Message => {
+  const toMessage = (r: Row, authorOf: (id: number) => Participant): Message => {
     const author = authorOf(Number(r.author));
     return {
     seq: Number(r.seq),
@@ -944,7 +944,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
-    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
+    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row, participantById);
   };
   /** board-fixes#D13: the seq of the member's open task, its latest `post --task` until its next `done`; null when none. */
   const openTaskOf = (run: RunId, name: string, id: number): number | null => {
@@ -1912,8 +1912,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // idea 2: what the pause held from the orchestrator (what would have woken it) comes in resume's answer, one
         // line each, and is delivered with it
         const me = participantById(fresh.id);
+        const authorOf = memoizedParticipants();
         const held = unseenRows(me)
-          .map((r) => toMessage(r))
+          .map((r) => toMessage(r, authorOf))
           .filter((m) => m.run === me.run && wakes(m, me));
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const m of held) mark.run(me.id, m.seq, now());
@@ -2404,8 +2405,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         return statesByRun.get(run)!.get(member);
       };
       const cutoff = t - STALE_MS;
+      // board-fixes#D1: one read per participant for the whole snapshot, shared by the pack, the roster's unread and the events
+      const authorOf = memoizedParticipants();
       // the pack's fields of the project: the lock and its turns, the files held, the flags (D18)
-      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
+      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => authorOf(id).name, relPath }, repo, people, ORCHESTRATOR);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id: number): Row | undefined => runsById.get(id);
@@ -2420,6 +2423,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const state: SnapshotMemberState = core;
         // what its pack says of it (merging), beside its state, on a live member only
         const fact = core === "working" || core === "stopped" ? packPart.factOf(id) : null;
+        const liveness = ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t);
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -2438,9 +2442,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           calls: Number(r.calls ?? 0),
           listening: !ended && Number(r.listening) === 1,
           lastCall: String(r.last_call ?? r.joined_at),
-          liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
-          badge: ended ? null : (livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null),
-          unread: ended ? 0 : unreadOf(id),
+          liveness,
+          badge: liveness?.badge ?? null,
+          unread: ended ? 0 : unreadOf(id, authorOf),
           // U-F13: an ended seat runs nothing the card should show; its last calls are stale
           ...(ended ? {} : activityShown(Number(r.run), seat)),
         };
@@ -2449,7 +2453,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const events = (
         db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN) as Row[]
       ).map((r) => {
-        const m = toMessage(r);
+        const m = toMessage(r, authorOf);
         const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
         const subject = alarm ? alarmSubjectOf(m) : null;
         return {
