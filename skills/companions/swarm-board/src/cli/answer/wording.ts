@@ -143,6 +143,11 @@ export const WORDING = {
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
   swarmStopped: (cli: Command, as: string) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
+  // board-fixes#D13: a post to one seat is no task unless posted as one
+  taskHint: (member: string) =>
+    `a post to ${member} alone: if it is ${member}'s task, post it with --task (or --after <seats> when it waits on others), so the board counts it owed until ${member}'s done`,
+  // board-fixes#D5: the roster's doing, its age in minutes, `stale` once a merge or an event to the member came after it
+  doingAge: (ms: number, stale: boolean) => ` (${Math.max(0, Math.floor(ms / 60_000))} min${stale ? ", stale" : ""})`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachOwn: "stop only the PIDs you started: machine.md",

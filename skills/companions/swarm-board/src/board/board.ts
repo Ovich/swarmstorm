@@ -11,11 +11,11 @@ import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
-import { type EventName, currentEventName, EVENTS, eventOf, isEvent, mentions as mentionsMe, wakes } from "./events.ts";
+import { type AwaitedCause, awaitedLine, type EventName, currentEventName, EVENTS, eventOf, isAwaitedCause, isEvent, mentions as mentionsMe, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
-import type { MemberActivity } from "../wire.ts";
+import { type MemberActivity, ORCHESTRATORS_GROUP } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
 
 export type RunId = number;
@@ -168,6 +168,11 @@ export interface RosterEntry {
   aliveAt: number | null;
   /** Messages for it (a message to it, an urgent post) not yet delivered to it (swarm-relay D43). */
   unread: number;
+  /** board-fixes#D13: the seq of its open task (`post --task`), null when none. */
+  task: number | null;
+  /** board-fixes#D5: when its doing text was set, ms epoch; `doingStale` once it merged, or an event to it came, since. */
+  doingAt: number;
+  doingStale: boolean;
 }
 
 export interface Message {
@@ -269,7 +274,9 @@ export type PauseMeta = { person: boolean; text: string };
 /** What an event carries as data, by its event: merged, phase, stalled, a link-down liveness or a pause. */
 /** An all-joined event's data: whether a post had already been made to one of the run's seats. */
 export type AllJoinedMeta = { tasked: boolean };
-export type MessageMeta = PackMessageMeta | PhaseMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta | AllJoinedMeta;
+/** board-fixes#D4: an awaited event's task (its seq) and the awaited seat it tells of. */
+export type AwaitedMeta = { task: number; seat: string };
+export type MessageMeta = PackMessageMeta | PhaseMeta | LinkDownMeta | PauseMeta | UnlockedMeta | BreachMeta | AllJoinedMeta | AwaitedMeta;
 /** `event`, `mentions`, `meta`: absent on rows written before D11. */
 export type SnapshotEvent = {
   seq: number;
@@ -415,7 +422,9 @@ export interface Board {
   /** `with`: an agreement's explicit parties, as seats or `<plan>/<seat>` (F25). */
   /** `task` (board-split D50): the orchestrator's task to the one member it mentions, recorded as that member's task
    *  for the open phase; a post without it never becomes a task. */
-  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind; with?: string[] }): Message;
+  /** board-fixes#D13: `task`, the orchestrator's task to the one seat it mentions, open until that seat's next `done` or a
+   *  later task to it; `after` (implies `task`): the seats whose merged, done or leaving wake the task's seat (D4). */
+  post(p: Participant, body: string, opts?: { about?: string; kind?: MessageKind; with?: string[]; task?: boolean; after?: string[] }): Message;
   /** An agreement backed; throws on a message that is not an agreement, or on one's own. */
   endorse(p: Participant, seq: number): Message;
   /** The first delivery, or empty on timeout or once `p` has ended (D49): only a message to `p` (a mention, its group's
@@ -661,6 +670,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("messages", "event", "event TEXT");
   // board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery
   upkeep("deliveries", "at", "at TEXT");
+  // board-fixes#D13: 1 on an orchestrator's task to one seat; the seats it waits on (`--after`, JSON), null for none
+  upkeep("messages", "task", "task INTEGER NOT NULL DEFAULT 0");
+  upkeep("messages", "after", "after TEXT");
+  // board-fixes#D5: when the member's doing text was set, and the last seq then; null on a row from before
+  upkeep("participants", "doing_at", "doing_at TEXT");
+  upkeep("participants", "doing_seq", "doing_seq INTEGER");
   // board-split D55 (amended, U-F27): since when an open episode's predicate reads false, its close pending
   upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
   // the run's current phase, set by `phase`: its name and its text; null until one is opened
@@ -695,6 +710,17 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // S22 (board-split D25): when the seat's current member joined, a re-join included; joined_at keeps the seat's first
   // join. Null on a row from before: read as joined_at
   upkeep("participants", "seated_at", "seated_at TEXT");
+  /** board-fixes#D12: ends (never deletes) each orchestrators-board seat whose team has no open run left in its project;
+   *  idempotent: run at every open and at every close. */
+  const endClosedOrchestratorSeats = (): void => {
+    const at = new Date().toISOString();
+    db.prepare(
+      `UPDATE participants SET ended_at = ?, doing = 'ended' WHERE ended_at IS NULL AND seat != 'orchestrator' AND run IN (
+         SELECT b.id FROM runs b WHERE b.plan = ? AND b.state = 'open')
+       AND NOT EXISTS (SELECT 1 FROM runs t JOIN runs b ON b.id = participants.run WHERE t.repo = b.repo AND t.plan = participants.seat AND t.state = 'open')`,
+    ).run(at, ORCHESTRATORS_GROUP);
+  };
+  endClosedOrchestratorSeats();
   // the architecture guides already named to a member, each once
   db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   // idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
@@ -895,8 +921,42 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .run(p.repo, p.id, body, about, kind, JSON.stringify(mentions), now(), named ? 1 : 0, run, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
+    // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
+    if (extra.event === "merged" || extra.event === "done") db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
+    if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
     return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
   };
+  /** board-fixes#D13: the seq of the member's open task, its latest `post --task` until its next `done`; null when none. */
+  const openTaskOf = (run: RunId, name: string, id: number): number | null => {
+    const t = db.prepare("SELECT seq FROM messages WHERE run = ? AND task = 1 AND mentions = ? ORDER BY seq DESC LIMIT 1").get(run, JSON.stringify([name])) as Row | undefined;
+    if (!t) return null;
+    const done = db.prepare("SELECT 1 FROM messages WHERE run = ? AND author = ? AND event = ? AND seq > ?").get(run, id, EVENTS.done.name, Number(t.seq));
+    return done ? null : Number(t.seq);
+  };
+  /** board-fixes#D4: wakes the seat of every open task waiting on `subject`, once per awaited seat, on the first of its
+   *  merged, done, ended or lost; its posts never do. */
+  const tellAwaiting = (subject: Participant, cause: AwaitedCause): void => {
+    const tasks = db.prepare("SELECT seq, mentions, after FROM messages WHERE run = ? AND task = 1 AND after IS NOT NULL ORDER BY seq").all(subject.run) as Row[];
+    for (const t of tasks) {
+      const awaited = JSON.parse(String(t.after)) as string[];
+      if (!awaited.includes(subject.seat)) continue;
+      const [waiter] = JSON.parse(String(t.mentions)) as string[];
+      const waiterRow = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(subject.run, waiter.slice(waiter.lastIndexOf("/") + 1)) as Row | undefined;
+      // a task whose seat has not joined is open: no done of its seat can have closed it
+      const open = waiterRow ? openTaskOf(subject.run, waiter, Number(waiterRow.id)) === Number(t.seq) : true;
+      if (!open) continue;
+      const told = (db.prepare("SELECT json_extract(meta, '$.seat') AS seat FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.task') = ?").all(subject.run, EVENTS.awaited.name, Number(t.seq)) as Row[]).map((r) => String(r.seat));
+      if (told.includes(subject.seat)) continue;
+      const meta: AwaitedMeta = { task: Number(t.seq), seat: subject.seat };
+      const body = awaitedLine(subject.seat, cause, subject.pack != null, told.length + 1, awaited.length);
+      insertMessage(subject, body, null, "event", [waiter], { event: EVENTS.awaited.name, meta });
+    }
+  };
+  /** board-fixes#D5: the member's doing text is stale once it merged, or an event to it (or its group) came, after it was set. */
+  const doingStaleOf = (r: Row): boolean =>
+    db
+      .prepare("SELECT 1 FROM messages WHERE run = ? AND seq > ? AND ((author = ? AND event = 'merged') OR (author != ? AND event IS NOT NULL AND (mentions LIKE ? OR mentions LIKE ?))) LIMIT 1")
+      .get(Number(r.run), Number(r.doing_seq ?? r.since_seq), Number(r.id), Number(r.id), `%${JSON.stringify(`${r.plan}/${r.seat}`)}%`, `%${JSON.stringify(`${r.plan}/*`)}%`) != null;
 
   const live = (p: Participant): Participant => {
     const fresh = participantById(p.id);
@@ -1171,6 +1231,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
    *  doing (fix2: the code pack's merging, the merge lock held). */
   const owesOf = (p: Row, run: Row): boolean => {
     if (String(p.seat) === ORCHESTRATOR || owedNameOf(p, run) != null) return true;
+    // board-fixes#D5: an open task owes, phase or not
+    if (openTaskOf(Number(run.id), `${run.plan}/${p.seat}`, Number(p.id)) != null) return true;
     const m = participantById(Number(p.id));
     return packOf(m)?.memberFact?.(m, packCtxOf(m)) != null;
   };
@@ -1494,6 +1556,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         bump(String(runRow(run).repo));
         db.prepare("UPDATE participants SET ended_at = COALESCE(ended_at, ?) WHERE run = ?").run(now(), run);
         for (const p of db.prepare("SELECT id FROM participants WHERE run = ?").all(run) as Row[]) packTables.releaseAll(Number(p.id));
+        // board-fixes#D12: the run's orchestrator leaves the orchestrators board with it
+        endClosedOrchestratorSeats();
       });
     },
 
@@ -1617,6 +1681,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           .run(run, seat, where, doing, JSON.stringify(files), since, now(), fresh(), packName, verify);
         return Number(ins.lastInsertRowid);
       });
+      // board-fixes#D5: the join's doing is set now; what came before it never stales it
+      db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), lastSeq(), id);
       const member = participantById(id);
       // the member's pack takes what it declared, and reads it fresh (the code pack: its claims, merged since its join)
       packOf(member)?.onJoin?.(member, packCtxOf(member), files);
@@ -1679,8 +1745,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
 
     setDoing(p, doing) {
       const fresh = live(p);
-      db.prepare("UPDATE participants SET doing = ? WHERE id = ?").run(doing, fresh.id);
-      insertMessage(fresh, `doing: ${doing}`, null, "event");
+      const said = insertMessage(fresh, `doing: ${doing}`, null, "event");
+      db.prepare("UPDATE participants SET doing = ?, doing_at = ?, doing_seq = ? WHERE id = ?").run(doing, now(), said.seq, fresh.id);
     },
 
     end(p) {
@@ -1955,6 +2021,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
               // board-split D59: what its pack holds that others wait on (the merge lock) is released at once, the
               // orchestrator and the waiters told, as the lost member, as a release by its holder would be
               const lostMember = participantById(Number(lostRow.id));
+              tellAwaiting(lostMember, "lost");
               const freed = packOf(lostMember)?.onLost?.(lostMember, packCtxOf(lostMember)) ?? null;
               if (freed) insertMessage(lostMember, freed.body, null, "event", [...new Set([...freed.mentions, orch.name])], { event: EVENTS.unlocked.name, meta: { unlocked: freed.unlocked } });
             }
@@ -2032,6 +2099,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
         unread: unreadOf(Number(r.id)),
+        task: openTaskOf(Number(r.run), `${r.plan}/${r.seat}`, Number(r.id)),
+        doingAt: Date.parse(String(r.doing_at ?? seatedAtOf(r))),
+        doingStale: doingStaleOf(r),
         ...factEntry(toParticipant(r)),
       }));
     },
@@ -2049,10 +2119,24 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
+      const after = [...new Set((opts.after ?? []).map((w) => w.trim().replace(/^@/, "")).map((w) => w.slice(w.lastIndexOf("/") + 1)).filter(Boolean))];
+      const task = opts.task || after.length > 0;
+      if (task) {
+        // board-fixes#D13: a task is the orchestrator's, to exactly one seat of its run
+        if (fresh.seat !== ORCHESTRATOR) throw new Error(`post --task: only the orchestrator posts a task; ${fresh.name} is not ${fresh.plan}/${ORCHESTRATOR}`);
+        if (opts.kind && opts.kind !== "msg") throw new Error("post --task: a task is a plain post");
+        const mentioned = parseMentions(body, fresh.plan, openPlans(fresh.repo), activeNames(fresh.repo));
+        const isSeat = (s: string): boolean => s !== ORCHESTRATOR && (db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) != null || db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s) != null);
+        const target = mentioned.length === 1 && mentioned[0].startsWith(`${fresh.plan}/`) ? mentioned[0].slice(fresh.plan.length + 1) : null;
+        if (!target || !isSeat(target)) throw new Error(`post --task: a task mentions exactly one seat of run ${fresh.run}; this one mentions ${mentioned.join(", ") || "none"}`);
+        const unknown = after.filter((s) => !isSeat(s) || s === target);
+        if (unknown.length) throw new Error(`post --after: names no other seat of run ${fresh.run}: ${unknown.join(", ")}`);
+      }
       return transaction(() => {
         const message = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
         // board-fixes#D8: the agreement settles the parties' overlap on its path
         if (named && opts.about) packOf(fresh)?.onAgreement?.(fresh, named, opts.about, packCtxOf(fresh));
+        if (task) db.prepare("UPDATE messages SET task = 1, after = ? WHERE seq = ?").run(after.length ? JSON.stringify(after) : null, message.seq);
         return message;
       });
     },
@@ -2076,6 +2160,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
       if (!row || row.ended_at != null || String(row.seat) === ORCHESTRATOR || Number(row.empty_waits) < 2) return false;
       if (owedNameOf(row, runRow(Number(row.run))) != null) return false;
+      if (openTaskOf(p.run, p.name, p.id) != null) return false;
       // a member its pack calls busy (the code pack: holding a claim or the merge lock) is never idle
       const fresh = participantById(p.id);
       if (packOf(fresh)?.busy?.(fresh, packCtxOf(fresh))) return false;

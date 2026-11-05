@@ -272,7 +272,7 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${WORDING.doingAge(Date.now() - r.doingAt, r.doingStale)}${files ? `  files: ${files}` : ""}${declared}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -898,7 +898,13 @@ async function main(): Promise<void> {
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
       if (urgent && p.seat !== "orchestrator") fail("--urgent is the orchestrator's: it wakes every waiter of the run, even in a pause; ask @orchestrator on the thread instead");
+      // board-fixes#D13: a task to one seat; --after (seats, comma lists) implies it
+      const after = args.flags("--after").flatMap((w) => w.split(",")).filter(Boolean);
+      const task = args.has("--task") || after.length > 0;
+      if (task && args.verb !== "post") fail("--task and --after are for post");
+      if (task && urgent) fail("--task: a task is a plain post, never --urgent");
       const m = await board.post(p, body, {
+        ...(task ? { task: true, after } : {}),
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         // every --with counts, each a seat or a comma list of seats (S5)
@@ -918,6 +924,7 @@ async function main(): Promise<void> {
         ...unmatched,
         ...lostMentioned,
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
+        ...rules.taskHintLines({ orchestrator: p.seat === "orchestrator", plain: args.verb === "post" && !urgent, task, mentions: m.mentions ?? [], group: p.plan }),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
       await emitHeard(p, json, human);

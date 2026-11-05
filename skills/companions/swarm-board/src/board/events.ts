@@ -4,7 +4,7 @@ import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
 import type { Message, Participant } from "./board.ts";
 
-export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined";
+export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined" | "awaited";
 export type EventName = CoreEventName | PackEventName;
 
 export interface EventDef<N extends string = EventName> {
@@ -54,6 +54,19 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   composition: { name: "composition" },
   // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
   "all-joined": { name: "all-joined" },
+  // board-fixes#D4: a seat a task waits on (`post --after`) merged, finished its part or left; to the task's seat alone,
+  // once per awaited seat, posted in the awaited seat's name
+  awaited: { name: "awaited" },
+};
+
+/** board-fixes#D4: what an awaited seat did that wakes the seat of a task waiting on it (`post --after`). */
+export type AwaitedCause = "merged" | "done" | "ended" | "lost";
+const AWAITED_CAUSES: readonly string[] = ["merged", "done", "ended", "lost"] satisfies AwaitedCause[];
+export const isAwaitedCause = (e: string): e is AwaitedCause => AWAITED_CAUSES.includes(e);
+/** The awaited event's body: `w1 merged (1 of 2 you wait on)`; on a run that merges, a done or a leave says nothing merged. */
+export const awaitedLine = (seat: string, cause: AwaitedCause, merges: boolean, nth: number, of: number): string => {
+  const what = cause === "merged" || !merges ? cause : cause === "done" ? "done, nothing merged" : `${cause} without merging`;
+  return `${seat} ${what} (${nth} of ${of} you wait on)`;
 };
 
 /** Core and pack events by name, read at first use: the registry loads after this module in some import orders. */

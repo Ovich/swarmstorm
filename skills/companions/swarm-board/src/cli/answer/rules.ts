@@ -71,6 +71,13 @@ export const heardStep = (s: Situation): string | null => {
   return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 
+/** board-fixes#D13: an orchestrator's plain post to exactly one seat of its run, posted without --task, is told how a task is
+ *  posted; nothing otherwise. */
+export const taskHintLines = (p: { orchestrator: boolean; plain: boolean; task: boolean; mentions: string[]; group: string }): string[] => {
+  const oneSeat = p.mentions.length === 1 && p.mentions[0].startsWith(`${p.group}/`) && !p.mentions[0].endsWith("/*") && !p.mentions[0].endsWith("/orchestrator");
+  return p.orchestrator && p.plain && !p.task && oneSeat ? [W.taskHint(p.mentions[0])] : [];
+};
+
 /** The phase header: whole the first time a member is shown it, then the short form naming where its text is;
  *  the pause beside it. `printed` for the human answer, `full` always whole, for --json. */
 export const phaseHeaders = (s: Situation, showPause = true): { printed: string | null; full: string | null; first: boolean } => {
