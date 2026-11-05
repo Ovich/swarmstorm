@@ -31,7 +31,7 @@ export interface Claims {
    *  again. Each new active path another member actively holds is posted once to both, unless they agreed on it.
    *  `drifted`: paths of `files` its target changed past its branch; one merged this phase by another member is told
    *  to `p` once per path and phase, to rebase. */
-  setHoldings(p: Participant, files: string[], drifted?: DriftedFile[]): Flag[];
+  setHoldings(p: Participant, files: string[], drifted: DriftedFile[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
   /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */
@@ -266,7 +266,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       );
     },
 
-    setHoldings(me, files, drifted = []) {
+    setHoldings(me, files, drifted) {
       return transaction(() => {
         const relOf = (f: string): string => relPath(me.repo, f) ?? slashes(f);
         const now = new Set(files.map(relOf));
