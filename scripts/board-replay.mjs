@@ -69,8 +69,8 @@ const replayed = busiest(logged);
 const startAt = replayed[0].at;
 
 // ── the server, on the copy ──
-// the wire client the load bench drives, from the served checkout: one copy (tests/fixtures/wire-client.ts)
-const { serveBoard, connectMember } = await import(pathToFileURL(path.join(serverDir, "tests/fixtures/wire-client.ts")).href);
+// the wire client the load bench drives, from this checkout (an older --server has none); --server only serves
+const { serveBoard, connectMember } = await import(pathToFileURL(path.join(repoRoot, "skills/companions/swarm-board/tests/fixtures/wire-client.ts")).href);
 const boardCli = path.join(serverDir, "src/cli/index.ts");
 const serverEnv = { ...process.env, SWARMSTORM_HOME: scratchHome };
 const served = await serveBoard(scratchHome, boardCli);
