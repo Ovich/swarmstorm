@@ -11,7 +11,8 @@ export type LockTurn = { member: string; askedAt: string; grantedAt: string | nu
 /** A file claimed this phase (claims-phase): who holds it, active, in claim order (D40), and who held it and merged it
  *  (`sha` the merge's) or ended; `holders` alone count for shared. The FileMap's rows. */
 export type SnapshotFile = { path: string; holders: string[]; past: PastHolder[] };
-/** A claim of the phase no longer active: merged, with its merge's sha, or its member ended (sha null). */
+/** A claim of the phase merged, with its merge's sha (its holder may be active on it again, v1-5: then it is in
+ *  `holders` too), or no longer active because its member ended (sha null). */
 export type PastHolder = { member: string; state: "merged" | "ended"; sha: string | null };
 /** The code fields of `BoardSnapshot`, as the page reads them. */
 export type CodeSnapshotFields = {
@@ -58,9 +59,9 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   for (const c of claimed) {
     const f = fileOf(String(c.path));
     const member = `${c.plan}/${c.seat}`;
-    if (c.state === "merged") f.past.push({ member, state: "merged", sha: c.sha == null ? null : String(c.sha) });
-    else if (isLive(Number(c.participant))) f.holders.push(member);
-    else f.past.push({ member, state: "ended", sha: null });
+    if (c.sha != null) f.past.push({ member, state: "merged", sha: String(c.sha) });
+    if (c.state === "active" && isLive(Number(c.participant))) f.holders.push(member);
+    else if (c.state === "active" && c.sha == null) f.past.push({ member, state: "ended", sha: null });
   }
   // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
   // one it claimed this phase, merged or not, does not come back

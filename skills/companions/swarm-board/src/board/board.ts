@@ -11,7 +11,7 @@ import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
-import { alwaysEventNames, awaitedLine, type EventName, currentEventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, wakes } from "./events.ts";
+import { alwaysEventNames, awaitedLine, type EventName, currentEventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, toAuthorEventNames, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
@@ -473,8 +473,6 @@ const SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR (p.ended_at IS NOT NUL
  *  subquery over a seats row aliased `s`. */
 const SEAT_STOOD_FOR_CLOSED_SQL = `(SELECT CASE WHEN o.state = 'closed' THEN o.id END FROM runs o
   WHERE o.repo = (SELECT repo FROM runs WHERE id = s.run) AND o.plan = s.id AND o.id != s.run ORDER BY (o.state = 'open') DESC, o.id DESC LIMIT 1)`;
-/** The events a member receives though it is their author: the board posts them in its name. */
-const TO_AUTHOR = Object.values(EVENTS).filter((e) => e.toAuthor).map((e) => `'${e.name}'`).join(", ");
 const ORCHESTRATOR = "orchestrator";
 /** A watch event can be missed (a coalesced write, a platform quirk); the store is re-read
  *  this often regardless, so a missed event costs at most this much. */
@@ -1057,7 +1055,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return db
       .prepare(
         `SELECT m.* FROM messages m
-         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR})) ${candidate}
+         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${quoted(toAuthorEventNames())})) ${candidate}
            AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.participant = ? AND d.seq = m.seq)
          ORDER BY m.seq`,
       )

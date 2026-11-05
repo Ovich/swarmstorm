@@ -100,7 +100,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
       .filter((c) => isLive(c.participant));
   /** `p`'s worktree changes `rel`: held, active. True when the claim is new, or a merged one made active again because
-   *  the path had left the changes since the merge (a frame read before the merge and sent after never reopens it). */
+   *  the path had left the changes since the merge (a frame read before the merge and sent after never reopens it).
+   *  A claim made active again keeps its last merge's sha (v1-5): it was merged this phase, and drift still finds it. */
   const hold = (p: Participant, rel: string): boolean =>
     transaction(() => {
       const made = db
@@ -110,7 +111,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         Number(made.changes) === 0 &&
         Number(
           db
-            .prepare("UPDATE claims SET state = 'active', sha = NULL, since_seq = ? WHERE repo = ? AND path = ? AND participant = ? AND state = 'merged' AND in_changes = 0")
+            .prepare("UPDATE claims SET state = 'active', since_seq = ? WHERE repo = ? AND path = ? AND participant = ? AND state = 'merged' AND in_changes = 0")
             .run(lastSeq(), p.repo, rel, p.id).changes,
         ) > 0;
       db.prepare("UPDATE claims SET in_changes = 1 WHERE repo = ? AND path = ? AND participant = ? AND in_changes = 0").run(p.repo, rel, p.id);
@@ -119,10 +120,11 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       return true;
     });
   /** claims-phase: `p`'s branch lacks the target's change to `rel`; when another member merged `rel` this phase, `p` is
-   *  told once per path and phase to rebase. The merger is not told. */
+   *  told once per path and phase to rebase. The merger is not told, nor a member the merge's event mentioned (v1-6). */
   const tellDrift = (p: Participant, rel: string, drifted: DriftedFile): void => {
+    // a claim merged this phase carries its merge's sha, active again or not (v1-5)
     const merges = db
-      .prepare("SELECT participant, sha FROM claims WHERE repo = ? AND path = ? AND state = 'merged' AND participant != ? ORDER BY rowid DESC")
+      .prepare("SELECT participant, sha FROM claims WHERE repo = ? AND path = ? AND sha IS NOT NULL AND participant != ? ORDER BY rowid DESC")
       .all(p.repo, rel, p.id) as Row[];
     if (!merges.length) return;
     // the merge whose commit is the target's last change to the path, else the latest claim merged
@@ -411,11 +413,16 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...(waiters.length ? { free: waiters } : {}) };
-        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters])], { event: CODE_EVENTS.merged.name, meta });
+        const mentioned = [...new Set([...told, ...agreed, ...waiters])];
+        insertMessage(me, lines.join("\n"), null, "event", mentioned, { event: CODE_EVENTS.merged.name, meta });
+        // v1-6: a member this merge's event mentioned was told to rebase: no drift notice for its files this phase
+        const toldOfDrift = db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)");
+        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) toldOfDrift.run(me.repo, rel, id);
         // claims-phase: the merger's claims on the merged files are merged, with the sha, kept until the phase ends;
-        // a merged file it never claimed is claimed so, for the drift notice
+        // a merged file it never claimed is claimed so, for the drift notice, out of its changes: a later edit makes it
+        // active again (v1-4)
         const markMerged = db.prepare(
-          `INSERT INTO claims (repo, path, participant, since_seq, state, sha) VALUES (?, ?, ?, ?, 'merged', ?)
+          `INSERT INTO claims (repo, path, participant, since_seq, state, sha, in_changes) VALUES (?, ?, ?, ?, 'merged', ?, 0)
              ON CONFLICT (repo, path, participant) DO UPDATE SET state = 'merged', sha = excluded.sha`,
         );
         for (const rel of rels) markMerged.run(me.repo, rel, me.id, lastSeq(), sha);

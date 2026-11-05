@@ -52,7 +52,7 @@ test("a claim survives the path leaving the changes, a merge and an end; the nex
   assert.deepEqual(fileOf("src/a.ts")?.holders, ["g/w1"], "the link claims again from the worktree's changes");
 });
 
-test("a merged path changed again after it left the changes is active again; a frame read before the merge never reopens it", () => {
+test("a merged path changed again after it left the changes is active again, keeping its merge (v1-5); a frame read before the merge never reopens it", () => {
   const { w1, code } = seated();
   code.changes(w1, ["src/a.ts"]);
   code.merged(w1, SHA, ["src/a.ts"]);
@@ -60,7 +60,7 @@ test("a merged path changed again after it left the changes is active again; a f
   assert.equal(fileOf("src/a.ts")?.past[0]?.state, "merged");
   code.changes(w1, []);
   code.changes(w1, ["src/a.ts"]);
-  assert.deepEqual(fileOf("src/a.ts"), { path: "src/a.ts", holders: ["g/w1"], past: [] });
+  assert.deepEqual(fileOf("src/a.ts"), { path: "src/a.ts", holders: ["g/w1"], past: [{ member: "g/w1", state: "merged", sha: SHA }] });
 });
 
 test("overlap and merge mentions only between active holders; shared counts active holders", () => {
@@ -83,9 +83,10 @@ test("overlap and merge mentions only between active holders; shared counts acti
 test("the drift notice: once per member and path per phase, only for a path merged this phase, none when the branch has it", () => {
   const { w1, w2, orchestrator, code } = seated();
   code.changes(w1, ["src/a.ts"]);
-  code.changes(w2, ["src/a.ts", "src/x.ts"]);
-  changes(w2, ["src/a.ts", "src/x.ts"], [{ path: "src/x.ts", sha: "c".repeat(40) }]);
+  code.changes(w2, ["src/x.ts"]);
+  changes(w2, ["src/x.ts"], [{ path: "src/x.ts", sha: "c".repeat(40) }]);
   assert.equal(drifts().length, 0, "x.ts was merged by no one this phase");
+  // w2 holds no a.ts yet: the merge does not mention it (a member it mentions is told already, v1-6)
   code.merged(w1, SHA, ["src/a.ts"]);
   changes(w2, ["src/a.ts", "src/x.ts"]);
   assert.equal(drifts().length, 0, "the branch has the merge: no drift listed, no notice");
@@ -101,6 +102,16 @@ test("the drift notice: once per member and path per phase, only for a path merg
   code.merged(w1, SHA, ["src/a.ts"]);
   changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
   assert.equal(drifts().length, 2, "a new phase tells again");
+});
+
+test("v1-6: a member the merge's event mentioned gets no drift notice for its files", () => {
+  const { w1, w2, code } = seated();
+  code.changes(w1, ["src/a.ts"]);
+  code.changes(w2, ["src/a.ts"]);
+  code.merged(w1, SHA, ["src/a.ts"]);
+  assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "merged").at(-1)!.mentions?.includes("g/w2"));
+  changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
+  assert.equal(drifts().length, 0);
 });
 
 test("an older store with a claim log opens: the log goes, the claims gain their state", () => {
