@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { openBoard, type Board, type Participant } from "../src/board/board.ts";
 import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
+import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const SHA = "0c85ce0aa1b2c3d4e5f60718293a4b5c6d7e8f90";
 const OTHER = "9f1a2d77b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6";
@@ -15,30 +16,28 @@ const PLAN = "review-tool";
 
 /** The two runners of `openTwoRunners`, S3 (worktree a, holding src/a.ts) and S5 (worktree b), driven on the board
  *  itself with the server stopped, as their links' frames and merges would; then each reads through `wait --mentions`. */
-async function onTheBoard(r: Repo, drive: (board: Board, s3: Participant, s5: Participant) => void): Promise<void> {
+async function onTheBoard(r: Repo, drive: (board: Board, s3: Participant, s5: Participant, code: ReturnType<typeof codeVerbs<Board>>) => void): Promise<void> {
   stopServerOf(r.home);
   const board = await openBoard(r.store);
   try {
-    drive(board, board.participant(`${PLAN}/S3`)!, board.participant(`${PLAN}/S5`)!);
+    drive(board, board.participant(`${PLAN}/S3`)!, board.participant(`${PLAN}/S5`)!, codeVerbs(board));
   } finally {
     board.close();
   }
 }
-const changes = (board: Board, p: Participant, files: string[], drifted: { path: string; sha: string }[] = []) => board.packCall(p, "changes", { files, drifted });
-const merged = (board: Board, p: Participant, sha: string, files: string[]) => board.packCall(p, "merged", { sha, files });
 const waitIn = (r: Repo, cwd: string): string => r.cli(cwd, "wait", "--mentions", "--timeout", "2000");
 
 test("v1-1, v1-6: a drift notice wakes its member through wait, with the rebase step; none to a member the merge mentioned", async () => {
   const r = makeRepo("swarm-claims-wake-");
   try {
     openTwoRunners(r, PLAN);
-    await onTheBoard(r, (board, s3, s5) => {
-      changes(board, s3, ["src/a.ts", "src/c.ts"]);
-      changes(board, s5, ["src/a.ts"]);
+    await onTheBoard(r, (_board, s3, s5, code) => {
+      code.changes(s3, ["src/a.ts", "src/c.ts"]);
+      code.changes(s5, ["src/a.ts"]);
       // S3 merges a.ts, which S5 holds: that merge mentions S5; then c.ts, which S5 does not hold yet: that one does not
-      merged(board, s3, OTHER, ["src/a.ts"]);
-      merged(board, s3, SHA, ["src/c.ts"]);
-      changes(board, s5, ["src/a.ts", "src/c.ts"], [{ path: "src/a.ts", sha: OTHER }, { path: "src/c.ts", sha: SHA }]);
+      code.merged(s3, OTHER, ["src/a.ts"]);
+      code.merged(s3, SHA, ["src/c.ts"]);
+      code.changes(s5, ["src/a.ts", "src/c.ts"], [{ path: "src/a.ts", sha: OTHER }, { path: "src/c.ts", sha: SHA }]);
     });
     const heard = waitIn(r, r.wtB);
     assert.match(heard, /merged 9f1a2d77/, "the a.ts merge mentions S5");
@@ -56,7 +55,7 @@ test("v1-7: the overlap flag wakes its writer too, with the agree step", async (
   try {
     openTwoRunners(r, PLAN);
     // S3 holds src/a.ts; S5's worktree changes it too: the flag is posted in S5's name
-    await onTheBoard(r, (board, _s3, s5) => changes(board, s5, ["src/a.ts"]));
+    await onTheBoard(r, (_board, _s3, s5, code) => code.changes(s5, ["src/a.ts"]));
     const writer = waitIn(r, r.wtB);
     assert.match(writer, /overlap: .* changes src\/a\.ts/);
     assert.match(writer, /settle it: .*agree/);
@@ -71,12 +70,12 @@ test("v1-4, v1-5: a merged file never reported, edited again, is active; active 
   try {
     openTwoRunners(r, PLAN);
     let files: unknown;
-    await onTheBoard(r, (board, s3, s5) => {
+    await onTheBoard(r, (board, s3, s5, code) => {
       // S3's link never reported src/old.ts before the merge (v1-4): its next edit makes the claim active again
-      merged(board, s3, SHA, ["src/old.ts"]);
-      changes(board, s3, ["src/a.ts", "src/old.ts"]);
+      code.merged(s3, SHA, ["src/old.ts"]);
+      code.changes(s3, ["src/a.ts", "src/old.ts"]);
       // S5 changes it too, its branch lacking S3's merge: the overlap (S3 active) and the drift (S3's merge kept, v1-5)
-      changes(board, s5, ["src/old.ts"], [{ path: "src/old.ts", sha: SHA }]);
+      code.changes(s5, ["src/old.ts"], [{ path: "src/old.ts", sha: SHA }]);
       files = board.snapshot(board.repos()[0].repo).files.find((f) => f.path === "src/old.ts");
     });
     assert.deepEqual(files, { path: "src/old.ts", holders: [`${PLAN}/S3`, `${PLAN}/S5`], past: [{ member: `${PLAN}/S3`, state: "merged", sha: SHA }] });

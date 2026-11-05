@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { openBoard, type Board, type Participant } from "../src/board/board.ts";
+import { openBoard, type Board } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import { migrateCodeTables } from "../src/packs/code/schema.ts";
 
@@ -32,7 +32,6 @@ const seated = () => {
   return { run, w1, w2, orchestrator: board.participant("g/orchestrator")!, code: codeVerbs(board) };
 };
 const fileOf = (rel: string) => board.snapshot(REPO).files.find((f) => f.path === rel);
-const changes = (p: Participant, files: string[], drifted: { path: string; sha: string }[] = []) => board.packCall(p, "changes", { files, drifted });
 const drifts = () => board.snapshot(REPO).events.filter((e) => e.event === "drift");
 
 test("a claim survives the path leaving the changes, a merge and an end; the next phase drops every claim of the run", () => {
@@ -84,14 +83,14 @@ test("the drift notice: once per member and path per phase, only for a path merg
   const { w1, w2, orchestrator, code } = seated();
   code.changes(w1, ["src/a.ts"]);
   code.changes(w2, ["src/x.ts"]);
-  changes(w2, ["src/x.ts"], [{ path: "src/x.ts", sha: "c".repeat(40) }]);
+  code.changes(w2, ["src/x.ts"], [{ path: "src/x.ts", sha: "c".repeat(40) }]);
   assert.equal(drifts().length, 0, "x.ts was merged by no one this phase");
   // w2 holds no a.ts yet: the merge does not mention it (a member it mentions is told already, v1-6)
   code.merged(w1, SHA, ["src/a.ts"]);
-  changes(w2, ["src/a.ts", "src/x.ts"]);
+  code.changes(w2, ["src/a.ts", "src/x.ts"]);
   assert.equal(drifts().length, 0, "the branch has the merge: no drift listed, no notice");
-  changes(w2, ["src/a.ts", "src/x.ts"], [{ path: "src/a.ts", sha: SHA }]);
-  changes(w2, ["src/a.ts", "src/x.ts"], [{ path: "src/a.ts", sha: SHA }]);
+  code.changes(w2, ["src/a.ts", "src/x.ts"], [{ path: "src/a.ts", sha: SHA }]);
+  code.changes(w2, ["src/a.ts", "src/x.ts"], [{ path: "src/a.ts", sha: SHA }]);
   assert.equal(drifts().length, 1, "once");
   const notice = drifts()[0];
   assert.deepEqual(notice.mentions, ["g/w2"], "the merger is not told");
@@ -100,7 +99,7 @@ test("the drift notice: once per member and path per phase, only for a path merg
   board.phase(orchestrator, "fix", "the findings");
   code.changes(w1, ["src/a.ts"]);
   code.merged(w1, SHA, ["src/a.ts"]);
-  changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
+  code.changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
   assert.equal(drifts().length, 2, "a new phase tells again");
 });
 
@@ -110,7 +109,7 @@ test("v1-6: a member the merge's event mentioned gets no drift notice for its fi
   code.changes(w2, ["src/a.ts"]);
   code.merged(w1, SHA, ["src/a.ts"]);
   assert.ok(board.snapshot(REPO).events.filter((e) => e.event === "merged").at(-1)!.mentions?.includes("g/w2"));
-  changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
+  code.changes(w2, ["src/a.ts"], [{ path: "src/a.ts", sha: SHA }]);
   assert.equal(drifts().length, 0);
 });
 
