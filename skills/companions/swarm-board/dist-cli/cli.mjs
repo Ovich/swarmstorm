@@ -798,7 +798,7 @@ var init_liveness = __esm({
 function changedSet(worktree, onto) {
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
-  const status = gitAnswer(worktree, "status", "--porcelain=v2", "-z", "--untracked-files=all");
+  const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
   const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base.stdout.trim(), "HEAD");
   if (status.status !== 0 || diff.status !== 0) return null;
   const set = /* @__PURE__ */ new Set();
@@ -9415,7 +9415,7 @@ function repoOf2(dir) {
 }
 function changedIn(worktree) {
   if (!fs13.existsSync(worktree)) return [];
-  const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out = [];

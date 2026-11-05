@@ -8,7 +8,7 @@ import { gitAnswer } from "../../git.ts";
 export function changedSet(worktree: string, onto: string): string[] | null {
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
-  const status = gitAnswer(worktree, "status", "--porcelain=v2", "-z", "--untracked-files=all");
+  const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
   const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base.stdout.trim(), "HEAD");
   if (status.status !== 0 || diff.status !== 0) return null;
   const set = new Set<string>();

@@ -97,7 +97,7 @@ function repoOf(dir: string): string {
 function changedIn(worktree: string): string[] {
   // G20: a worktree named at join and never made holds nothing
   if (!fs.existsSync(worktree)) return [];
-  const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out: string[] = [];
