@@ -1,6 +1,7 @@
 // The board under load (board-fixes#D14): realistic exchanges over the wire on a store seeded with a long history,
 // the members stepped 5 → 10 → 20 → 50. At 20 members a call's p95 stays under 500 ms and no call is dropped; the
-// step where p95 passes 1 s is printed.
+// step where p95 passes 1 s is printed. Its own script (`npm run test:load`), never beside the suite: it measures
+// time, and a suite running in parallel on the same machine is what it would measure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

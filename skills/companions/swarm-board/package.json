@@ -9,6 +9,7 @@
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import ./tests/fixtures/outside-harness.ts --test --test-timeout=600000 \"tests/**/*.test.ts\"",
+    "test:load": "node --import ./tests/fixtures/outside-harness.ts --test tests/load.bench.ts",
     "yardstick": "node --import ./tests/fixtures/outside-harness.ts --test tests/yardstick.harness.ts"
   },
   "devDependencies": {
