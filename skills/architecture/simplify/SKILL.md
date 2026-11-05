@@ -24,6 +24,7 @@ One artefact each, and a stop.
 |---|---|
 | where is the dead code, audit, what can go | 1, then stop |
 | clean up, an approved audit | 2 or 3 per family, in the approved order |
+| a commit range (`<base>..<head>`): what a piece of work changed | 1 scoped to the range's files and what they reach; its diff and commit messages name what each change superseded, so no one's memory is needed |
 | the work just replaced a path and knows the old one | 2 on it, no audit: the work in hand is the context |
 | as a phase of a run | 1 as one task, then one task per approved family |
 | stop this coming back | 4 |
@@ -35,6 +36,7 @@ One artefact each, and a stop.
 - **Families that touch no common file run in parallel**, each in its own worktree. Families that share a file run in order.
 - **Add no dependency without the person's yes**: not an analyzer, not a CI step.
 - **Report net lines per family** with `scripts/net-lines.mjs`. A family that did not go negative is not done.
+- **The phase ends on a summary**, short and scannable: one row per family (what went, why, its commit, lines added and deleted), then the total, and what was left and why.
 - **The audit is the context.** Run without it, a removal pass rebuilds by exploration what the audit already found. With no audit and no known path, phase 1 runs first.
 
 ## Red flags

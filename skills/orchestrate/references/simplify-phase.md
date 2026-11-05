@@ -18,10 +18,10 @@ context of what they replaced. **The person can ask for one mid-run too**: a cha
 
 ## The phase
 
-1. **Audit**: one task to one builder, the `simplify` skill's phase 1 on the files the run
-   changed and what they reach, its report in aiview. In the same phase, **every builder lists what
-   its own work superseded** (the old path, its replacement, the commit), posted to you: the
-   context no later pass can rebuild cheaply.
+1. **Audit**: one task to one seat, the `simplify` skill's phase 1 on the run's commit range
+   (`<base>..<head>`) and what its files reach, its report in aiview. The range's diff and commit
+   messages name what each change superseded; builders still holding the work's context add what
+   they know, posted to you, but the audit never waits on a memory.
 2. **Choose**: you judge the families against the run's goal and the audit's risk; the person is
    asked only for a duplicate's survivor or a family whose risk is high.
 3. **Remove**: one task per approved family, each a brief of the `simplify` skill's `references/path.md` (remove, replacement,
@@ -29,6 +29,9 @@ context of what they replaced. **The person can ask for one mid-run too**: a cha
    file run at once, in their own worktrees; the rest in order.
 4. **Re-verify**: the protocol's verify runs again on the merged branch. A family whose net lines
    did not go negative, or that changed a pinned test, is reverted, not argued.
+5. **Summary**: you write it once the phase closes, posted on the board and in the run's report:
+   one row per family (what went, why, its commit, lines added and deleted), the total, and what
+   was left and why.
 
 **Every seat without a task is on call**: answers a question on the code it knows, changes
 nothing, `done simplify` at once.
