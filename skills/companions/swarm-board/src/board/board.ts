@@ -1436,8 +1436,34 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open = run.phase === phase;
     return { open, forSeats: open && run.phase_for != null ? (JSON.parse(String(run.phase_for)) as string[]) : null };
   };
-  /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them for `phase`. */
+  /** The declared seats of `run` with no member yet that the orchestrator posted to (`@<seat>`) since `phase` opened,
+   *  `phase` being the run's open one: each owes its done before it joins, so all-done waits for it. A declared seat
+   *  with no task in the phase is left out, so an unused seat never holds a phase. */
+  const taskedSeatsNotJoinedOf = (run: RunId, phase: string): PhaseMember[] => {
+    const r = runRow(run);
+    if (r.phase !== phase) return [];
+    const plan = String(r.plan);
+    return (
+      db
+        .prepare(
+          `SELECT s.id AS seat FROM seats s
+           WHERE s.run = ? AND s.id != '${ORCHESTRATOR}'
+             AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)
+             AND EXISTS (
+               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = '${ORCHESTRATOR}', json_each(m.mentions) j
+               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id
+                 AND m.seq > (SELECT COALESCE(MAX(seq), 0) FROM messages WHERE run = s.run AND event = '${EVENTS.phase.name}'))
+           ORDER BY s.ord`,
+        )
+        .all(run, plan) as Row[]
+    ).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
+  };
+  /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them
+   *  for `phase`, with the seats tasked in it that no member holds yet. */
   const phaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
+    onlyId != null ? joinedPhaseMembersOf(run, phase, onlyId) : [...joinedPhaseMembersOf(run, phase), ...taskedSeatsNotJoinedOf(run, phase)];
+  /** The run's members that joined, as owing.ts counts them for `phase` (only participant `onlyId` when given). */
+  const joinedPhaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
     (
       db
         .prepare(
