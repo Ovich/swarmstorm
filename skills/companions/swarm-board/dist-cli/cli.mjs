@@ -2345,7 +2345,11 @@ async function openBoard(dbPath = SQLITE_PATH) {
   if (hasTable("participants") && columnsOf("participants").includes("slice")) db.exec("ALTER TABLE participants RENAME COLUMN slice TO seat");
   if (hasTable("participants") && columnsOf("participants").includes("worktree") && !columnsOf("participants").includes("place")) db.exec("ALTER TABLE participants RENAME COLUMN worktree TO place");
   db.exec(`
-    PRAGMA journal_mode = DELETE;
+    -- WAL: a write appends to the log and returns; NORMAL syncs the log at checkpoints, not at
+    -- each commit, so a power cut may lose the last writes but never corrupts the store.
+    -- A rollback journal synced every commit and capped the server near 800 writes a second.
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
     -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
     -- concurrent verb fails outright with SQLITE_BUSY.
     PRAGMA busy_timeout = 5000;
