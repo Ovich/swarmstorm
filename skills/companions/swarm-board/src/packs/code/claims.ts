@@ -74,7 +74,6 @@ export interface Claims {
 export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[] };
 
 type Row = Record<string, unknown>;
-type ClaimRow = { participant: number; kind: string; since: number };
 
 export function claimsOf(deps: ClaimsDeps): Claims {
   const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack } = deps;
@@ -90,15 +89,11 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     ).run();
   };
 
-  /** Every active, live holder of `rel`, in claim order: of the path itself, or of a directory it is under (G42). */
-  const activeHoldersOf = (repo: string, rel: string): ClaimRow[] =>
-    (
-      db
-        .prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid")
-        .all(repo, rel, rel) as Row[]
-    )
-      .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
-      .filter((c) => isLive(c.participant));
+  /** Every active, live holder of `rel` by id, in claim order: of the path itself, or of a directory it is under (G42). */
+  const activeHoldersOf = (repo: string, rel: string): number[] =>
+    (db.prepare("SELECT participant FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel) as Row[])
+      .map((r) => Number(r.participant))
+      .filter(isLive);
   /** `p`'s worktree changes `rel`: held, active. True when the claim is new, or a merged one made active again because
    *  the path had left the changes since the merge (a frame read before the merge and sent after never reopens it).
    *  A claim made active again keeps its last merge's sha (v1-5): it was merged this phase, and drift still finds it. */
@@ -284,8 +279,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
         const overlaps: Flag[] = [];
         for (const rel of fresh)
-          for (const c of activeHoldersOf(me.repo, rel).filter((c) => c.participant !== me.id)) {
-            const other = participantById(c.participant);
+          for (const holder of activeHoldersOf(me.repo, rel).filter((id) => id !== me.id)) {
+            const other = participantById(holder);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
             const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
               event: CODE_EVENTS.flag.name,
@@ -369,9 +364,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         });
         // every active holder of a merged path, a shared one included (D40)
         for (const rel of rels) {
-          for (const c of activeHoldersOf(me.repo, rel)) {
-            if (c.participant !== me.id) told.add(participantById(c.participant).name);
-          }
+          for (const holder of activeHoldersOf(me.repo, rel)) if (holder !== me.id) told.add(participantById(holder).name);
         }
         // declarers
         const everyone = db
@@ -404,7 +397,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         // phase; once the conflicts are known, of a conflicted path only (D5)
         for (const rel of rels) {
           if (conflicted && !conflicted.has(fold(rel))) continue;
-          const ids = new Set(activeHoldersOf(me.repo, rel).map((c) => c.participant));
+          const ids = new Set(activeHoldersOf(me.repo, rel));
           const held = db
             .prepare("SELECT c.participant FROM claims c JOIN participants p ON p.id = c.participant WHERE c.repo = ? AND c.path = ? AND p.run = ? ORDER BY c.rowid")
             .all(me.repo, rel, me.run) as Row[];
