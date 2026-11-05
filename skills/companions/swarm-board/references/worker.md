@@ -35,7 +35,7 @@ never `end` while the run is open (it is refused). A turn ended while you owe wo
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it
-   again (it holds 170 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
+   again (it holds 150 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
 4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **You claim
    nothing**: your link reads your worktree's changes from git every 2 s and the board holds

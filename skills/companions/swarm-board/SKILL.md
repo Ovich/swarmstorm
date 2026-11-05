@@ -85,7 +85,7 @@ a background task. It ends on a message that mentions you or an urgent post, you
 you, you read it, act, and start it again. **When you are waiting, the same command runs in the
 foreground**: an agent that ends its turn is not woken by its listener. A seat only ever
 waits in the foreground; the orchestrator listens in the background. A foreground wait holds
-170 s and returns empty, under the 180 s after which Claude Code detaches a foreground command:
+150 s and returns empty, under the 180 s after which Claude Code detaches a foreground command:
 an empty return is a re-arm, run the printed line again. **Nothing else wakes it**: a post or an event
 not addressed to you stays on the board, on its page. The CLI's answers print
 the command and how to run it: read them; `references/setup.md` says which harnesses notify on a

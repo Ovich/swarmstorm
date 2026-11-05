@@ -160,7 +160,9 @@ dispatch a fresh agent that joins the same seat.
 ## Close
 
 **`$S close --run <run>`** once the work is done (a task left to the person never holds it
-open), or the brainstorm concluded; it archives the run's posts. **Before ending
+open), or the brainstorm concluded. It takes two calls: the first closes nothing, and its answer
+says what comes before the close (who still owes, or the closing post to write) and the
+`--confirm` call that closes and archives the run's posts; read it and do that. **Before ending
 your session, close** the run you opened unless it is still being worked: one left open stays an
 active tab. `$S status` flags a run idle a day with its close command; ask the person, then close. A member's pending `wait`, and any call it makes after, answers with the
 `end` command to run and the summary to return.
