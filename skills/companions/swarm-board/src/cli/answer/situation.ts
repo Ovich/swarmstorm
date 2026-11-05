@@ -33,6 +33,8 @@ export type Situation = {
   phaseFirst: boolean | null;
   /** simple-states: a member (never the orchestrator) owing no phase, no open task, and holding nothing of its pack's (the merge lock) */
   owesNothing: boolean;
+  /** board-fixes V1-3: the seq of the task posted to the member and still open, null when none */
+  openTask?: number | null;
 };
 
 /** Reads the member's situation. `show`: the verb shows the phase to the member (wait, join), which the board
@@ -62,5 +64,6 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     phaseFirst: shown ? shown.first : null,
     // board-fixes#D5: an open task owes, phase or not
     owesNothing: owed == null && own?.fact == null && own?.task == null,
+    openTask: own?.task ?? null,
   };
 }

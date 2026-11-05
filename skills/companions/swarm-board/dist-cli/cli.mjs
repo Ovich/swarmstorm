@@ -8502,6 +8502,8 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--link",
   "--since",
   "--watch",
+  "--after",
+  // board-fixes V1-1: post --after w1,w2 takes its seats as a value, never into the body
   "--person",
   "--report",
   "--report-file",
@@ -8949,6 +8951,8 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   pauseWhy: (person, text) => person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : "",
   owedOpen: (name, text, done) => `phase ${name} is open and asks: ${text}. Do your part now, then mark it done: ${done}`,
   owedBrief: (name, done) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
+  /** board-fixes V1-3 */
+  taskStillOpen: (seq, done) => `your task #${seq} is still open: finish it (merge and report), then close it with your next done: ${done}; a later task to you replaces it`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
@@ -9113,6 +9117,7 @@ var owedLine = (s, opts = {}) => {
   const done = WORDING.done(s.cli, s.owed.word, s.as);
   return opts.brief ? WORDING.owedBrief(s.owed.name, done) : WORDING.owedOpen(s.owed.name, s.owed.text, done);
 };
+var openTaskLine = (s) => pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? WORDING.taskStillOpen(s.openTask, WORDING.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
 var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? WORDING.owesNothingEndTurn : null);
 var unreachedMentionLines = (targets) => targets.flatMap((t) => t.state === "away" ? [WORDING.postToAway(t.name)] : t.state === "lost" ? [WORDING.postToLost(t.name)] : []);
 var listenNow = (s, afterPhase = false) => s.listens === "foreground" ? WORDING.waitNow(afterPhase, waitCommand(s, true)) : WORDING.listenerStart(waitCommand(s));
@@ -9220,7 +9225,8 @@ async function readSituation(board2, me, opts) {
     owed: owed ? { name: owed.name, text: owed.text, word: opts.word(owed.name) } : null,
     phaseFirst: shown ? shown.first : null,
     // board-fixes#D5: an open task owes, phase or not
-    owesNothing: owed == null && own?.fact == null && own?.task == null
+    owesNothing: owed == null && own?.fact == null && own?.task == null,
+    openTask: own?.task ?? null
   };
 }
 
@@ -9331,7 +9337,7 @@ ${owes}` : rearm;
     }
     case "done": {
       if (r.none) return { lines: [WORDING.doneNone], next: null, phase: null };
-      const next = owedLine(s, { brief: true }) ?? owesNothingLine(s) ?? WORDING.doneWaitNext(waitCommand(s, true));
+      const next = owedLine(s, { brief: true }) ?? openTaskLine(s) ?? owesNothingLine(s) ?? WORDING.doneWaitNext(waitCommand(s, true));
       return { lines: [r.line, ...r.facts ?? [], next], next, phase: null };
     }
     case "heard": {

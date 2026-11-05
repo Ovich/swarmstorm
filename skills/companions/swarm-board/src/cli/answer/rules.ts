@@ -36,6 +36,10 @@ export const owedLine = (s: Situation, opts: { brief?: boolean } = {}): string |
   return opts.brief ? W.owedBrief(s.owed.name, done) : W.owedOpen(s.owed.name, s.owed.text, done);
 };
 
+/** board-fixes V1-3: a member's task still open, by its seq, and how it closes; the pause first; null when none. */
+export const openTaskLine = (s: Situation): string | null =>
+  pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? W.taskStillOpen(s.openTask, W.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
+
 /** simple-states: the step of a member that owes nothing (task merged and reported, phase done): end its turn; the
  *  pause first; null while it owes, and for the orchestrator. */
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
