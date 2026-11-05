@@ -3,7 +3,7 @@
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
 import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
-import type { Flag, MemberWorktree, MergedMeta } from "./types.ts";
+import type { DriftedFile, Flag, MemberWorktree, MergedMeta } from "./types.ts";
 import type { EventName } from "../../board/events.ts";
 import { CODE_EVENTS } from "./events.ts";
 
@@ -26,7 +26,7 @@ export interface ClaimsDeps {
 export interface Claims {
   /** spec §7: `p`'s holdings become `files`, its worktree's changed set as its link read it (new paths held, gone ones
    *  released); each new path another member holds is posted once to both, unless they agreed on it. */
-  setHoldings(p: Participant, files: string[]): Flag[];
+  setHoldings(p: Participant, files: string[], drifted?: DriftedFile[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
   lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
   /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */

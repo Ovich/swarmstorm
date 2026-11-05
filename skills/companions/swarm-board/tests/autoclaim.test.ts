@@ -6,7 +6,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { changedSet } from "../src/packs/code/changes.ts";
+import { changedSet, driftedSet } from "../src/packs/code/changes.ts";
+import { CODE_WORDING } from "../src/cli/answer/code-wording.ts";
+import { decode, type Frame } from "../src/wire.ts";
 import { openBoard, type Board, type Message } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import { codeEventStep } from "../src/cli/answer/code-rules.ts";
@@ -123,4 +125,65 @@ test("board-fixes#D8: an agreement clears the pair's overlap flags on its path, 
   } finally {
     board.close();
   }
+});
+
+test("driftedSet (claims-phase): a changed file the target changed since the merge-base is drifted with that commit's sha; once the branch has it, not", () => {
+  const repo = path.join(dir, "repo");
+  fs.mkdirSync(repo);
+  git(repo, "init", "-q", "-b", "main");
+  for (const f of ["a.ts", "b.ts", "c.ts"]) fs.writeFileSync(path.join(repo, f), `${f}\n`);
+  git(repo, "add", ".");
+  git(repo, "commit", "-qm", "base");
+  git(repo, "checkout", "-qb", "work");
+  fs.appendFileSync(path.join(repo, "a.ts"), "mine\n");
+  fs.appendFileSync(path.join(repo, "b.ts"), "mine\n");
+  git(repo, "commit", "-qam", "work");
+  assert.deepEqual(driftedSet(repo, "main", ["a.ts", "b.ts"]), [], "the target has not moved");
+  // another member merges a.ts twice and c.ts into main: a.ts drifts with the newer sha; c.ts is not this member's
+  git(repo, "checkout", "-q", "main");
+  fs.writeFileSync(path.join(repo, "a.ts"), "theirs 1\n");
+  git(repo, "commit", "-qam", "a1");
+  fs.writeFileSync(path.join(repo, "a.ts"), "theirs 2\n");
+  fs.appendFileSync(path.join(repo, "c.ts"), "theirs\n");
+  git(repo, "commit", "-qam", "a2");
+  const newest = git(repo, "rev-parse", "HEAD").trim();
+  git(repo, "checkout", "-q", "work");
+  assert.deepEqual(driftedSet(repo, "main", ["a.ts", "b.ts"]), [{ path: "a.ts", sha: newest }]);
+  assert.deepEqual(driftedSet(repo, "main", []), [], "no changed file, nothing drifted");
+  // rebased onto main: the branch has it
+  git(repo, "rebase", "-q", "-X", "ours", "main");
+  assert.deepEqual(driftedSet(repo, "main", ["a.ts", "b.ts"]), [], "rebased: not drifted");
+  // a branch made after the merge: not drifted
+  git(repo, "checkout", "-qb", "later", "main");
+  fs.appendFileSync(path.join(repo, "a.ts"), "later\n");
+  assert.deepEqual(driftedSet(repo, "main", ["a.ts"]), []);
+  // as changedSet: a git error or a detached HEAD keeps the last set
+  assert.equal(driftedSet(repo, "no-such-branch", ["a.ts"]), null);
+  git(repo, "checkout", "-q", "--", "a.ts");
+  git(repo, "checkout", "-q", "--detach", "main");
+  assert.equal(driftedSet(repo, "main", ["a.ts"]), null);
+});
+
+test("claims-phase: a changes call without drifted (an older link) is still taken, and a drift event's step is the rebase onto its sha", async () => {
+  board = await openBoard(path.join(dir, "swarm.sqlite"));
+  try {
+    const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
+    const [w1, w2] = ["w1", "w2"].map((seat) => board.join({ run: run.id, seat, doing: "x", files: [] }).member);
+    board.packCall(w1, "changes", { files: ["src/a.ts"] });
+    assert.deepEqual(board.heldBy(w1), ["src/a.ts"], "the old frame's input, no drifted field");
+    codeVerbs(board).changes(w1, ["src/a.ts"], [{ path: "src/a.ts", sha: "abc1234def" }]);
+    assert.deepEqual(board.heldBy(w1), ["src/a.ts"]);
+    const drift = { mentions: [w1.name], about: "src/a.ts", meta: { event: "drift", sha: "abc1234def" } } as unknown as Message;
+    assert.equal(codeEventStep(drift, w1, "swarm", "drift"), "commit what you have, then: git rebase abc1234def");
+    assert.equal(codeEventStep(drift, w2, "swarm", "drift"), null, "nothing asked of another member");
+    assert.equal(CODE_WORDING.driftNotice(w1.name, "src/a.ts", w2.name, "abc1234def"), "@g/w1 src/a.ts was merged by g/w2 (abc1234) and is not in your branch: rebase now");
+  } finally {
+    board.close();
+  }
+});
+
+test("claims-phase: a changes frame without drifted still decodes", () => {
+  const f = decode(JSON.stringify({ type: "changes", files: ["a.ts"] }));
+  assert.equal(f.type, "changes");
+  assert.equal((f as Extract<Frame, { type: "changes" }>).drifted ?? null, null);
 });

@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
-import { changedSet } from "../packs/code/changes.ts";
+import { changedSet, driftedSet } from "../packs/code/changes.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -180,16 +180,19 @@ export async function runLink(opts: {
   /** spec §7: the member's folder and the branch it is read against, from the welcome; the set last sent, as one key */
   let watched: { dir: string; against: string } | null = null;
   let sentChanges: string | null = null;
-  /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing.
-   *  git runs synchronously, so a tick never starts while the previous look runs: a slow look delays the next. */
+  /** one look at the worktree: its changed set and the drifted paths of it (claims-phase), sent when either differs
+   *  from the last sent; a git error sends nothing. git runs synchronously, so a tick never starts while the previous
+   *  look runs: a slow look delays the next. */
   const watchChanges = () => {
     if (exiting || !watched || !welcomed) return;
     const files = changedSet(watched.dir, watched.against);
     if (!files) return;
-    const key = files.join("\0");
+    const drifted = driftedSet(watched.dir, watched.against, files);
+    if (!drifted) return;
+    const key = JSON.stringify([files, drifted]);
     if (key === sentChanges) return;
     sentChanges = key;
-    sendUp({ type: "changes", files });
+    sendUp({ type: "changes", files, drifted });
   };
 
   let transcript: string | null = null;

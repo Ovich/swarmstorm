@@ -6,6 +6,8 @@ export const CODE_EVENTS = {
   merged: { name: "merged", lands: true },
   // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
   flag: { name: "flag" },
+  // claims-phase: a path the member changed that another member merged this phase and its branch lacks; mentions: the member
+  drift: { name: "drift" },
 } as const satisfies Record<string, EventDef<string>>;
 
 /** board-split V-22: the merge lock's name in an `unlocked` event, when the board frees it from a lost holder. */

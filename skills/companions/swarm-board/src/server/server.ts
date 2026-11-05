@@ -389,7 +389,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       } else if (f.type === "changes" && s.member) {
         // spec §7: the member's holdings become its worktree's changed set; an overlap is posted to both
         const seat = board.participant(s.member.name);
-        if (seat) logged("changes", () => board.packCall(seat, "changes", { files: f.files }));
+        if (seat) logged("changes", () => board.packCall(seat, "changes", { files: f.files, drifted: f.drifted ?? [] }));
       } else if (f.type === "subscribe") s.subscribed = true;
     });
     socket.on("close", () => {

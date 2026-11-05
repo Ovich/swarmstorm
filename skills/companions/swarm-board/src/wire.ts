@@ -100,8 +100,10 @@ export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
-/** spec §7: the paths its member's worktree changed since it left its target, sent when the set differs */
-export type Changes = { type: "changes"; files: string[] };
+/** spec §7: the paths its member's worktree changed since it left its target, sent when the set differs; `drifted`
+ *  (claims-phase): those of them its target changed since the merge-base, with the newest such commit; absent from an
+ *  older link, read as none */
+export type Changes = { type: "changes"; files: string[]; drifted?: { path: string; sha: string }[] };
 /** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
 export type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
