@@ -461,3 +461,30 @@ test("a server's log starts with its data home, its pid, and its starter's pid a
   }
   assert.equal(fs.readFileSync(serverLogFile(home), "utf8").split("\n")[0], `serve: home ${path.resolve(home)}, pid ${process.pid}, started by ${process.ppid} node swarm.mjs join --run 72`);
 });
+
+test("board-fixes#D1: a link's socket killed is logged with its member, its cause and its calls still open; a superseded one with its cause", async () => {
+  const opener = await welcomed();
+  const run = await value(opener, "openRun", { repo: REPO, group: "p", title: "T", seats: SEATS });
+  const joiner = await welcomed();
+  const s1 = (await value(joiner, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  const member = { name: "p/S1", run: run.id };
+  const link = await welcomed({ member });
+  link.send({ type: "call", id: "held-wait", method: "wait", args: [s1, { timeoutMs: 60000, mentionsOnly: true }] });
+  await new Promise((r) => setTimeout(r, 100));
+  link.socket.close();
+  await link.closed;
+  const logLines = async (): Promise<string[]> => {
+    for (let i = 0; i < 40; i++) {
+      const lines = fs.readFileSync(serverLogFile(dir), "utf8").split(/\r?\n/).filter((l) => l.includes(" close: p/S1, "));
+      if (lines.length) return lines;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return [];
+  };
+  assert.match((await logLines()).at(-1) ?? "no close logged", /close: p\/S1, cause socket, 1 call\(s\) open$/);
+  const old = await welcomed({ member });
+  await welcomed({ member, supersede: true });
+  await old.closed;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.match((await logLines()).at(-1) ?? "", /close: p\/S1, cause superseded, 0 call\(s\) open$/);
+});

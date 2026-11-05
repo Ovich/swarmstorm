@@ -10,7 +10,7 @@ import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
-import { bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
+import { SERVER_CLOSED_CONNECTION, bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
@@ -21,7 +21,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -1298,6 +1298,7 @@ if (args.verb === "serve") {
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);
+    if (said === SERVER_CLOSED_CONNECTION) console.error(closedConnectionHint(args.verb ?? "", self().join(" ")));
     process.exitCode = 1;
   } finally {
     board?.close();

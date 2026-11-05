@@ -152,3 +152,9 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
   }
 }
 
+
+/** Verbs that only read the board: a call of theirs the server dropped is safe to run again as is (board-fixes §2). */
+const READING_VERBS: ReadonlySet<string> = new Set(["status", "roster", "read", "wait", "doing"]);
+/** The hint after a call the server's connection dropped: retry a reading verb, check `status` before a writing one. */
+export const closedConnectionHint = (verb: string, cli: string): string =>
+  READING_VERBS.has(verb) ? W.retryReading(verb) : W.retryWriting(verb, W.status(cli));

@@ -17,6 +17,11 @@ export const WORDING = {
   /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
   stallClamped: (askedMs: number, floorMs: number): string => `--stall-ms ${askedMs} is under the ${floorMs} ms floor of the stall window: the run uses ${floorMs}`,
 
+  // ── a call the server's connection dropped (board-fixes §2) ──
+  retryReading: (verb: string): string => `the call did not complete: run the same ${verb} again, as is`,
+  retryWriting: (verb: string, status: Command): string =>
+    `the ${verb} may or may not have landed: check with ${status} first, and run it again only if it is not there`,
+
   // ── the run's page ──
   /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
    *  an older aiview's `/board` takes it as its hash */

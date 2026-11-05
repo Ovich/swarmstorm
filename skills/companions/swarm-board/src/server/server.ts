@@ -29,9 +29,14 @@ const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 /** `member`: the member whose link this is, its presence written; `bound`: the member its calls are judged for
  *  (trust-adaptations#D5), a link's and a direct connection's alike. */
 /** `anonymousScope`: the scope of its calls' ids while it is bound to no member, its own alone. */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean };
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean; closeCause?: ClosedForLog };
+/** Why a socket closed, as swarm-server.log says it (board-fixes#D1): finer than the stored drop cause. */
+type ClosedForLog = "ping timeout" | "link ended" | "run closed" | `error: ${string}`;
 /** A call running or answered, keyed by its scope and its id (callKey): a resend reaches it only from the same member. */
-type CallRecord = { speaker: Speaker; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
+type CallRecord = { speaker: Speaker; method: string; startedAt: number; answer: string | null; answeredAt: number; cancelWait: AbortController | null };
+
+/** A call answered this long after it came in is logged as slow (board-fixes#D1); a wait holds by design and is not. */
+const SLOW_CALL_MS = 10 * 1000;
 
 /** How long an ended member's link must carry no call before the server tells it so (T53b); under stopLinks' grace. */
 const ENDED_LINK_QUIET_MS = 1000;
@@ -55,6 +60,24 @@ export async function startBoardServer(opts: ServerOptions): Promise<{ url: stri
 function logStart(dataRoot: string): void {
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.appendFileSync(serverLogFile(dataRoot), `serve: home ${path.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}\n`);
+}
+
+/** board-fixes#D1: one line per member's socket closed, or any socket closed on an error or a ping timeout: who, why,
+ *  how many of its calls were still unanswered. */
+function connLog(dataRoot: string, who: string, cause: string, openCalls: number): void {
+  appendLog(dataRoot, `close: ${who}, cause ${cause}, ${openCalls} call(s) open`);
+}
+
+/** board-fixes#D1: one line per call answered SLOW_CALL_MS or more after it came in. */
+function slowCallLog(dataRoot: string, who: string, method: string, ms: number): void {
+  appendLog(dataRoot, `slow: ${who}, ${method} answered in ${ms} ms`);
+}
+
+function appendLog(dataRoot: string, line: string): void {
+  try {
+    fs.appendFileSync(serverLogFile(dataRoot), `${new Date().toISOString()} ${line}
+`);
+  } catch {}
 }
 
 /** The starter's command line: what a spawning CLI passed, else read from /proc where there is one, else "unknown". */
@@ -197,10 +220,14 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const answer = (id: string, rec: CallRecord, text: string): void => {
     rec.answer = text;
     rec.answeredAt = Date.now();
+    const took = rec.answeredAt - rec.startedAt;
+    if (took >= SLOW_CALL_MS && rec.method !== "wait") slowCallLog(opts.dataRoot, speakerName(rec.speaker), rec.method, took);
     rec.cancelWait = null;
     if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
     void id;
   };
+
+  const speakerName = (sp: Speaker): string => sp.member?.name ?? sp.anonymousScope;
 
   const dropWait = (key: string): void => {
     const rec = calls.get(key);
@@ -223,7 +250,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (known.answer !== null) s.socket.send(known.answer);
       return;
     }
-    const rec: CallRecord = { speaker: s, answer: null, answeredAt: 0, cancelWait: null };
+    const rec: CallRecord = { speaker: s, method: String(call.method), startedAt: Date.now(), answer: null, answeredAt: 0, cancelWait: null };
     calls.set(key, rec);
     const fail = (error: string): void => answer(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail(`unknown method ${String(call.method)}`);
@@ -253,7 +280,11 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
 
   // D30: a closed run's links are told so
   const closed = (run: number): void => {
-    for (const s of speakers) if (s.member?.run === run) refuse(s, "closed");
+    for (const s of speakers)
+      if (s.member?.run === run) {
+        s.closeCause = "run closed";
+        refuse(s, "closed");
+      }
   };
   // its own end, or the orchestrator's end --seat: the member's link is done as at a close, once it has carried no call
   // for ENDED_LINK_QUIET_MS: the wait the end released reaches its CLI, and that CLI's follow-up calls are answered (T53b)
@@ -271,6 +302,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       return;
     }
     s.endedPending = false;
+    s.closeCause = "link ended";
     refuse(s, "closed");
   }
 
@@ -288,6 +320,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   wss.on("connection", (socket) => {
     const s: Speaker = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false };
     let welcomed = false;
+    socket.on("error", (e) => (s.closeCause = `error: ${e.message}`));
     socket.on("pong", () => (s.lastPong = Date.now()));
     socket.on("message", (data) => {
       let f: Frame;
@@ -352,6 +385,9 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     });
     socket.on("close", () => {
       speakers.delete(s);
+      const openCalls = [...calls.values()].filter((c) => c.speaker === s && c.answer === null).length;
+      const cause = s.closeCause ?? (s.superseded ? "superseded" : (s.closedBy ?? "socket"));
+      if (s.member || s.closeCause) connLog(opts.dataRoot, speakerName(s), cause, openCalls);
       // its link lost, unless another link of the same member took over (superseded)
       const m = s.member;
       if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : (s.closedBy ?? "socket"));
@@ -385,7 +421,10 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const ping = setInterval(() => {
     const t = Date.now();
     for (const s of speakers) {
-      if (t - s.lastPong > PONG_WITHIN_MS) s.socket.terminate();
+      if (t - s.lastPong > PONG_WITHIN_MS) {
+        s.closeCause = "ping timeout";
+        s.socket.terminate();
+      }
       else s.socket.ping();
     }
   }, PING_EVERY_MS);
