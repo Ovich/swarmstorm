@@ -1523,7 +1523,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const r = runRow(p.run);
     const watch = r.phase_watch == null ? [] : (JSON.parse(String(r.phase_watch)) as string[]);
     if (watch.includes(p.seat)) return "watched";
-    const orch =db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
+    const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
     if (orch) {
       const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), phaseOpenedSeqOf(p.run)) as Row[]).find(
         (m) => (JSON.parse(String(m.mentions)) as string[]).includes(p.name),
