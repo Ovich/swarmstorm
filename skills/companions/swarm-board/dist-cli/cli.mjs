@@ -2624,7 +2624,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return (id) => read.get(id) ?? read.set(id, participantById(id)).get(id);
   };
   const participantById = (id) => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id));
-  const toMessage = (r, authorOf = participantById) => {
+  const toMessage = (r, authorOf) => {
     const author = authorOf(Number(r.author));
     return {
       seq: Number(r.seq),
@@ -2657,7 +2657,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     bump(p.repo);
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
-    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq));
+    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq), participantById);
   };
   const openTaskOf = (run2, name, id) => {
     const t = db.prepare("SELECT seq FROM messages WHERE run = ? AND task = 1 AND mentions = ? ORDER BY seq DESC LIMIT 1").get(run2, JSON.stringify([name]));
@@ -3011,7 +3011,23 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const open = run2.phase === phase;
     return { open, forSeats: open && run2.phase_for != null ? JSON.parse(String(run2.phase_for)) : null };
   };
-  const phaseMembersOf = (run2, phase, onlyId) => db.prepare(
+  const taskedSeatsNotJoinedOf = (run2, phase) => {
+    const r = runRow(run2);
+    if (r.phase !== phase) return [];
+    const plan = String(r.plan);
+    return db.prepare(
+      `SELECT s.id AS seat FROM seats s
+           WHERE s.run = ? AND s.id != '${ORCHESTRATOR}'
+             AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)
+             AND EXISTS (
+               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = '${ORCHESTRATOR}', json_each(m.mentions) j
+               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id
+                 AND m.seq > (SELECT COALESCE(MAX(seq), 0) FROM messages WHERE run = s.run AND event = '${EVENTS.phase.name}'))
+           ORDER BY s.ord`
+    ).all(run2, plan).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
+  };
+  const phaseMembersOf = (run2, phase, onlyId) => onlyId != null ? joinedPhaseMembersOf(run2, phase, onlyId) : [...joinedPhaseMembersOf(run2, phase), ...taskedSeatsNotJoinedOf(run2, phase)];
+  const joinedPhaseMembersOf = (run2, phase, onlyId) => db.prepare(
     `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.idle_ended, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
              EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = p.run AND e.member = p.seat AND e.badge = 'lost' AND e.opened_at IS NOT NULL AND e.closed_at IS NULL) AS lost
            FROM participants p WHERE p.run = ? AND p.seat != '${ORCHESTRATOR}' AND (? IS NULL OR p.id = ?) ORDER BY p.id`
@@ -3367,7 +3383,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const said = text.trim();
       return transaction(() => {
         const me = participantById(fresh.id);
-        const held = unseenRows(me).map((r2) => toMessage(r2)).filter((m) => m.run === me.run && wakes(m, me));
+        const authorOf = memoizedParticipants();
+        const held = unseenRows(me).map((r2) => toMessage(r2, authorOf)).filter((m) => m.run === me.run && wakes(m, me));
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const m of held) mark.run(me.id, m.seq, now());
         db.prepare("UPDATE runs SET paused = NULL, paused_person = 0, resumed_at = ?, stall_posts = 0 WHERE id = ?").run(now(), fresh.run);
@@ -3776,7 +3793,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         return statesByRun.get(run2).get(member);
       };
       const cutoff = t - STALE_MS;
-      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
+      const authorOf = memoizedParticipants();
+      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => authorOf(id).name, relPath }, repo, people, ORCHESTRATOR);
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id) => runsById.get(id);
       const roster = people.map((r) => {
@@ -3789,6 +3807,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const core = memberStateOf(r, runR ?? void 0, t);
         const state = core;
         const fact = core === "working" || core === "stopped" ? packPart.factOf(id) : null;
+        const liveness = ended ? void 0 : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t);
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -3807,15 +3826,15 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           calls: Number(r.calls ?? 0),
           listening: !ended && Number(r.listening) === 1,
           lastCall: String(r.last_call ?? r.joined_at),
-          liveness: ended ? void 0 : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
-          badge: ended ? null : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null,
-          unread: ended ? 0 : unreadOf(id),
+          liveness,
+          badge: liveness?.badge ?? null,
+          unread: ended ? 0 : unreadOf(id, authorOf),
           // U-F13: an ended seat runs nothing the card should show; its last calls are stale
           ...ended ? {} : activityShown(Number(r.run), seat)
         };
       });
       const events = db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN).map((r) => {
-        const m = toMessage(r);
+        const m = toMessage(r, authorOf);
         const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
         const subject = alarm ? alarmSubjectOf(m) : null;
         return {
@@ -7760,12 +7779,6 @@ function logStart(dataRoot) {
   fs12.appendFileSync(serverLogFile(dataRoot), `serve: home ${path12.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
-function connLog(dataRoot, who, cause, openCalls) {
-  appendLog(dataRoot, `close: ${who}, cause ${cause}, ${openCalls} call(s) open`);
-}
-function slowCallLog(dataRoot, who, method, ms) {
-  appendLog(dataRoot, `slow: ${who}, ${method} answered in ${ms} ms`);
-}
 function appendLog(dataRoot, line) {
   try {
     fs12.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
@@ -7881,12 +7894,15 @@ async function runBoardServer(opts) {
     rec.answer = text;
     rec.answeredAt = Date.now();
     const took = rec.answeredAt - rec.startedAt;
-    if (took >= SLOW_CALL_MS && rec.method !== "wait") slowCallLog(opts.dataRoot, speakerName(rec.speaker), rec.method, took);
+    if (took >= SLOW_CALL_MS && rec.method !== "wait") appendLog(opts.dataRoot, `slow: ${speakerName(rec.speaker)}, ${rec.method} answered in ${took} ms`);
     rec.cancelWait = null;
     if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
     void id;
   };
   const speakerName = (sp) => sp.member?.name ?? sp.anonymousScope;
+  const dropAs = (s, cause) => {
+    if (s.dropCause !== "superseded") s.dropCause = cause;
+  };
   const dropWait = (key) => {
     const rec = calls.get(key);
     if (!rec || rec.answer !== null) return;
@@ -7932,7 +7948,7 @@ async function runBoardServer(opts) {
   const closed = (run3) => {
     for (const s of speakers)
       if (s.member?.run === run3) {
-        s.closeCause = "run closed";
+        s.logCause = "run closed";
         refuse(s, "closed");
       }
   };
@@ -7950,7 +7966,7 @@ async function runBoardServer(opts) {
       return;
     }
     s.endedPending = false;
-    s.closeCause = "link ended";
+    s.logCause = "link ended";
     refuse(s, "closed");
   }
   const httpServer = http.createServer((req, res) => {
@@ -7967,7 +7983,7 @@ async function runBoardServer(opts) {
     const s = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false, readAt: Date.now() };
     upgrade.socket.prependListener("data", () => s.readAt = Date.now());
     let welcomed = false;
-    socket.on("error", (e) => s.closeCause = `error: ${e.message}`);
+    socket.on("error", (e) => s.logCause = `error: ${e.message}`);
     socket.on("pong", () => s.lastPong = Date.now());
     socket.on("message", (data) => {
       s.lastPong = Date.now();
@@ -7999,7 +8015,7 @@ async function runBoardServer(opts) {
         if (isLink && f.member) {
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
-              other.superseded = true;
+              dropAs(other, "superseded");
               refuse(other, "superseded");
             }
           s.member = f.member;
@@ -8014,7 +8030,7 @@ async function runBoardServer(opts) {
       if (f.type === "call") run2(s, f);
       else if (f.type === "cancel") dropWait(callKey(s, f.id));
       else if (f.type === "bye") {
-        s.closedBy = "member-closed";
+        dropAs(s, "member-closed");
         socket.close();
       } else if (f.type === "beat" && s.member) beat(s.member);
       else if (f.type === "activity" && s.member) {
@@ -8028,10 +8044,10 @@ async function runBoardServer(opts) {
     socket.on("close", () => {
       speakers.delete(s);
       const openCalls = [...calls.values()].filter((c) => c.speaker === s && c.answer === null).length;
-      const cause = s.closeCause ?? (s.superseded ? "superseded" : s.closedBy ?? "socket");
-      if (s.member || s.closeCause) connLog(opts.dataRoot, speakerName(s), cause, openCalls);
+      const dropCause = s.dropCause ?? "socket";
+      if (s.member || s.logCause) appendLog(opts.dataRoot, `close: ${speakerName(s)}, cause ${s.logCause ?? dropCause}, ${openCalls} call(s) open`);
       const m = s.member;
-      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : s.closedBy ?? "socket");
+      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, dropCause);
       for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
     });
   });
@@ -8059,7 +8075,7 @@ async function runBoardServer(opts) {
     lastPingRound = t;
     for (const s of speakers) {
       if (silentTooLong(t, lastRound, s.lastPong)) {
-        s.closeCause = "ping timeout";
+        s.logCause = "ping timeout";
         s.socket.terminate();
       } else s.socket.ping();
     }
@@ -8070,7 +8086,7 @@ async function runBoardServer(opts) {
     clearInterval(ping);
     stopTellingReaders();
     for (const s of speakers) {
-      s.closedBy = "server-restart";
+      dropAs(s, "server-restart");
       refuse(s, "shutdown");
     }
     for (const id of [...calls.keys()]) dropWait(id);
@@ -9635,8 +9651,7 @@ function parseFile(spec) {
   const d = m ? { path: m[1], interface: m[2] === "interface" } : { path: spec, interface: false };
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
-var declaredPath = (file) => {
-  const root = worktreeOf(process.cwd());
+var declaredPath = (file, root = worktreeOf(process.cwd())) => {
   const { abs, missing } = resolveIn(root, file);
   return missing.length && root ? path13.resolve(root, file) : abs;
 };
@@ -10153,7 +10168,7 @@ ${verbHelp()}`);
       if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed2(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await packVerb(p, "merged", { sha, files: files.map((f) => path13.resolve(f)), conflicts });
+      const sharers = await packVerb(p, "merged", { sha, files: files.map((f) => declaredPath(f, pathsRoot())), conflicts });
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `
 guides: ${guidesArg}` : ""}`, { kind: "msg" });
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
