@@ -296,8 +296,18 @@ function cmdStatus(): void {
 function cmdPath(): void {
   const name = args.positional[0];
   if (!name) {
-    console.error("usage: aiview path <filename> [--project <slug>]");
+    console.error("usage: aiview path <filename> [--project <slug>] | aiview path #<id>");
     process.exit(1);
+  }
+  // board-fixes plan, its "small" row: a registered doc's id (`#<n>` or a bare number) names its file, whatever the project
+  if (/^#?\d+$/.test(name)) {
+    const doc = resolveRef(name);
+    if (!doc) {
+      console.error(`no document ${name.startsWith("#") ? name : `#${name}`} in the index`);
+      process.exit(1);
+    }
+    emit({ path: doc.abs_path, dir: path.dirname(doc.abs_path), project: doc.project }, doc.abs_path);
+    return;
   }
   const index = openIndex();
   const slug = projectOfVerb(index);

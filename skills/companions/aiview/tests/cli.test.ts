@@ -547,6 +547,23 @@ test("path: the tool joins the location, so no caller ever builds one", () => {
   );
 });
 
+test("path #<id>: a registered doc's id names its file", () => {
+  const f = write("docs/P/y.plan.md", "# Plan Y\n");
+  const added = run("add", f);
+  assert.equal(added.status, 0, added.stderr);
+  const id = /#(\d+)/.exec(added.stdout)![1];
+  for (const ref of [`#${id}`, id]) {
+    const r = run("path", ref, "--json");
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.equal(fs.realpathSync(out.path), fs.realpathSync(f));
+    assert.equal(out.project, "P");
+  }
+  const missing = run("path", "#9999");
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /no document #9999/);
+});
+
 test("path: the project the cwd is in, --project over it", () => {
   const ciipRepo = path.join(toolRoot, "repos", "ciip");
   fs.mkdirSync(path.join(ciipRepo, "sub"), { recursive: true });

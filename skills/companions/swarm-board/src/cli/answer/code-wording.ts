@@ -21,7 +21,7 @@ export const CODE_WORDING = {
     [
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
       "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own",
-      "  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
+      "  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
@@ -41,7 +41,7 @@ export const CODE_WORDING = {
     // board-split D52: the full suite ran before the lock; under it only rebase, quick check, fast-forward
     `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; your full suite ran before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
-  guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok|n/a <why>, ..."; corrected: --guides ${corrected}`,
+  guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>); corrected: --guides ${corrected}`,
   /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
   detach: (worktree: string): Command => `git -C ${worktree} switch --detach`,
   ontoCheckedOutAtOpen: (onto: string, worktree: string, detach: Command) =>

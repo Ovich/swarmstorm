@@ -2049,7 +2049,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // on a code run an agreement binds two: with no other party it is refused (F25); a brainswarm agreement binds the room
         if (!named.length && fresh.pack !== null) throw new Error("agree needs another party: @<seat> or --with <seat>; to inform, use post");
       }
-      return insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
+      return transaction(() => {
+        const message = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
+        // board-fixes#D8: the agreement settles the parties' overlap on its path
+        if (named && opts.about) packOf(fresh)?.onAgreement?.(fresh, named, opts.about, packCtxOf(fresh));
+        return message;
+      });
     },
 
     endorse(p, seq) {

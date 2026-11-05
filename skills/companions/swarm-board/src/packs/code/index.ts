@@ -62,6 +62,8 @@ export const codePack: Pack = {
     (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
   // an agreement with no party named binds the file's other holders (F25)
   defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
+  // board-fixes#D8: an agreement clears the pair's overlap flags on its path
+  onAgreement: (author, parties, about, ctx) => tablesOf(ctx).settleOverlaps(author, parties, about),
   // a member holding a claim or the merge lock is mid-work, never idle
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
   // holding the merge lock, the member is merging (D36), whatever its core state says

@@ -87,6 +87,8 @@ export interface Pack {
   onJoin?(member: Participant, ctx: PackCtx, declared: Declared[]): JoinFacts;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
+  /** After an agreement about `about` between `author` and `parties` (names) is posted, in its transaction. */
+  onAgreement?(author: Participant, parties: string[], about: string, ctx: PackCtx): void;
   busy?(member: Participant, ctx: PackCtx): boolean;
   /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
