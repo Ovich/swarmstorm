@@ -60,7 +60,7 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
     const f = fileOf(String(c.path));
     const member = `${c.plan}/${c.seat}`;
     if (c.sha != null) f.past.push({ member, state: "merged", sha: String(c.sha) });
-    if (c.state === "active" && isLive(Number(c.participant))) f.holders.push(member);
+    if (live.includes(c)) f.holders.push(member);
     else if (c.state === "active" && c.sha == null) f.past.push({ member, state: "ended", sha: null });
   }
   // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
