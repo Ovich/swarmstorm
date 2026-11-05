@@ -17,7 +17,7 @@ export function migrateCodeTables(db: DatabaseSync): void {
     -- claims are global by repository-relative path, across every run on a repository (D12, D20);
     -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed.
     -- A claim lasts its run's phase (claims-phase): from the member's first change of the path until the next phase
-    -- opens or the run closes; state 'active' or 'merged' (sha: the merge's), 'ended' read from the member;
+    -- opens or the run closes; state 'active' or 'merged', 'ended' read from the member; sha: its last merge this phase, kept when active again;
     -- in_changes: the path is in the member's worktree changes as its link last read them
     CREATE TABLE IF NOT EXISTS claims (
       repo TEXT NOT NULL,
@@ -139,7 +139,7 @@ export function migrateCodeTables(db: DatabaseSync): void {
       COMMIT;
     `);
   }
-  // claims-phase: a claim's state, its merge's sha, and whether its path is still in the member's changes
+  // claims-phase: a claim's state, its last merge's sha, and whether its path is still in the member's changes
   upkeep("claims", "state", "state TEXT NOT NULL DEFAULT 'active'");
   upkeep("claims", "sha", "sha TEXT");
   upkeep("claims", "in_changes", "in_changes INTEGER NOT NULL DEFAULT 1");
