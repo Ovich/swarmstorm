@@ -327,8 +327,6 @@ const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(
  *  background task, so a stopped agent takes it down; a verb that finds none spawns one detached outside a harness session,
  *  and inside one ends on this line (D39). */
 const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord)].join(" "));
-/** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
-const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
 /** A member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
 const pausedLine = async (p: Participant): Promise<string | null> => rules.pausedLine(await situation(p));
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
@@ -1048,7 +1046,7 @@ async function main(): Promise<void> {
       emit({ member: p.name, ...r, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
-        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, waitCommand(p.name, true)));
+        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, WORDING.wait(self().join(" "), shellWord(p.name), FOREGROUND_WAIT_MS)));
       });
       break;
     }
