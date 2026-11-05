@@ -3,11 +3,11 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { heardStep, openTaskLine, joinStep, nextStep, owedLine, owesNothingLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
+import { heardStep, openTaskLine, joinStep, owedLine, owesNothingLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedConnectionHint, closedLine, foregroundBound, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
+export { closedConnectionHint, closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";

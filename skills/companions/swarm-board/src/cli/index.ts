@@ -4,7 +4,7 @@ import { hiddenSpawnSync } from "../proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { openBoard, progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
+import { progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
 import type { HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
@@ -21,7 +21,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -329,7 +329,6 @@ const self = (): string[] => [...(HOME_OVERRIDE ? [`SWARMSTORM_HOME=${shellWord(
 const startLinkLine = (member: BoardMember): string => WORDING.linkStart([...self(), ...linkVerbArgs(member).map(shellWord)].join(" "));
 /** The wait a member runs: a background listener holds until something comes; a foreground wait carries its hold. */
 const waitCommand = (name: string, foreground = false): string => WORDING.wait(self().join(" "), shellWord(name), foreground ? FOREGROUND_WAIT_MS : undefined);
-const listensInForeground = (p: Pick<Participant, "seat" | "kind">): boolean => p.seat !== "orchestrator" && profileOf(p.kind).member !== "worker";
 /** A member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
 const pausedLine = async (p: Participant): Promise<string | null> => rules.pausedLine(await situation(p));
 /** True, having printed the paused line with exit 4, when `p`'s run is paused: the verb does nothing. */
@@ -371,10 +370,6 @@ const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): str
     : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
 
-/** A member's next step where it would be told to listen: the pause first, then the owed phase. */
-const nextStep = async (p: Participant): Promise<string> => rules.nextStep(await situation(p));
-/** What a verb that heard from the member ends on (D9). */
-const heardStep = async (p: Participant): Promise<string | null> => rules.heardStep(await situation(p));
 
 /** break-flow D61: the gate before every member verb, core and code pack. True, having printed the closed or ended
  *  line, when `p`'s run is closed or `p` has ended: the verb writes nothing more. */
@@ -429,8 +424,6 @@ const guidesHere = (p: Participant, onto?: string): Guide[] => {
   return discoverGuides(toolRoot(), root, ofOnto);
 };
 
-/** The last line of a `wait --mentions` that delivered (F28). */
-export const DELIVERED_LINE = WORDING.delivered;
 
 /** The worktree a member's paths are relative to: its board worktree once known, else the shell's checkout. */
 let callerWorktree: string | null = null;
@@ -587,7 +580,6 @@ async function main(): Promise<void> {
   switch (args.verb) {
     case "open": {
       const { kind, group } = openKindAndGroup();
-      const plan = group;
       const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${verbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === undefined ? undefined : Number(rawStall);

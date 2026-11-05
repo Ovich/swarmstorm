@@ -19,7 +19,6 @@ export interface ClaimsDeps {
   relPath(repo: string, file: string): string | null;
   fold(s: string): string;
   slashes(rel: string): string;
-  doingOf(id: number): string;
   /** A run of `kind` gives its members claims by default (D22): an interface change is announced to those runs. */
   kindHasPack(kind: string): boolean;
 }
@@ -70,7 +69,7 @@ type Row = Record<string, unknown>;
 type ClaimRow = { participant: number; kind: string; since: number };
 
 export function claimsOf(deps: ClaimsDeps): Claims {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasPack } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack } = deps;
 
   /** A flag lives while a claim on its path does; a notice while both its holders' claims do. */
   const clearFlags = (): void => {
