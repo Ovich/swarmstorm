@@ -2,16 +2,23 @@
 // git and sent as a `changes` frame; the server sets the member's holdings to them. The board runs no git for it.
 import { gitAnswer } from "../../git.ts";
 
+/** The commit `worktree`'s branch left `onto` at; null when git fails, or when HEAD is detached (the worktree
+ *  switched to another commit, a base to compare against): no branch to read against. */
+function branchBase(worktree: string, onto: string): string | null {
+  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
+  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
+  return base.status === 0 ? base.stdout.trim() : null;
+}
+
 /** Every path `worktree` changed against `onto`, repository-relative with forward slashes: what git status shows
  *  (staged, unstaged, untracked, a conflict; a rename's both paths) and what its branch committed since the merge-base
  *  (a rename's both paths); ignored files never. Null when git fails, or when HEAD is detached (the worktree switched
  *  to another commit, a base to compare against): the caller keeps the last set, so the claims stay the member's work. */
 export function changedSet(worktree: string, onto: string): string[] | null {
-  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
-  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
-  if (base.status !== 0) return null;
+  const base = branchBase(worktree, onto);
+  if (!base) return null;
   const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
-  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base.stdout.trim(), "HEAD");
+  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base, "HEAD");
   if (status.status !== 0 || diff.status !== 0) return null;
   const set = new Set<string>();
   // porcelain v2 -z: one record per NUL; a rename record ("2 …") carries its original path as the next record
