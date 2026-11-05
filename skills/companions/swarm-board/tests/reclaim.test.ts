@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
+import { endProcess } from "./fixtures/server.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
@@ -17,7 +18,7 @@ const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "sr
 let repos: Repo[] = [];
 let links: ChildProcess[] = [];
 afterEach(() => {
-  for (const l of links) if (l.exitCode === null) l.kill();
+  for (const l of links) if (l.exitCode === null) endProcess(l.pid);
   links = [];
   for (const r of repos) r.cleanup();
   repos = [];

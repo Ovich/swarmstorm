@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBoard } from "../../src/board/board.ts";
-import { stopServerOf, untilGone } from "../fixtures/server.ts";
+import { endProcess, stopServerOf } from "../fixtures/server.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(HERE, "..", "..", "src", "cli", "index.ts");
@@ -132,10 +132,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     },
     stop: () => {
       // waited out, not only killed: on Windows a listener still exiting keeps its cwd, the temp repo, from removal (S31)
-      for (const l of listeners) {
-        l.kill();
-        if (l.pid !== undefined) untilGone(l.pid);
-      }
+      for (const l of listeners) endProcess(l.pid);
       stopServerOf(home);
       fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },

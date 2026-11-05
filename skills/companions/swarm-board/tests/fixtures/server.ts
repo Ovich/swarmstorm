@@ -17,6 +17,25 @@ export function untilGone(pid: number): void {
   for (let i = 0; i < GONE_POLLS && isAlive(pid); i++) spawnSync(process.execPath, ["-e", "setTimeout(()=>{},50)"]);
 }
 
+/** Ends `pid` with every process it started (o-2). A link reads its worktree's changes with a synchronous git call every
+ *  2 s: killed alone mid-call, its git child lives on with its working directory in the test's home, and on Windows
+ *  that home cannot be removed until it exits (EPERM). `taskkill /T` ends the git child with the link. */
+function killTree(pid: number): void {
+  if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+  else {
+    try {
+      process.kill(pid);
+    } catch {}
+  }
+}
+
+/** A process a test started (a link, a listener), ended with its children and waited out before its home goes (o-2). */
+export function endProcess(pid: number | undefined): void {
+  if (pid === undefined || !isAlive(pid)) return;
+  killTree(pid);
+  untilGone(pid);
+}
+
 /** The pid `home`'s state file names; null when there is none. */
 function statePid(home: string): number | null {
   try {
@@ -43,9 +62,7 @@ function stopLinksOf(home: string): void {
       pid = Number(fs.readFileSync(path.join(home, "links", f), "utf8").trim());
     } catch {}
     if (!Number.isInteger(pid) || pid === process.pid || !isAlive(pid)) continue;
-    try {
-      process.kill(pid);
-    } catch {}
+    killTree(pid);
     untilGone(pid);
   }
 }
@@ -61,9 +78,7 @@ export function stopServerOf(home: string): void {
   stopLinksOf(home);
   const holder = serverLockHolder(home);
   if (holder === null || holder === process.pid || !isAlive(holder)) return;
-  try {
-    process.kill(holder);
-  } catch {}
+  killTree(holder);
   untilGone(holder);
   fs.rmSync(serverStartLock(home), { force: true });
 }
