@@ -9305,7 +9305,7 @@ var init_wire = __esm({
       "snapshot",
       "composition"
     ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
