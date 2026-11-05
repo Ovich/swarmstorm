@@ -448,6 +448,7 @@ test("merged on a code run is refused without the merge lock, naming merge-lock;
 
 test("post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
   const id = String(openRun());
+  run("phase", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const as = ["--as", "review-tool/S5"];
   const unheard = [run("post", ...as, "hello"), run("doing", ...as, "the page")];
@@ -1349,6 +1350,7 @@ test("G3: on a home other than the default, every printed command carries SWARMS
 test("the listener line follows the link's report of the member's listener, not its in-wait column (D4, G16)", async () => {
   const id = Number(openRun());
   run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
+  run("phase", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
   const as = ["--as", "review-tool/S5"];
   const report = async (listener: { running: boolean; endedAt: number | null }): Promise<void> => {
     const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));

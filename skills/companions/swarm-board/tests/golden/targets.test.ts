@@ -136,7 +136,7 @@ test("S5 target: agree names every party, the author included, each --with count
     expect(agreed, [
       "#<seq>",
       "parties: g/orchestrator, g/w1 (you), g/w2; woken when its file merges",
-      `start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as ${s.me}`,
+      // board-fixes#D3: an idle worker owes nothing: no listener line
     ]);
   } finally {
     s.stop();
