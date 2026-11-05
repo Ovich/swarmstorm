@@ -385,7 +385,7 @@ function claimsOf(deps) {
          OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.other AND ${ACTIVE})`
     ).run();
   };
-  const activeHoldersOf = (repo, rel) => db.prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) })).filter((c) => isLive(c.participant));
+  const activeHoldersOf = (repo, rel) => db.prepare("SELECT participant FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => Number(r.participant)).filter(isLive);
   const hold = (p, rel) => transaction(() => {
     const made = db.prepare(`INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`).run(p.repo, rel, p.id, lastSeq());
     const reopened = Number(made.changes) === 0 && Number(
@@ -396,11 +396,12 @@ function claimsOf(deps) {
     bump(p.repo);
     return true;
   });
+  const markToldOfDrift = (repo, rel, id) => Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(repo, rel, id).changes) > 0;
   const tellDrift = (p, rel, drifted) => {
     const merges = db.prepare("SELECT participant, sha FROM claims WHERE repo = ? AND path = ? AND sha IS NOT NULL AND participant != ? ORDER BY rowid DESC").all(p.repo, rel, p.id);
     if (!merges.length) return;
     const merge = merges.find((m) => String(m.sha) === drifted.sha) ?? merges[0];
-    if (Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(p.repo, rel, p.id).changes) === 0) return;
+    if (!markToldOfDrift(p.repo, rel, p.id)) return;
     const sha = String(merge.sha);
     insertMessage(p, CODE_WORDING.driftNotice(p.name, rel, participantById(Number(merge.participant)).name, sha), rel, "event", [p.name], {
       event: CODE_EVENTS.drift.name,
@@ -412,21 +413,19 @@ function claimsOf(deps) {
     const other = Number(r.author) === a.id ? b : a;
     return about !== "" && (fold2(rel) === about || fold2(rel).endsWith(`/${about}`)) && JSON.parse(String(r.mentions)).includes(other.name);
   });
-  const releaseAll = (id) => {
+  const releaseLockOf = (id, changedBefore = 0) => {
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
-    const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
     const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
     db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
-    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
-    clearFlags();
-    if (owner && claims + locks > 0) bump(String(owner.repo));
-  };
-  const releaseLockOf = (id) => {
-    const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
-    db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id);
-    db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
+    const active = Number(db.prepare("SELECT COUNT(*) AS n FROM claims WHERE participant = ? AND state = 'active'").get(id).n);
+    if (changedBefore + locks + active === 0) return;
     clearFlags();
     if (owner) bump(String(owner.repo));
+  };
+  const releaseAll = (id) => {
+    const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
+    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
+    releaseLockOf(id, claims);
   };
   const takeLockWaiters = (repo) => {
     const rows = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo);
@@ -512,7 +511,7 @@ function claimsOf(deps) {
     holdsAny(p) {
       return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? AND state = 'active' AND in_changes = 1 LIMIT 1").get(p.id, p.id) !== void 0;
     },
-    setHoldings(me, files, drifted = []) {
+    setHoldings(me, files, drifted) {
       return transaction(() => {
         const relOf = (f) => relPath(me.repo, f) ?? slashes(f);
         const now2 = new Set(files.map(relOf));
@@ -524,8 +523,8 @@ function claimsOf(deps) {
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
         const overlaps = [];
         for (const rel of fresh)
-          for (const c of activeHoldersOf(me.repo, rel).filter((c2) => c2.participant !== me.id)) {
-            const other = participantById(c.participant);
+          for (const holder of activeHoldersOf(me.repo, rel).filter((id) => id !== me.id)) {
+            const other = participantById(holder);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
             const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
               event: CODE_EVENTS.flag.name
@@ -594,9 +593,7 @@ function claimsOf(deps) {
           waiters = takeLockWaiters(me.repo).filter((n) => n !== me.name);
         });
         for (const rel of rels) {
-          for (const c of activeHoldersOf(me.repo, rel)) {
-            if (c.participant !== me.id) told.add(participantById(c.participant).name);
-          }
+          for (const holder of activeHoldersOf(me.repo, rel)) if (holder !== me.id) told.add(participantById(holder).name);
         }
         const everyone = db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo);
         for (const o of everyone) {
@@ -621,7 +618,7 @@ function claimsOf(deps) {
         lines.push(`files: ${rels.join(", ") || "-"}`);
         for (const rel of rels) {
           if (conflicted && !conflicted.has(fold2(rel))) continue;
-          const ids = new Set(activeHoldersOf(me.repo, rel).map((c) => c.participant));
+          const ids = new Set(activeHoldersOf(me.repo, rel));
           const held = db.prepare("SELECT c.participant FROM claims c JOIN participants p ON p.id = c.participant WHERE c.repo = ? AND c.path = ? AND p.run = ? ORDER BY c.rowid").all(me.repo, rel, me.run);
           for (const r of held) ids.add(Number(r.participant));
           ids.delete(me.id);
@@ -630,8 +627,7 @@ function claimsOf(deps) {
         const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...waiters.length ? { free: waiters } : {} };
         const mentioned = [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters])];
         insertMessage(me, lines.join("\n"), null, "event", mentioned, { event: CODE_EVENTS.merged.name, meta });
-        const toldOfDrift = db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)");
-        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) toldOfDrift.run(me.repo, rel, id);
+        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) markToldOfDrift(me.repo, rel, id);
         const markMerged = db.prepare(
           `INSERT INTO claims (repo, path, participant, since_seq, state, sha, in_changes) VALUES (?, ?, ?, ?, 'merged', ?, 0)
              ON CONFLICT (repo, path, participant) DO UPDATE SET state = 'merged', sha = excluded.sha`
@@ -660,7 +656,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const { db, isLive, nameOf, relPath } = deps;
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo);
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
-  const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
+  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
   const lockWaiters = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo).map((w) => Number(w.participant)).filter((id) => isLive(id) && id !== lockHolder).map(nameOf);
   const claimed = db.prepare("SELECT c.path, c.participant, c.state, c.sha, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo);
   const live = claimed.filter((c) => c.state === "active" && isLive(Number(c.participant)));
@@ -670,7 +666,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
     const f = fileOf(String(c.path));
     const member = `${c.plan}/${c.seat}`;
     if (c.sha != null) f.past.push({ member, state: "merged", sha: String(c.sha) });
-    if (c.state === "active" && isLive(Number(c.participant))) f.holders.push(member);
+    if (live.includes(c)) f.holders.push(member);
     else if (c.state === "active" && c.sha == null) f.past.push({ member, state: "ended", sha: null });
   }
   const everClaimed = db.prepare("SELECT 1 FROM claims WHERE repo = ? AND path = ? AND participant = ?");
@@ -721,7 +717,7 @@ function migrateCodeTables(db) {
     -- claims are global by repository-relative path, across every run on a repository (D12, D20);
     -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed.
     -- A claim lasts its run's phase (claims-phase): from the member's first change of the path until the next phase
-    -- opens or the run closes; state 'active' or 'merged' (sha: the merge's), 'ended' read from the member;
+    -- opens or the run closes; state 'active' or 'merged', 'ended' read from the member; sha: its last merge this phase, kept when active again;
     -- in_changes: the path is in the member's worktree changes as its link last read them
     CREATE TABLE IF NOT EXISTS claims (
       repo TEXT NOT NULL,
@@ -807,7 +803,8 @@ function migrateCodeTables(db) {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- claims-phase: the kept claims replace the claim log; an older store's goes
+    -- claims-phase: the kept claims replace the claim log, read by member as it was (board-fixes#D14); an older store's goes
+    CREATE INDEX IF NOT EXISTS claims_by_participant ON claims (participant);
     DROP INDEX IF EXISTS claim_log_by_participant;
     DROP TABLE IF EXISTS claim_log;
   `);
@@ -918,8 +915,7 @@ function branchBase(worktree, onto) {
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   return base.status === 0 ? base.stdout.trim() : null;
 }
-function changedSet(worktree, onto) {
-  const base = branchBase(worktree, onto);
+function changedSet(worktree, onto, base = branchBase(worktree, onto)) {
   if (!base) return null;
   const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
   const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base, "HEAD");
@@ -944,20 +940,18 @@ function changedSet(worktree, onto) {
   }
   return [...set].filter(Boolean).map((p) => p.split("\\").join("/")).sort();
 }
-function driftedSet(worktree, onto, files) {
-  const base = branchBase(worktree, onto);
+function driftedSet(worktree, onto, files, base = branchBase(worktree, onto)) {
   if (!base) return null;
   if (!files.length) return [];
   const log = gitAnswer(worktree, "-c", "core.quotePath=false", "log", "--format=%x01%H", "--name-only", "--end-of-options", `${base}..${onto}`);
   if (log.status !== 0) return null;
-  const wanted = new Set(files);
   const newest = /* @__PURE__ */ new Map();
   let sha = "";
   for (const line of log.stdout.split(/\r?\n/)) {
     if (line.startsWith("")) sha = line.slice(1);
-    else if (line && wanted.has(line) && !newest.has(line)) newest.set(line, sha);
+    else if (line && !newest.has(line)) newest.set(line, sha);
   }
-  return [...newest].map(([path14, sha2]) => ({ path: path14, sha: sha2 })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  return files.filter((path14) => newest.has(path14)).map((path14) => ({ path: path14, sha: newest.get(path14) }));
 }
 var init_changes = __esm({
   "src/packs/code/changes.ts"() {
@@ -1609,15 +1603,16 @@ async function runLink(opts) {
   let sentChanges = null;
   const watchChanges = () => {
     if (exiting || !watched || !welcomed) return;
-    const files = changedSet(watched.dir, watched.against);
-    if (!files) return;
-    const drifted = driftedSet(watched.dir, watched.against, files);
-    if (!drifted) return;
+    const base = branchBase(watched.dir, watched.against);
+    const files = base ? changedSet(watched.dir, watched.against, base) : null;
+    const drifted = base && files ? driftedSet(watched.dir, watched.against, files, base) : null;
+    if (!files || !drifted) return;
     const key = JSON.stringify([files, drifted]);
     if (key === sentChanges) return;
     sentChanges = key;
     sendUp({ type: "changes", files, drifted });
   };
+  const resendChanges = () => (sentChanges = null, watchChanges());
   let transcript = null;
   let cursor = null;
   let lastSeen = null;
@@ -1660,13 +1655,11 @@ async function runLink(opts) {
     if (f.type === "welcome") {
       welcomed = true;
       watched = f.watched ?? null;
-      sentChanges = null;
-      watchChanges();
+      resendChanges();
       for (const { call } of unanswered.values()) sendUp(call);
       flushActivity();
     } else if (f.type === "reclaim") {
-      sentChanges = null;
-      watchChanges();
+      resendChanges();
     } else if (f.type === "refused") {
       if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
         socket?.close();
