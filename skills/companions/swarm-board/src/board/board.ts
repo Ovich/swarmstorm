@@ -802,11 +802,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     else touch();
   };
 
-  const runRow = (id: RunId): Row => {
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
-    if (!r) throw new Error(`unknown run ${id}`);
-    return r;
-  };
+  /** A run's row: undefined for an unknown run, where runRow throws. */
+  const runRowOrNone = (id: RunId): Row | undefined => db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
+  const runRow = (id: RunId): Row => runRowOrNone(id) ?? ((): never => { throw new Error(`unknown run ${id}`); })();
 
   const phaseOf = (r: Row): Phase | null => (r.phase == null ? null : { name: String(r.phase), text: String(r.phase_text ?? "") });
 
@@ -1467,7 +1465,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
   /** The states of a run's live members (not ended), keyed by member. */
   const statesOf = (run: RunId, t: number, predicate = false): Map<string, MemberState> => {
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+    const r = runRowOrNone(run);
     if (!r) return new Map();
     const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run) as Row[];
     return new Map(live.map((p) => [String(p.seat), memberView(p, r, t, { predicate })]));
@@ -1476,7 +1474,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const livenessOf =(run: RunId, st: MemberState | undefined, t: number): Liveness | undefined => {
     if (!st) return undefined;
     const a = activityOf(run, st.member);
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row;
+    const r = runRowOrNone(run) as Row;
     const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run, st.member) as Row;
     const link = (presenceOf.get(run) ?? noPresence)(st.member);
     const { member: _, ...state } = st;
@@ -1971,12 +1969,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       // board-split D62: the one owing rule, owedNameOf's
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
       if (!row || row.ended_at != null) return null;
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(row.run)) as Row | undefined;
+      const r = runRowOrNone(Number(row.run));
       return r && owedNameOf(row, r) != null ? phaseOf(r) : null;
     },
 
     recordActivity(run, member, act, at) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r || r.state !== "open") return;
       if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member)) return;
       transaction(() => {
@@ -2038,7 +2036,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
 
     livenessTick(run, at, presence) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r || r.state !== "open") {
         presenceOf.delete(run);
         return false;
@@ -2114,7 +2112,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
 
     owingMembers(run) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r) return [];
       const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND seat != ? ORDER BY id").all(run, ORCHESTRATOR) as Row[];
       return live.filter((p) => owesOf(p, r)).map((p) => `${String(r.plan)}/${String(p.seat)}`);
@@ -2137,7 +2135,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       };
       // each run's row read once for all its members
       const runsRead = new Map<RunId, Row | undefined>();
-      const runOf = (run: RunId): Row | undefined => (runsRead.has(run) ? runsRead.get(run) : runsRead.set(run, db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined).get(run));
+      const runOf = (run: RunId): Row | undefined => (runsRead.has(run) ? runsRead.get(run) : runsRead.set(run, runRowOrNone(run)).get(run));
       return rows.map((r) => ({
         name: `${r.plan}/${r.seat}`,
         nick: nickOf(r),
