@@ -117,10 +117,12 @@ export type Result = { type: "result"; id: string; ok: true; value: unknown } | 
 export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" | "member" };
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
+/** claims-phase (v1-2): a phase opened and dropped the run's claims: the link sends its changes again, unchanged or not */
+export type Reclaim = { type: "reclaim" };
 
-export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
+export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed | Reclaim;
 
-const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
 
 /** One JSON text. */
 export function encode(f: Frame): string {

@@ -279,11 +279,17 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       // V-17 (D56): an ended member's link is told so, and exits 0 on its own before its worktree goes
       if (call.method === "end") ended((args[0] as { name?: string } | undefined)?.name);
       if (call.method === "join") freshPresence(value as { member: { run: number; seat: string } });
+      if (call.method === "phase") reclaimAfterPhase((value as { run: number }).run);
     };
     if (out instanceof Promise) out.then(settle, (e: Error) => calls.get(key) === rec && fail(e.message));
     else settle(out);
   };
 
+  // claims-phase (v1-2): a phase open dropped the run's claims; each of its links sends its changes again, so its member
+  // holds them back at once, its set unchanged or not
+  const reclaimAfterPhase = (run: number): void => {
+    for (const s of speakers) if (s.member?.run === run) send(s, { type: "reclaim" });
+  };
   // D30: a closed run's links are told so
   const closed = (run: number): void => {
     for (const s of speakers)

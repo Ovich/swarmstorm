@@ -250,6 +250,10 @@ export async function runLink(opts: {
       watchChanges();
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache
       flushActivity();
+    } else if (f.type === "reclaim") {
+      // claims-phase (v1-2): the phase open dropped the claims; the set goes up again, even unchanged, at once
+      sentChanges = null;
+      watchChanges();
     } else if (f.type === "refused") {
       // U-F14: refused for its version, the link re-reads the state file and tries once more: a server replaced between
       // its read and its hello is met again; a second refusal, or a state of another version, ends it
