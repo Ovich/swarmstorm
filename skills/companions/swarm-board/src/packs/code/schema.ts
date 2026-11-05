@@ -103,7 +103,8 @@ export function migrateCodeTables(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- claims-phase: the kept claims replace the claim log; an older store's goes
+    -- claims-phase: the kept claims replace the claim log, read by member as it was (board-fixes#D14); an older store's goes
+    CREATE INDEX IF NOT EXISTS claims_by_participant ON claims (participant);
     DROP INDEX IF EXISTS claim_log_by_participant;
     DROP TABLE IF EXISTS claim_log;
   `);
