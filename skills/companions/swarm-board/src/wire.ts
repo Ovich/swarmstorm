@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Board } from "./board/board.ts";
+import type { DriftedFile } from "./packs/code/types.ts";
 /** The code pack's answers as they cross the wire to the CLI, which never imports src/packs/ (D9). */
 export type { HeldMergeLock } from "./packs/code/claims.ts";
 export type { Flag } from "./packs/code/types.ts";
@@ -100,10 +101,8 @@ export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
-/** spec §7: the paths its member's worktree changed since it left its target, sent when the set differs; `drifted`
- *  (claims-phase): those of them its target changed since the merge-base, with the newest such commit; absent from an
- *  older link, read as none */
-export type Changes = { type: "changes"; files: string[]; drifted?: { path: string; sha: string }[] };
+/** spec §7: what its member's worktree changed since it left its target, sent on a change; `drifted` absent from an older link */
+export type Changes = { type: "changes"; files: string[]; drifted?: DriftedFile[] };
 /** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
 export type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
