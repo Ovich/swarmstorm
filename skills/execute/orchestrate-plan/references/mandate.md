@@ -30,8 +30,9 @@ message, each proposed from the work with its reason:
   phases before merged. What the person adds to watch is written into the *Mandate* in their
   words. Any other special seat (a reviewer of every merge) is asked the same way.
 - **`simplify:`** `none`, `after-verify` or `end`: a simplify phase on the code the plan changed,
-  as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`, never on
-  when it is off.
+  as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`. Chosen
+  with `verify: off`, recommend a verify after it, with why: removal breaks callers no test
+  reaches; the person decides.
 
 **`pace:`**
 

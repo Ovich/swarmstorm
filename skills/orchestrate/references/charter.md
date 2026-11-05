@@ -16,7 +16,8 @@ beside it (`pace: run through, the person merges (D41)`), and reaches the next b
 - `design:` `none` (the default), `d1` (a designer seat) or `orchestrator`: a design phase opens the
   run, as `references/design-phase.md` says, when the person asks for it; with it, `design scope:`;
 - `simplify:` `none` (the default), `after-verify` or `end`: a simplify phase cuts back the code the
-  run changed, as `references/simplify-phase.md` says, when the person asks for it;
+  run changed, as `references/simplify-phase.md` says, when the person asks for it; recommended
+  with a verify after it, with why (removal breaks what no test reaches);
 - `long-horizon:` `none` (the default) or the path of the long-horizon document the run keeps and
   resumes from, as the `long-horizon` skill says;
 - `effort:` each seat's model and effort, a column of the run table: **Opus for every seat**;

@@ -5,7 +5,9 @@
 paths deleted and duplicates consolidated, the line count going down, behaviour unchanged. Code
 only: an architecture change it suggests is a finding, never applied here. Most fitting after a
 verify verdict of ready (`build-verify`, a plan with `verify:` on), the builders still holding the
-context of what they replaced. **The person can ask for one mid-run too**: a charter amendment
+context of what they replaced. **Propose it** when a run that changed code nears its close, in one line with why: the builders
+still know what they replaced, and the range names the rest; cut later, it costs a fresh
+exploration. **The person can ask for one mid-run too**: a charter amendment
 (`references/charter.md`), run before the next piece of work.
 
 ## When
@@ -18,6 +20,8 @@ context of what they replaced. **The person can ask for one mid-run too**: a cha
 
 ## The phase
 
+0. **Baseline**: the full suite and the verifier's steps on the range's head, before any cut, their
+   results posted: parity is measured against them.
 1. **Candidates**: one task to one seat, the `simplify` skill's step 1 on the run's commit range
    (`<base>..<head>`): the candidates and their reach, posted to you. The range's diff and commit
    messages name what each change superseded; builders still holding the work's context add what
@@ -27,11 +31,16 @@ context of what they replaced. **The person can ask for one mid-run too**: a cha
 3. **Remove**: one task per approved candidate, its brief the `simplify` skill's (a path or a
    duplicate), to the builder that knows that area. Candidates touching no common file run at
    once, in their own worktrees; the rest in order.
-4. **Re-verify**: the protocol's verify runs again on the merged branch. A pass whose net lines
-   did not go negative, or that changed a pinned test, is reverted, not argued.
+4. **Parity**: the full suite on the merged branch, then a verify phase with the baseline's steps.
+   **Recommend it highly whenever the run has no verify**, with why: removal breaks callers no test
+   reaches, and the verify re-runs what held before the cuts. The verifier needs no verify skill:
+   an `instructed` one, its steps written in the verify message (what to check and how, from the
+   last verify's steps or the range's done-whens); a project's `verify-<app>-<focus>` skill when it
+   has one. Declined, the summary says `parity not verified`. A pass that broke parity, did not go
+   net negative or changed a pinned test is reverted, not argued.
 5. **Summary**: you write it once the phase closes, posted on the board and in the run's report:
-   one row per pass (what went, why, its commit, lines added and deleted), the total, and what
-   was left and why.
+   one row per pass (what went, why, its commit, lines added and deleted), the total, parity
+   (suite and verify, before and after), and what was left and why.
 
 **Every seat without a task is on call**: answers a question on the code it knows, changes
 nothing, `done simplify` at once.

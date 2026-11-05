@@ -9,10 +9,12 @@ description: "Use when the code a piece of work changed is to be cut back to few
 
 ## Steps
 
+0. **The baseline**: the full test suite, and the verify that judged the work where there is one, run on `<head>` before any cut, their results kept. Parity means the same steps give the same results after; without the before, a failure after cannot be laid on the cuts.
 1. **Read the range**: `git log <base>..<head>` and its diff. List each candidate: an old path a change superseded, code the range left without a caller (a name search outside its file finds none), two implementations of one concern. Check each one's reach as the `simplify-rework` skill's `references/audit.md` says under *Reach*; a reached candidate is dropped.
 2. **One pass per candidate**: a superseded or dead path as `references/path.md` says, a duplicate as `references/consolidate.md` says. Candidates touching no common file run in parallel, each in its own worktree.
 3. **Net lines** per pass with this skill's `scripts/net-lines.mjs`. A pass that did not go negative is reverted, not argued.
-4. **The summary**, short and scannable: one row per pass (what went, why, its commit, lines added and deleted), the total, and what was left and why.
+4. **Parity**: the full suite, not the narrow tests (a removal breaks code far from the files it touched, and only the full suite sees that), then the verify of step 0 again. **A verify is highly recommended even where the work had none**: removal breaks callers no test reaches (a load by string, an entry point by convention, wording a reader sees), and the verify re-runs what held before. It needs no verify skill: the steps are written on the spot, what to check and how, from the last verify's steps or the range's done-whens. A pass that broke parity is reverted, never patched: it has already cost more than it saved, and a patch turns a removal into a rewrite.
+5. **The summary**, short and scannable: one row per pass (what went, why, its commit, lines added and deleted), the total, parity (suite and verify, before and after, or "parity not verified"), and what was left and why.
 
 ## Rules
 
