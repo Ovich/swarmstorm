@@ -18,13 +18,13 @@ context of what they replaced. **The person can ask for one mid-run too**: a cha
 
 ## The phase
 
-1. **Audit**: one task to one builder, the `simplify-code` skill's phase 1 on the files the run
+1. **Audit**: one task to one builder, the `simplify` skill's phase 1 on the files the run
    changed and what they reach, its report in aiview. In the same phase, **every builder lists what
    its own work superseded** (the old path, its replacement, the commit), posted to you: the
    context no later pass can rebuild cheaply.
 2. **Choose**: you judge the families against the run's goal and the audit's risk; the person is
    asked only for a duplicate's survivor or a family whose risk is high.
-3. **Remove**: one task per approved family, each a `simplify-path` brief (remove, replacement,
+3. **Remove**: one task per approved family, each a brief of the `simplify` skill's `references/path.md` (remove, replacement,
    pinned by, scope, budget), to the builder that knows that area. Families touching no common
    file run at once, in their own worktrees; the rest in order.
 4. **Re-verify**: the protocol's verify runs again on the merged branch. A family whose net lines
@@ -37,5 +37,5 @@ nothing, `done simplify` at once.
 
 | phase | text |
 |---|---|
-| simplify audit | `simplify <k>: one builder audits the code this run changed (simplify-code phase 1) and posts the report; every builder posts what its own work superseded (old path, replacement, commit), then done simplify.` |
-| simplify remove | `simplify <k>: each builder named removes its family through simplify-path, its brief in its task; net lines negative, pinned tests unchanged; merge, report, done simplify.` |
+| simplify audit | `simplify <k>: one builder audits the code this run changed (the simplify skill, phase 1) and posts the report; every builder posts what its own work superseded (old path, replacement, commit), then done simplify.` |
+| simplify remove | `simplify <k>: each builder named removes its family through the simplify skill, its brief in its task; net lines negative, pinned tests unchanged; merge, report, done simplify.` |

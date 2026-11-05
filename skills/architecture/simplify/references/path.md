@@ -1,9 +1,4 @@
----
-name: simplify-path
-description: "Use when the current work already knows a path to remove: an architecture shift just landed and the old path is still there, a run's phase or task says to delete what a change superseded, or a simplify-code audit hands over one approved family. Produces the old path deleted, its callers on the replacement, the tests green and the net line count negative, in one change. Not for finding candidates in a codebase with no context (simplify-code), branching complexity (complexity-rework) or an interface's shape (deepen-module)."
----
-
-# Simplify path
+# Remove one path
 
 **The context is the asset.** The session that made the shift knows both paths, and deleting now costs a fraction of what a later pass pays to rebuild that knowledge. Delete, never rewrite.
 
@@ -24,7 +19,7 @@ A dispatched pass gets the brief and nothing else: no "look around", the file li
 1. Run the tests in the brief, green, before touching anything.
 2. Move each caller to the replacement. A caller that needs behaviour the replacement lacks stops the pass.
 3. Delete the old path and the tests listed for deletion. One commit per removed unit, its message naming what superseded it.
-4. Run the project's type check, tests and unused-code finder. Then `node scripts/net-lines.mjs <base> --scope <files…>`: it prints the net lines and any file touched outside the scope, and exits non-zero on either failure.
+4. Run the project's type check, tests and unused-code finder. Then this skill's `scripts/net-lines.mjs`, run with node from the repository as `net-lines.mjs <base> --scope <files…>`: it prints the net lines and any file touched outside the scope, and exits non-zero on either failure.
 
 ## Stop and report instead of guessing
 
