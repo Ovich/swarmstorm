@@ -283,7 +283,7 @@ export const TIPS = {
   opened: "Opened: an orchestrator started a run on the board.",
   closed: "Closed: the run is over; its conversation is in the archive (☰).",
   joined: "Joined: a member arrived on the board and took its seat.",
-  ended: "Ended: the member left the board and its claims were released.",
+  ended: "Ended: the member left the board; the files it claimed stay listed as ended until the next phase.",
   stalled: "Stopped: no member's tokens have moved for the run's window. The orchestrator is told: it posts the next task, opens the next phase or resumes the members. The row keeps only the latest and leaves once anything happens.",
   gone: "Lost: this member's link is down while it still owes work (a member owing nothing whose link is down is away, resumable); the orchestrator dispatches a fresh agent into its seat or ends it.",
 } as const;
