@@ -108,7 +108,14 @@ jobs:
           # A push touching these files without a bump is normal (a description edit, a
           # keyword). Nothing to release, and re-tagging would move a published tag.
           if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "::notice::$TAG already exists — version unchanged, nothing to release."
+            # An attest that failed after the tag was pushed is retried by a manual run:
+            # these bundles are the tag's, byte for byte, so attesting them attests the tag's.
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && git diff --quiet "$TAG" HEAD -- skills/companions/swarm-board/dist-cli skills/companions/aiview/dist-cli skills/companions/aiview/dist; then
+              echo "released=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::$TAG already exists; its bundles are unchanged, attesting them again."
+            else
+              echo "::notice::$TAG already exists — version unchanged, nothing to release."
+            fi
             exit 0
           fi
 
