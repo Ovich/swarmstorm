@@ -68,10 +68,16 @@ export const WORDING = {
   closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
   /** board-fixes#D6: the second step of a close, the one that closes */
   closeConfirm: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --confirm --as ${as}`,
-  closeWaitRunning: (run: number, owing: string[]) =>
-    `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (merged, reported, done), then run close again`,
-  closeSteps: (run: number, confirm: Command) =>
-    `close: one step first. Post the closing table to the run, written from status: one row per task, | task | seat | state | merge sha |, then the next steps (what is left, what follows). Then close run ${run}: ${confirm}`,
+  closeWaitRunning: (run: number, owing: string[], finish = "reported, done") =>
+    `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (${finish}), then run close again`,
+  closeSteps: (run: number, confirm: Command, columns = "| task | seat | state | result |") =>
+    `close: one step first. Post the closing table to the run, written from status: one row per task, ${columns}, then the next steps (what is left, what follows). Then close run ${run}: ${confirm}`,
+  // board-fixes#D5: the roster's doing, its age once a minute old, `stale` once its work landed or an event to it came after it
+  doingAge: (ms: number, stale: boolean) => {
+    const min = Math.floor(Math.max(0, ms) / 60_000);
+    const parts = [...(min >= 1 ? [`${min} min`] : []), ...(stale ? ["stale"] : [])];
+    return parts.length ? ` (${parts.join(", ")})` : "";
+  },
   seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
@@ -157,8 +163,6 @@ export const WORDING = {
   // board-fixes#D13: a post to one seat is no task unless posted as one
   taskHint: (member: string) =>
     `a post to ${member} alone: if it is ${member}'s task, post it with --task (or --after <seats> when it waits on others), so the board counts it owed until ${member}'s done`,
-  // board-fixes#D5: the roster's doing, its age in minutes, `stale` once a merge or an event to the member came after it
-  doingAge: (ms: number, stale: boolean) => ` (${Math.max(0, Math.floor(ms / 60_000))} min${stale ? ", stale" : ""})`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachKill: "you ran a kill by pattern: stop only PIDs you started, and say what you stopped in your report",

@@ -102,16 +102,20 @@ test("D5: an open task is owed outside any phase, until its seat's done; a later
 });
 
 test("D5: the doing is fresh until an event to the member comes after it; a new doing is fresh again", () => {
-  const { of, orch } = setup("task", ["w1"]);
+  const { of, orch } = setup("task", ["w1", "w2"]);
   board.setDoing(of("w1"), "on T1");
   const row = rosterOf("g/w1")!;
   assert.equal(row.doingStale, false);
   assert.ok(Date.now() - row.doingAt < 60_000);
   board.post(orch, "@w1 a plain post wakes it but is no event");
   assert.equal(rosterOf("g/w1")!.doingStale, false);
+  // a broadcast to the group (a phase) is no event to it by name
   board.phase(orch, "p1", "build");
+  assert.equal(rosterOf("g/w1")!.doingStale, false);
+  board.post(orch, "@w1 T2 once w2 is in", { after: ["w2"] });
+  board.end(of("w2"));
   assert.equal(rosterOf("g/w1")!.doingStale, true);
-  board.setDoing(of("w1"), "on p1");
+  board.setDoing(of("w1"), "on T2");
   assert.equal(rosterOf("g/w1")!.doingStale, false);
 });
 

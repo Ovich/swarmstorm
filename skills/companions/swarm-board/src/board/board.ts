@@ -11,7 +11,7 @@ import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
-import { type AwaitedCause, awaitedLine, type EventName, currentEventName, EVENTS, eventOf, isAwaitedCause, isEvent, mentions as mentionsMe, wakes } from "./events.ts";
+import { awaitedLine, type EventName, currentEventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
@@ -924,7 +924,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
     // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
-    if (extra.event === "merged" || extra.event === "done") db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
+    if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
     return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
   };
@@ -937,7 +937,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
   /** board-fixes#D4: wakes the seat of every open task waiting on `subject`, once per awaited seat, on the first of its
    *  merged, done, ended or lost; its posts never do. */
-  const tellAwaiting = (subject: Participant, cause: AwaitedCause): void => {
+  const tellAwaiting = (subject: Participant, cause: string): void => {
     const tasks = db.prepare("SELECT seq, mentions, after FROM messages WHERE run = ? AND task = 1 AND after IS NOT NULL ORDER BY seq").all(subject.run) as Row[];
     for (const t of tasks) {
       const awaited = JSON.parse(String(t.after)) as string[];
@@ -950,15 +950,20 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       const told = (db.prepare("SELECT json_extract(meta, '$.seat') AS seat FROM messages WHERE run = ? AND event = ? AND json_extract(meta, '$.task') = ?").all(subject.run, EVENTS.awaited.name, Number(t.seq)) as Row[]).map((r) => String(r.seat));
       if (told.includes(subject.seat)) continue;
       const meta: AwaitedMeta = { task: Number(t.seq), seat: subject.seat };
-      const body = awaitedLine(subject.seat, cause, subject.pack != null, told.length + 1, awaited.length);
+      const body = awaitedLine(subject.seat, packOf(subject)?.awaitedWording?.(cause) ?? cause, told.length + 1, awaited.length);
       insertMessage(subject, body, null, "event", [waiter], { event: EVENTS.awaited.name, meta });
     }
   };
-  /** board-fixes#D5: the member's doing text is stale once it merged, or an event to it (or its group) came, after it was set. */
-  const doingStaleOf = (r: Row): boolean =>
-    db
-      .prepare("SELECT 1 FROM messages WHERE run = ? AND seq > ? AND ((author = ? AND event = 'merged') OR (author != ? AND event IS NOT NULL AND (mentions LIKE ? OR mentions LIKE ?))) LIMIT 1")
-      .get(Number(r.run), Number(r.doing_seq ?? r.since_seq), Number(r.id), Number(r.id), `%${JSON.stringify(`${r.plan}/${r.seat}`)}%`, `%${JSON.stringify(`${r.plan}/*`)}%`) != null;
+  /** board-fixes#D5: the member's doing text is stale once its work landed (a pack's landing event), or an event addressed
+   *  to it by name came, after it was set; a broadcast to its group (a phase) never stales it, nor anything for the orchestrator. */
+  const doingStaleOf = (r: Row): boolean => {
+    if (String(r.seat) === ORCHESTRATOR || !String(r.doing ?? "")) return false;
+    const landing = landingEvents();
+    const landed = landing.length ? `(author = ? AND event IN (${landing.map(() => "?").join(", ")})) OR ` : "";
+    return db
+      .prepare(`SELECT 1 FROM messages WHERE run = ? AND seq > ? AND (${landed}(author != ? AND event IS NOT NULL AND mentions LIKE ?)) LIMIT 1`)
+      .get(Number(r.run), Number(r.doing_seq ?? r.since_seq), ...(landing.length ? [Number(r.id), ...landing] : []), Number(r.id), `%${JSON.stringify(`${r.plan}/${r.seat}`)}%`) != null;
+  };
 
   const live = (p: Participant): Participant => {
     const fresh = participantById(p.id);

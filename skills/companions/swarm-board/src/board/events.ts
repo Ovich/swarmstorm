@@ -13,6 +13,8 @@ export interface EventDef<N extends string = EventName> {
   always?: boolean;
   /** posted by the board in a member's name, it reaches that member too (stopped, lost) */
   toAuthor?: boolean;
+  /** board-fixes#D4: a pack's event that lands the member's work: it wakes a task waiting on the member and is its latest doing */
+  lands?: boolean;
 }
 
 /** board-fixes#D2: a foreground wait's hold, 30 s under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
@@ -59,15 +61,14 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   awaited: { name: "awaited" },
 };
 
-/** board-fixes#D4: what an awaited seat did that wakes the seat of a task waiting on it (`post --after`). */
-export type AwaitedCause = "merged" | "done" | "ended" | "lost";
-const AWAITED_CAUSES: readonly string[] = ["merged", "done", "ended", "lost"] satisfies AwaitedCause[];
-export const isAwaitedCause = (e: string): e is AwaitedCause => AWAITED_CAUSES.includes(e);
-/** The awaited event's body: `w1 merged (1 of 2 you wait on)`; on a run that merges, a done or a leave says nothing merged. */
-export const awaitedLine = (seat: string, cause: AwaitedCause, merges: boolean, nth: number, of: number): string => {
-  const what = cause === "merged" || !merges ? cause : cause === "done" ? "done, nothing merged" : `${cause} without merging`;
-  return `${seat} ${what} (${nth} of ${of} you wait on)`;
-};
+/** board-fixes#D4: what an awaited seat did that wakes the seat of a task waiting on it (`post --after`): a core end of its
+ *  part, or a pack's landing event (`lands`). */
+const CORE_AWAITED: readonly string[] = ["done", "ended", "lost"];
+export const isAwaitedCause = (e: string): boolean => CORE_AWAITED.includes(e) || (isEvent(e) && !!eventDef(e).lands);
+/** The pack events that land a member's work, by name. */
+export const landingEvents = (): string[] => Object.values(allEvents()).filter((d) => d.lands).map((d) => d.name);
+/** The awaited event's body: `w1 done (1 of 2 you wait on)`; `what`: the cause as the member's pack words it. */
+export const awaitedLine = (seat: string, what: string, nth: number, of: number): string => `${seat} ${what} (${nth} of ${of} you wait on)`;
 
 /** Core and pack events by name, read at first use: the registry loads after this module in some import orders. */
 let all: Record<string, EventDef> | null = null;

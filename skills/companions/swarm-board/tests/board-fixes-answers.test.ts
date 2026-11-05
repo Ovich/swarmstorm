@@ -19,8 +19,9 @@ test("D2: 150 s; a seat in the foreground and a member owing nothing are bounded
 });
 
 test("D6: the first close names who owes, else the closing steps ending on the confirm", () => {
-  assert.match(closeStep(["g/w1", "g/w2"], 4, "swarm close --run 4 --confirm --as g/orchestrator"), /owing work: g\/w1, g\/w2\. Post no new task/);
-  const steps = closeStep([], 4, "swarm close --run 4 --confirm --as g/orchestrator");
+  assert.match(closeStep(["g/w1", "g/w2"], 4, "swarm close --run 4 --confirm --as g/orchestrator", true), /owing work: g\/w1, g\/w2\. Post no new task/);
+  const steps = closeStep([], 4, "swarm close --run 4 --confirm --as g/orchestrator", true);
   assert.match(steps, /\| task \| seat \| state \| merge sha \|/);
+  assert.match(closeStep([], 4, "c", false), /\| task \| seat \| state \| result \|/);
   assert.ok(steps.endsWith("swarm close --run 4 --confirm --as g/orchestrator"));
 });

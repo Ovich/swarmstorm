@@ -695,14 +695,15 @@ async function main(): Promise<void> {
     case "close": {
       const run = runArg();
       // V-45: a member of the run holding the merge lock is named: its merge did not land
-      const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
+      const closing = (await board.runs()).find((r) => r.id === run);
+      const plan = closing?.plan ?? null;
       // the orchestrators board is permanent: closed only on purpose
       if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run));
       await orchestratorOf("close", run, (as) => WORDING.closeRun(self().join(" "), run, as));
       // board-fixes#D6: two steps by the answer alone, no state between them; the first lists who still owes, or the closing steps
       if (plan !== ORCHESTRATORS_GROUP && !args.has("--confirm")) {
         const confirm = WORDING.closeConfirm(self().join(" "), run, shellWord(args.flag("--as") ?? `${plan ?? "<group>"}/orchestrator`));
-        fail(rules.closeStep(await board.owingMembers(run), run, confirm));
+        fail(rules.closeStep(await board.owingMembers(run), run, confirm, closing?.kindPack != null));
       }
       const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);

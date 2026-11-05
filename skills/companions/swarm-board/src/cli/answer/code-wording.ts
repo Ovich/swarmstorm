@@ -16,6 +16,9 @@ export const CODE_IN_CORE_HELP = {
 };
 
 export const CODE_WORDING = {
+  // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
+  closeFinish: "merged, reported, done",
+  closeColumns: "| task | seat | state | merge sha |",
   /** The code verbs' help, apart from the core (D22). */
   usage: (cli: Command): string =>
     [

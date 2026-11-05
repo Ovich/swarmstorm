@@ -3,7 +3,7 @@
 import type { Message, Participant } from "../../board/board.ts";
 import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
 import { profileOf } from "../../board/kinds.ts";
-import { codeEventStep } from "./code-rules.ts";
+import { codeCloseStep, codeEventStep } from "./code-rules.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 
@@ -103,8 +103,8 @@ export const lostMentionLines = (lost: string[], cli: string, as: string): strin
 
 /** board-fixes#D6: the first `close`'s answer: while a member owes, who, and post no new task; else the closing steps,
  *  ending on the confirming call. */
-export const closeStep = (owing: string[], run: number, confirm: string): string =>
-  owing.length ? W.closeWaitRunning(run, owing) : W.closeSteps(run, confirm);
+export const closeStep = (owing: string[], run: number, confirm: string, code: boolean): string =>
+  code ? codeCloseStep(owing, run, confirm) : owing.length ? W.closeWaitRunning(run, owing) : W.closeSteps(run, confirm);
 
 export const closedLine = (s: Situation): string => W.closed(s.run, W.end(s.cli, s.as));
 

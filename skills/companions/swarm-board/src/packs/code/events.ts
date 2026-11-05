@@ -3,7 +3,7 @@
 import type { EventDef } from "../../board/events.ts";
 
 export const CODE_EVENTS = {
-  merged: { name: "merged" },
+  merged: { name: "merged", lands: true },
   // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
   flag: { name: "flag" },
 } as const satisfies Record<string, EventDef<string>>;
