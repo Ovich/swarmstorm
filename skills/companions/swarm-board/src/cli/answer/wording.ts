@@ -1,7 +1,8 @@
 // The answer module's wording (board-rework D1): every line and command template of the wait cluster's answers, in one
 // typed table. A placeholder is a typed parameter, so a template called with a missing or wrong value does not compile.
 // The rules choosing which line a member reads are in rules.ts; no verb writes these lines itself.
-import { FOREGROUND_NOTE } from "../../board/events.ts";
+import { FOREGROUND_WAIT_MS } from "../../board/events.ts";
+const FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1000} s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty`;
 
 /** A command as printed: the words joined, ready to copy. */
 export type Command = string;

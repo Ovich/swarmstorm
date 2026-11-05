@@ -23,15 +23,16 @@ message, each proposed from the work with its reason:
   phases' tasks re-cut to it.
 - **`verify:`** `after each phase`, `at the end`, or `off`; on, the plan runs the `orchestrate`
   skill's build-verify protocol, and **`loop:`** is asked with it: how many fix phases a verify may
-  add beyond the plan's own (`until ready · cap 3` recommended). Look for a `verify-<app>-<focus>`
-  skill in the project's local skill folder; several: ask which one each validation phase runs.
-  None: offer to create it (yes runs `verification-skill-create` before the first phase), or an
-  `instructed` verifier whose steps you write in each verify message; no is `verify: off`. On, a validator seat runs it alone in its own phases, scoped by you to what the
+  add beyond the plan's own (`until ready · cap 3` recommended). The verifier's source as the
+  build-verify protocol says: a project `verify-<app>-<focus>` skill that fits the plan's work,
+  or an instructed verifier you define for it (what, how, which tools), proposed with why,
+  also when a skill exists but misses what the plan changes; no is `verify: off`. On, a validator seat runs it alone in its own phases, scoped by you to what the
   phases before merged. What the person adds to watch is written into the *Mandate* in their
   words. Any other special seat (a reviewer of every merge) is asked the same way.
 - **`simplify:`** `none`, `after-verify` or `end`: a simplify phase on the code the plan changed,
-  as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`, never on
-  when it is off.
+  as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`. Chosen
+  with `verify: off`, recommend a verify after it, with why: removal breaks callers no test
+  reaches; the person decides.
 
 **`pace:`**
 

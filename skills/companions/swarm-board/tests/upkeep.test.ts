@@ -3,7 +3,7 @@
 import { test, beforeEach, afterEach } from "node:test";
 import { stopServerOf } from "./fixtures/server.ts";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -51,17 +51,6 @@ const withRaw = <T>(fn: (raw: DatabaseSync) => T): T => {
 };
 const lastUpkeepAgo = (ms: number): void => void
   withRaw((raw) => raw.prepare("UPDATE settings SET value = ? WHERE name = 'last-upkeep'").run(ago(ms)));
-const silentFor = (run: number, ms: number): void => void
-  withRaw((raw) => raw.prepare("UPDATE participants SET last_call = ?, joined_at = ? WHERE run = ?").run(ago(ms), ago(ms), run));
-const events = async (event: string) => {
-  const board = await openBoard(file);
-  try {
-    // every run here is of the one test repository, as the CLI names it
-    return board.snapshot(board.runs()[0].repo).events.filter((e) => e.event === event);
-  } finally {
-    board.close();
-  }
-};
 const openRunCli = (group: string): number => {
   const seats = path.join(dir, `${group}.seats.json`);
   fs.writeFileSync(seats, JSON.stringify([{ id: "S3", blockers: [] }]));
@@ -117,16 +106,6 @@ test("upkeepIfDue runs again after five minutes", async () => {
     board.close();
   }
 });
-
-/** The events of `event` once the board server's upkeep, looked at every second, has had its turn (swarm-relay D13). */
-const eventsAfterUpkeep = async (event: string) => {
-  let found = await events(event);
-  for (let i = 0; i < 40 && !found.length; i++) {
-    await new Promise((r) => setTimeout(r, 150));
-    found = await events(event);
-  }
-  return found;
-};
 
 test("an upkeep failure does not stop the verb", async () => {
   openRunCli("broken");

@@ -802,11 +802,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     else touch();
   };
 
-  const runRow = (id: RunId): Row => {
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
-    if (!r) throw new Error(`unknown run ${id}`);
-    return r;
-  };
+  /** A run's row: undefined for an unknown run, where runRow throws. */
+  const runRowOrNone = (id: RunId): Row | undefined => db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as Row | undefined;
+  const runRow = (id: RunId): Row => runRowOrNone(id) ?? ((): never => { throw new Error(`unknown run ${id}`); })();
 
   const phaseOf = (r: Row): Phase | null => (r.phase == null ? null : { name: String(r.phase), text: String(r.phase_text ?? "") });
 
@@ -1023,9 +1021,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return null;
   };
 
-  const doingOf = (id: number): string => String((db.prepare("SELECT doing FROM participants WHERE id = ?").get(id) as Row).doing) || "no note";
   // the code pack's tables, opened through the registry (board-split#D20)
-  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, doingOf, kindHasPack: (kind) => kindPackOf(kind) !== null });
+  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack: (kind) => kindPackOf(kind) !== null });
 
   /** One run's context for a pack call (D10). */
   const runPackCtx = (runId: RunId): PackCtx => {
@@ -1256,12 +1253,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const m = participantById(Number(p.id));
     return packOf(m)?.lockQueue?.(m, packCtxOf(m)) ?? null;
   };
-  const inHeldWaitOf = (p: Row): boolean => {
-    if (!heldWaits.has(Number(p.id))) return false;
-    const a = activityOf(Number(p.run), String(p.seat));
-    // V-46: a member queued on a pack's lock, its wait held, is waiting on that lock, whatever else it runs
-    return a == null || Number(a.open_wait) === 1 || packLockWaitOf(p) != null;
-  };
   /** A participant row's one state (liveness.ts), the same for snapshot, roster, status, seats and reader. */
   const memberStateOf = (p: Row, run: Row | undefined, t = Date.now()): CoreMemberState =>
     coreStateOf({
@@ -1440,8 +1431,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return { ...activity, badge: lost && owedAtDropOf(p, run) && shows ? lost : null };
   };
   const minutes = (ms: number): number => Math.round(ms / 60000);
-  /** False for a seat the run's current phase is not for (`phase --for`); true when the phase is for every member. */
-  const phaseIsFor = (run: Row, seat: string): boolean => phaseIsForSeat(phaseScopeOf(run, String(run.phase)), seat);
   /** board-split D62: the scope `phase` is counted in: the run's open phase carries its --for, an earlier one none. */
   const phaseScopeOf = (run: Row, phase: string): PhaseScope => {
     const open = run.phase === phase;
@@ -1476,7 +1465,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
   /** The states of a run's live members (not ended), keyed by member. */
   const statesOf = (run: RunId, t: number, predicate = false): Map<string, MemberState> => {
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+    const r = runRowOrNone(run);
     if (!r) return new Map();
     const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL ORDER BY id").all(run) as Row[];
     return new Map(live.map((p) => [String(p.seat), memberView(p, r, t, { predicate })]));
@@ -1485,7 +1474,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const livenessOf =(run: RunId, st: MemberState | undefined, t: number): Liveness | undefined => {
     if (!st) return undefined;
     const a = activityOf(run, st.member);
-    const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row;
+    const r = runRowOrNone(run) as Row;
     const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run, st.member) as Row;
     const link = (presenceOf.get(run) ?? noPresence)(st.member);
     const { member: _, ...state } = st;
@@ -1547,7 +1536,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   };
 
   const board: Board = {
-    openRun({ repo, kind = "plan", group, title, link, seats, transcript, stallMs, protocol, authority = [], base }) {
+    openRun({ repo, kind = "plan", group, title, link, seats, stallMs, protocol, authority = [], base }) {
       const profile = profileOf(kind);
       if (protocol != null && !PROTOCOL_NAME.test(protocol)) throw new Error(`a protocol is named in lower case, digits and dashes (build-verify), got ${protocol}`);
       const badRole = authority.find((role) => !AUTHORITY_ROLE.test(role));
@@ -1980,12 +1969,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       // board-split D62: the one owing rule, owedNameOf's
       const row = db.prepare("SELECT * FROM participants WHERE id = ?").get(p.id) as Row | undefined;
       if (!row || row.ended_at != null) return null;
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(row.run)) as Row | undefined;
+      const r = runRowOrNone(Number(row.run));
       return r && owedNameOf(row, r) != null ? phaseOf(r) : null;
     },
 
     recordActivity(run, member, act, at) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r || r.state !== "open") return;
       if (!db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ? AND ended_at IS NULL").get(run, member)) return;
       transaction(() => {
@@ -2047,7 +2036,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
 
     livenessTick(run, at, presence) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r || r.state !== "open") {
         presenceOf.delete(run);
         return false;
@@ -2123,7 +2112,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
 
     owingMembers(run) {
-      const r = db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined;
+      const r = runRowOrNone(run);
       if (!r) return [];
       const live = db.prepare("SELECT * FROM participants WHERE run = ? AND ended_at IS NULL AND seat != ? ORDER BY id").all(run, ORCHESTRATOR) as Row[];
       return live.filter((p) => owesOf(p, r)).map((p) => `${String(r.plan)}/${String(p.seat)}`);
@@ -2139,7 +2128,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL ORDER BY r.id, p.id`)
         .all(repo) as Row[];
       const t = Date.now();
-      const cutoff = t - STALE_MS;
       const statesByRun = new Map<RunId, Map<string, MemberState>>();
       const stateIn = (run: RunId, member: string): MemberState | undefined => {
         if (!statesByRun.has(run)) statesByRun.set(run, statesOf(run, t));
@@ -2147,7 +2135,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       };
       // each run's row read once for all its members
       const runsRead = new Map<RunId, Row | undefined>();
-      const runOf = (run: RunId): Row | undefined => (runsRead.has(run) ? runsRead.get(run) : runsRead.set(run, db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined).get(run));
+      const runOf = (run: RunId): Row | undefined => (runsRead.has(run) ? runsRead.get(run) : runsRead.set(run, runRowOrNone(run)).get(run));
       return rows.map((r) => ({
         name: `${r.plan}/${r.seat}`,
         nick: nickOf(r),
@@ -2383,7 +2371,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const sliceRows = db.prepare(`SELECT s.* FROM seats s WHERE s.run IN (${marks}) ORDER BY s.run, s.ord`).all(...runIds) as Row[];
       const sliceOf = new Map(sliceRows.map((s) => [`${s.run}/${s.id}`, s]));
       const people = db.prepare(`${PARTICIPANT_SQL} WHERE p.run IN (${marks}) ORDER BY p.run, p.id`).all(...runIds) as Row[];
-      const runOpen = new Map(runRows.map((r) => [Number(r.id), r.state === "open"]));
       const t = Date.now();
       const statesByRun = new Map<RunId, Map<string, MemberState>>();
       const stateIn = (run: RunId, member: string): MemberState | undefined => {
@@ -2403,7 +2390,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const s = sliceOf.get(`${r.run}/${seat}`);
         const ended = r.ended_at != null;
         const runR = runById(Number(r.run));
-        const owedPhase = runR ? owedNameOf(r, runR) : null;
         const core = memberStateOf(r, runR ?? undefined, t);
         const state: SnapshotMemberState = core;
         // what its pack says of it (merging), beside its state, on a live member only

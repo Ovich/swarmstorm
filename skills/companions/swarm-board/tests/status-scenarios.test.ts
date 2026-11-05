@@ -10,7 +10,6 @@ import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { LOST_MS } from "../src/board/liveness.ts";
 import type { MemberActivity } from "../src/wire.ts";
-import { openRawStore } from "./fixtures/raw-store.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/status/.git";

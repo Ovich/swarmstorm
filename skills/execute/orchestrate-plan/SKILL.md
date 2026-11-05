@@ -41,9 +41,9 @@ cut**: the next phase as planned, amended, a fix phase of the rows that stand, o
 finding breaks a decision. Write what changed into the plan before cutting. The mandate's `loop:`
 bounds the fix phases a verify may add beyond the plan's own.
 
-A verifier that ended (its context spent) is replaced by a fresh one in the same row. No
-`verify-<app>-<focus>` skill and the person wants one: the `verification-skill-create` skill runs
-before the first phase; else the verifier is `instructed`, its steps in each verify message.
+A verifier that ended (its context spent) is replaced by a fresh one in the same row. Its source,
+a project skill or an instructed verifier defined on the fly for the job, is chosen as the
+protocol says.
 
 ## Branch and pull request
 

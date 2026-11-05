@@ -27,7 +27,6 @@ afterEach(() => {
 });
 
 const linked: Presence = () => ({ connected: true, lostAt: null });
-const lost = (since: number): Presence => () => ({ connected: false, lostAt: since });
 const act = (o: Partial<MemberActivity> = {}): MemberActivity => ({ grewAt: null, tokens: 0, context: null, openTool: null, lastTool: null, finished: false, ...o });
 const at = (base: number, s: number): Date => new Date(base + s * 1000);
 const eventsOf = (name: string) => board.snapshot(REPO).events.filter((e) => e.event === name);

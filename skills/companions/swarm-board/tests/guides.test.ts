@@ -85,7 +85,6 @@ afterEach(() => {
   }
 });
 
-const guidesLineOf = (out: string): string | undefined => out.split("\n").find((l) => l.startsWith("guides for this work: "));
 
 test("merge-lock lists the branch's guides; merged refuses until every one is settled, then records them", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 1;\n");

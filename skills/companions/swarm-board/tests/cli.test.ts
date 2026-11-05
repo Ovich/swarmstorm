@@ -977,7 +977,7 @@ test("end on an ended member exits 0 and says nothing; on a closed run it prints
 test("once its run is closed, a member's wait, roster, post and done answer the one closed line, exit 0, and write nothing", () => {
   const id = openBrainstorm();
   assert.equal(joinSeat(id, "architect").status, 0);
-  const seq = seqOf(run("post", "a thought", "--as", "idea/architect").stdout);
+  run("post", "a thought", "--as", "idea/architect");
   run("close", "--run", String(id), "--confirm", "--as", "idea/orchestrator");
   const line = new RegExp(`^run ${id} closed: run end and return your summary: node .* end --as idea/architect; your link and listener background tasks end on their own now, and their end notices are not news$`);
   const calls = [

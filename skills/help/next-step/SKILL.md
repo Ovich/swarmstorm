@@ -25,7 +25,10 @@ or something else. A yes loads that skill; it takes over from there.
 **At a run's close**, its follow-up: a brainstorm or a debate settled → a plan; a plan approved →
 its run, with build-verify when the result must be walked (with a design phase first when its modules must be designed); a run whose setup will recur → keep it
 as the project's `protocol-<name>` skill (the `orchestrate` skill's protocols); a delivery to go
-over together → the `validate-delivery` skill.
+over together → the `validate-delivery` skill; a run that changed code, its verdict ready → the
+`simplify` skill on its range: "Simplify this run's range `<base>..<head>`, parity verified after?
+Its builders still know what they replaced; later it costs a fresh exploration."; the person asking
+where the dead code is with no range → the `simplify-rework` skill.
 
 ## How you offer
 

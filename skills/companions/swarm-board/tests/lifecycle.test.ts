@@ -14,7 +14,6 @@ const SEATS = [
   { id: "S2", title: "two", blockers: [] },
 ];
 const DAY = 24 * 60 * 60 * 1000;
-const MINUTE = 60 * 1000;
 
 let dir: string;
 let file: string;

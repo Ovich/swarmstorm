@@ -8,9 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard } from "../src/board/board.ts";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { decode, encode, serverStateFile, type Frame, type RpcMethod, type ServerState } from "../src/wire.ts";
+import { connectMember, serveBoard, type CallOutcome, type ServedBoard } from "./fixtures/wire-client.ts";
 
 const REPO = "/repos/load/.git";
 const HISTORY_RUNS = 40;
@@ -54,69 +52,24 @@ async function seedHistory(dataRoot: string): Promise<void> {
   }
 }
 
-type Outcome = { ms: number; dropped: boolean };
-type Link = { call(method: RpcMethod, ...args: unknown[]): Promise<Outcome & { value?: any }>; close(): void };
-
-async function connect(url: string, state: ServerState, member?: { name: string; run: number }): Promise<Link> {
-  const socket = new WebSocket(url);
-  const pending = new Map<string, (f: Frame | null) => void>();
-  let ids = 0;
-  let welcomed!: (f: Frame) => void;
-  const welcome = new Promise<Frame>((r) => (welcomed = r));
-  socket.addEventListener("message", (e) => {
-    const f = decode(String(e.data));
-    if (f.type === "welcome" || f.type === "refused") return welcomed(f);
-    if (f.type !== "result") return;
-    pending.get(f.id)?.(f);
-    pending.delete(f.id);
-  });
-  socket.addEventListener("close", () => {
-    for (const settle of pending.values()) settle(null);
-    pending.clear();
-  });
-  await new Promise<void>((r, j) => {
-    socket.addEventListener("open", () => r());
-    socket.addEventListener("error", () => j(new Error("no connection")));
-  });
-  socket.send(encode({ type: "hello", version: state.version, secret: state.secret, ...(member ? { member, supersede: true } : {}) }));
-  assert.equal((await welcome).type, "welcome");
-  return {
-    call: (method, ...args) => {
-      const id = `l${++ids}`;
-      const started = Date.now();
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          pending.delete(id);
-          resolve({ ms: GIVE_UP_MS, dropped: true });
-        }, GIVE_UP_MS);
-        pending.set(id, (f) => {
-          clearTimeout(timer);
-          const ok = f?.type === "result" && f.ok;
-          resolve({ ms: Date.now() - started, dropped: !ok, value: ok ? f.value : undefined });
-        });
-        socket.send(encode({ type: "call", id, method, args }));
-      });
-    },
-    close: () => socket.close(),
-  };
-}
+const connect = (served: ServedBoard, member?: { name: string; run: number }) => connectMember(served, member ?? null, GIVE_UP_MS);
 
 /** One step: `count` members join a fresh run and work through ROUNDS rounds at once; every call's time kept. */
-async function step(url: string, state: ServerState, count: number, stepNo: number): Promise<Outcome[]> {
-  const opener = await connect(url, state);
+async function step(served: ServedBoard, count: number, stepNo: number): Promise<CallOutcome[]> {
+  const opener = await connect(served);
   const seats = Array.from({ length: count }, (_, i) => ({ id: `m${i + 1}`, blockers: [] }));
   const run = (await opener.call("openRun", { repo: REPO, group: `step${stepNo}`, title: `${count} members`, seats })).value;
   const members = await Promise.all(
     seats.map(async (s) => {
-      const joiner = await connect(url, state);
+      const joiner = await connect(served);
       const joined = await joiner.call("join", { run: run.id, seat: s.id, doing: "load", files: [] });
       joiner.close();
       const member = joined.value.member;
-      return { member, link: await connect(url, state, { name: member.name, run: run.id }) };
+      return { member, link: await connect(served, { name: member.name, run: run.id }) };
     }),
   );
-  const outcomes: Outcome[] = [];
-  const kept = async (p: Promise<Outcome>): Promise<Outcome & { value?: any }> => {
+  const outcomes: CallOutcome[] = [];
+  const kept = async (p: Promise<CallOutcome>): Promise<CallOutcome> => {
     const o = await p;
     outcomes.push(o);
     return o;
@@ -140,7 +93,7 @@ async function step(url: string, state: ServerState, count: number, stepNo: numb
   return outcomes;
 }
 
-const p95 = (o: Outcome[]): number => {
+const p95 = (o: CallOutcome[]): number => {
   const sorted = o.map((x) => x.ms).sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(0.95 * sorted.length))] ?? 0;
 };
@@ -148,31 +101,20 @@ const p95 = (o: Outcome[]): number => {
 test("board-fixes#D14: on a store of 20k messages, 20 members' calls answer with p95 under 500 ms and none dropped", { timeout: 120_000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-load-"));
   await seedHistory(dir);
-  // the server in its own process, as a real one runs: the members' clients never share its loop
-  const cli = fileURLToPath(new URL("../src/cli/index.ts", import.meta.url));
-  const child = spawn(process.execPath, [cli, "serve"], { env: { ...process.env, SWARMSTORM_HOME: dir }, stdio: ["ignore", "pipe", "inherit"] });
-  const server = {
-    url: await new Promise<string>((resolve, reject) => {
-      child.stdout.on("data", (chunk) => {
-        const found = String(chunk).match(/ws:\/\/\S+/);
-        if (found) resolve(found[0]);
-      });
-      child.on("exit", (code) => reject(new Error(`server exited ${code}`)));
-    }),
-    close: () => new Promise<void>((resolve) => (child.exitCode !== null ? resolve() : (child.once("exit", () => resolve()), child.kill()))),
-  };
+  const served = await serveBoard(dir);
+  const child = served.child;
+  const stopServer = () => new Promise<void>((resolve) => (child.exitCode !== null ? resolve() : (child.once("exit", () => resolve()), child.kill())));
   try {
-    const state = JSON.parse(fs.readFileSync(serverStateFile(dir), "utf8")) as ServerState;
-    const byStep = new Map<number, Outcome[]>();
-    for (const [n, count] of STEPS.entries()) byStep.set(count, await step(server.url, state, count, n));
-    for (const [count, o] of byStep) console.log(`load: ${count} members, ${o.length} calls, p95 ${p95(o)} ms, ${o.filter((x) => x.dropped).length} dropped`);
+    const byStep = new Map<number, CallOutcome[]>();
+    for (const [n, count] of STEPS.entries()) byStep.set(count, await step(served, count, n));
+    for (const [count, o] of byStep) console.log(`load: ${count} members, ${o.length} calls, p95 ${p95(o)} ms, ${o.filter((x) => !x.ok).length} dropped`);
     const overASecond = STEPS.find((count) => p95(byStep.get(count)!) > 1000);
     console.log(`load: p95 passes 1 s at ${overASecond === undefined ? "no step" : `${overASecond} members`}`);
     const at20 = byStep.get(20)!;
-    assert.equal(at20.filter((x) => x.dropped).length, 0);
+    assert.equal(at20.filter((x) => !x.ok).length, 0);
     assert.ok(p95(at20) < 500, `p95 at 20 members: ${p95(at20)} ms`);
   } finally {
-    await server.close();
+    await stopServer();
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
