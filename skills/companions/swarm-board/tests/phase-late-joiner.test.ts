@@ -21,11 +21,14 @@ afterEach(() => {
 });
 
 const allDones = () => board.snapshot(REPO).events.filter((e) => e.event === "all-done");
+/** A task run of `seats`, its orchestrator, and w1 joined. */
+const openTaskRun = (seats: string[]) => {
+  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: seats.map((id) => ({ id, blockers: [] })) });
+  return { run, orchestrator: board.participant("g/orchestrator")!, w1: board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member };
+};
 
 test("a member joining after the phase opened is in its count: no all-done until it is done, then all-done once", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
-  const orchestrator = board.participant("g/orchestrator")!;
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const { run, orchestrator, w1 } = openTaskRun(["w1", "w2"]);
   board.phase(orchestrator, "build", "build it");
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
   assert.deepEqual(board.phaseProgress(run.id), { phase: "build", done: 0, of: 2, gone: [], idleEnded: [] });
@@ -40,9 +43,7 @@ test("a member joining after the phase opened is in its count: no all-done until
 });
 
 test("a member rejoining its ended seat while the phase is open owes the phase again, unless it was done", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
-  const orchestrator = board.participant("g/orchestrator")!;
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const { run, orchestrator, w1 } = openTaskRun(["w1", "w2"]);
   const w2 = board.join({ run: run.id, seat: "w2", doing: "x", files: [] }).member;
   board.phase(orchestrator, "build", "build it");
   board.end(w2);
@@ -55,9 +56,7 @@ test("a member rejoining its ended seat while the phase is open owes the phase a
 });
 
 test("a declared seat tasked in the open phase owes it before it joins; a declared seat with no task never holds it", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2", "w3"].map((id) => ({ id, blockers: [] })) });
-  const orchestrator = board.participant("g/orchestrator")!;
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const { run, orchestrator, w1 } = openTaskRun(["w1", "w2", "w3"]);
   board.phase(orchestrator, "build", "build it");
   board.post(orchestrator, "@w2 your task");
   assert.deepEqual(board.phaseProgress(run.id), { phase: "build", done: 0, of: 2, gone: [], idleEnded: [] });
@@ -71,9 +70,7 @@ test("a declared seat tasked in the open phase owes it before it joins; a declar
 });
 
 test("a task posted before the phase opened does not make an unjoined seat owe it", () => {
-  const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2"].map((id) => ({ id, blockers: [] })) });
-  const orchestrator = board.participant("g/orchestrator")!;
-  const w1 = board.join({ run: run.id, seat: "w1", doing: "x", files: [] }).member;
+  const { run, orchestrator, w1 } = openTaskRun(["w1", "w2"]);
   board.post(orchestrator, "@w2 an earlier task");
   board.phase(orchestrator, "build", "build it");
   assert.equal(board.done(w1, "build").all, true);
