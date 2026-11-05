@@ -143,22 +143,22 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       const other = Number(r.author) === a.id ? b : a;
       return about !== "" && (fold(rel) === about || fold(rel).endsWith(`/${about}`)) && (JSON.parse(String(r.mentions)) as string[]).includes(other.name);
     });
-  const releaseAll = (id: number): void => {
+  /** `id`'s merge lock and claim requests go; its flags and notices too, and the page is told, only when something it
+   *  held changed (`changedBefore`: rows its caller already removed). */
+  const releaseLockOf = (id: number, changedBefore = 0): void => {
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
-    const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
     const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
     db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
-    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
-    clearFlags();
-    if (owner && claims + locks > 0) bump(String(owner.repo));
-  };
-  const releaseLockOf = (id: number): void => {
-    const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
-    db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id);
-    db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
-    // its claims are no longer active: the flags and notices on them go
+    // at an end its active claims read as ended from now on
+    const active = Number((db.prepare("SELECT COUNT(*) AS n FROM claims WHERE participant = ? AND state = 'active'").get(id) as Row).n);
+    if (changedBefore + locks + active === 0) return;
     clearFlags();
     if (owner) bump(String(owner.repo));
+  };
+  const releaseAll = (id: number): void => {
+    const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
+    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
+    releaseLockOf(id, claims);
   };
   /** The live members refused the lock since its holder took it, as mentions name them; the record is cleared (D65). */
   const takeLockWaiters = (repo: string): string[] => {
