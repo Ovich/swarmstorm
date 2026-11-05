@@ -106,7 +106,9 @@ waits: in the foreground; a seat runs on the plugin's
 - **A brainstorm's events**: an agreement and its endorsement, an escalation, a new question,
   handled as the `brainswarm` skill's protocol says.
 - **Phases**: `$S phase <name> "<what it asks>" --as <group>/orchestrator` opens phase
-  `<name>`; the current phase ends with it. A separator on the thread that wakes every member
+  `<name>`; the current phase ends with it. **A name opens on its kind**, one word, the same every time
+  the phase recurs (`build`, `verify`, `simplify`, `reflect`, or any word a request needs), anything
+  after it free (`verify-3`, `build-desk`): the board counts a loop's passes by it. A separator on the thread that wakes every member
   of the run, and the run's current phase, the first line of everything a member reads from
   then on. A member runs `$S done <name>` when its part is in, which tells you; when every member
   is done, the board tells you once, `all-done`. Each answer prints the step to run next. Phases

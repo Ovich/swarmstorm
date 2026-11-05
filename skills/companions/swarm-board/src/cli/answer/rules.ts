@@ -44,6 +44,10 @@ export const openTaskLine = (s: Situation): string | null =>
  *  pause first; null while it owes, and for the orchestrator. */
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
 
+/** Whether a post's stored mentions reach `name` (`<group>/<seat>`): by name, or by its group (`@swarm`, `@<CODE>` are stored as `<group>/*`). */
+export const mentionReaches = (mentions: readonly string[], name: string): boolean =>
+  mentions.includes(name) || mentions.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
+
 /** simple-states: what the orchestrator's post tells it of a member it mentions whose link is down, by its board state. */
 export const unreachedMentionLines = (targets: { name: string; state: string }[]): string[] =>
   targets.flatMap((t) => (t.state === "away" ? [W.postToAway(t.name)] : t.state === "lost" ? [W.postToLost(t.name)] : []));
@@ -172,3 +176,16 @@ const READING_VERBS: ReadonlySet<string> = new Set(["status", "roster", "read", 
 /** The hint after a call the server's connection dropped: retry a reading verb, check `status` before a writing one. */
 export const closedConnectionHint = (verb: string, cli: string): string =>
   READING_VERBS.has(verb) ? W.retryReading(verb) : W.retryWriting(verb, W.status(cli));
+
+/** A phase's kind: the word its name opens with, lowercased (`verify-38`, `verify1`, `build-desk`); null when the name
+ *  opens on no letter, which the phase verb refuses. Any word is a kind: the list is never fixed. */
+export const phaseKind = (name: string): string | null => /^[a-z]+/i.exec(name)?.[0].toLowerCase() ?? null;
+/** The reminder at a phase's open that a loop may be circling: the opening phase's kind at its 3rd, 6th, 9th… pass
+ *  since the run's last reflect; null otherwise, and for a reflect itself. */
+export const circlingLine = (earlier: readonly string[], name: string): string | null => {
+  const kind = phaseKind(name);
+  if (!kind || kind === "reflect") return null;
+  const kinds = earlier.map(phaseKind);
+  const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
+  return passes % 3 === 0 ? W.circling(kind, passes) : null;
+};

@@ -3475,12 +3475,13 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           const scope = phaseScopeOf(before, String(before.phase));
           return phaseMembersOf(fresh.run, String(before.phase)).filter((m) => owesPhase(m, scope)).map((m) => m.member);
         })();
+        const earlier = db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(fresh.run, EVENTS.phase.name).map((r) => String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""));
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
         packTables.phaseOpened(fresh.run);
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
-        return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed };
+        return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed, earlier };
       });
     },
     currentPhase(run2) {
@@ -9049,6 +9050,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   // ── the orchestrator's verbs ──
   phaseHeard: (watch) => watch.length ? `the done of ${watch.join(", ")} wakes you; the board tells you once every member is done` : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
   phaseFor: (only) => only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : "",
+  circling: (kind, passes) => `${kind} pass ${passes} since the run began or last reflected: closer to the goal, or circling? When the same kinds of fault keep coming back, a reflect phase may serve better than another pass (the orchestrate skill's references/reflect-phase.md).`,
   phaseOpened: (name, forWhom, heard, cli, as, run2) => `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run2} --as ${as}`,
   briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
   seatIdleEnded: (seat) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
@@ -9120,6 +9122,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   /** V-43: with a lost member owing the phase, "every member" is not said: the orchestrator's own line says "but the lost" */
   doneCounted: (phase, progress, all2, lost) => `done ${phase}: ${progress}${all2 ? lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done" : ""}`,
   /** V-44: `phase --for` with no seat in it */
+  phaseNoKind: (name) => `phase ${name}: a phase's name opens on its kind, a word (build, verify, simplify, reflect, or any other), then anything after it: verify-3, build-desk`,
   phaseForEmpty: (name) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
   /** V-35: a member owing the phase just opened whose agent is lost */
   phaseLostMember: (member, move) => `${member} owes this phase and is lost: ${move}`,
@@ -9199,6 +9202,7 @@ var owedLine = (s, opts = {}) => {
 };
 var openTaskLine = (s) => pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? WORDING.taskStillOpen(s.openTask, WORDING.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
 var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? WORDING.owesNothingEndTurn : null);
+var mentionReaches = (mentions2, name) => mentions2.includes(name) || mentions2.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
 var unreachedMentionLines = (targets) => targets.flatMap((t) => t.state === "away" ? [WORDING.postToAway(t.name)] : t.state === "lost" ? [WORDING.postToLost(t.name)] : []);
 var listenNow = (s, afterPhase = false) => s.listens === "foreground" ? WORDING.waitNow(afterPhase, waitCommand(s, true)) : WORDING.listenerStart(waitCommand(s));
 var nextStep = (s, brief = false) => {
@@ -9279,6 +9283,14 @@ function eventStep(m, me, cli, event = eventOf(m)) {
 }
 var READING_VERBS = /* @__PURE__ */ new Set(["status", "roster", "read", "wait", "doing"]);
 var closedConnectionHint = (verb, cli) => READING_VERBS.has(verb) ? WORDING.retryReading(verb) : WORDING.retryWriting(verb, WORDING.status(cli));
+var phaseKind = (name) => /^[a-z]+/i.exec(name)?.[0].toLowerCase() ?? null;
+var circlingLine = (earlier, name) => {
+  const kind = phaseKind(name);
+  if (!kind || kind === "reflect") return null;
+  const kinds = earlier.map(phaseKind);
+  const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
+  return passes % 3 === 0 ? WORDING.circling(kind, passes) : null;
+};
 
 // src/cli/answer/situation.ts
 init_kinds();
@@ -9936,6 +9948,7 @@ ${verbHelp()}`);
       const [name, ...said] = args.positional;
       if (!name) fail(`phase: which phase?
 ${verbHelp()}`);
+      if (!phaseKind(name)) fail(WORDING.phaseNoKind(name));
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       const watch = args.list("--watch");
       const only = args.list("--for");
@@ -9952,13 +9965,15 @@ ${verbHelp()}`);
       const seatOf2 = (member) => member.slice(member.lastIndexOf("/") + 1);
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord2(seatOf2(member)), shellWord2(p.name))));
       const pausedLine3 = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
+      const circling = circlingLine(m.earlier, name);
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...circling ? { circling } : {}, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
         console.log(seqLine(m));
         if (pausedLine3) console.log(pausedLine3);
         if (stillOwed) console.log(stillOwed);
         for (const line of lostLines) console.log(line);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
+        if (circling) console.log(circling);
         console.log(next);
       });
       break;
@@ -10080,7 +10095,7 @@ ${verbHelp()}`);
         ...args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}
       });
       const unmatched = await unmatchedLines(p, body);
-      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => m.mentions.includes(r.name)) : [];
+      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.name !== p.name && mentionReaches(m.mentions, r.name)) : [];
       const unreached = unreachedMentionLines(named);
       const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(unreached.length && r.state === "lost")).map((r) => r.name);
       const lostMentioned = [...lostMentionLines(lostNamed, self().join(" "), shellWord2(p.name)), ...unreached];

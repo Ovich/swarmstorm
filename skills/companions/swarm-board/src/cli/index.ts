@@ -709,6 +709,7 @@ async function main(): Promise<void> {
       const p = await caller();
       const [name, ...said] = args.positional;
       if (!name) fail(`phase: which phase?\n${verbHelp()}`);
+      if (!rules.phaseKind(name)) fail(WORDING.phaseNoKind(name));
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
       const watch = args.list("--watch");
@@ -734,13 +735,15 @@ async function main(): Promise<void> {
       // V-35: a member owing it whose agent is lost is named with the move it needs
       const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord(seatOf(member)), shellWord(p.name))));
       const pausedLine = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
-      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
+      const circling = rules.circlingLine(m.earlier, name);
+      emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...(circling ? { circling } : {}), ...(pausedLine ? { paused: pausedLine } : {}) }, () => {
         console.log(seqLine(m));
         if (pausedLine) console.log(pausedLine);
         if (stillOwed) console.log(stillOwed);
         for (const line of lostLines) console.log(line);
         for (const line of idleEnded) console.log(line);
         console.log(brief);
+        if (circling) console.log(circling);
         console.log(next);
       });
       break;
@@ -903,8 +906,8 @@ async function main(): Promise<void> {
         ...(args.verb === "agree" && args.has("--with") ? { with: args.flags("--with").flatMap((w) => w.split(",")) } : {}),
       });
       const unmatched = await unmatchedLines(p, body);
-      // break-flow V-47: the orchestrator told which member it named is lost, as phase tells it (V-35)
-      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => m.mentions!.includes(r.name)) : [];
+      // break-flow V-47: the orchestrator told which member it named is lost, as phase tells it (V-35); a group mention (@swarm) names every member of it
+      const named = p.seat === "orchestrator" && m.mentions?.length ? (await board.roster(p.repo)).filter((r) => r.name !== p.name && rules.mentionReaches(m.mentions!, r.name)) : [];
       // simple-states: a post to a member whose link is down says how it is reached; the lost line then says it alone
       const unreached = rules.unreachedMentionLines(named);
       const lostNamed = named.filter((r) => r.badge?.name === "lost" && !(unreached.length && r.state === "lost")).map((r) => r.name);

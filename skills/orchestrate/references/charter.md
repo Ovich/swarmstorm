@@ -18,6 +18,8 @@ beside it (`pace: run through, the person merges (D41)`), and reaches the next b
 - `simplify:` `none` (the default), `after-verify` or `end`: a simplify phase cuts back the code the
   run changed, as `references/simplify-phase.md` says, when the person asks for it; recommended
   with a verify after it, with why (removal breaks what no test reaches);
+- `reflect:` `when-circling` (the default: proposed or opened as `references/reflect-phase.md`
+  says) or `none`; the person may ask for one at any time;
 - `long-horizon:` `none` (the default) or the path of the long-horizon document the run keeps and
   resumes from, as the `long-horizon` skill says;
 - `effort:` each seat's model and effort, a column of the run table: **Opus for every seat**;
