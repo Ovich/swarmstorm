@@ -90,7 +90,7 @@ describe("conversation: the pick (D1, D14)", () => {
 });
 
 describe("conversation: what an item is (D8, D16)", () => {
-  const FILES = [{ path: "a.ts", holders: ["alpha/S1"] }];
+  const FILES = [{ path: "a.ts", holders: ["alpha/S1"], past: [] }];
 
   test("a held file: a post --about a path mentioning its holder, by a member not holding it; answered once the holder posts about it", () => {
     const ask = item(2, "beta/S2", "@AL·S1 I add one call in a.ts", { about: "a.ts" });
@@ -223,14 +223,14 @@ describe("agents (D7, D20)", () => {
 
 describe("claimRows (D7)", () => {
   const files = [
-    { path: "a.ts", holders: ["alpha/S1", "beta/S2"] },
-    { path: "b.ts", holders: ["beta/S2"] },
+    { path: "a.ts", holders: ["alpha/S1", "beta/S2"], past: [] },
+    { path: "b.ts", holders: ["beta/S2"], past: [] },
   ];
   test("every held file under All, a run's under its tab; a file of two holders is shared", () => {
     const snap = board(RUNS, ROSTER, [], files);
     expect(claimRows(snap, null)).toEqual([
-      { path: "a.ts", holders: ["alpha/S1", "beta/S2"], shared: true },
-      { path: "b.ts", holders: ["beta/S2"], shared: false },
+      { path: "a.ts", holders: ["alpha/S1", "beta/S2"], past: [], shared: true },
+      { path: "b.ts", holders: ["beta/S2"], past: [], shared: false },
     ]);
     expect(claimRows(snap, 1)!.map((r) => r.path)).toEqual(["a.ts"]);
     expect(claimRows(snap, 99)).toEqual([]);
@@ -238,7 +238,7 @@ describe("claimRows (D7)", () => {
 
   test("V-19: a brainswarm run has no claims row; a code run keeps it", () => {
     const roster = [member("alpha", "S1", "Old Owl", "working")];
-    const held = [{ path: "a.ts", holders: ["alpha/S1"] }];
+    const held = [{ path: "a.ts", holders: ["alpha/S1"], past: [] }];
     expect(claimRows(board([{ ...run(1, "alpha", "AL"), kind: "brainstorm" }], roster, [], held), 1)).toBeNull();
     expect(claimRows(board([run(1, "alpha", "AL")], roster, [], held), 1)!.map((r) => r.path)).toEqual(["a.ts"]);
   });
@@ -250,11 +250,30 @@ describe("claimRows (D7)", () => {
       { ...member("same", "S2", "New Owl", "working"), run: 6 },
     ];
     const held = [
-      { path: "old.ts", holders: ["same/S1"] },
-      { path: "new.ts", holders: ["same/S2"] },
+      { path: "old.ts", holders: ["same/S1"], past: [] },
+      { path: "new.ts", holders: ["same/S2"], past: [] },
     ];
     expect(claimRows(board(runs, roster, [], held), 6)!.map((r) => r.path)).toEqual(["new.ts"]);
     expect(claimRows(board(runs, roster, [], held), 5)!.map((r) => r.path)).toEqual(["old.ts"]);
+  });
+
+  test("past holders ride beside the active ones; shared counts the active alone", () => {
+    const merged = { member: "beta/S2", state: "merged" as const, sha: "abcdef1234567" };
+    const held = [
+      { path: "a.ts", holders: ["alpha/S1"], past: [merged] },
+      { path: "c.ts", holders: ["alpha/S1", "gamma/S3"], past: [merged] },
+    ];
+    expect(claimRows(board(RUNS, ROSTER, [], held), null)).toEqual([
+      { path: "a.ts", holders: ["alpha/S1"], past: [merged], shared: false },
+      { path: "c.ts", holders: ["alpha/S1", "gamma/S3"], past: [merged], shared: true },
+    ]);
+  });
+
+  test("a file only past holders claimed this phase stays in their run's row", () => {
+    const ended = { member: "alpha/S1", state: "ended" as const, sha: null };
+    const snap = board(RUNS, ROSTER, [], [{ path: "gone.ts", holders: [], past: [ended] }]);
+    expect(claimRows(snap, 1)).toEqual([{ path: "gone.ts", holders: [], past: [ended], shared: false }]);
+    expect(claimRows(snap, 99)).toEqual([]);
   });
 });
 

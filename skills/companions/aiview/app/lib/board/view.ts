@@ -550,10 +550,13 @@ export function agents(snap: BoardSnapshot, run: RunId): SnapshotMember[] {
   return r ? orderRoster(membersOf(snap, r)) : [];
 }
 
-export type ClaimRow = { path: string; holders: string[]; shared: boolean };
+/** A claim this phase whose holder merged the file (with the merge's sha) or ended. */
+export type PastClaim = BoardSnapshot["files"][number]["past"][number];
+/** A file claimed this phase: its active holders, then its past ones; `shared` counts the active alone. */
+export type ClaimRow = { path: string; holders: string[]; past: PastClaim[]; shared: boolean };
 
-/** The held files with their holders: those held by one run's members, or every one (null); null for a run that holds
- *  no files, so no claims row shows under it. */
+/** The files claimed this phase with their holders, active and past: those of one run's members, or every one (null);
+ *  null for a run that holds no files, so no claims row shows under it. */
 export function claimRows(snap: BoardSnapshot, run: RunId | null): ClaimRow[] | null {
   const r = run == null ? null : snap.runs.find((x) => x.run === run);
   if (run != null && !r) return [];
@@ -562,7 +565,9 @@ export function claimRows(snap: BoardSnapshot, run: RunId | null): ClaimRow[] | 
   // by the run's members, as the strip: another run of the same group holds nothing here
   const members = r ? new Set(membersOf(snap, r).map((m) => m.member)) : null;
   const inRun = (holder: string): boolean => !members || members.has(holder);
-  return snap.files.filter((f) => f.holders.some(inRun)).map((f) => ({ path: f.path, holders: f.holders, shared: f.holders.length > 1 }));
+  return snap.files
+    .map((f) => ({ path: f.path, holders: f.holders, past: f.past ?? [], shared: f.holders.length > 1 }))
+    .filter((f) => f.holders.some(inRun) || f.past.some((p) => inRun(p.member)));
 }
 
 export type MergedFileRow = { path: string; mergers: string[] };
