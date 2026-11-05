@@ -55,12 +55,11 @@ export function driftedSet(worktree: string, onto: string, files: string[]): Dri
   // one record per commit, newest first: "\x01<sha>", then the paths it changed, one per line, unquoted
   const log = gitAnswer(worktree, "-c", "core.quotePath=false", "log", "--format=%x01%H", "--name-only", "--end-of-options", `${base}..${onto}`);
   if (log.status !== 0) return null;
-  const wanted = new Set(files);
   const newest = new Map<string, string>();
   let sha = "";
   for (const line of log.stdout.split(/\r?\n/)) {
     if (line.startsWith("\x01")) sha = line.slice(1);
-    else if (line && wanted.has(line) && !newest.has(line)) newest.set(line, sha);
+    else if (line && !newest.has(line)) newest.set(line, sha);
   }
-  return [...newest].map(([path, sha]) => ({ path, sha })).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return files.filter((path) => newest.has(path)).map((path) => ({ path, sha: newest.get(path)! }));
 }
