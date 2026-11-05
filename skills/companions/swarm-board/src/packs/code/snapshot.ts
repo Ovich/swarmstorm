@@ -42,7 +42,7 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   const { db, isLive, nameOf, relPath } = deps;
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo) as Row | undefined;
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
-  const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
+  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
   // V-46: who waits on the lock, in the order refused
   const lockWaiters = (db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo) as Row[])
     .map((w) => Number(w.participant))
