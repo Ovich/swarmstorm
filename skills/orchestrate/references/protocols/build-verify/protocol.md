@@ -26,8 +26,14 @@ disjoint steps, and you open their walks on the one instance one at a time (`pha
 
 A verifier judges **from a project skill or from instructions**: the charter names, per verifier,
 its focus and its source: a `verify-<app>-<focus>` skill in the project's local skills, or
-`instructed`, the steps written in each verify phase's message. No skill and the person wants
-one: the `verification-skill-create` skill runs before the run opens.
+`instructed`, the steps written in each verify phase's message. **An instructed verifier is defined
+on the fly, by you, for the job in hand**: what it judges, how, through which tools (a browser walk,
+the CLI on a scratch home, the test suite, a replay of real data, a load run), and what is a
+blocker. **Propose it to the person**, steps and tools in a few lines, with why this verify fits
+this work. **A project skill that exists but does not match the job** (another focus, another
+surface, steps that miss what changed) is not forced on it: propose an instructed verifier that
+fits better, saying what the skill misses; the person chooses. A skill wanted for a focus that
+recurs: the `verification-skill-create` skill runs before the run opens.
 
 ## Charter fields
 
