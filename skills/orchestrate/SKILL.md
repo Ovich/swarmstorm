@@ -24,6 +24,8 @@ one run tuned to it, built on the closest example**.
 
 **Any of them can open with a design phase** when the person asks (charter `design:`): the work
 designed on the board first, in the one design format, then the protocol runs: `references/design-phase.md`.
+**Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
+back after a verdict of ready, behaviour unchanged: `references/simplify-phase.md`.
 
 - **The project's own come first**: its `protocol-<name>` skills in its local skills folder
   (`.claude/skills/` when it has no other), and its older `brainswarm-<name>` skills.
