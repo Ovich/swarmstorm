@@ -29,6 +29,9 @@ message, each proposed from the work with its reason:
   `instructed` verifier whose steps you write in each verify message; no is `verify: off`. On, a validator seat runs it alone in its own phases, scoped by you to what the
   phases before merged. What the person adds to watch is written into the *Mandate* in their
   words. Any other special seat (a reviewer of every merge) is asked the same way.
+- **`simplify:`** `none`, `after-verify` or `end`: a simplify phase on the code the plan changed,
+  as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`, never on
+  when it is off.
 
 **`pace:`**
 
