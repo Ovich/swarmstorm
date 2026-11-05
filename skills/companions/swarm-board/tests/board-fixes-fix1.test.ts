@@ -18,6 +18,6 @@ test("V1-3: a done that leaves the member's task open names it and how it closes
     owesNothing: false, openTask: 39,
   };
   const a = answer({ verb: "done", phase: "build", line: "done build: 1/2 done" }, s);
-  assert.equal(a.next, "your task #39 is still open: finish it (merge and report), then close it with your next done: swarm done build --as g/w2; a later task to you replaces it");
+  assert.equal(a.next, "your task #39 is still open: finish it and report, then close it with your next done: swarm done build --as g/w2; a later task to you replaces it");
   assert.doesNotMatch(a.lines.join("\n"), /wait for the next phase/);
 });

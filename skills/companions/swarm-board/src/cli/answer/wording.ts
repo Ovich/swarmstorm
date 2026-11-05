@@ -102,7 +102,7 @@ export const WORDING = {
   owedBrief: (name: string, done: Command) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
   /** board-fixes V1-3 */
   taskStillOpen: (seq: number, done: Command) =>
-    `your task #${seq} is still open: finish it (merge and report), then close it with your next done: ${done}; a later task to you replaces it`,
+    `your task #${seq} is still open: finish it and report, then close it with your next done: ${done}; a later task to you replaces it`,
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */

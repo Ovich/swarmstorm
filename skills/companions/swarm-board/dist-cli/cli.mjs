@@ -8952,7 +8952,7 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   owedOpen: (name, text, done) => `phase ${name} is open and asks: ${text}. Do your part now, then mark it done: ${done}`,
   owedBrief: (name, done) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
   /** board-fixes V1-3 */
-  taskStillOpen: (seq, done) => `your task #${seq} is still open: finish it (merge and report), then close it with your next done: ${done}; a later task to you replaces it`,
+  taskStillOpen: (seq, done) => `your task #${seq} is still open: finish it and report, then close it with your next done: ${done}; a later task to you replaces it`,
   doneWaitNext: (wait) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
