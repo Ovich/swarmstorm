@@ -114,6 +114,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       bump(p.repo);
       return true;
     });
+  const markToldOfDrift = (repo: string, rel: string, id: number): boolean => Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(repo, rel, id).changes) > 0;
   /** claims-phase: `p`'s branch lacks the target's change to `rel`; when another member merged `rel` this phase, `p` is
    *  told once per path and phase to rebase. The merger is not told, nor a member the merge's event mentioned (v1-6). */
   const tellDrift = (p: Participant, rel: string, drifted: DriftedFile): void => {
@@ -124,7 +125,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     if (!merges.length) return;
     // the merge whose commit is the target's last change to the path, else the latest claim merged
     const merge = merges.find((m) => String(m.sha) === drifted.sha) ?? merges[0];
-    if (Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(p.repo, rel, p.id).changes) === 0) return;
+    if (!markToldOfDrift(p.repo, rel, p.id)) return;
     const sha = String(merge.sha);
     insertMessage(p, CODE_WORDING.driftNotice(p.name, rel, participantById(Number(merge.participant)).name, sha), rel, "event", [p.name], {
       event: CODE_EVENTS.drift.name,
@@ -409,8 +410,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const mentioned = [...new Set([...told, ...agreed, ...waiters])];
         insertMessage(me, lines.join("\n"), null, "event", mentioned, { event: CODE_EVENTS.merged.name, meta });
         // v1-6: a member this merge's event mentioned was told to rebase: no drift notice for its files this phase
-        const toldOfDrift = db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)");
-        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) toldOfDrift.run(me.repo, rel, id);
+        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) markToldOfDrift(me.repo, rel, id);
         // claims-phase: the merger's claims on the merged files are merged, with the sha, kept until the phase ends;
         // a merged file it never claimed is claimed so, for the drift notice, out of its changes: a later edit makes it
         // active again (v1-4)
