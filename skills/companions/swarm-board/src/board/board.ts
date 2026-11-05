@@ -11,7 +11,7 @@ import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts
 import { type Kind, profileOf } from "./kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
-import { awaitedLine, type EventName, currentEventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, wakes } from "./events.ts";
+import { alwaysEventNames, awaitedLine, type EventName, currentEventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, wakes } from "./events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
@@ -517,6 +517,12 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   // the busy timeout set at open, not by the pragma below: the first reads already need it, and
   // without it a verb that opens while another process writes fails outright with SQLITE_BUSY
   const db = new DatabaseSync(dbPath, { timeout: 5000 });
+  // board-fixes#D14: a statement is prepared once per SQL text and reused, the board's and its packs' alike: a roster
+  // runs dozens of small queries per member, and preparing each anew was a large share of its cost. Every use runs
+  // a statement to its end (get, all, run; never iterate), so one statement is never used by two callers at once.
+  const prepareAnew = db.prepare.bind(db);
+  const prepared = new Map<string, ReturnType<typeof prepareAnew>>();
+  db.prepare = (sql: string) => prepared.get(sql) ?? prepared.set(sql, prepareAnew(sql)).get(sql)!;
   // D16: a store from before the seat vocabulary: table `slices` is `seats`, `participants.slice` is `seat`, a seat has no title
   const hasTable = (name: string): boolean => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== undefined;
   const columnsOf = (table: string): string[] => (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((c) => String(c.name));
@@ -746,6 +752,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
+  // board-fixes#D14: a run's own messages read by run alone (a member's open task, its stale doing, the tasks awaiting it),
+  // which messages_channel cannot serve without the repo: on a store of 16k messages each read was a full scan
+  db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages (run, seq)");
   // Waking and watching: every write moves its project's version; once committed, the waits
   // and watchers of this process are woken at once (swarm-relay D14): the server is the one
   // process that writes, so no file carries the wake to another (no `.signal`, D14). The poll
@@ -1034,21 +1043,45 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const fact = packOf(p)?.memberFact?.(p, packCtxOf(p)) ?? null;
     return fact ? { fact } : {};
   };
-  /** The messages not yet delivered to `me`, oldest first: its own run's and any other's (the caller filters). */
-  const unseenRows = (me: Participant): Row[] =>
-    db
+  /** The messages not yet delivered to `me`, oldest first: its own run's and any other's (the caller filters).
+   *  `wakeCandidates`: only the rows that may wake it (board-fixes#D14), as `wakes` reads them: one naming it or its
+   *  group, or an always event (by its stored name, renamed ones included, or by its kind); `wakes` still decides. */
+  const unseenRows = (me: Participant, wakeCandidates = false, afterSeq = 0): Row[] => {
+    const { events: always, stored } = alwaysEventNames();
+    const quoted = (names: string[]) => (names.length ? names.map((n) => `'${n}'`).join(", ") : "NULL");
+    const candidate = wakeCandidates
+      ? `AND (instr(m.mentions, ?) > 0 OR instr(m.mentions, ?) > 0 OR m.event IN (${quoted(stored)}) OR m.kind IN (${quoted(always)}))`
+      : "";
+    const named = wakeCandidates ? [JSON.stringify(me.name), JSON.stringify(`${me.plan}/*`)] : [];
+    return db
       .prepare(
         `SELECT m.* FROM messages m
-         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
+         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR})) ${candidate}
            AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.participant = ? AND d.seq = m.seq)
          ORDER BY m.seq`,
       )
-      .all(me.repo, Number((db.prepare("SELECT since_seq FROM participants WHERE id = ?").get(me.id) as Row).since_seq), me.id, me.id) as Row[];
-  /** How many undelivered messages wake `me`: a message to it, an urgent post (swarm-relay D43). */
-  const unreadOf = (id: number): number => {
+      .all(me.repo, Math.max(afterSeq, sinceSeqOf(me.id)), me.id, ...named, me.id) as Row[];
+  };
+  const sinceSeqOf = (id: number): number => Number((db.prepare("SELECT since_seq FROM participants WHERE id = ?").get(id) as Row).since_seq);
+  /** board-fixes#D14: per member, the messages up to `throughSeq` that wake it, found once: a message's waking never
+   *  changes, so each roster reads only the messages since, and the deliveries. Dropped whole when messages are pruned. */
+  const wakingSeqs = new Map<number, { sinceSeq: number; throughSeq: number; seqs: Set<number> }>();
+  /** How many undelivered messages wake `me`: a message to it, an urgent post (swarm-relay D43).
+   *  `authorOf`: a memo the caller shares across members (a roster's), each author read once for all of them. */
+  const unreadOf = (id: number, authorOf = memoizedParticipants()): number => {
     const me = participantById(id);
-    const authorOf = memoizedParticipants();
-    return unseenRows(me).filter((r) => wakes(toMessage(r, authorOf), me)).length;
+    const sinceSeq = sinceSeqOf(id);
+    const known = wakingSeqs.get(id);
+    const waking = known && known.sinceSeq === sinceSeq ? known : { sinceSeq, throughSeq: 0, seqs: new Set<number>() };
+    // the rows not yet looked at, undelivered: a delivered one can never count again; read through the last seq taken
+    // before the scan, so a row written meanwhile is looked at again next time, never skipped
+    const through = lastSeq();
+    for (const r of unseenRows(me, true, waking.throughSeq)) if (wakes(toMessage(r, authorOf), me)) waking.seqs.add(Number(r.seq));
+    waking.throughSeq = through;
+    wakingSeqs.set(id, waking);
+    if (!waking.seqs.size) return 0;
+    for (const d of db.prepare("SELECT seq FROM deliveries WHERE participant = ? AND seq > ?").all(id, sinceSeq) as Row[]) waking.seqs.delete(Number(d.seq));
+    return waking.seqs.size;
   };
 
   /** `fromWait`: a wait's own look, not a call of the member's. Only what wakes `p` is taken and marked (a message to
@@ -1595,6 +1628,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           .all(cutoff) as Row[];
         const dropDeliveries = db.prepare("DELETE FROM deliveries WHERE seq = ?");
         const dropMessage = db.prepare("DELETE FROM messages WHERE seq = ?");
+        if (doomed.length) wakingSeqs.clear();
         for (const m of doomed) {
           dropDeliveries.run(Number(m.seq));
           dropMessage.run(Number(m.seq));
@@ -2096,6 +2130,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
 
     roster(repo) {
+      const authorOf = memoizedParticipants();
       const rows = db
         .prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL ORDER BY r.id, p.id`)
         .all(repo) as Row[];
@@ -2106,6 +2141,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         if (!statesByRun.has(run)) statesByRun.set(run, statesOf(run, t));
         return statesByRun.get(run)!.get(member);
       };
+      // each run's row read once for all its members
+      const runsRead = new Map<RunId, Row | undefined>();
+      const runOf = (run: RunId): Row | undefined => (runsRead.has(run) ? runsRead.get(run) : runsRead.set(run, db.prepare("SELECT * FROM runs WHERE id = ?").get(run) as Row | undefined).get(run));
       return rows.map((r) => ({
         name: `${r.plan}/${r.seat}`,
         nick: nickOf(r),
@@ -2120,10 +2158,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
-        state: memberStateOf(r, db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(r.run)) as Row | undefined, t),
+        state: memberStateOf(r, runOf(Number(r.run)), t),
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
-        unread: unreadOf(Number(r.id)),
+        unread: unreadOf(Number(r.id), authorOf),
         task: openTaskOf(Number(r.run), `${r.plan}/${r.seat}`, Number(r.id)),
         doingAt: Date.parse(String(r.doing_at ?? seatedAtOf(r))),
         doingStale: doingStaleOf(r),
