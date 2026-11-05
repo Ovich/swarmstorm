@@ -1459,10 +1459,8 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
         .all(run, ORCHESTRATOR, ORCHESTRATOR, plan, phaseOpenedSeqOf(run)) as Row[]
     ).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
   };
-  /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them
-   *  for `phase`, with the seats tasked in it that no member holds yet. */
-  const phaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
-    onlyId != null ? joinedPhaseMembersOf(run, phase, onlyId) : [...joinedPhaseMembersOf(run, phase), ...taskedSeatsNotJoinedOf(run, phase)];
+  /** board-split D62: the run's members (the orchestrator apart) as owing.ts counts them for `phase`, with the seats tasked in it that no member holds yet. */
+  const phaseMembersOf = (run: RunId, phase: string): PhaseMember[] => [...joinedPhaseMembersOf(run, phase), ...taskedSeatsNotJoinedOf(run, phase)];
   /** The run's members that joined, as owing.ts counts them for `phase` (only participant `onlyId` when given). */
   const joinedPhaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
     (
@@ -1487,7 +1485,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const owedNameOf = (p: Row, run: Row): string | null => {
     if (String(p.seat) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
     const phase = String(run.phase);
-    const [me] = phaseMembersOf(Number(run.id), phase, Number(p.id));
+    const [me] = joinedPhaseMembersOf(Number(run.id), phase, Number(p.id));
     return me && owesPhase(me, phaseScopeOf(run, phase)) ? phase : null;
   };
   /** The states of a run's live members (not ended), keyed by member. */
