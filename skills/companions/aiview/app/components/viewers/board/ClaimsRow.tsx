@@ -2,11 +2,10 @@
 // how many are shared by two members or more; opened, one file per line with its holders, a shared one
 // ending on a faint "shared". A viewer's opening it is remembered in their browser.
 import { useState } from "react";
+import type { ClaimRow } from "../../../lib/board/view.ts";
 import { MemberName } from "./chips.tsx";
 
 export const CLAIMS_EXPANDED_KEY = "swarm.filemap.expanded";
-
-export type ClaimRow = { path: string; holders: string[]; shared: boolean };
 
 function readExpanded(): boolean {
   try {
