@@ -692,6 +692,8 @@ function migrateCodeTables(db) {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
+    -- board-fixes#D14: the roster reads every member's claimed paths; by participant, never a scan of the whole log
+    CREATE INDEX IF NOT EXISTS claim_log_by_participant ON claim_log (participant);
   `);
   if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, (/* @__PURE__ */ new Date()).toISOString());
   const upkeep = (table, column, ddl) => {
@@ -2106,7 +2108,7 @@ function wakes(m, me) {
   const e = eventOf(m);
   return !!e && !!eventDef(e).always;
 }
-var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, CORE_AWAITED, isAwaitedCause, landingEvents, awaitedLine, all, allEvents, isEvent, RENAMED_EVENTS, currentEventName, eventDef;
+var FOREGROUND_WAIT_MS, FOREGROUND_NOTE, EVENTS, CORE_AWAITED, isAwaitedCause, landingEvents, awaitedLine, all, allEvents, isEvent, alwaysEventNames, RENAMED_EVENTS, currentEventName, eventDef;
 var init_events2 = __esm({
   "src/board/events.ts"() {
     "use strict";
@@ -2159,6 +2161,10 @@ var init_events2 = __esm({
     all = null;
     allEvents = () => all ??= { ...EVENTS, ...registry.events() };
     isEvent = (s) => Object.hasOwn(allEvents(), s);
+    alwaysEventNames = () => {
+      const events = Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
+      return { events, stored: [...events, ...Object.keys(RENAMED_EVENTS).filter((old) => events.includes(RENAMED_EVENTS[old]))] };
+    };
     RENAMED_EVENTS = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };
     currentEventName = (s) => RENAMED_EVENTS[s] ?? s;
     eventDef = (name) => allEvents()[name];
@@ -2329,6 +2335,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const { DatabaseSync } = await import("node:sqlite");
   fs8.mkdirSync(path8.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath, { timeout: 5e3 });
+  const prepareAnew = db.prepare.bind(db);
+  const prepared = /* @__PURE__ */ new Map();
+  db.prepare = (sql) => prepared.get(sql) ?? prepared.set(sql, prepareAnew(sql)).get(sql);
   const hasTable = (name) => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== void 0;
   const columnsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => String(c.name));
   if (hasTable("slices") && !hasTable("seats")) db.exec("ALTER TABLE slices RENAME TO seats");
@@ -2513,6 +2522,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   upkeep("member_activity", "listener_running", "listener_running INTEGER");
   upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
+  db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages (run, seq)");
   const localWakers = /* @__PURE__ */ new Set();
   const touch = () => {
     for (const wake of [...localWakers]) queueMicrotask(wake);
@@ -2718,16 +2728,32 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const fact = packOf(p)?.memberFact?.(p, packCtxOf(p)) ?? null;
     return fact ? { fact } : {};
   };
-  const unseenRows = (me) => db.prepare(
-    `SELECT m.* FROM messages m
-         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR}))
+  const unseenRows = (me, wakeCandidates = false, afterSeq = 0) => {
+    const { events: always, stored } = alwaysEventNames();
+    const quoted2 = (names) => names.length ? names.map((n) => `'${n}'`).join(", ") : "NULL";
+    const candidate = wakeCandidates ? `AND (instr(m.mentions, ?) > 0 OR instr(m.mentions, ?) > 0 OR m.event IN (${quoted2(stored)}) OR m.kind IN (${quoted2(always)}))` : "";
+    const named = wakeCandidates ? [JSON.stringify(me.name), JSON.stringify(`${me.plan}/*`)] : [];
+    return db.prepare(
+      `SELECT m.* FROM messages m
+         WHERE m.repo = ? AND m.seq > ? AND (m.author != ? OR m.event IN (${TO_AUTHOR})) ${candidate}
            AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.participant = ? AND d.seq = m.seq)
          ORDER BY m.seq`
-  ).all(me.repo, Number(db.prepare("SELECT since_seq FROM participants WHERE id = ?").get(me.id).since_seq), me.id, me.id);
-  const unreadOf = (id) => {
+    ).all(me.repo, Math.max(afterSeq, sinceSeqOf(me.id)), me.id, ...named, me.id);
+  };
+  const sinceSeqOf = (id) => Number(db.prepare("SELECT since_seq FROM participants WHERE id = ?").get(id).since_seq);
+  const wakingSeqs = /* @__PURE__ */ new Map();
+  const unreadOf = (id, authorOf = memoizedParticipants()) => {
     const me = participantById(id);
-    const authorOf = memoizedParticipants();
-    return unseenRows(me).filter((r) => wakes(toMessage(r, authorOf), me)).length;
+    const sinceSeq = sinceSeqOf(id);
+    const known = wakingSeqs.get(id);
+    const waking = known && known.sinceSeq === sinceSeq ? known : { sinceSeq, throughSeq: 0, seqs: /* @__PURE__ */ new Set() };
+    const through = lastSeq();
+    for (const r of unseenRows(me, true, waking.throughSeq)) if (wakes(toMessage(r, authorOf), me)) waking.seqs.add(Number(r.seq));
+    waking.throughSeq = through;
+    wakingSeqs.set(id, waking);
+    if (!waking.seqs.size) return 0;
+    for (const d of db.prepare("SELECT seq FROM deliveries WHERE participant = ? AND seq > ?").all(id, sinceSeq)) waking.seqs.delete(Number(d.seq));
+    return waking.seqs.size;
   };
   const deliverTo = (p, fromWait) => {
     const me = participantById(p.id);
@@ -3139,6 +3165,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         ).all(cutoff);
         const dropDeliveries = db.prepare("DELETE FROM deliveries WHERE seq = ?");
         const dropMessage = db.prepare("DELETE FROM messages WHERE seq = ?");
+        if (doomed.length) wakingSeqs.clear();
         for (const m of doomed) {
           dropDeliveries.run(Number(m.seq));
           dropMessage.run(Number(m.seq));
@@ -3541,6 +3568,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       return (packOf(p)?.held?.(db, p.id) ?? []).map((d) => d.path);
     },
     roster(repo) {
+      const authorOf = memoizedParticipants();
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL ORDER BY r.id, p.id`).all(repo);
       const t = Date.now();
       const cutoff = t - STALE_MS;
@@ -3549,6 +3577,8 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         if (!statesByRun.has(run2)) statesByRun.set(run2, statesOf(run2, t));
         return statesByRun.get(run2).get(member);
       };
+      const runsRead = /* @__PURE__ */ new Map();
+      const runOf2 = (run2) => runsRead.has(run2) ? runsRead.get(run2) : runsRead.set(run2, db.prepare("SELECT * FROM runs WHERE id = ?").get(run2)).get(run2);
       return rows.map((r) => ({
         name: `${r.plan}/${r.seat}`,
         nick: nickOf(r),
@@ -3564,10 +3594,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot
-        state: memberStateOf(r, db.prepare("SELECT * FROM runs WHERE id = ?").get(Number(r.run)), t),
+        state: memberStateOf(r, runOf2(Number(r.run)), t),
         activity: stateIn(Number(r.run), String(r.seat))?.doing ?? null,
         ...agesOf(livenessOf(Number(r.run), stateIn(Number(r.run), String(r.seat)), t)),
-        unread: unreadOf(Number(r.id)),
+        unread: unreadOf(Number(r.id), authorOf),
         task: openTaskOf(Number(r.run), `${r.plan}/${r.seat}`, Number(r.id)),
         doingAt: Date.parse(String(r.doing_at ?? seatedAtOf(r))),
         doingStale: doingStaleOf(r),
