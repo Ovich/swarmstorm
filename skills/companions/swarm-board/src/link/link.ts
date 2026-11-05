@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
-import { changedSet, driftedSet } from "../packs/code/changes.ts";
+import { branchBase, changedSet, driftedSet } from "../packs/code/changes.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -185,10 +185,10 @@ export async function runLink(opts: {
    *  look runs: a slow look delays the next. */
   const watchChanges = () => {
     if (exiting || !watched || !welcomed) return;
-    const files = changedSet(watched.dir, watched.against);
-    if (!files) return;
-    const drifted = driftedSet(watched.dir, watched.against, files);
-    if (!drifted) return;
+    const base = branchBase(watched.dir, watched.against);
+    const files = base ? changedSet(watched.dir, watched.against, base) : null;
+    const drifted = base && files ? driftedSet(watched.dir, watched.against, files, base) : null;
+    if (!files || !drifted) return;
     const key = JSON.stringify([files, drifted]);
     if (key === sentChanges) return;
     sentChanges = key;
