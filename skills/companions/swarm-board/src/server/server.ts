@@ -27,13 +27,14 @@ const CLOSE_GRACE_MS = 500;
 const CALLABLE: ReadonlySet<string> = new Set(RPC_METHODS);
 
 /** `subscribed`: a reader that sent `subscribe`, told `changed` after each commit (D23). */
-/** `superseded`, `closedBy`: why its socket closes, the link's drop cause (board-split D55). */
+/** `dropCause`: why its socket closes, the link's stored drop cause (board-split D55), set through dropAs; `logCause`: the
+ *  finer cause swarm-server.log gives instead, when there is one (board-fixes#D1). */
 /** `member`: the member whose link this is, its presence written; `bound`: the member its calls are judged for
  *  (trust-adaptations#D5), a link's and a direct connection's alike. */
 /** `lastPong`: when it was last heard from, any frame or pong (board-fixes#D1); `readAt`: when its socket's last bytes
  *  came in, the arrival a call queued behind others is timed from. */
 /** `anonymousScope`: the scope of its calls' ids while it is bound to no member, its own alone. */
-type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; superseded?: boolean; closedBy?: LinkDropCause; endedPending?: boolean; closeCause?: ClosedForLog; readAt: number };
+type Speaker = { socket: WebSocket; member: Hello["member"] | null; bound: Bound; anonymousScope: string; lastPong: number; subscribed: boolean; dropCause?: LinkDropCause; endedPending?: boolean; logCause?: ClosedForLog; readAt: number };
 /** Why a socket closed, as swarm-server.log says it (board-fixes#D1): finer than the stored drop cause. */
 type ClosedForLog = "ping timeout" | "link ended" | "run closed" | `error: ${string}`;
 /** A call running or answered, keyed by its scope and its id (callKey): a resend reaches it only from the same member. */
@@ -71,17 +72,6 @@ export async function startBoardServer(opts: ServerOptions): Promise<{ url: stri
 function logStart(dataRoot: string): void {
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.appendFileSync(serverLogFile(dataRoot), `serve: home ${path.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}\n`);
-}
-
-/** board-fixes#D1: one line per member's socket closed, or any socket closed on an error or a ping timeout: who, why,
- *  how many of its calls were still unanswered. */
-function connLog(dataRoot: string, who: string, cause: string, openCalls: number): void {
-  appendLog(dataRoot, `close: ${who}, cause ${cause}, ${openCalls} call(s) open`);
-}
-
-/** board-fixes#D1: one line per call answered SLOW_CALL_MS or more after it came in. */
-function slowCallLog(dataRoot: string, who: string, method: string, ms: number): void {
-  appendLog(dataRoot, `slow: ${who}, ${method} answered in ${ms} ms`);
 }
 
 function appendLog(dataRoot: string, line: string): void {
@@ -232,13 +222,18 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     rec.answer = text;
     rec.answeredAt = Date.now();
     const took = rec.answeredAt - rec.startedAt;
-    if (took >= SLOW_CALL_MS && rec.method !== "wait") slowCallLog(opts.dataRoot, speakerName(rec.speaker), rec.method, took);
+    // board-fixes#D1: one line per call answered SLOW_CALL_MS or more after it came in
+    if (took >= SLOW_CALL_MS && rec.method !== "wait") appendLog(opts.dataRoot, `slow: ${speakerName(rec.speaker)}, ${rec.method} answered in ${took} ms`);
     rec.cancelWait = null;
     if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
     void id;
   };
 
   const speakerName = (sp: Speaker): string => sp.member?.name ?? sp.anonymousScope;
+  /** board-split D55: a take-over stays the drop's cause; a later cause of a superseded link's close does not replace it. */
+  const dropAs = (s: Speaker, cause: LinkDropCause): void => {
+    if (s.dropCause !== "superseded") s.dropCause = cause;
+  };
 
   const dropWait = (key: string): void => {
     const rec = calls.get(key);
@@ -293,7 +288,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const closed = (run: number): void => {
     for (const s of speakers)
       if (s.member?.run === run) {
-        s.closeCause = "run closed";
+        s.logCause = "run closed";
         refuse(s, "closed");
       }
   };
@@ -313,7 +308,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       return;
     }
     s.endedPending = false;
-    s.closeCause = "link ended";
+    s.logCause = "link ended";
     refuse(s, "closed");
   }
 
@@ -333,7 +328,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     // ahead of ws's own reader: the time the bytes came in, before the calls queued in them are run one by one
     upgrade.socket.prependListener("data", () => (s.readAt = Date.now()));
     let welcomed = false;
-    socket.on("error", (e) => (s.closeCause = `error: ${e.message}`));
+    socket.on("error", (e) => (s.logCause = `error: ${e.message}`));
     socket.on("pong", () => (s.lastPong = Date.now()));
     socket.on("message", (data) => {
       s.lastPong = Date.now();
@@ -369,7 +364,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
           for (const other of speakers)
             if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
               // board-split D55: the old link's drop is the new one's take-over, never a loss
-              other.superseded = true;
+              dropAs(other, "superseded");
               refuse(other, "superseded");
             }
           s.member = f.member;
@@ -385,7 +380,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       if (f.type === "call") run(s, f);
       else if (f.type === "cancel") dropWait(callKey(s, f.id));
       else if (f.type === "bye") {
-        s.closedBy = "member-closed";
+        dropAs(s, "member-closed");
         socket.close();
       } else if (f.type === "beat" && s.member) beat(s.member);
       else if (f.type === "activity" && s.member) {
@@ -400,11 +395,13 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     socket.on("close", () => {
       speakers.delete(s);
       const openCalls = [...calls.values()].filter((c) => c.speaker === s && c.answer === null).length;
-      const cause = s.closeCause ?? (s.superseded ? "superseded" : (s.closedBy ?? "socket"));
-      if (s.member || s.closeCause) connLog(opts.dataRoot, speakerName(s), cause, openCalls);
+      const dropCause = s.dropCause ?? "socket";
+      // board-fixes#D1: one line per member's socket closed, or any socket closed with a cause of its own: who, why, how
+      // many of its calls were still unanswered
+      if (s.member || s.logCause) appendLog(opts.dataRoot, `close: ${speakerName(s)}, cause ${s.logCause ?? dropCause}, ${openCalls} call(s) open`);
       // its link lost, unless another link of the same member took over (superseded)
       const m = s.member;
-      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, s.superseded ? "superseded" : (s.closedBy ?? "socket"));
+      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, dropCause);
       // D16: a wait whose link went is cancelled at once; resent after a reconnect, it runs again
       for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
     });
@@ -441,7 +438,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     lastPingRound = t;
     for (const s of speakers) {
       if (silentTooLong(t, lastRound, s.lastPong)) {
-        s.closeCause = "ping timeout";
+        s.logCause = "ping timeout";
         s.socket.terminate();
       }
       else s.socket.ping();
@@ -456,7 +453,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       stopTellingReaders();
       for (const s of speakers) {
         // board-split D55: a link this server drops on its way down is a restart, never a socket loss
-        s.closedBy = "server-restart";
+        dropAs(s, "server-restart");
         refuse(s, "shutdown");
       }
       for (const id of [...calls.keys()]) dropWait(id);

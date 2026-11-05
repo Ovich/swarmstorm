@@ -890,7 +890,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const participantById = (id: number): Participant => toParticipant(db.prepare(`${PARTICIPANT_SQL} WHERE p.id = ?`).get(id) as Row);
 
   /** `authorOf`: how its author is read; a caller turning many rows passes one memo, each author read once (board-fixes#D1). */
-  const toMessage = (r: Row, authorOf: (id: number) => Participant = participantById): Message => {
+  const toMessage = (r: Row, authorOf: (id: number) => Participant): Message => {
     const author = authorOf(Number(r.author));
     return {
     seq: Number(r.seq),
@@ -944,7 +944,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
-    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row);
+    return toMessage(db.prepare("SELECT * FROM messages WHERE seq = ?").get(seq) as Row, participantById);
   };
   /** board-fixes#D13: the seq of the member's open task, its latest `post --task` until its next `done`; null when none. */
   const openTaskOf = (run: RunId, name: string, id: number): number | null => {
@@ -1436,8 +1436,33 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const open = run.phase === phase;
     return { open, forSeats: open && run.phase_for != null ? (JSON.parse(String(run.phase_for)) as string[]) : null };
   };
-  /** board-split D62: the run's members (the orchestrator apart, or only participant `onlyId`) as owing.ts counts them for `phase`. */
-  const phaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
+  /** The seq of the `phase` event that opened `run`'s current phase (0 before any): the one "since the phase opened". */
+  const phaseOpenedSeqOf = (run: RunId): number => Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(run, EVENTS.phase.name) as Row).seq ?? 0);
+  /** The declared seats of `run` with no member yet that the orchestrator posted to (`@<seat>`) since `phase` opened,
+   *  `phase` being the run's open one: each owes its done before it joins, so all-done waits for it. A declared seat
+   *  with no task in the phase is left out, so an unused seat never holds a phase. */
+  const taskedSeatsNotJoinedOf = (run: RunId, phase: string): PhaseMember[] => {
+    const r = runRow(run);
+    if (r.phase !== phase) return [];
+    const plan = String(r.plan);
+    return (
+      db
+        .prepare(
+          `SELECT s.id AS seat FROM seats s
+           WHERE s.run = ? AND s.id != ?
+             AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)
+             AND EXISTS (
+               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = ?, json_each(m.mentions) j
+               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id AND m.seq > ?)
+           ORDER BY s.ord`,
+        )
+        .all(run, ORCHESTRATOR, ORCHESTRATOR, plan, phaseOpenedSeqOf(run)) as Row[]
+    ).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
+  };
+  /** board-split D62: the run's members (the orchestrator apart) as owing.ts counts them for `phase`, with the seats tasked in it that no member holds yet. */
+  const phaseMembersOf = (run: RunId, phase: string): PhaseMember[] => [...joinedPhaseMembersOf(run, phase), ...taskedSeatsNotJoinedOf(run, phase)];
+  /** The run's members that joined, as owing.ts counts them for `phase` (only participant `onlyId` when given). */
+  const joinedPhaseMembersOf = (run: RunId, phase: string, onlyId?: number): PhaseMember[] =>
     (
       db
         .prepare(
@@ -1460,7 +1485,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const owedNameOf = (p: Row, run: Row): string | null => {
     if (String(p.seat) === ORCHESTRATOR || run.state !== "open" || run.phase == null) return null;
     const phase = String(run.phase);
-    const [me] = phaseMembersOf(Number(run.id), phase, Number(p.id));
+    const [me] = joinedPhaseMembersOf(Number(run.id), phase, Number(p.id));
     return me && owesPhase(me, phaseScopeOf(run, phase)) ? phase : null;
   };
   /** The states of a run's live members (not ended), keyed by member. */
@@ -1498,10 +1523,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const r = runRow(p.run);
     const watch = r.phase_watch == null ? [] : (JSON.parse(String(r.phase_watch)) as string[]);
     if (watch.includes(p.seat)) return "watched";
-    const opened = Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(p.run, EVENTS.phase.name) as Row).seq ?? 0);
     const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR) as Row | undefined;
     if (orch) {
-      const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), opened) as Row[]).find(
+      const asked = (db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), phaseOpenedSeqOf(p.run)) as Row[]).find(
         (m) => (JSON.parse(String(m.mentions)) as string[]).includes(p.name),
       );
       if (asked) {
@@ -1852,8 +1876,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const phase = phaseOf(runRow(fresh.run));
       if (!phase) return null;
       // the phase is "shown" per opening: the phase event's seq, so a phase opened again is shown in full once more
-      const opened = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name) as Row;
-      const key = `${phase.name}#${opened.seq ?? 0}`;
+      const key = `${phase.name}#${phaseOpenedSeqOf(fresh.run)}`;
       const shown = db.prepare("SELECT phase_shown FROM participants WHERE id = ?").get(fresh.id) as Row;
       if (shown.phase_shown === key) return { phase, first: false };
       db.prepare("UPDATE participants SET phase_shown = ? WHERE id = ?").run(key, fresh.id);
@@ -1886,8 +1909,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         // idea 2: what the pause held from the orchestrator (what would have woken it) comes in resume's answer, one
         // line each, and is delivered with it
         const me = participantById(fresh.id);
+        const authorOf = memoizedParticipants();
         const held = unseenRows(me)
-          .map((r) => toMessage(r))
+          .map((r) => toMessage(r, authorOf))
           .filter((m) => m.run === me.run && wakes(m, me));
         const mark = db.prepare("INSERT OR IGNORE INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
         for (const m of held) mark.run(me.id, m.seq, now());
@@ -2378,8 +2402,10 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         return statesByRun.get(run)!.get(member);
       };
       const cutoff = t - STALE_MS;
+      // board-fixes#D1: one read per participant for the whole snapshot, shared by the pack, the roster's unread and the events
+      const authorOf = memoizedParticipants();
       // the pack's fields of the project: the lock and its turns, the files held, the flags (D18)
-      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => participantById(id).name, relPath }, repo, people, ORCHESTRATOR);
+      const packPart = registry.snapshot({ db, isLive, nameOf: (id) => authorOf(id).name, relPath }, repo, people, ORCHESTRATOR);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
       const runById = (id: number): Row | undefined => runsById.get(id);
@@ -2394,6 +2420,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const state: SnapshotMemberState = core;
         // what its pack says of it (merging), beside its state, on a live member only
         const fact = core === "working" || core === "stopped" ? packPart.factOf(id) : null;
+        const liveness = ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t);
         return {
           run: Number(r.run),
           member: `${r.plan}/${seat}`,
@@ -2412,9 +2439,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           calls: Number(r.calls ?? 0),
           listening: !ended && Number(r.listening) === 1,
           lastCall: String(r.last_call ?? r.joined_at),
-          liveness: ended ? undefined : livenessOf(Number(r.run), stateIn(Number(r.run), seat), t),
-          badge: ended ? null : (livenessOf(Number(r.run), stateIn(Number(r.run), seat), t)?.badge ?? null),
-          unread: ended ? 0 : unreadOf(id),
+          liveness,
+          badge: liveness?.badge ?? null,
+          unread: ended ? 0 : unreadOf(id, authorOf),
           // U-F13: an ended seat runs nothing the card should show; its last calls are stale
           ...(ended ? {} : activityShown(Number(r.run), seat)),
         };
@@ -2423,7 +2450,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const events = (
         db.prepare("SELECT * FROM (SELECT * FROM messages WHERE repo = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(repo, EVENTS_SHOWN) as Row[]
       ).map((r) => {
-        const m = toMessage(r);
+        const m = toMessage(r, authorOf);
         const alarm = Number(r.by_board) === 1 && m.kind === "event" && !!m.event && BOARD_ALARMS.has(m.event);
         const subject = alarm ? alarmSubjectOf(m) : null;
         return {

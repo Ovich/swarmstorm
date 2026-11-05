@@ -97,7 +97,7 @@ function repoOf(dir: string): string {
 function changedIn(worktree: string): string[] {
   // G20: a worktree named at join and never made holds nothing
   if (!fs.existsSync(worktree)) return [];
-  const r = hiddenSpawnSync("git", ["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
+  const r = hiddenSpawnSync("git", ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
   const out: string[] = [];
@@ -451,9 +451,8 @@ function parseFile(spec: string): Declared {
   return { ...d, path: repoRelative(declaredPath(d.path)) };
 }
 
-/** A declared file: from the shell's folder when it is there, else from the repository root (created or not). */
-const declaredPath = (file: string): string => {
-  const root = worktreeOf(process.cwd());
+/** A declared or merged file: from the shell's folder when it is there, else from `root` (created, or deleted, or not). */
+const declaredPath = (file: string, root = worktreeOf(process.cwd())): string => {
   const { abs, missing } = resolveIn(root, file);
   // not there yet: one the seat creates, from the repository root
   return missing.length && root ? path.resolve(root, file) : abs;
@@ -1100,7 +1099,7 @@ async function main(): Promise<void> {
       if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
       const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
-      const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => path.resolve(f)), conflicts })) as Sharer[];
+      const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => declaredPath(f, pathsRoot())), conflicts })) as Sharer[];
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
       // a silent merge still records how it settled its guides, in the run, waking no one (V3)
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
