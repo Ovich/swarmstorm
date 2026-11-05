@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const option = (name, fallback) => {
@@ -69,61 +69,13 @@ const replayed = busiest(logged);
 const startAt = replayed[0].at;
 
 // ── the server, on the copy ──
+// the wire client the load bench drives, from the served checkout: one copy (tests/fixtures/wire-client.ts)
+const { serveBoard, connectMember } = await import(pathToFileURL(path.join(serverDir, "tests/fixtures/wire-client.ts")).href);
 const boardCli = path.join(serverDir, "src/cli/index.ts");
 const serverEnv = { ...process.env, SWARMSTORM_HOME: scratchHome };
-const server = spawn(process.execPath, [boardCli, "serve"], { env: serverEnv, stdio: ["ignore", "pipe", "inherit"], windowsHide: true });
-const url = await new Promise((resolve, reject) => {
-  server.stdout.on("data", (chunk) => {
-    const found = String(chunk).match(/ws:\/\/\S+/);
-    if (found) resolve(found[0]);
-  });
-  server.on("exit", (code) => reject(new Error(`server exited ${code}`)));
-});
-const serverState = JSON.parse(fs.readFileSync(path.join(scratchHome, "swarm-server.json"), "utf8"));
-
-/** One WebSocket to the server, welcomed; `call` answers with { ok, value | error, ms } or { dropped }. */
-async function connectAs(member) {
-  const socket = new WebSocket(url);
-  const pending = new Map();
-  let nextId = 0;
-  let welcomed;
-  const welcome = new Promise((r) => (welcomed = r));
-  socket.addEventListener("message", (e) => {
-    const frame = JSON.parse(String(e.data));
-    if (frame.type === "welcome" || frame.type === "refused") return welcomed(frame);
-    if (frame.type !== "result") return;
-    const settle = pending.get(frame.id);
-    pending.delete(frame.id);
-    settle?.(frame.ok ? { ok: true, value: frame.value } : { ok: false, error: frame.error });
-  });
-  socket.addEventListener("close", () => {
-    for (const settle of pending.values()) settle({ dropped: "socket closed" });
-    pending.clear();
-  });
-  await new Promise((r, j) => {
-    socket.addEventListener("open", () => r());
-    socket.addEventListener("error", () => j(new Error("no connection")));
-  });
-  socket.send(JSON.stringify({ type: "hello", version: serverState.version, secret: serverState.secret, ...(member ? { member, supersede: true } : {}) }));
-  const greeting = await welcome;
-  if (greeting.type !== "welcome") throw new Error(`refused: ${greeting.reason}`);
-  const call = (method, ...args) => {
-    const id = `r${++nextId}`;
-    const started = Date.now();
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        resolve({ dropped: "no answer", ms: GIVE_UP_MS });
-      }, GIVE_UP_MS);
-      pending.set(id, (outcome) => {
-        clearTimeout(timer);
-        resolve({ ...outcome, ms: Date.now() - started });
-      });
-      socket.send(JSON.stringify({ type: "call", id, method, args }));
-    });
-  };
-  return { call, close: () => socket.close() };
-}
+const served = await serveBoard(scratchHome, boardCli);
+const server = served.child;
+const connectAs = (member) => connectMember(served, member, GIVE_UP_MS);
 
 // ── the run seated again: the same project, the same seats ──
 const opener = await connectAs(null);
