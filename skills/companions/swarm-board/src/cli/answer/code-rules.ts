@@ -38,6 +38,11 @@ export function codeEventStep(m: Message, me: Participant, cli: string, event: E
     if (!m.meta || !("unlocked" in m.meta) || m.meta.unlocked !== MERGE_LOCK) return undefined;
     return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CW.mergeLockFree(cli, shellWord(me.name)) : null;
   }
+  if (event === "drift") {
+    // claims-phase: the drifted member rebases onto the merge its branch lacks; nobody else is asked anything
+    const sha = m.meta && "sha" in m.meta && typeof m.meta.sha === "string" ? m.meta.sha : null;
+    return sha && m.mentions.includes(me.name) ? CW.driftRebase(sha) : null;
+  }
   if (event !== "flag") return undefined;
   // spec §7: an overlap mentions the two members whose worktrees changed the path: each settles it with the other
   const [holder, writer] = m.mentions;

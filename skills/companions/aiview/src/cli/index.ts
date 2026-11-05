@@ -6,7 +6,6 @@ import { hiddenSpawn, hiddenSpawnSync } from "../proc.ts";
 import { openBrowser } from "../core/browser.ts";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   openIndex,
   SQLITE_PATH,
@@ -27,7 +26,6 @@ import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStat
 import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import { parseArgs } from "./args.ts";
-import { disciplineWarnings } from "../mermaid/discipline.ts";
 import { check as trackerCheck, findTracker, sync as trackerSync } from "../core/tracker.ts";
 import { check as planCheck, readApproval } from "../core/plan.ts";
 
@@ -58,7 +56,6 @@ const USAGE = [
   "  check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any",
   "  show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link",
   "  show --done                              # the question is answered: every tab goes back to what the person was reading",
-  "  mermaid-check <file|#id>                 # parse every mermaid block; warn on a missing caption or an unlabeled fork; exit 1 if one fails",
   "  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
   "  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice",
   "  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0",
@@ -446,47 +443,6 @@ function cmdCheck(): void {
     if (!r.errors.length && !r.warnings.length) console.log("ok");
   });
   if (r.errors.length) process.exit(1);
-}
-
-/** Parse every mermaid block of a document, the way the viewer will. The checker is a
- *  separate bundle next to the CLI bundle, loaded only here. */
-async function cmdMermaidCheck(): Promise<void> {
-  const ref = args.positional[0];
-  if (!ref) {
-    console.error("usage: aiview mermaid-check <file|#id>");
-    process.exit(1);
-  }
-  const abs = resolveRef(ref)?.abs_path ?? path.resolve(ref);
-  if (!fs.existsSync(abs)) {
-    console.error(`no such file: ${abs}`);
-    process.exit(1);
-  }
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const bundle = [path.join(here, "mermaid-check.mjs"), path.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs.existsSync(f));
-  if (!bundle) {
-    console.error(`aiview: the mermaid checker is not built. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
-    process.exit(1);
-  }
-  const { blocksOf, checkBlocks } = (await import(pathToFileURL(bundle).href)) as typeof import("../mermaid/check.ts");
-  const content = fs.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
-  const markdown = /\.(md|markdown)$/i.test(abs);
-  const lines = content.split("\n");
-  const blocks = blocksOf(content, markdown);
-  const results = (await checkBlocks(blocks)).map((r, i) => ({
-    ...r,
-    warnings: r.ok ? disciplineWarnings(lines, r.line, blocks[i].text, markdown) : [],
-  }));
-  const failed = results.filter((r) => !r.ok).length;
-  const warned = results.reduce((n, r) => n + r.warnings.length, 0);
-  emit({ file: path.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
-    if (!results.length) return console.log("no mermaid block in this document");
-    for (const r of results) {
-      console.log(r.ok ? `ok     line ${r.line}  ${r.type}` : `FAIL   line ${r.line}  ${r.error}`);
-      for (const w of r.warnings) console.log(`warn   line ${r.line}  ${w}`);
-    }
-    console.log(`${results.length} block${results.length === 1 ? "" : "s"}, ${failed} failed, ${warned} warning${warned === 1 ? "" : "s"}`);
-  });
-  if (failed) process.exit(1);
 }
 
 /** First clone / new machine: make the data home exist and say what lives where. */
@@ -988,9 +944,6 @@ switch (args.verb) {
     break;
   case "check":
     cmdCheck();
-    break;
-  case "mermaid-check":
-    await cmdMermaidCheck();
     break;
   case "tracker":
     cmdTracker();

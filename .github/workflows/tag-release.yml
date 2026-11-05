@@ -135,5 +135,4 @@ jobs:
           subject-path: |
             skills/companions/swarm-board/dist-cli/cli.mjs
             skills/companions/aiview/dist-cli/cli.mjs
-            skills/companions/aiview/dist-cli/mermaid-check.mjs
             skills/companions/aiview/dist/**

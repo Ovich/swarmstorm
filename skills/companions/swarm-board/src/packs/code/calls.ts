@@ -2,7 +2,7 @@
 // and a test's way to claims and the merge lock, on the board itself or on its remote client alike. A refusal fact
 // (D12) is thrown, its fact on the error, so a caller that did not gate the verb up front still stops.
 import type { Conflicts, Participant, RunId, Sharer } from "../../board/board.ts";
-import type { Flag, MemberWorktree } from "./types.ts";
+import type { DriftedFile, Flag, MemberWorktree } from "./types.ts";
 import type { PackRefusal, PackVerbInput } from "../types.ts";
 import type { HeldMergeLock } from "./claims.ts";
 
@@ -30,8 +30,8 @@ export function codeVerbs<B extends PackCaller>(board: B) {
     return (fact instanceof Promise ? fact.then(unlessRefused) : unlessRefused(fact)) as Answer<B, T>;
   };
   return {
-    /** spec §7: `p`'s holdings set to its worktree's changed set, as its link sends it; the overlaps posted. */
-    changes: (p: Participant, files: string[]) => call<Flag[]>(p, "changes", { files }),
+    /** spec §7: `p`'s holdings set to its worktree's changed set, as its link sends it, with the paths of it its target changed since (claims-phase); the overlaps posted. */
+    changes: (p: Participant, files: string[], drifted: DriftedFile[] = []) => call<Flag[]>(p, "changes", { files, drifted }),
     lockMerge: (p: Participant, onto?: string, reflogMark?: number, guides?: string[]) =>
       call<{ granted: true } | { granted: false; holder: string }>(p, "lock-merge", { onto, reflogMark, guides }),
     merged: (p: Participant, sha: string, files: string[], conflicts?: Conflicts) => call<Sharer[]>(p, "merged", { sha, files, conflicts }),

@@ -14,7 +14,7 @@ import { connectBoard, connectDirectBoard } from "../src/client/remote.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { linkPipe } from "../src/link/link.ts";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
-import { stopServerOf } from "./fixtures/server.ts";
+import { endProcess, stopServerOf } from "./fixtures/server.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 // the in-process client spawns and versions as the CLI does: from the CLI's entry (D28)
@@ -27,7 +27,7 @@ let links: ChildProcess[] = [];
 afterEach(async () => {
   mock.restoreAll();
   syncBuiltinESMExports();
-  for (const l of links) if (l.exitCode === null) l.kill();
+  for (const l of links) if (l.exitCode === null) endProcess(l.pid);
   links = [];
   for (const r of repos) {
     stopServerOf(r.home);

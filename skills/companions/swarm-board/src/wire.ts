@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { Board } from "./board/board.ts";
+import type { DriftedFile } from "./packs/code/types.ts";
 /** The code pack's answers as they cross the wire to the CLI, which never imports src/packs/ (D9). */
 export type { HeldMergeLock } from "./packs/code/claims.ts";
 export type { Flag } from "./packs/code/types.ts";
@@ -100,8 +101,8 @@ export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
-/** spec §7: the paths its member's worktree changed since it left its target, sent when the set differs */
-export type Changes = { type: "changes"; files: string[] };
+/** spec §7: what its member's worktree changed since it left its target, sent on a change; `drifted` absent from an older link */
+export type Changes = { type: "changes"; files: string[]; drifted?: DriftedFile[] };
 /** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
 export type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
@@ -115,10 +116,12 @@ export type Result = { type: "result"; id: string; ok: true; value: unknown } | 
 export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" | "member" };
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
+/** claims-phase (v1-2): a phase opened and dropped the run's claims: the link sends its changes again, unchanged or not */
+export type Reclaim = { type: "reclaim" };
 
-export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
+export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed | Reclaim;
 
-const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
 
 /** One JSON text. */
 export function encode(f: Frame): string {

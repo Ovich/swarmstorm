@@ -413,7 +413,7 @@ test("a stopped card keeps its doing line on its face", () => {
 
 // ── ClaimsRow ────────────────────────────────────────────────────────────────────
 
-const SHARED: BoardSnapshot = { ...LIVE, files: [...LIVE.files, { path: "src/shared.ts", holders: ["refresh-tokens/S3", "audit-log/S1"], interface: true }] };
+const SHARED: BoardSnapshot = { ...LIVE, files: [...LIVE.files, { path: "src/shared.ts", holders: ["refresh-tokens/S3", "audit-log/S1"], past: [] }] };
 
 test("the claims row is collapsed, counting files and those shared", () => {
   show([APP], 1, [SHARED]);
@@ -433,6 +433,66 @@ test("opened, a plain list: one file per line with its holders, a shared one mar
   expect(row.getAttribute("style")).toBeNull();
   expect(row.querySelector("[style*='danger'], [style*='amber']")).toBeNull();
   expect(localStorage.getItem(CLAIMS_EXPANDED_KEY)).toBe("1");
+});
+
+const WITH_PAST: BoardSnapshot = {
+  ...LIVE,
+  files: [
+    ...LIVE.files,
+    {
+      path: "src/settled.ts",
+      holders: ["refresh-tokens/S3", "audit-log/S1"],
+      past: [
+        { member: "refresh-tokens/S1", state: "merged", sha: "9f3c2a17d0e4b5" },
+        { member: "audit-log/S2", state: "ended", sha: null },
+      ],
+    },
+  ],
+};
+
+test("a past holder is listed after the active ones, merged with its sha7 or ended; shared stays the active count", () => {
+  show([APP], 1, [WITH_PAST]);
+  const toggle = screen.getByRole("button", { name: /Claims/ });
+  expect(toggle.textContent).toContain("7 files · 1 shared");
+  fireEvent.click(toggle);
+  const row = screen.getByText("src/settled.ts").closest("li")!;
+  expect(row.querySelectorAll('[data-component="MemberTag"]').length).toBe(4);
+  const past = [...row.querySelectorAll(".past")];
+  expect(past.map((p) => p.getAttribute("data-state"))).toEqual(["merged", "ended"]);
+  expect(past[0].querySelector(".past-state")!.textContent).toBe("merged 9f3c2a1");
+  expect(past[1].querySelector(".past-state")!.textContent).toBe("ended");
+  // read as already done: a done mark beside each, never an inline style
+  expect(past.map((p) => p.querySelector(".past-mark")!.textContent)).toEqual(["✓", "■"]);
+  expect(past.every((p) => p.getAttribute("style") === null)).toBe(true);
+  expect(within(row).getByText("shared")).toBeTruthy();
+});
+
+test("a file of one active holder and a merged one is not shared", () => {
+  const snap: BoardSnapshot = {
+    ...LIVE,
+    files: [...LIVE.files, { path: "src/once.ts", holders: ["refresh-tokens/S3"], past: [{ member: "refresh-tokens/S1", state: "merged", sha: "1234567890" }] }],
+  };
+  show([APP], 1, [snap]);
+  const toggle = screen.getByRole("button", { name: /Claims/ });
+  expect(toggle.textContent).not.toContain("shared");
+  fireEvent.click(toggle);
+  const row = screen.getByText("src/once.ts").closest("li")!;
+  expect(within(row).queryByText("shared")).toBeNull();
+  expect(within(row).getByText("merged 1234567")).toBeTruthy();
+});
+
+test("a holder that merged and changed the file again stands active, and its past entry says active again", () => {
+  const snap: BoardSnapshot = {
+    ...LIVE,
+    files: [...LIVE.files, { path: "src/again.ts", holders: ["refresh-tokens/S3"], past: [{ member: "refresh-tokens/S3", state: "merged", sha: "abcdef0123" }] }],
+  };
+  show([APP], 1, [snap]);
+  fireEvent.click(screen.getByRole("button", { name: /Claims/ }));
+  const row = screen.getByText("src/again.ts").closest("li")!;
+  expect(within(row).queryByText("shared")).toBeNull();
+  const past = row.querySelector(".past")!;
+  expect(past.querySelector(".past-state")!.textContent).toBe("merged abcdef0");
+  expect(past.querySelector(".past-again")!.textContent).toBe("· active again");
 });
 
 test("the claims row falls back to collapsed when storage throws, and still opens", () => {

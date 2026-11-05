@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
-import { changedSet } from "../packs/code/changes.ts";
+import { branchBase, changedSet, driftedSet } from "../packs/code/changes.ts";
 import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
@@ -180,17 +180,21 @@ export async function runLink(opts: {
   /** spec §7: the member's folder and the branch it is read against, from the welcome; the set last sent, as one key */
   let watched: { dir: string; against: string } | null = null;
   let sentChanges: string | null = null;
-  /** one look at the worktree: its changed set, sent when it differs from the last sent; a git error sends nothing.
-   *  git runs synchronously, so a tick never starts while the previous look runs: a slow look delays the next. */
+  /** one look at the worktree: its changed set and the drifted paths of it (claims-phase), sent when either differs
+   *  from the last sent; a git error sends nothing. git runs synchronously, so a tick never starts while the previous
+   *  look runs: a slow look delays the next. */
   const watchChanges = () => {
     if (exiting || !watched || !welcomed) return;
-    const files = changedSet(watched.dir, watched.against);
-    if (!files) return;
-    const key = files.join("\0");
+    const base = branchBase(watched.dir, watched.against);
+    const files = base ? changedSet(watched.dir, watched.against, base) : null;
+    const drifted = base && files ? driftedSet(watched.dir, watched.against, files, base) : null;
+    if (!files || !drifted) return;
+    const key = JSON.stringify([files, drifted]);
     if (key === sentChanges) return;
     sentChanges = key;
-    sendUp({ type: "changes", files });
+    sendUp({ type: "changes", files, drifted });
   };
+  const resendChanges = () => ((sentChanges = null), watchChanges());
 
   let transcript: string | null = null;
   let cursor: TranscriptCursor | null = null;
@@ -243,10 +247,12 @@ export async function runLink(opts: {
       welcomed = true;
       // spec §7: the worktree whose changes this link sends; a new connection sends the set afresh
       watched = f.watched ?? null;
-      sentChanges = null;
-      watchChanges();
+      resendChanges();
       for (const { call } of unanswered.values()) sendUp(call); // D4: resent, answered from the cache
       flushActivity();
+    } else if (f.type === "reclaim") {
+      // claims-phase (v1-2): the phase open dropped the claims; the set goes up again, even unchanged, at once
+      resendChanges();
     } else if (f.type === "refused") {
       // U-F14: refused for its version, the link re-reads the state file and tries once more: a server replaced between
       // its read and its hello is met again; a second refusal, or a state of another version, ends it

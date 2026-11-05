@@ -9305,7 +9305,7 @@ var init_wire = __esm({
       "snapshot",
       "composition"
     ];
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
@@ -10330,7 +10330,6 @@ init_projects();
 import { spawnSync as spawnSync3 } from "node:child_process";
 import fs13 from "node:fs";
 import path15 from "node:path";
-import { fileURLToPath as fileURLToPath2, pathToFileURL } from "node:url";
 
 // src/core/boardhash.ts
 function boardHash(project, run) {
@@ -10371,55 +10370,6 @@ function parseArgs(argv) {
     flags: (name) => rest.flatMap((a, i) => a === name && rest[i + 1] ? [rest[i + 1]] : []),
     has: (name) => rest.includes(name)
   };
-}
-
-// src/mermaid/discipline.ts
-function captionWarning(lines, fenceLine) {
-  for (let i = fenceLine - 2; i >= 0; i--) {
-    const l = lines[i].trim();
-    if (!l) continue;
-    if (/^#{1,6}\s/.test(l) || /^```/.test(l) || /^\|/.test(l) || /^---+$/.test(l)) break;
-    return void 0;
-  }
-  return "no caption above the fence: one line naming the diagram's type and the question it answers";
-}
-var SKIP = /^\s*(subgraph\b|end\b|classDef\b|class\b|style\b|linkStyle\b|click\b|direction\b|flowchart\b|graph\b|%%)/;
-var SHAPES = /\[\[.*?\]\]|\[\(.*?\)\]|\(\(.*?\)\)|\{\{.*?\}\}|\[.*?\]|\(.*?\)|\{.*?\}|(?<=\w)>[^\]]*\]/g;
-var EDGE = /(-{2,}\s*[^-|>\s][^>]*?-{2,}>|-\.+\s*[^.|>\s][^>]*?\.+->|={2,}\s*[^=|>\s][^>]*?={2,}>|(?:<?-{2,}>|<?-\.+->|<?={2,}>|-{3,}|-\.+-|={3,}|--[ox]|[ox]--)(?:\s*\|[^|]*\|)?)/g;
-function forkWarning(text) {
-  const head = text.trim().split("\n")[0] ?? "";
-  if (!/^\s*(flowchart|graph)\b/.test(head)) return void 0;
-  const out = /* @__PURE__ */ new Map();
-  for (const raw of text.split("\n")) {
-    if (SKIP.test(raw) || !raw.trim()) continue;
-    const line = raw.replace(SHAPES, "").replace(/:::\w+/g, "");
-    const parts = line.split(EDGE);
-    if (parts.length < 3) continue;
-    for (let i = 1; i < parts.length; i += 2) {
-      const edge = parts[i];
-      const labeled = /\|[^|]*\|/.test(edge) || /^(-{2,}|-\.+|={2,})\s*[^-.=|>\s]/.test(edge);
-      const sources = parts[i - 1].split("&").map((s) => s.trim()).filter((s) => /^[\w.-]+$/.test(s));
-      for (const s of sources) {
-        const c = out.get(s) ?? { total: 0, unlabeled: 0 };
-        c.total++;
-        if (!labeled) c.unlabeled++;
-        out.set(s, c);
-      }
-    }
-  }
-  const bad = [...out].filter(([, c]) => c.total >= 2 && c.unlabeled > 0);
-  if (!bad.length) return void 0;
-  return bad.map(([n, c]) => c.unlabeled === c.total ? `${n} branches (${c.total} arrows) and none carries a label` : `${n} branches (${c.total} arrows) and ${c.unlabeled} of them ${c.unlabeled === 1 ? "carries" : "carry"} no label`).join("; ");
-}
-function disciplineWarnings(lines, fenceLine, text, markdown) {
-  const w = [];
-  if (markdown) {
-    const c = captionWarning(lines, fenceLine);
-    if (c) w.push(c);
-  }
-  const f = forkWarning(text);
-  if (f) w.push(f);
-  return w;
 }
 
 // src/core/tracker.ts
@@ -10758,7 +10708,6 @@ var USAGE = [
   "  check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any",
   "  show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link",
   "  show --done                              # the question is answered: every tab goes back to what the person was reading",
-  "  mermaid-check <file|#id>                 # parse every mermaid block; warn on a missing caption or an unlabeled fork; exit 1 if one fails",
   "  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
   "  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice",
   "  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0",
@@ -11065,44 +11014,6 @@ function cmdCheck() {
     if (!r.errors.length && !r.warnings.length) console.log("ok");
   });
   if (r.errors.length) process.exit(1);
-}
-async function cmdMermaidCheck() {
-  const ref = args.positional[0];
-  if (!ref) {
-    console.error("usage: aiview mermaid-check <file|#id>");
-    process.exit(1);
-  }
-  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
-  if (!fs13.existsSync(abs)) {
-    console.error(`no such file: ${abs}`);
-    process.exit(1);
-  }
-  const here = path15.dirname(fileURLToPath2(import.meta.url));
-  const bundle = [path15.join(here, "mermaid-check.mjs"), path15.join(here, "..", "..", "dist-cli", "mermaid-check.mjs")].find((f) => fs13.existsSync(f));
-  if (!bundle) {
-    console.error(`aiview: the mermaid checker is not built. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
-    process.exit(1);
-  }
-  const { blocksOf, checkBlocks } = await import(pathToFileURL(bundle).href);
-  const content = fs13.readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
-  const markdown = /\.(md|markdown)$/i.test(abs);
-  const lines = content.split("\n");
-  const blocks = blocksOf(content, markdown);
-  const results = (await checkBlocks(blocks)).map((r, i) => ({
-    ...r,
-    warnings: r.ok ? disciplineWarnings(lines, r.line, blocks[i].text, markdown) : []
-  }));
-  const failed = results.filter((r) => !r.ok).length;
-  const warned = results.reduce((n, r) => n + r.warnings.length, 0);
-  emit({ file: path15.basename(abs), blocks: results.length, failed, warnings: warned, results }, () => {
-    if (!results.length) return console.log("no mermaid block in this document");
-    for (const r of results) {
-      console.log(r.ok ? `ok     line ${r.line}  ${r.type}` : `FAIL   line ${r.line}  ${r.error}`);
-      for (const w of r.warnings) console.log(`warn   line ${r.line}  ${w}`);
-    }
-    console.log(`${results.length} block${results.length === 1 ? "" : "s"}, ${failed} failed, ${warned} warning${warned === 1 ? "" : "s"}`);
-  });
-  if (failed) process.exit(1);
 }
 function cmdInit() {
   ensureHome();
@@ -11549,9 +11460,6 @@ async function runVerb() {
       break;
     case "check":
       cmdCheck();
-      break;
-    case "mermaid-check":
-      await cmdMermaidCheck();
       break;
     case "tracker":
       cmdTracker();

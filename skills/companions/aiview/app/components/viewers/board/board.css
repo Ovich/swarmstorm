@@ -268,6 +268,13 @@
 .board .claims-list .path { font-family: var(--font-mono, monospace); flex: none; width: 360px; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board .claims-list .holders { display: inline-flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
 .board .claims-list .shared { color: var(--faint-foreground); }
+/* a past holder (merged or ended this phase) reads as already done: a grey pill, its member tag drained of its hue,
+   every text in --muted-foreground (5.2:1 light on --surface-2, 6.1:1 dark; the faint grey was 3.1:1), never an opacity that thins the contrast */
+.board .claims-list .past { display: inline-flex; gap: 4px; align-items: center; padding: 0 6px 0 5px; border-radius: 999px; background: var(--surface-2); color: var(--muted-foreground); }
+.board .claims-list .past .who { --s: 0; }
+.board .claims-list .past .nick { color: var(--muted-foreground); }
+.board .claims-list .past-mark { font-size: 10px; }
+.board .claims-list .past-state { font-family: var(--font-mono, monospace); font-size: 11px; }
 /* a run's code in the tab row and the archive: coloured text, no box (the generic .code draws one) */
 .board .run .code, .board .archive .arow .code { border: 0; border-radius: 0; padding: 0; background: none; }
 

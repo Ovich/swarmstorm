@@ -54,7 +54,7 @@ The **roadmap** is the one document above the pieces of work: what is delivered 
 
 ## The diagram
 
-**The roadmap opens on its tracker, drawn to the tracker protocol of the `write-plan` skill** (its `references/tracker.md`, the Slots section): one subgraph per iteration, one node per slot with the glyph of its derived state, dependency edges, the state node with the iteration, the slot in progress, next, blocked and the open rows. The coarse iterations share one subgraph, "later", their order carried by the edges alone. Parse it after every edit with `aiview mermaid-check`.
+**The roadmap opens on its tracker, drawn to the tracker protocol of the `write-plan` skill** (its `references/tracker.md`, the Slots section): one subgraph per iteration, one node per slot with the glyph of its derived state, dependency edges, the state node with the iteration, the slot in progress, next, blocked and the open rows. The coarse iterations share one subgraph, "later", their order carried by the edges alone. Look at it in aiview after every edit: a block that fails to parse shows `mermaid failed`.
 
 ## Red flags
 

@@ -278,11 +278,12 @@ export const TIPS = {
   quiet: "Quiet: this member has not called the board for a while. Its session may be waiting on you, or gone; its claims stay held.",
   agreement: "Agreed: two members settled something between them, and it binds both. An endorsement is another member backing it.",
   merged: "Merged: this member's branch went into the plan's branch. Members holding the files it changed rebase onto it.",
+  drift: "Drift: a file this member changed was merged by another member this phase, and its branch lacks that merge. It rebases onto it before going on.",
   lock: "Waiting for the merge lock: one member merges at a time, across every run.",
   opened: "Opened: an orchestrator started a run on the board.",
   closed: "Closed: the run is over; its conversation is in the archive (☰).",
   joined: "Joined: a member arrived on the board and took its seat.",
-  ended: "Ended: the member left the board and its claims were released.",
+  ended: "Ended: the member left the board; the files it claimed stay listed as ended until the next phase.",
   stalled: "Stopped: no member's tokens have moved for the run's window. The orchestrator is told: it posts the next task, opens the next phase or resumes the members. The row keeps only the latest and leaves once anything happens.",
   gone: "Lost: this member's link is down while it still owes work (a member owing nothing whose link is down is away, resumable); the orchestrator dispatches a fresh agent into its seat or ends it.",
 } as const;
@@ -410,6 +411,10 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
+  }
+  // claims-phase: a drift is the board's call to rebase, named by its stored event; its body opens on the member told
+  if (e.kind === "event" && e.event === "drift") {
+    return { ...base, kind: "event", text: e.body, word: "drift", tone: "act", rest: eventWord(e.body).rest, tip: TIPS.drift };
   }
   if (e.kind === "event") {
     const word = eventLine(e.body).word;
@@ -550,9 +555,14 @@ export function agents(snap: BoardSnapshot, run: RunId): SnapshotMember[] {
   return r ? orderRoster(membersOf(snap, r)) : [];
 }
 
-/** The held files with their holders: those held by one run's members, or every one (null); null for a run that holds
- *  no files, so no claims row shows under it. */
-export function claimRows(snap: BoardSnapshot, run: RunId | null): { path: string; holders: string[]; shared: boolean }[] | null {
+/** A claim this phase whose holder merged the file (with the merge's sha) or ended. */
+export type PastClaim = BoardSnapshot["files"][number]["past"][number];
+/** A file claimed this phase: its active holders, then its past ones; `shared` counts the active alone. */
+export type ClaimRow = { path: string; holders: string[]; past: PastClaim[]; shared: boolean };
+
+/** The files claimed this phase with their holders, active and past: those of one run's members, or every one (null);
+ *  null for a run that holds no files, so no claims row shows under it. */
+export function claimRows(snap: BoardSnapshot, run: RunId | null): ClaimRow[] | null {
   const r = run == null ? null : snap.runs.find((x) => x.run === run);
   if (run != null && !r) return [];
   // V-19 (D66): a brainswarm's seats hold no files: no claims row under it
@@ -560,7 +570,9 @@ export function claimRows(snap: BoardSnapshot, run: RunId | null): { path: strin
   // by the run's members, as the strip: another run of the same group holds nothing here
   const members = r ? new Set(membersOf(snap, r).map((m) => m.member)) : null;
   const inRun = (holder: string): boolean => !members || members.has(holder);
-  return snap.files.filter((f) => f.holders.some(inRun)).map((f) => ({ path: f.path, holders: f.holders, shared: f.holders.length > 1 }));
+  return snap.files
+    .map((f) => ({ path: f.path, holders: f.holders, past: f.past ?? [], shared: f.holders.length > 1 }))
+    .filter((f) => f.holders.some(inRun) || f.past.some((p) => inRun(p.member)));
 }
 
 export type MergedFileRow = { path: string; mergers: string[] };

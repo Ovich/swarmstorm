@@ -147,7 +147,7 @@ gh attestation verify skills/companions/aiview/dist-cli/cli.mjs --repo Ovich/swa
 ```
 
 The attested files are `skills/companions/swarm-board/dist-cli/cli.mjs`,
-`skills/companions/aiview/dist-cli/cli.mjs`, `skills/companions/aiview/dist-cli/mermaid-check.mjs`
+`skills/companions/aiview/dist-cli/cli.mjs`
 and everything under `skills/companions/aiview/dist/`.
 
 ## Nothing outside this repository

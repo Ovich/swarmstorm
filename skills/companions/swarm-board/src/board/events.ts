@@ -86,6 +86,8 @@ export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost
 export const currentEventName = (s: string): string => RENAMED_EVENTS[s] ?? s;
 /** The definition of a known event. */
 export const eventDef = (name: EventName): EventDef => allEvents()[name];
+/** The events, core and pack, a member receives though it is their author (`toAuthor`), by name (v1-1). */
+export const toAuthorEventNames = (): string[] => Object.values(allEvents()).filter((d) => d.toAuthor).map((d) => d.name);
 
 /** The message's event: its stored name, else what its kind is (agreement, endorsement, urgent); null for a plain post. */
 export function eventOf(m: Message): EventName | null {

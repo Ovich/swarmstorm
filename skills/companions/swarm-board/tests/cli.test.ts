@@ -93,7 +93,7 @@ test("no verb prints usage and exits 1", () => {
 test("open then join prints the roster", () => {
   const id = openRun();
   assert.ok(id > 0);
-  const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts:interface", "--file", "src/a.ts");
+  const r = run("join", "--run", String(id), "--seat", "S3", "--doing", "the page", "--file", "src/page.ts", "--file", "src/a.ts");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /you are review-tool\/S3/);
   // spec §7: declared files are no claims; the member holds what its worktree changes, read by its link

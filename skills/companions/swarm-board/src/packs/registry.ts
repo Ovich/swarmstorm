@@ -5,6 +5,7 @@ import { profileOf } from "../board/kinds.ts";
 import { codePack } from "./code/index.ts";
 import type { EventDef } from "../board/events.ts";
 import type { CodeEventName } from "./code/events.ts";
+import type { DriftMeta, MergedMeta } from "./code/types.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
@@ -56,7 +57,7 @@ export const registry = {
     return reader.snapshot(deps, repo, people, orchestratorSeat);
   },
   /** What the member holds now, every pack's (F27). */
-  heldOf(db: PackTablesDeps["db"], member: number): { path: string; interface: boolean }[] {
+  heldOf(db: PackTablesDeps["db"], member: number): { path: string }[] {
     return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
   },
   /** The paths the member ever claimed, every pack's (S28). */
@@ -83,4 +84,4 @@ export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile }
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
 export type { HeldMergeLock } from "./code/claims.ts";
 /** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */
-export type { MergedMeta as PackMessageMeta } from "./code/types.ts";
+export type PackMessageMeta = MergedMeta | DriftMeta;

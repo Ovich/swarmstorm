@@ -1,9 +1,2 @@
 exit 0
-act on it, then start this listener again, in the background: node <cli> wait --mentions --as g/orchestrator --timeout 200
-#<seq> g/w1 (event)  <ts>
-merged <sha> into main: rebase your branch onto it.
-@g/w2: you agreed on a file it changed.
-@swarm interface changed: a.ts.
-the merge lock is free: @g/w2
-files: a.ts
-these lines are delivered; the task-end notice is the same event
+nothing yet; wait: node <cli> wait --mentions --as g/orchestrator --timeout 200

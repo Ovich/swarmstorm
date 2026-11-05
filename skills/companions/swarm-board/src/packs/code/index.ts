@@ -11,6 +11,7 @@ import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
+import type { DriftedFile } from "./types.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
 
@@ -47,8 +48,8 @@ const optional = <T>(v: unknown): T | undefined => (v === null || v === undefine
 
 /** The claims verbs a member calls through `packCall` (board-split T11, D9): the core's transaction around each. */
 const CLAIM_WRITES: Record<string, PackWrite> = {
-  // spec §7: the member's link's changed set, not a call of its own
-  changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[])),
+  // spec §7: the member's link's changed set, not a call of its own; its drifted paths (claims-phase) none from an older link
+  changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[], optional<DriftedFile[]>(i.drifted) ?? [])),
   "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional<string>(i.onto), optional<number>(i.reflogMark), optional<string[]>(i.guides))),
   merged: tableWrite("merged", (c, m, i) => c.merged(m, String(i.sha), i.files as string[], optional<Conflicts>(i.conflicts)), true),
 };
@@ -143,9 +144,9 @@ export const codePack: Pack = {
   },
 
   onEnded(member, ctx) {
-    // a held lock released by the end frees whoever was refused it (D65); its claims go with it
+    // a held lock released by the end frees whoever was refused it (D65); its claims stay, ended, until the phase ends
     const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
-    tablesOf(ctx).releaseAll(member.id);
+    tablesOf(ctx).releaseLockOf(member.id);
     return {
       note: waiters.length ? `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}` : null,
       mentions: waiters,
