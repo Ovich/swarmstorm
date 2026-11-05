@@ -461,6 +461,9 @@ test("a past holder is listed after the active ones, merged with its sha7 or end
   expect(past.map((p) => p.getAttribute("data-state"))).toEqual(["merged", "ended"]);
   expect(past[0].querySelector(".past-state")!.textContent).toBe("merged 9f3c2a1");
   expect(past[1].querySelector(".past-state")!.textContent).toBe("ended");
+  // read as already done: a done mark beside each, never an inline style
+  expect(past.map((p) => p.querySelector(".past-mark")!.textContent)).toEqual(["✓", "■"]);
+  expect(past.every((p) => p.getAttribute("style") === null)).toBe(true);
   expect(within(row).getByText("shared")).toBeTruthy();
 });
 

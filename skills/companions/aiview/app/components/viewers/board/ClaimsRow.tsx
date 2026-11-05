@@ -57,7 +57,8 @@ export function ClaimsRow({ rows }: { rows: ClaimRow[] }) {
                 ))}
                 {r.shared && <span className="shared">shared</span>}
                 {r.past.map((p) => (
-                  <span key={p.member} className="past" data-state={p.state}>
+                  <span key={p.member} className="past" data-state={p.state} title={`${p.member}: ${pastStateLabel(p)}, already done this phase`}>
+                    <span className="past-mark" aria-hidden="true">{p.state === "merged" ? "✓" : "■"}</span>
                     <MemberName name={p.member} /> <span className="past-state">{pastStateLabel(p)}</span>
                   </span>
                 ))}

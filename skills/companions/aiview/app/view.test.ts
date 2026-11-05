@@ -120,6 +120,14 @@ describe("conversation: what an item is (D8, D16)", () => {
     expect(alone.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ S1 gone"]]);
   });
 
+  test("claims-phase: a drift event gets its own chip, drift in the act tone with its tip, the body kept as its line", () => {
+    const body = "@alpha/S1 a.ts was merged by beta/S2 (abc1234) and is not in your branch: rebase now";
+    const drift = item(1, "swarm", body, { kind: "event", event: "drift", about: "a.ts", mentions: ["alpha/S1"], meta: { sha: "abc1234def" } } as Partial<SnapshotEvent>);
+    const [it] = conversation(board(RUNS, ROSTER, [drift]), { run: 1, follow: null });
+    expect(it).toMatchObject({ kind: "event", word: "drift", tone: "act", rest: body });
+    expect("tip" in it && it.tip).toMatch(/^Drift: /);
+  });
+
   test("D51 (U-F11): a board alarm is the board's, about its subject: its header names the member, following the orchestrator leaves it out", () => {
     const alarm = item(1, "swarm", "lost alpha/S9: its link was lost", { kind: "event", event: "lost", subject: "alpha/S9" } as Partial<SnapshotEvent>);
     const said = item(1, "alpha/orchestrator", "@S1 rebase");

@@ -278,6 +278,7 @@ export const TIPS = {
   quiet: "Quiet: this member has not called the board for a while. Its session may be waiting on you, or gone; its claims stay held.",
   agreement: "Agreed: two members settled something between them, and it binds both. An endorsement is another member backing it.",
   merged: "Merged: this member's branch went into the plan's branch. Members holding the files it changed rebase onto it.",
+  drift: "Drift: a file this member changed was merged by another member this phase, and its branch lacks that merge. It rebases onto it before going on.",
   lock: "Waiting for the merge lock: one member merges at a time, across every run.",
   opened: "Opened: an orchestrator started a run on the board.",
   closed: "Closed: the run is over; its conversation is in the archive (☰).",
@@ -410,6 +411,10 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   if (isQuiet(e)) {
     const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
     return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
+  }
+  // claims-phase: a drift is the board's call to rebase, named by its stored event; its body opens on the member told
+  if (e.kind === "event" && e.event === "drift") {
+    return { ...base, kind: "event", text: e.body, word: "drift", tone: "act", rest: eventWord(e.body).rest, tip: TIPS.drift };
   }
   if (e.kind === "event") {
     const word = eventLine(e.body).word;
