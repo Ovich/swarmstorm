@@ -126,6 +126,7 @@ export function makeAuthority(board: Board): Authority {
     runs: open,
     roster: open,
     endedMembers: open,
+    owingMembers: open,
     repos: open,
     snapshot: open,
     composition: open,

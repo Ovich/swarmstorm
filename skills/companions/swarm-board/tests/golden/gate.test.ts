@@ -83,7 +83,7 @@ for (const how of ["close", "end --seat"] as const)
       const exited = new Promise<number | null>((ok) => link.once("exit", (code) => ok(code)));
       const pidFile = path.join(s.home, "links", "1-g_w1.pid");
       for (let i = 0; i < 100 && !fs.existsSync(pidFile); i++) await new Promise((ok) => setTimeout(ok, 100));
-      if (how === "close") s.must("close", "--run", "1", "--as", "g/orchestrator");
+      if (how === "close") s.must("close", "--run", "1", "--confirm", "--as", "g/orchestrator");
       else s.must("end", "--seat", "w1", "--as", "g/orchestrator");
       assert.equal(await exited, 0);
     } finally {

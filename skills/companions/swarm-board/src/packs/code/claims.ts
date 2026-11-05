@@ -43,6 +43,8 @@ export interface Claims {
   /** end, closeRun, seat done */
   releaseAll(participant: number): void;
   clearFlags(): void;
+  /** board-fixes#D8: `author` agreed with `parties` (names) about `about`: their flags and notices on its paths go. */
+  settleOverlaps(author: Participant, parties: string[], about: string): void;
   /** board-split D59: `p` went lost holding the merge lock: the lock is released at once and the live members refused
    *  it are returned (cleared), as at a release; null when `p` held none. */
   releaseLockOfLost(p: Participant): { waiters: string[] } | null;
@@ -146,9 +148,33 @@ export function claimsOf(deps: ClaimsDeps): Claims {
   };
   const declared = (id: number): Declared[] => JSON.parse(String((db.prepare("SELECT files FROM participants WHERE id = ?").get(id) as Row).files)) as Declared[];
 
+  /** The live members of `repo` named `names` (`<group>/<seat>`), by id. */
+  const liveIdsNamed = (repo: string, names: string[]): number[] =>
+    (db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.ended_at IS NULL").all(repo) as Row[])
+      .filter((r) => names.includes(`${r.plan}/${r.seat}`))
+      .map((r) => Number(r.id));
+
   return {
     clearFlags,
     releaseAll,
+
+    settleOverlaps(author, parties, about) {
+      const want = fold(relPath(author.repo, about) ?? slashes(about));
+      if (!want) return;
+      const pair = new Set([author.id, ...liveIdsNamed(author.repo, parties)]);
+      if (pair.size < 2) return;
+      const onPath = (x: string): boolean => fold(x) === want || fold(x).endsWith(`/${want}`);
+      let cleared = 0;
+      for (const r of db.prepare("SELECT path, participant FROM flags WHERE repo = ?").all(author.repo) as Row[]) {
+        if (!onPath(String(r.path)) || !pair.has(Number(r.participant))) continue;
+        cleared += Number(db.prepare("DELETE FROM flags WHERE repo = ? AND path = ? AND participant = ?").run(author.repo, String(r.path), Number(r.participant)).changes);
+      }
+      for (const r of db.prepare("SELECT path, participant, other FROM notices WHERE repo = ?").all(author.repo) as Row[]) {
+        if (!onPath(String(r.path)) || !pair.has(Number(r.participant)) || !pair.has(Number(r.other))) continue;
+        cleared += Number(db.prepare("DELETE FROM notices WHERE repo = ? AND path = ? AND participant = ? AND other = ?").run(author.repo, String(r.path), Number(r.participant), Number(r.other)).changes);
+      }
+      if (cleared) bump(author.repo);
+    },
 
     releaseLockOfLost(p) {
       const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== undefined;

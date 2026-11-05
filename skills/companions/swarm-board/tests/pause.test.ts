@@ -59,7 +59,7 @@ test("pause wakes every member's wait with the stop line; resume wakes them with
   assert.deepEqual((await waiting).full.map((m) => m.seq), [p.seq]);
   assert.equal(board.pausedOf(run.id), "the brief changed");
   assert.equal(board.runs().find((r) => r.id === run.id)!.paused, "the brief changed");
-  assert.match(stepOf("pause")(p, a, "swarm")!, /^stop where you are: .* wait in the foreground for the resume \(it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): swarm wait --mentions --as idea\/a --timeout 170000$/);
+  assert.match(stepOf("pause")(p, a, "swarm")!, /^stop where you are: .* wait in the foreground for the resume \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): swarm wait --mentions --as idea\/a --timeout 150000$/);
   assert.equal(stepOf("pause")(p, orchestrator, "swarm"), null);
   const again = (await another()).wait(a, { mentionsOnly: true, timeoutMs: 5000 });
   const r = (await another()).resume(orchestrator, "read the new brief in the dossier");

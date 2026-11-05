@@ -12,11 +12,13 @@ import { linkPipe } from "../link/link.ts";
 import type { Binding } from "../link/transcripts.ts";
 
 export type RemoteBoard = { [K in RpcMethod]: (...a: Parameters<Board[K]>) => Promise<Awaited<ReturnType<Board[K]>>> };
+/** A call failed because the server's connection closed under it; the CLI adds the retry hint (board-fixes §2). */
+export const SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
 export type BoardMember = { name: string; run: RunId };
 
-/** How long a server or a link started here has to answer (D19): 5 s, unless SWARM_START_TIMEOUT_MS says otherwise
- *  (a slow CI runner sets it; trust-adaptations T9). */
-const START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5000;
+/** How long a server or a link started here has to answer (D19): 15 s (board-fixes#D10), unless SWARM_START_TIMEOUT_MS
+ *  says otherwise (trust-adaptations T9). */
+const START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15000;
 const START_POLL_MS = 50;
 
 /** The entry this CLI runs from: what a server or a link is spawned as (D28); no node flag of the caller carried over. */
@@ -331,7 +333,7 @@ export async function connectBoard(opts: { dataRoot: string; member?: BoardMembe
         const conn = await connectServer(await ensureServer(opts.dataRoot), member);
         direct = conn;
         conn.onFrame((f) => calls.settle(f));
-        conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+        conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
         calls.reroute(conn.send);
       };
       const wireLink = (sock: net.Socket): void => {
@@ -367,6 +369,6 @@ async function serverBoard(state: ServerState, member?: BoardMember): Promise<Re
   const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
-  conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+  conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
   return Object.assign(asRemote(calls.call), { close: conn.close });
 }

@@ -3,12 +3,16 @@
 import type { Message, Participant } from "../../board/board.ts";
 import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
 import { profileOf } from "../../board/kinds.ts";
-import { codeEventStep } from "./code-rules.ts";
+import { codeCloseStep, codeEventStep } from "./code-rules.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 
 /** The member's wait command: a background listener holds until something comes, a foreground wait carries its hold. */
 export const waitCommand = (s: Situation, foreground = false): string => W.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : undefined);
+
+/** board-fixes#D2: a wait with no --timeout is a foreground one, bounded at FOREGROUND_WAIT_MS, for a seat that listens
+ *  in the foreground and for a member owing nothing (waiting for its next task); a background listener is not. */
+export const foregroundBound = (s: Situation): boolean => s.seat !== "orchestrator" && !s.ended && (s.listens === "foreground" || s.owesNothing);
 
 /** The member's one step while its run is paused; null when not paused, for the orchestrator and an ended member. */
 export const pausedLine = (s: Situation): string | null => {
@@ -31,6 +35,10 @@ export const owedLine = (s: Situation, opts: { brief?: boolean } = {}): string |
   const done = W.done(s.cli, s.owed.word, s.as);
   return opts.brief ? W.owedBrief(s.owed.name, done) : W.owedOpen(s.owed.name, s.owed.text, done);
 };
+
+/** board-fixes V1-3: a member's task still open, by its seq, and how it closes; the pause first; null when none. */
+export const openTaskLine = (s: Situation): string | null =>
+  pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? W.taskStillOpen(s.openTask, W.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
 
 /** simple-states: the step of a member that owes nothing (task merged and reported, phase done): end its turn; the
  *  pause first; null while it owes, and for the orchestrator. */
@@ -65,10 +73,19 @@ export const joinStep = (s: Situation, showedPosts: boolean): string => {
  *  only the pause or its owed phase; a background listener is told to start. */
 export const heardStep = (s: Situation): string | null => {
   if (s.ended || s.listenerRunning) return null;
+  // board-fixes#D3: one next step per answer; a member owing nothing reads only the end-your-turn line
+  if (s.owesNothing && s.seat !== "orchestrator" && !s.pause) return null;
   // S21, board-split F8: the owed phase is news once, at the wake or join that showed it; a verb that heard from a
   // working member only asks for its listener
   if (s.listens !== "foreground") return pausedLine(s) ?? listenNow(s);
   return pausedLine(s) ?? owedLine(s, { brief: true });
+};
+
+/** board-fixes#D13: an orchestrator's plain post to exactly one seat of its run, posted without --task, is told how a task is
+ *  posted; nothing otherwise. */
+export const taskHintLines = (p: { orchestrator: boolean; plain: boolean; task: boolean; mentions: string[]; group: string }): string[] => {
+  const oneSeat = p.mentions.length === 1 && p.mentions[0].startsWith(`${p.group}/`) && !p.mentions[0].endsWith("/*") && !p.mentions[0].endsWith("/orchestrator");
+  return p.orchestrator && p.plain && !p.task && oneSeat ? [W.taskHint(p.mentions[0])] : [];
 };
 
 /** The phase header: whole the first time a member is shown it, then the short form naming where its text is;
@@ -87,6 +104,11 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
  *  `phase` does (V-35). `lost`: the mentioned members whose badge reads lost, `<group>/<seat>`. */
 export const lostMentionLines = (lost: string[], cli: string, as: string): string[] =>
   lost.map((member) => W.mentionLost(member, W.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
+
+/** board-fixes#D6: the first `close`'s answer: while a member owes, who, and post no new task; else the closing steps,
+ *  ending on the confirming call. */
+export const closeStep = (owing: string[], run: number, confirm: string, code: boolean): string =>
+  code ? codeCloseStep(owing, run, confirm) : owing.length ? W.closeWaitRunning(run, owing) : W.closeSteps(run, confirm);
 
 export const closedLine = (s: Situation): string => W.closed(s.run, W.end(s.cli, s.as));
 
@@ -131,9 +153,8 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
       return meta && "tasked" in meta && meta.tasked ? W.allJoinedTasked(cli, as) : W.allJoined(cli, as);
     case "breach": {
       const member = meta && "breach" in meta ? meta.breach : null;
-      if (!member || !orchestrator) return null;
-      // G2: the orchestrator's own kill is its own to correct, never a message to itself
-      return member === me.name ? W.breachOwn : W.breachOther(member);
+      // board-fixes#D7: the member that killed by pattern reads it, the orchestrator included; nobody else
+      return member === me.name ? W.breachKill : null;
     }
     case "lost": {
       // the body names the member: `lost <group>/<seat>: <why>`
@@ -145,3 +166,9 @@ export function eventStep(m: Message, me: Participant, cli: string, event: Event
   }
 }
 
+
+/** Verbs that only read the board: a call of theirs the server dropped is safe to run again as is (board-fixes §2). */
+const READING_VERBS: ReadonlySet<string> = new Set(["status", "roster", "read", "wait", "doing"]);
+/** The hint after a call the server's connection dropped: retry a reading verb, check `status` before a writing one. */
+export const closedConnectionHint = (verb: string, cli: string): string =>
+  READING_VERBS.has(verb) ? W.retryReading(verb) : W.retryWriting(verb, W.status(cli));

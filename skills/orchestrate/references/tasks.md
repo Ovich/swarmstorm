@@ -7,8 +7,9 @@ and from what the run left (its merges, the agreements and findings on the threa
 
 ## The post
 
-`$S post --file <path> --as <group>/orchestrator`, one task per post, to one worker (the one member it
-mentions), its id the
+`$S post --task --file <path> --as <group>/orchestrator`, one task per post, to one worker (the one
+seat it mentions; `--after <seats>` implies `--task` and wakes it on those seats' merges or dones),
+open until that seat's next `done` or a later task to it, its id the
 run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 
 ```markdown
@@ -33,6 +34,10 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 - **A task that outgrows a post** (a module's design, a migration, a screen's states) links a
   short document in aiview, kind `task`, in the plan's group when there is a plan; the post keeps
   its goal, files and done-when. The exception, never the habit.
+- **A task that includes tests** says in its done-when that the test run has finished before the
+  report or the merge lock.
+- **Its tests are the narrowest covering the seat's change**, named as files or a filter, never
+  the full suites; the full check is the orchestrator's, on the merged branch.
 - **The design is the plan's**: a decision the task needs that the plan does not carry is a
   question to the person, never one taken in the task.
 

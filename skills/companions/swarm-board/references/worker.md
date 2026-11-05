@@ -9,8 +9,6 @@ merges into, `<target>` below.
 **End your turn only when you owe nothing**: your task merged and reported, or the phase done.
 The board then shows you `away`, and the orchestrator resumes you by message with the next task;
 never `end` while the run is open (it is refused). A turn ended while you owe work reads `lost`.
-**Your only background tasks are your link and your listener.** A check, a test run or a build runs in
-the foreground: an agent that ends its turn on a background task of its own is not woken by it.
 
 ## The loop
 
@@ -37,7 +35,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
 3. **Wait for a task**: `$S wait --mentions`, in the **foreground**, with no timeout or one under
    your shell call's own limit. A task is a post to you (the `orchestrate` skill's
    `references/tasks.md` shapes it): its goal, contract, files, done-when. It returns empty: run it
-   again (it holds 170 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
+   again (it holds 150 s and returns empty on purpose: a re-arm). Never sleep. Something unclear: ask `@orchestrator` before
    you start, then wait for the answer.
 4. **Do it**, as your agent's definition says, `$S doing "<the task>"` first. **You claim
    nothing**: your link reads your worktree's changes from git every 2 s and the board holds
@@ -50,8 +48,8 @@ the foreground: an agent that ends its turn on a background task of its own is n
 6. **Merge, at the task's end**, and early when a file your task marks *interface* changed in a way
    other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
    **The lock is held only to rebase, check and fast-forward**: every other worker waits on it.
-   0. **Before the lock**: commit, then run the task's full done-when (the full suite included) on
-      your branch. A suite that fails is fixed here, never under the lock.
+   0. **Before the lock**: commit, then run the task's done-when on your branch. What fails is
+      fixed here, never under the lock.
    1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in
       the foreground for its merged event, then run `merge-lock` again. `… is checked out at …`
       (exit 5): git would refuse the push; do what the answer says.
@@ -62,8 +60,7 @@ the foreground: an agent that ends its turn on a background task of its own is n
       --about <file>`. For each file you resolved, run that post with `<how>` filled in.
    4. **Guides**: a grant that names `guides of this merge` lists the guides your changes fall
       under; check the change against each, then settle each in step 6.
-   5. Run the task's **quick check** on the rebased branch (the tests covering the files you
-      touched, never the full suite again), then fast-forward `<target>` from your own
+   5. Run the task's **quick check** on the rebased branch, then fast-forward `<target>` from your own
       worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
       rebase again.
    6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with
@@ -98,7 +95,7 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 - **One command per shell call**: absolute paths into your worktree, no `cd … &&`, no pipes into
   xargs, no `$(…)`; `git -C <path>` instead of cd.
 - **`$S doing "<text>"`** at each step another worker would want to know: the module you are
-  in, a test going green, a merge coming.
+  in, a check passing, a merge coming.
 - **A mention that asks you something is answered before you go on.**
 - **`$S roster`** for who holds what now.
 - **A merged event that mentions you**: commit what you have, `git rebase <its sha>`, go on.

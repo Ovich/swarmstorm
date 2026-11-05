@@ -77,6 +77,17 @@ test("D5: the link reads a kill by name or pattern as a breach, once per command
   assert.equal(breaches().length, 2, "a kill before the join: no breach");
 });
 
+test("board-fixes#D7: a member's breach reaches it alone, with the one line; never the orchestrator", () => {
+  const { runA, oA } = setup();
+  const at = Date.now();
+  board.recordActivity(runA.id, "a1", act({ grewAt: at, breach: { command: "pkill -f vite", kind: "pattern", at } }), new Date(at));
+  const m = board.snapshot("/repos/a/.git").events.find((e) => e.event === "breach")!;
+  assert.deepEqual(m.mentions, ["ga/a1"]);
+  const a1 = board.participant("ga/a1")!;
+  assert.equal(stepOf("breach")(m as never, a1, "swarm"), "you ran a kill by pattern: stop only PIDs you started, and say what you stopped in your report");
+  assert.equal(stepOf("breach")(m as never, oA, "swarm"), null);
+});
+
 test("G2: the orchestrator's own breach is never told to SendMessage itself", () => {
   const { runA, oA } = setup();
   const at = Date.now();
@@ -84,6 +95,6 @@ test("G2: the orchestrator's own breach is never told to SendMessage itself", ()
   const m = board.snapshot("/repos/a/.git").events.find((e) => e.event === "breach")!;
   const next = stepOf("breach")(m as never, oA, "swarm")!;
   assert.ok(!next.includes("SendMessage"), next);
-  assert.match(next, /stop only the PIDs you started/);
+  assert.match(next, /stop only PIDs you started/);
 });
 

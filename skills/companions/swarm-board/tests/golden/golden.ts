@@ -166,7 +166,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
       store.close();
     }
   }
-  if (situation === "closed") must("close", "--run", runId, "--as", orchestrator);
+  if (situation === "closed") must("close", "--run", runId, "--confirm", "--as", orchestrator);
   return s;
 }
 

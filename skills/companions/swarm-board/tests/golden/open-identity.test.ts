@@ -21,7 +21,7 @@ test("V-1: a second open of a group open on the project is refused, naming the o
     assert.match(second.text, /close --run 1/);
     // another group opens; once the first is closed, the group opens again
     assert.equal(openTask(s, "other").status, 0);
-    s.must("close", "--run", "1", "--as", "vt/orchestrator");
+    s.must("close", "--run", "1", "--confirm", "--as", "vt/orchestrator");
     assert.equal(openTask(s, "vt").status, 0);
   } finally {
     s.done();
@@ -32,7 +32,7 @@ test("V-1: --as <group>/<seat> binds to the group's open run, never a newer clos
   const s = scene();
   try {
     openTask(s, "vt");
-    s.must("close", "--run", "1", "--as", "vt/orchestrator");
+    s.must("close", "--run", "1", "--confirm", "--as", "vt/orchestrator");
     openTask(s, "vt"); // run 2, open
     const status = s.must("doing", "x", "--as", "vt/orchestrator", "--json");
     assert.match(status, /vt\/orchestrator/);
@@ -75,7 +75,7 @@ test("V-16: an orchestrators-board seat standing for a run that closed reads end
     const seats = path.join(s.home, "orchestrators.json");
     fs.writeFileSync(seats, JSON.stringify([{ id: "alpha", role: "architect", blockers: [] }]));
     s.must("open", "--kind", "brainstorm", "--group", "orchestrators", "--title", "Orchestrators", "--seats", seats);
-    s.must("close", "--run", "1", "--as", "alpha/orchestrator");
+    s.must("close", "--run", "1", "--confirm", "--as", "alpha/orchestrator");
     const status = s.must("status");
     const seat = status.split("\n").filter((l) => /^\s+alpha /.test(l));
     pin("open-identity.closed-seat", { status: 0, text: seat.join("\n") });

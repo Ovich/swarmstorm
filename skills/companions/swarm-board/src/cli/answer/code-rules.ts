@@ -7,6 +7,10 @@ import { shellWord, WORDING as W } from "./wording.ts";
 import type { Situation } from "./situation.ts";
 import { planCode } from "../../board/mentions.ts";
 
+/** board-fixes#D6: a code run's first `close`: its members finish by merging, its closing table names each merge sha. */
+export const codeCloseStep = (owing: string[], run: number, confirm: string): string =>
+  owing.length ? W.closeWaitRunning(run, owing, CW.closeFinish) : W.closeSteps(run, confirm, CW.closeColumns);
+
 /** A member as `me` mentions it: `@<seat>` in its own run, `@<CODE>·<seat>` in another. */
 export const mentionFrom = (me: Participant, member: string): string => {
   const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];

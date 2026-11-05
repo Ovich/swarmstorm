@@ -87,7 +87,11 @@ export interface Pack {
   onJoin?(member: Participant, ctx: PackCtx, declared: Declared[]): JoinFacts;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
+  /** After an agreement about `about` between `author` and `parties` (names) is posted, in its transaction. */
+  onAgreement?(author: Participant, parties: string[], about: string, ctx: PackCtx): void;
   busy?(member: Participant, ctx: PackCtx): boolean;
+  /** board-fixes#D4: how a cause that wakes a waiting task reads on this pack's run (`done` with nothing landed); absent: the cause. */
+  awaitedWording?(cause: string): string;
   /** What it says of the member now (D36), shown instead of working or waiting; null: nothing. */
   memberFact?(member: Participant, ctx: PackCtx): MemberFact | null;
   /** board-split V-26: the holder of a lock of the pack's the member is queued on, and the lock's name, so its wait

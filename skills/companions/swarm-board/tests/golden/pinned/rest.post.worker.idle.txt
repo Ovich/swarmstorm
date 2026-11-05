@@ -1,3 +1,2 @@
 exit 0
 #<seq>
-start your listener now, in the background (your harness's background task): node <cli> wait --mentions --as g/w1

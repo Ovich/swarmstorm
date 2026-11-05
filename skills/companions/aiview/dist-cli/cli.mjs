@@ -9295,6 +9295,7 @@ var init_wire = __esm({
       "end",
       "roster",
       "endedMembers",
+      "owingMembers",
       "heldBy",
       "post",
       "endorse",
@@ -9395,6 +9396,7 @@ var remote_exports = {};
 __export(remote_exports, {
   HARNESS_LINK_WAIT_MS: () => HARNESS_LINK_WAIT_MS,
   LINK_DOWN_WAIT_MS: () => LINK_DOWN_WAIT_MS,
+  SERVER_CLOSED_CONNECTION: () => SERVER_CLOSED_CONNECTION,
   bindingOf: () => bindingOf,
   connectBoard: () => connectBoard,
   connectDirectBoard: () => connectDirectBoard,
@@ -9646,7 +9648,7 @@ async function connectBoard(opts) {
         const conn = await connectServer(await ensureServer(opts.dataRoot), member);
         direct = conn;
         conn.onFrame((f) => calls.settle(f));
-        conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+        conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
         calls.reroute(conn.send);
       };
       const wireLink = (sock) => {
@@ -9679,17 +9681,18 @@ async function serverBoard(state, member) {
   const conn = await connectServer(state, member);
   const calls = callsOver(conn.send);
   conn.onFrame((f) => calls.settle(f));
-  conn.onClose(() => calls.fail("swarm: the board server closed the connection"));
+  conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
   return Object.assign(asRemote(calls.call), { close: conn.close });
 }
-var START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
+var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
     init_proc2();
     init_wire();
     init_link();
-    START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 5e3;
+    SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
+    START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
     START_POLL_MS = 50;
     entry = () => [process.argv[1]];
     homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
@@ -10937,8 +10940,17 @@ function cmdStatus() {
 function cmdPath() {
   const name = args.positional[0];
   if (!name) {
-    console.error("usage: aiview path <filename> [--project <slug>]");
+    console.error("usage: aiview path <filename> [--project <slug>] | aiview path #<id>");
     process.exit(1);
+  }
+  if (/^#?\d+$/.test(name)) {
+    const doc = resolveRef(name);
+    if (!doc) {
+      console.error(`no document ${name.startsWith("#") ? name : `#${name}`} in the index`);
+      process.exit(1);
+    }
+    emit({ path: doc.abs_path, dir: path15.dirname(doc.abs_path), project: doc.project }, doc.abs_path);
+    return;
   }
   const index = openIndex();
   const slug = projectOfVerb(index);

@@ -219,10 +219,10 @@ test("S4 target: merge-lock prints the --guides form merged takes; either name f
   commit(wtA, "page");
   const lock = cli(wtA, "merge-lock", "--onto", "main").split("\n");
   assert.ok(lock.includes("guides of this merge: all (guide-all), ui (guide-ui); check your change against each, then settle each in merged's --guides below"), lock.join("\n"));
-  assert.ok(lock.some((l) => l.startsWith("granted: under the lock only rebase, ") && l.includes("your full suite ran before merge-lock") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
+  assert.ok(lock.some((l) => l.startsWith("granted: under the lock only rebase, ") && l.includes("the tests your task asked for have finished before merge-lock") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
   const sha = git(wtA, "rev-parse", "HEAD").trim();
   const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
-  const usage = 'usage: --guides "<name>:ok|n/a <why>, ..."';
+  const usage = 'usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>)';
   assert.equal(merged("all:ok; ui:ok").stderr.trim(), `merged: --guides separates guides with ";"; ${usage}; corrected: --guides "all:ok, ui:ok"`);
   assert.equal(merged("all:ok, ui ok").stderr.trim(), `merged: --guides has "ui ok", which is no <name>:<verdict>; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);
   assert.equal(merged("all:ok, ui:ok, bogus:ok").stderr.trim(), `merged: --guides names bogus, which merge-lock did not list; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);

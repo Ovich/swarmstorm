@@ -25,6 +25,7 @@ const VALUE_FLAGS = new Set([
   "--link",
   "--since",
   "--watch",
+  "--after", // board-fixes V1-1: post --after w1,w2 takes its seats as a value, never into the body
   "--person",
   "--report",
   "--report-file",

@@ -99,6 +99,8 @@ export function migrateCodeTables(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
+    -- board-fixes#D14: the roster reads every member's claimed paths; by participant, never a scan of the whole log
+    CREATE INDEX IF NOT EXISTS claim_log_by_participant ON claim_log (participant);
   `);
   if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, new Date().toISOString());
   const upkeep = (table: string, column: string, ddl: string): void => {

@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard } from "../src/board/board.ts";
-import { startBoardServer, stopBoardServer } from "../src/server/server.ts";
+import { silentTooLong, startBoardServer, stopBoardServer } from "../src/server/server.ts";
 import { decode, encode, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type Hello, type MemberActivity, type RpcMethod, type ServerState } from "../src/wire.ts";
 
 const REPO = "/repos/one/.git";
@@ -461,3 +461,39 @@ test("a server's log starts with its data home, its pid, and its starter's pid a
   }
   assert.equal(fs.readFileSync(serverLogFile(home), "utf8").split("\n")[0], `serve: home ${path.resolve(home)}, pid ${process.pid}, started by ${process.ppid} node swarm.mjs join --run 72`);
 });
+
+test("board-fixes#D1: a link's socket killed is logged with its member, its cause and its calls still open; a superseded one with its cause", async () => {
+  const opener = await welcomed();
+  const run = await value(opener, "openRun", { repo: REPO, group: "p", title: "T", seats: SEATS });
+  const joiner = await welcomed();
+  const s1 = (await value(joiner, "join", { run: run.id, seat: "S1", doing: "x", files: [] })).member;
+  const member = { name: "p/S1", run: run.id };
+  const link = await welcomed({ member });
+  link.send({ type: "call", id: "held-wait", method: "wait", args: [s1, { timeoutMs: 60000, mentionsOnly: true }] });
+  await new Promise((r) => setTimeout(r, 100));
+  link.socket.close();
+  await link.closed;
+  const logLines = async (): Promise<string[]> => {
+    for (let i = 0; i < 40; i++) {
+      const lines = fs.readFileSync(serverLogFile(dir), "utf8").split(/\r?\n/).filter((l) => l.includes(" close: p/S1, "));
+      if (lines.length) return lines;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return [];
+  };
+  assert.match((await logLines()).at(-1) ?? "no close logged", /close: p\/S1, cause socket, 1 call\(s\) open$/);
+  const old = await welcomed({ member });
+  await welcomed({ member, supersede: true });
+  await old.closed;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.match((await logLines()).at(-1) ?? "", /close: p\/S1, cause superseded, 0 call\(s\) open$/);
+});
+
+test("board-fixes#D1: a ping round cuts a socket silent past 25 s only when the round ran on time, never after the server's loop was blocked", () => {
+  const now = 100_000;
+  assert.equal(silentTooLong(now, now - 10_000, now - 26_000), true);
+  assert.equal(silentTooLong(now, now - 10_000, now - 5_000), false);
+  // the round ran 30 s late: the loop was blocked, the pongs it held back are not read yet
+  assert.equal(silentTooLong(now, now - 40_000, now - 40_000), false);
+});
+

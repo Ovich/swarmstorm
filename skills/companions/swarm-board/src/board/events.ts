@@ -4,7 +4,7 @@ import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
 import type { Message, Participant } from "./board.ts";
 
-export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined";
+export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined" | "awaited";
 export type EventName = CoreEventName | PackEventName;
 
 export interface EventDef<N extends string = EventName> {
@@ -13,11 +13,13 @@ export interface EventDef<N extends string = EventName> {
   always?: boolean;
   /** posted by the board in a member's name, it reaches that member too (stopped, lost) */
   toAuthor?: boolean;
+  /** board-fixes#D4: a pack's event that lands the member's work: it wakes a task waiting on the member and is its latest doing */
+  lands?: boolean;
 }
 
-/** A foreground wait's hold, under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
-export const FOREGROUND_WAIT_MS = 170_000;
-export const FOREGROUND_NOTE = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
+/** board-fixes#D2: a foreground wait's hold, 30 s under the 180 s after which Claude Code moves a foreground command to the background (F22); the answer module words the wait from it. */
+export const FOREGROUND_WAIT_MS = 150_000;
+export const FOREGROUND_NOTE = "it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
 /** The core's events; `eventDef` and `isEvent` read these and every pack's. */
 export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   // a seat backs another member's agreement (D36): the answer module tells a seat to back it
@@ -54,12 +56,30 @@ export const EVENTS: Record<CoreEventName, EventDef<CoreEventName>> = {
   composition: { name: "composition" },
   // every declared seat has a member (D5): to the orchestrator, which opens the first phase or posts the tasks on it
   "all-joined": { name: "all-joined" },
+  // board-fixes#D4: a seat a task waits on (`post --after`) merged, finished its part or left; to the task's seat alone,
+  // once per awaited seat, posted in the awaited seat's name
+  awaited: { name: "awaited" },
 };
+
+/** board-fixes#D4: what an awaited seat did that wakes the seat of a task waiting on it (`post --after`): a core end of its
+ *  part, or a pack's landing event (`lands`). */
+const CORE_AWAITED: readonly string[] = ["done", "ended", "lost"];
+export const isAwaitedCause = (e: string): boolean => CORE_AWAITED.includes(e) || (isEvent(e) && !!eventDef(e).lands);
+/** The pack events that land a member's work, by name. */
+export const landingEvents = (): string[] => Object.values(allEvents()).filter((d) => d.lands).map((d) => d.name);
+/** The awaited event's body: `w1 done (1 of 2 you wait on)`; `what`: the cause as the member's pack words it. */
+export const awaitedLine = (seat: string, what: string, nth: number, of: number): string => `${seat} ${what} (${nth} of ${of} you wait on)`;
 
 /** Core and pack events by name, read at first use: the registry loads after this module in some import orders. */
 let all: Record<string, EventDef> | null = null;
 const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...registry.events() });
 export const isEvent = (s: string): s is EventName => Object.hasOwn(allEvents(), s);
+/** board-fixes#D14: the events that wake every member (`always`), core and pack, as their names are stored, renamed
+ *  ones included: what a store's query narrows the unread to before `wakes` decides. */
+export const alwaysEventNames = (): { events: string[]; stored: string[] } => {
+  const events = Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
+  return { events, stored: [...events, ...Object.keys(RENAMED_EVENTS).filter((old) => events.includes(RENAMED_EVENTS[old]))] };
+};
 /** board-split D36: the events renamed or folded into a badge's event, old name to new; a stored message under an old
  *  name reads as the new one. */
 export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };

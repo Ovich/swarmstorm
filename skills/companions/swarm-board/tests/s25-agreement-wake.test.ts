@@ -43,7 +43,7 @@ test("S25: an agreement of an earlier run's member of the same name wakes no one
     must("wait", "--mentions", "--timeout", "200", "--as", "g/w3");
     must("end", "--seat", "w1", "--as", "g/orchestrator");
     must("end", "--seat", "w3", "--as", "g/orchestrator");
-    must("close", "--run", runA, "--as", "g/orchestrator");
+    must("close", "--run", runA, "--confirm", "--as", "g/orchestrator");
     // run B, same group: w3 is a new member of the same name; w1 merges a.ts
     const runB = must("open", "--kind", "task", "--group", "g", "--title", "B", "--seats", seats, "--onto", "main").split("\n")[0].trim();
     must("join", "--run", runB, "--seat", "w1", "--doing", "x", "--as", "g/w1");

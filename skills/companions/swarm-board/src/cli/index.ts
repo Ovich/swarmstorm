@@ -10,7 +10,7 @@ import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
-import { bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
+import { SERVER_CLOSED_CONNECTION, bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
@@ -21,7 +21,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
+import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation, type VerbResult } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -272,7 +272,7 @@ const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false): string
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${files ? `  files: ${files}` : ""}${declared}`;
+  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${WORDING.doingAge(Date.now() - r.doingAt, r.doingStale)}${files ? `  files: ${files}` : ""}${declared}`;
 };
 
 /** The member's situation, read once per verb, for the answer rules (board-rework D1). `show`: the verb shows the phase. */
@@ -695,10 +695,16 @@ async function main(): Promise<void> {
     case "close": {
       const run = runArg();
       // V-45: a member of the run holding the merge lock is named: its merge did not land
-      const plan = (await board.runs()).find((r) => r.id === run)?.plan ?? null;
+      const closing = (await board.runs()).find((r) => r.id === run);
+      const plan = closing?.plan ?? null;
       // the orchestrators board is permanent: closed only on purpose
       if (plan === ORCHESTRATORS_GROUP && !args.has("--force")) fail(WORDING.orchestratorsNeverClosed(self().join(" "), run));
       await orchestratorOf("close", run, (as) => WORDING.closeRun(self().join(" "), run, as));
+      // board-fixes#D6: two steps by the answer alone, no state between them; the first lists who still owes, or the closing steps
+      if (plan !== ORCHESTRATORS_GROUP && !args.has("--confirm")) {
+        const confirm = WORDING.closeConfirm(self().join(" "), run, shellWord(args.flag("--as") ?? `${plan ?? "<group>"}/orchestrator`));
+        fail(rules.closeStep(await board.owingMembers(run), run, confirm, closing?.kindPack != null));
+      }
       const lockHolder = plan ? ((await mergeLocksHeld()).find((l) => l.holder.startsWith(`${plan}/`))?.holder ?? null) : null;
       await board.closeRun(run);
       // the run's worktrees go once clean and merged, each seat's link stopped first, by the run's pack (D9)
@@ -898,7 +904,13 @@ async function main(): Promise<void> {
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
       if (urgent && p.seat !== "orchestrator") fail("--urgent is the orchestrator's: it wakes every waiter of the run, even in a pause; ask @orchestrator on the thread instead");
+      // board-fixes#D13: a task to one seat; --after (seats, comma lists) implies it
+      const after = args.flags("--after").flatMap((w) => w.split(",")).filter(Boolean);
+      const task = args.has("--task") || after.length > 0;
+      if (task && args.verb !== "post") fail("--task and --after are for post");
+      if (task && urgent) fail("--task: a task is a plain post, never --urgent");
       const m = await board.post(p, body, {
+        ...(task ? { task: true, after } : {}),
         about: aboutArg(),
         kind: args.verb === "agree" ? "agreement" : urgent ? "urgent" : "msg",
         // every --with counts, each a seat or a comma list of seats (S5)
@@ -918,6 +930,7 @@ async function main(): Promise<void> {
         ...unmatched,
         ...lostMentioned,
         ...(args.verb === "agree" && m.mentions?.length ? [WORDING.agreeParties(p.name, m.mentions)] : []),
+        ...rules.taskHintLines({ orchestrator: p.seat === "orchestrator", plain: args.verb === "post" && !urgent, task, mentions: m.mentions ?? [], group: p.plan }),
       ];
       // V4: open's next line is said once, by open; a post never repeats it
       await emitHeard(p, json, human);
@@ -940,7 +953,10 @@ async function main(): Promise<void> {
       const timeout = raw === undefined ? undefined : Number(raw);
       if (timeout !== undefined && !(timeout >= 0)) usageError(`--timeout takes milliseconds, got ${raw}`, "wait [--mentions] [--timeout <ms>] --as <member>", `wait --mentions --timeout ${FOREGROUND_WAIT_MS} --as ${asWord()}`);
       const mentionsOnly = args.has("--mentions");
-      const delivered = await board.wait(p, { timeoutMs: timeout, mentionsOnly });
+      // board-fixes#D2: with no --timeout, a wait that is a foreground one (a seat listening in the foreground, a member
+      // owing nothing) holds FOREGROUND_WAIT_MS and returns empty with its re-arm line; a background listener stays unbounded
+      const timeoutMs = timeout ?? (rules.foregroundBound(await situation(p)) ? FOREGROUND_WAIT_MS : undefined);
+      const delivered = await board.wait(p, { timeoutMs, mentionsOnly });
       // release-prep: ended, its link about to be stopped by the end: the ended line at once, with no call more (G26)
       if (delivered.ended) {
         emit(delivered, WORDING.ended(p.run));
@@ -960,7 +976,7 @@ async function main(): Promise<void> {
       if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
       if (raw !== undefined) again.push("--timeout", raw);
       if (asJson) again.push("--json");
-      // every foreground re-arm holds 170000, under the 180 s a harness lets a foreground command run (F22), whatever the caller gave: an old 110000
+      // every foreground re-arm holds 150000, under the 180 s a harness lets a foreground command run (F22), whatever the caller gave: an old 110000
       // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
       const foregroundAgain = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
       if (!d.full.length) {
@@ -970,7 +986,7 @@ async function main(): Promise<void> {
           emit(d, answer({ verb: "wait", outcome: "ended" }, await situation(p)).lines[0]);
           break;
         }
-        // a member with nothing to do ends rather than wake every 170 s (tokens); the orchestrator dispatches it again
+        // a member with nothing to do ends rather than wake every 150 s (tokens); the orchestrator dispatches it again
         const idle = mentionsOnly && (await board.idle(p));
         const a = answer({ verb: "wait", outcome: "empty", idle, again: again.join(" "), foregroundAgain }, await situation(p));
         emit({ ...d, ...(idle ? { idle: true } : {}), next: a.next }, a.next!);
@@ -1291,6 +1307,7 @@ if (args.verb === "serve") {
   } catch (e) {
     const said = (e as Error).message;
     console.error(e instanceof CliError || said.startsWith("swarm: ") ? said : `swarm: ${said}`);
+    if (said === SERVER_CLOSED_CONNECTION) console.error(closedConnectionHint(args.verb ?? "", self().join(" ")));
     process.exitCode = 1;
   } finally {
     board?.close();

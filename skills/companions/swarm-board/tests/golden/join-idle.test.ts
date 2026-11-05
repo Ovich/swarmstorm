@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { scene } from "./golden.ts";
 
 const O = "g/orchestrator";
-const FOREGROUND = "it holds 170 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
+const FOREGROUND = "it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty";
 
 const lastLine = (text: string): string => text.trimEnd().split("\n").at(-1)!;
 
@@ -14,7 +14,7 @@ test("S15 target: an idle worker's join ends on the foreground wait", async () =
   try {
     s.must("wait", "--mentions", "--timeout", "200", "--as", s.me);
     const joined = s.call("join", "--run", "1", "--seat", "w1", "--doing", "x", "--as", s.me);
-    assert.equal(lastLine(joined.text), `nothing yet; wait, in the foreground (${FOREGROUND}): node <cli> wait --mentions --as ${s.me} --timeout 170000`);
+    assert.equal(lastLine(joined.text), `nothing yet; wait, in the foreground (${FOREGROUND}): node <cli> wait --mentions --as ${s.me} --timeout 150000`);
   } finally {
     s.stop();
   }

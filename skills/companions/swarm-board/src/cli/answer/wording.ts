@@ -17,6 +17,11 @@ export const WORDING = {
   /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
   stallClamped: (askedMs: number, floorMs: number): string => `--stall-ms ${askedMs} is under the ${floorMs} ms floor of the stall window: the run uses ${floorMs}`,
 
+  // ── a call the server's connection dropped (board-fixes §2) ──
+  retryReading: (verb: string): string => `the call did not complete: run the same ${verb} again, as is`,
+  retryWriting: (verb: string, status: Command): string =>
+    `the ${verb} may or may not have landed: check with ${status} first, and run it again only if it is not there`,
+
   // ── the run's page ──
   /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
    *  an older aiview's `/board` takes it as its hash */
@@ -61,6 +66,18 @@ export const WORDING = {
   orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
     `${verb}: refused: only the orchestrator of run ${run} may ${verb === "close" ? "close it" : "add a seat to it"}${caller ? `, and ${caller} is not` : ""}. Run it as the orchestrator: ${rerun}`,
   closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
+  /** board-fixes#D6: the second step of a close, the one that closes */
+  closeConfirm: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --confirm --as ${as}`,
+  closeWaitRunning: (run: number, owing: string[], finish = "reported, done") =>
+    `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (${finish}), then run close again`,
+  closeSteps: (run: number, confirm: Command, columns = "| task | seat | state | result |") =>
+    `close: one step first. Post the closing table to the run, written from status: one row per task, ${columns}, then the next steps (what is left, what follows). Then close run ${run}: ${confirm}`,
+  // board-fixes#D5: the roster's doing, its age once a minute old, `stale` once its work landed or an event to it came after it
+  doingAge: (ms: number, stale: boolean) => {
+    const min = Math.floor(Math.max(0, ms) / 60_000);
+    const parts = [...(min >= 1 ? [`${min} min`] : []), ...(stale ? ["stale"] : [])];
+    return parts.length ? ` (${parts.join(", ")})` : "";
+  },
   seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
@@ -83,6 +100,9 @@ export const WORDING = {
   pauseWhy: (person: boolean, text: string) => (person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : ""),
   owedOpen: (name: string, text: string, done: Command) => `phase ${name} is open and asks: ${text}. Do your part now, then mark it done: ${done}`,
   owedBrief: (name: string, done: Command) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
+  /** board-fixes V1-3 */
+  taskStillOpen: (seq: number, done: Command) =>
+    `your task #${seq} is still open: finish it and report, then close it with your next done: ${done}; a later task to you replaces it`,
   doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   doneNone: "no phase is open: nothing to mark",
   /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
@@ -143,10 +163,12 @@ export const WORDING = {
     `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
   openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
   swarmStopped: (cli: Command, as: string) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
+  // board-fixes#D13: a post to one seat is no task unless posted as one
+  taskHint: (member: string) =>
+    `a post to ${member} alone: if it is ${member}'s task, post it with --task (or --after <seats> when it waits on others), so the board counts it owed until ${member}'s done`,
   allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
   allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
-  breachOwn: "stop only the PIDs you started: machine.md",
-  breachOther: (member: string) => `SendMessage ${member} "stop only the PIDs you started: machine.md"`,
+  breachKill: "you ran a kill by pattern: stop only PIDs you started, and say what you stopped in your report",
   /** break-flow V-17: the end verb as it runs, never "close its seat" */
   lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */

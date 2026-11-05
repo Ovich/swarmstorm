@@ -36,6 +36,7 @@ export const RPC_METHODS = [
   "end",
   "roster",
   "endedMembers",
+  "owingMembers",
   "heldBy",
   "post",
   "endorse",

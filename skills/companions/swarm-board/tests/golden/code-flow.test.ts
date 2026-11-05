@@ -115,7 +115,7 @@ test("golden code flow: two workers, one run onto main", async () => {
     git(wt3, "add", "c.ts");
     git(wt3, "commit", "-q", "-m", "w3 c");
 
-    pin("code.close", call("close", "--run", runId, "--as", ORCHESTRATOR));
+    pin("code.close", call("close", "--run", runId, "--confirm", "--as", ORCHESTRATOR));
   } finally {
     stopServerOf(home);
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
