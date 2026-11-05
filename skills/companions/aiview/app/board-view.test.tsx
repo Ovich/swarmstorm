@@ -481,6 +481,20 @@ test("a file of one active holder and a merged one is not shared", () => {
   expect(within(row).getByText("merged 1234567")).toBeTruthy();
 });
 
+test("a holder that merged and changed the file again stands active, and its past entry says active again", () => {
+  const snap: BoardSnapshot = {
+    ...LIVE,
+    files: [...LIVE.files, { path: "src/again.ts", holders: ["refresh-tokens/S3"], past: [{ member: "refresh-tokens/S3", state: "merged", sha: "abcdef0123" }] }],
+  };
+  show([APP], 1, [snap]);
+  fireEvent.click(screen.getByRole("button", { name: /Claims/ }));
+  const row = screen.getByText("src/again.ts").closest("li")!;
+  expect(within(row).queryByText("shared")).toBeNull();
+  const past = row.querySelector(".past")!;
+  expect(past.querySelector(".past-state")!.textContent).toBe("merged abcdef0");
+  expect(past.querySelector(".past-again")!.textContent).toBe("· active again");
+});
+
 test("the claims row falls back to collapsed when storage throws, and still opens", () => {
   vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
     throw new Error("blocked");
