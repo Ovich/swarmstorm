@@ -3011,22 +3011,22 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const open = run2.phase === phase;
     return { open, forSeats: open && run2.phase_for != null ? JSON.parse(String(run2.phase_for)) : null };
   };
+  const phaseOpenedSeqOf = (run2) => Number(db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(run2, EVENTS.phase.name).seq ?? 0);
   const taskedSeatsNotJoinedOf = (run2, phase) => {
     const r = runRow(run2);
     if (r.phase !== phase) return [];
     const plan = String(r.plan);
     return db.prepare(
       `SELECT s.id AS seat FROM seats s
-           WHERE s.run = ? AND s.id != '${ORCHESTRATOR}'
+           WHERE s.run = ? AND s.id != ?
              AND NOT EXISTS (SELECT 1 FROM participants p WHERE p.run = s.run AND p.seat = s.id)
              AND EXISTS (
-               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = '${ORCHESTRATOR}', json_each(m.mentions) j
-               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id
-                 AND m.seq > (SELECT COALESCE(MAX(seq), 0) FROM messages WHERE run = s.run AND event = '${EVENTS.phase.name}'))
+               SELECT 1 FROM messages m JOIN participants o ON o.id = m.author AND o.seat = ?, json_each(m.mentions) j
+               WHERE m.run = s.run AND m.kind != 'event' AND j.value = ? || '/' || s.id AND m.seq > ?)
            ORDER BY s.ord`
-    ).all(run2, plan).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
+    ).all(run2, ORCHESTRATOR, ORCHESTRATOR, plan, phaseOpenedSeqOf(run2)).map((s) => ({ member: `${plan}/${s.seat}`, seat: String(s.seat), done: false, ended: false, idleEnded: false, lost: false }));
   };
-  const phaseMembersOf = (run2, phase, onlyId) => onlyId != null ? joinedPhaseMembersOf(run2, phase, onlyId) : [...joinedPhaseMembersOf(run2, phase), ...taskedSeatsNotJoinedOf(run2, phase)];
+  const phaseMembersOf = (run2, phase) => [...joinedPhaseMembersOf(run2, phase), ...taskedSeatsNotJoinedOf(run2, phase)];
   const joinedPhaseMembersOf = (run2, phase, onlyId) => db.prepare(
     `SELECT (SELECT r.plan FROM runs r WHERE r.id = p.run) AS plan, p.seat, p.ended_at, p.idle_ended, EXISTS (SELECT 1 FROM phase_done d WHERE d.run = p.run AND d.participant = p.id AND d.phase = ?) AS done,
              EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = p.run AND e.member = p.seat AND e.badge = 'lost' AND e.opened_at IS NOT NULL AND e.closed_at IS NULL) AS lost
@@ -3043,7 +3043,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const owedNameOf = (p, run2) => {
     if (String(p.seat) === ORCHESTRATOR || run2.state !== "open" || run2.phase == null) return null;
     const phase = String(run2.phase);
-    const [me] = phaseMembersOf(Number(run2.id), phase, Number(p.id));
+    const [me] = joinedPhaseMembersOf(Number(run2.id), phase, Number(p.id));
     return me && owesPhase(me, phaseScopeOf(run2, phase)) ? phase : null;
   };
   const statesOf = (run2, t, predicate = false) => {
@@ -3076,10 +3076,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const r = runRow(p.run);
     const watch = r.phase_watch == null ? [] : JSON.parse(String(r.phase_watch));
     if (watch.includes(p.seat)) return "watched";
-    const opened = Number(db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(p.run, EVENTS.phase.name).seq ?? 0);
     const orch = db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(p.run, ORCHESTRATOR);
     if (orch) {
-      const asked = db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), opened).find(
+      const asked = db.prepare("SELECT seq, mentions FROM messages WHERE run = ? AND author = ? AND seq > ? AND kind != 'event' ORDER BY seq DESC").all(p.run, Number(orch.id), phaseOpenedSeqOf(p.run)).find(
         (m) => JSON.parse(String(m.mentions)).includes(p.name)
       );
       if (asked) {
@@ -3353,8 +3352,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const fresh = participantById(p.id);
       const phase = phaseOf(runRow(fresh.run));
       if (!phase) return null;
-      const opened = db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(fresh.run, EVENTS.phase.name);
-      const key = `${phase.name}#${opened.seq ?? 0}`;
+      const key = `${phase.name}#${phaseOpenedSeqOf(fresh.run)}`;
       const shown = db.prepare("SELECT phase_shown FROM participants WHERE id = ?").get(fresh.id);
       if (shown.phase_shown === key) return { phase, first: false };
       db.prepare("UPDATE participants SET phase_shown = ? WHERE id = ?").run(key, fresh.id);
