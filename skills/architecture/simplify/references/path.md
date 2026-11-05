@@ -4,7 +4,7 @@
 
 ## The brief
 
-Settle it before the first edit, from the work in hand or from the audit entry, and write it where the pass is tracked (the run's task, the plan's slice, chat):
+Settle it before the first edit, from the range, the work in hand or the audit entry, and write it where the pass is tracked (the run's task, the plan's slice, chat):
 
 - **Remove**: the files and symbols of the old path.
 - **Replacement**: what callers move to, and the change that introduced it.

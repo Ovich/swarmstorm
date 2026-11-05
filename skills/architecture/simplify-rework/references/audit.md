@@ -35,7 +35,7 @@ Group by cause, not by file: one shift left one family behind. Each entry:
 - kind: dead (no caller), superseded (callers exist, a replacement exists), duplicate (two live implementations of one concern)
 - files, and lines they hold
 - the evidence line: the finder or coverage output, the commit that superseded it
-- pinning tests: which tests cover the behaviour that must survive, or "none" (a finding, phase 3's characterization covers it)
+- pinning tests: which tests cover the behaviour that must survive, or "none" (a finding, the `simplify` skill's `references/consolidate.md` characterizes it)
 - risk: low (no caller), medium (callers move), high (behaviour differs between copies)
 
 Rank by lines saved over risk. The report goes where the project keeps working documents (the `aiview` skill when the collection is in use), never in the repository.
