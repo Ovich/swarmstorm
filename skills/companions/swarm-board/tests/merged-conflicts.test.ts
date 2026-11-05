@@ -42,6 +42,18 @@ test("a conflicting rebase after the grant tells its holder (US4, D3, D5)", () =
   assert.deepEqual(tellLines(out), [TELL_S3("src/a.ts")]);
 });
 
+test("v1-1: `merged --files` from a folder deep in the worktree, or in the main checkout, keeps the path repository-relative and wakes its holder", () => {
+  for (const cwdOf of [(r: Repo) => path.join(r.wtB, "src"), (r: Repo) => path.join(r.repo, "src")]) {
+    const r = fresh();
+    openTwoRunners(r);
+    const sha = conflictAfterGrant(r, "src/a.ts");
+    const merged = JSON.parse(r.cli(cwdOf(r), "merged", "--report", "-", sha, "--files", "src/a.ts", "--json", "--as", "review-tool/S5"));
+    assert.deepEqual(merged.files, ["src/a.ts"]);
+    assert.deepEqual(merged.tell, [TELL_S3("src/a.ts")]);
+    assert.match(r.cli(r.wtA, "wait", "--mentions", "--timeout", "2000"), /merged .*src\/a\.ts/s);
+  }
+});
+
 test("a clean rebase, or none since the grant, prints no tell line (D3, D5)", () => {
   const r = fresh();
   openTwoRunners(r);
