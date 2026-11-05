@@ -9,7 +9,7 @@ type Row = Record<string, unknown>;
 
 export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
 /** A held file and every member holding it, in claim order (D40): the FileMap's rows. */
-export type SnapshotFile = { path: string; holders: string[]; interface: boolean };
+export type SnapshotFile = { path: string; holders: string[] };
 /** The code fields of `BoardSnapshot`, as the page reads them. */
 export type CodeSnapshotFields = {
   /** V-46: `waiters`, the live members refused it and waiting for it, in the order they asked */
@@ -46,13 +46,12 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
     .map(nameOf);
   // every live claim on the repository, in claim order: the FileMap's rows, and which paths are shared (D40)
   const live = (
-    db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
+    db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
   ).filter((c) => isLive(Number(c.participant)));
   const files = new Map<string, SnapshotFile>();
   for (const c of live) {
-    const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
+    const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [] };
     f.holders.push(`${c.plan}/${c.seat}`);
-    f.interface ||= c.kind === "interface";
     files.set(f.path, f);
   }
   // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
@@ -90,13 +89,13 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
       flags,
     },
     factOf: (id) => (id === lockHolder ? "merging" : null),
-    heldFilesOf: (id) => (heldBy.all(id) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) })),
+    heldFilesOf: (id) => (heldBy.all(id) as Row[]).map((c) => ({ path: String(c.path), shared: sharedBy(String(c.path), id) })),
   };
 }
 
 /** The claims a member holds now (F27), repository-relative: the roster's `held`. */
 export function heldOf(db: DatabaseSync, id: number): Declared[] {
-  return (db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(id) as Row[]).map((c) => ({ path: String(c.path), interface: c.kind === "interface" }));
+  return (db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid").all(id) as Row[]).map((c) => ({ path: String(c.path) }));
 }
 
 /** Every path the member ever claimed, released ones included (S28): the roster's declared files no longer waited on. */

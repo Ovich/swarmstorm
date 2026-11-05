@@ -57,7 +57,7 @@ test("golden code flow: two workers, one run onto main", async () => {
     const seats = path.join(home, "seats.json");
     fs.writeFileSync(seats, JSON.stringify([{ id: "w1", blockers: [] }, { id: "w2", blockers: [] }, { id: "w3", blockers: [] }]));
     const runId = must("open", "--kind", "plan", "--group", GROUP, "--title", "T", "--seats", seats, "--onto", "main").split("\n")[0].trim();
-    const joinW1 = raw(["join", "--run", runId, "--seat", "w1", "--doing", "x", "--files", "a.ts:interface,c.ts:inside", "--as", W1]);
+    const joinW1 = raw(["join", "--run", runId, "--seat", "w1", "--doing", "x", "--files", "a.ts,c.ts", "--as", W1]);
     assert.equal(joinW1.status, 0, joinW1.stderr);
     must("join", "--run", runId, "--seat", "w2", "--doing", "x", "--as", W2);
     learnNicks();

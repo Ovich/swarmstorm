@@ -62,7 +62,7 @@ const member = (
     doing,
     state,
     stale: false,
-    files: files.map(([path, iface]) => ({ path, interface: !!iface, shared: false })),
+    files: files.map(([path]) => ({ path, shared: false })),
     joined: at(joined),
     ended: ended === null ? null : at(ended),
     calls,
@@ -171,7 +171,7 @@ export const LIVE: BoardSnapshot = {
   flags: [],
 };
 // the claims, as the Board derives them: one holder each here
-LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.member], interface: f.interface })));
+LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.member] })));
 
 /** The same repository with only the brainstorm and the closed runs: no claims, no merge lock (D3). */
 export const BRAINSTORM_ONLY: BoardSnapshot = {
@@ -211,7 +211,7 @@ export const SITE: BoardSnapshot = {
   roster: [member("landing/S1", "The hero", "Writing the hero", "working", [["site/hero.tsx"]], "14:03", 4)],
   events: [named("14:03", "landing/orchestrator", "opened", "run 7 opened: plan landing, The landing page")],
   queues: {},
-  files: [{ path: "site/hero.tsx", holders: ["landing/S1"], interface: false }],
+  files: [{ path: "site/hero.tsx", holders: ["landing/S1"] }],
   flags: [],
 };
 

@@ -70,14 +70,14 @@ test("join returns every participant of the repository, both plans", () => {
   const a = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const other = board.openRun({ repo: "/repos/two/.git", group: "elsewhere", title: "C", seats: SLICES });
-  board.join({ run: a.id, seat: "S3", doing: "page", files: [{ path: "src/x.ts", interface: true }] });
+  board.join({ run: a.id, seat: "S3", doing: "page", files: [{ path: "src/x.ts" }] });
   board.join({ run: other.id, seat: "S1", doing: "far away", files: [] });
   const { member, roster } = board.join({ run: b.id, seat: "S1", doing: "board", files: [] });
   assert.equal(member.name, "swarm/S1");
   assert.deepEqual(roster.map((r) => r.name).sort(), ["review-tool/S3", "review-tool/orchestrator", "swarm/S1", "swarm/orchestrator"]);
   const s3 = roster.find((r) => r.name === "review-tool/S3")!;
   assert.equal(s3.doing, "page");
-  assert.deepEqual(s3.files, [{ path: "src/x.ts", interface: true }]);
+  assert.deepEqual(s3.files, [{ path: "src/x.ts" }]);
 });
 
 test("a mention is delivered in full; a post to nobody is not delivered", () => {
@@ -392,7 +392,7 @@ test("a refusal recorded under one holder is not carried to the next (D65)", () 
 test("merged releases the lock and mentions holders and declarers", () => {
   const { run, s3, s5 } = claimed();
   // S1 declares src/b.ts, which S5 holds: a declarer, not a holder
-  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/b.ts", interface: false }], place: wt("s1") }).member;
+  const s1 = board.join({ run: run.id, seat: "S1", doing: "board", files: [{ path: "src/b.ts" }], place: wt("s1") }).member;
   board.deliverMentions(s3);
   board.deliverMentions(s5);
   board.deliverMentions(s1);
@@ -410,37 +410,6 @@ test("merged releases the lock and mentions holders and declarers", () => {
   assert.deepEqual([...forS5[0].mentions].sort(), ["review-tool/S1", "review-tool/S5"]);
   // S3 neither holds nor declared src/b.ts: not delivered
   assert.equal(board.deliverMentions(s3).full.length, 0);
-});
-
-test("an interface file in a merge is announced to @swarm, and reaches the other run's members", () => {
-  const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], place: wt("s3") }).member;
-  const s5 = board.join({ run: run.id, seat: "S5", doing: "x", files: [], place: wt("s5") }).member;
-  const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
-  const far = board.join({ run: other.id, seat: "S1", doing: "y", files: [], place: wt("far") }).member;
-  for (const p of [s3, s5, far]) board.deliverMentions(p);
-  codeVerbs(board).lockMerge(s3);
-  codeVerbs(board).merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
-  for (const p of [s5, far]) {
-    const d = board.deliverMentions(p);
-    assert.equal(d.full.length, 1, `${p.name} got the announcement in full`);
-    assert.match(d.full[0].body, /@swarm interface changed: src\/api\.ts/);
-    assert.match(d.full[0].body, /^merged def456: rebase your branch onto it./);
-  }
-});
-
-test("a plan merge of an interface file never mentions a brainstorm seat, and stays in its run (D70)", () => {
-  const run = board.openRun({ repo: REPO, group: "review-tool", title: "A", seats: SLICES });
-  const s3 = board.join({ run: run.id, seat: "S3", doing: "api", files: [{ path: "src/api.ts", interface: true }], place: wt("s3") }).member;
-  const debate = board.openRun({ repo: REPO, kind: "brainstorm", group: "topic", title: "T", seats: SLICES });
-  const seat = board.join({ run: debate.id, seat: "S1", doing: "arguing", files: [] }).member;
-  board.deliverMentions(seat);
-  codeVerbs(board).lockMerge(s3);
-  codeVerbs(board).merged(s3, "def456", [path.join(wt("s3"), "src", "api.ts")]);
-  const event = board.snapshot(REPO).events.find((e) => /^merged def456: rebase your branch onto it./.test(e.body))!;
-  assert.ok(!event.mentions!.includes("topic/*"), "the seat's run is not @all-ed");
-  assert.notEqual(event.channel, "main");
-  assert.equal(board.deliverMentions(seat).full.length, 0);
 });
 
 test("identify resolves the live member from its worktree, a subdirectory included (D28)", () => {
@@ -492,10 +461,10 @@ test("a snapshot shows two plans on one repository", () => {
   assert.equal(by["review-tool/S3"].state, "working");
   assert.equal(by["review-tool/S3"].role, "the page");
   assert.equal(by["review-tool/S3"].doing, "the page");
-  assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", interface: false, shared: false }]);
+  assert.deepEqual(by["review-tool/S3"].files, [{ path: "src/a.ts", shared: false }]);
   // the lock is the code pack's fact, beside the state: its holder reads merging
   assert.deepEqual([by["swarm/S1"].state, by["swarm/S1"].fact], ["working", "merging"]);
-  assert.deepEqual(by["swarm/S1"].files, [{ path: "src/api.ts", interface: false, shared: false }]);
+  assert.deepEqual(by["swarm/S1"].files, [{ path: "src/api.ts", shared: false }]);
   assert.deepEqual(snap.lock && snap.lock.holder, "swarm/S1");
   const last = snap.events.at(-1)!;
   assert.deepEqual([last.kind, last.from, last.body, last.about], ["msg", "review-tool/S3", "@swarm/S1 one thread", "src/a.ts"]);
@@ -779,7 +748,7 @@ test("a brainstorm run refuses files, worktrees and every code verb, writing not
   const run = board.openRun({ repo: REPO, kind: "brainstorm", group: "ideas", title: "Ideas", seats: [{ id: "critic", role: "critic", blockers: [] }] });
   assert.equal(run.kind, "brainstorm");
   const before = JSON.stringify(board.snapshot(REPO));
-  assert.throws(() => board.join({ run: run.id, seat: "critic", doing: "x", files: [{ path: "src/a.ts", interface: false }] }), /join: a brainstorm run has no claims/);
+  assert.throws(() => board.join({ run: run.id, seat: "critic", doing: "x", files: [{ path: "src/a.ts" }] }), /join: a brainstorm run has no claims/);
   assert.equal(JSON.stringify(board.snapshot(REPO)), before);
   const seat = board.join({ run: run.id, seat: "critic", doing: "reading", files: [], place: dir }).member;
   assert.equal(seat.place, null);
@@ -825,7 +794,7 @@ test("a store from before channels opens: a row with run null reads as its autho
   assert.equal(m.run, 1);
   assert.deepEqual(old.deliverMentions(s5).full.map((x) => x.seq), [m.seq]);
   codeVerbs(old).changes(s3, ["src/a.ts"]);
-  assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"], interface: false }]);
+  assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"] }]);
 });
 
 // D59: the wake rule; D60: a seat added mid-run

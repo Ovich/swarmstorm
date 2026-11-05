@@ -50,6 +50,23 @@ test("changedSet: unstaged, staged, committed, new, deleted, renamed (both paths
 let board: Board;
 const REPO = "/repos/autoclaim/.git";
 
+test("changedSet: a worktree switched to another commit (a base to compare against) keeps the last set, back on its branch it reads again", () => {
+  const repo = path.join(dir, "repo");
+  fs.mkdirSync(repo);
+  git(repo, "init", "-q", "-b", "main");
+  fs.writeFileSync(path.join(repo, "a.ts"), "a\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-qm", "base");
+  git(repo, "checkout", "-qb", "work");
+  fs.appendFileSync(path.join(repo, "a.ts"), "x\n");
+  git(repo, "commit", "-qam", "work");
+  assert.deepEqual(changedSet(repo, "main"), ["a.ts"]);
+  git(repo, "checkout", "-q", "--detach", "main");
+  assert.equal(changedSet(repo, "main"), null, "detached on the base: the claims stay");
+  git(repo, "checkout", "-q", "work");
+  assert.deepEqual(changedSet(repo, "main"), ["a.ts"]);
+});
+
 test("the board sets holdings to the set, releases what left it, and posts an overlap once to both, never when they agreed", async () => {
   board = await openBoard(path.join(dir, "swarm.sqlite"));
   try {

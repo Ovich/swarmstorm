@@ -253,8 +253,8 @@ const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "a
 
 /** F27: a member's held files, the first few and how many more. */
 const HELD_SHOWN = 3;
-const heldLine = (files: { path: string; interface: boolean }[]): string => {
-  const shown = files.slice(0, HELD_SHOWN).map((f) => (f.interface ? `${f.path} (interface)` : f.path)).join(", ");
+const heldLine = (files: { path: string }[]): string => {
+  const shown = files.slice(0, HELD_SHOWN).map((f) => f.path).join(", ");
   return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
 };
 
@@ -443,12 +443,9 @@ function aboutArg(): string | undefined {
   return repoRelative(resolveClaimPath(about, true));
 }
 
-/** `<path>`, `<path>:inside` or `<path>:interface`, the path resolved (D6); a file not there yet is one the
- *  seat creates, declared from the repository root. */
+/** `<path>`, resolved (D6); a file not there yet is one the seat creates, declared from the repository root. */
 function parseFile(spec: string): Declared {
-  const m = spec.match(/^(.*):(interface|inside)$/);
-  const d = m ? { path: m[1], interface: m[2] === "interface" } : { path: spec, interface: false };
-  return { ...d, path: repoRelative(declaredPath(d.path)) };
+  return { path: repoRelative(declaredPath(spec)) };
 }
 
 /** A declared or merged file: from the shell's folder when it is there, else from `root` (created, or deleted, or not). */

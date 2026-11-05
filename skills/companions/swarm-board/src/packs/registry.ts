@@ -56,7 +56,7 @@ export const registry = {
     return reader.snapshot(deps, repo, people, orchestratorSeat);
   },
   /** What the member holds now, every pack's (F27). */
-  heldOf(db: PackTablesDeps["db"], member: number): { path: string; interface: boolean }[] {
+  heldOf(db: PackTablesDeps["db"], member: number): { path: string }[] {
     return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
   },
   /** The paths the member ever claimed, every pack's (S28). */

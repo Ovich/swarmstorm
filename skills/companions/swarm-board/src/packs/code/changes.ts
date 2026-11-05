@@ -4,8 +4,10 @@ import { gitAnswer } from "../../git.ts";
 
 /** Every path `worktree` changed against `onto`, repository-relative with forward slashes: what git status shows
  *  (staged, unstaged, untracked, a conflict; a rename's both paths) and what its branch committed since the merge-base
- *  (a rename's both paths); ignored files never. Null when git fails: the caller keeps the last set. */
+ *  (a rename's both paths); ignored files never. Null when git fails, or when HEAD is detached (the worktree switched
+ *  to another commit, a base to compare against): the caller keeps the last set, so the claims stay the member's work. */
 export function changedSet(worktree: string, onto: string): string[] | null {
+  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
   const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");

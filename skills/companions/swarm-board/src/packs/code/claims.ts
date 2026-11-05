@@ -89,20 +89,17 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     )
       .map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) }))
       .filter((c) => isLive(c.participant));
-  /** `p` holds `rel` (alongside whoever else does); `interface` widens an inside claim, never the reverse.
-   *  True when the claim was made or widened here. */
-  const hold = (p: Participant, rel: string, kind: "interface" | "inside"): boolean =>
+  /** `p` holds `rel` (alongside whoever else does). True when the claim was made here. */
+  const hold = (p: Participant, rel: string): boolean =>
     transaction(() => {
       const r = db
         .prepare(
-          `INSERT INTO claims (repo, path, participant, kind, since_seq) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT (repo, path, participant) DO UPDATE SET kind = excluded.kind WHERE claims.kind = 'inside' AND excluded.kind = 'interface'`,
+          `INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`,
         )
-        .run(p.repo, rel, p.id, kind, lastSeq());
+        .run(p.repo, rel, p.id, lastSeq());
       db.prepare(
-        `INSERT INTO claim_log (repo, path, participant, kind) VALUES (?, ?, ?, ?)
-         ON CONFLICT (repo, path, participant) DO UPDATE SET kind = 'interface' WHERE excluded.kind = 'interface'`,
-      ).run(p.repo, rel, p.id, kind);
+        "INSERT INTO claim_log (repo, path, participant) VALUES (?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING",
+      ).run(p.repo, rel, p.id);
       if (Number(r.changes) === 0) return false;
       bump(p.repo);
       return true;
@@ -237,7 +234,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const gone = [...had].filter((x) => !now.has(x));
         const fresh = [...now].filter((x) => !had.has(x));
         for (const x of gone) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
-        for (const x of fresh) hold(me, x, "inside");
+        for (const x of fresh) hold(me, x);
         if (gone.length) {
           clearFlags();
           bump(me.repo);
@@ -306,7 +303,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold(slashes(f)))) : null;
       const wanted = new Set(rels);
       const told = new Set<string>();
-      const iface = new Set<string>();
       const sharers: Sharer[] = [];
       let waiters: string[] = [];
       let onto: string | null = null;
@@ -329,11 +325,10 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         // every holder of a merged path, a shared one included (D40)
         for (const rel of rels) {
           for (const c of holdersOf(me.repo, rel)) {
-            if (c.kind === "interface") iface.add(rel);
             if (c.participant !== me.id) told.add(participantById(c.participant).name);
           }
         }
-        // declarers, the merger's own declarations counting toward *interface*
+        // declarers
         const everyone = db
           .prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL")
           .all(me.repo) as Row[];
@@ -341,7 +336,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           for (const f of declared(Number(o.id))) {
             const rel = relPath(me.repo, f.path);
             if (!rel || !wanted.has(rel)) continue;
-            if (f.interface) iface.add(rel);
             if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.seat}`);
           }
         }
@@ -356,15 +350,9 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           const parties = [participantById(Number(a.author)).name, ...(JSON.parse(String(a.mentions)) as string[])];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        // an interface change is announced to every member on the repository (D26), never to a kind without claims (D70)
-        const openPlans = (db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo) as Row[])
-          .filter((r) => kindHasPack(String(r.kind)))
-          .map((r) => String(r.plan));
-        const all = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
         if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
-        if (iface.size) lines.push(`@swarm interface changed: ${[...iface].join(", ")}.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
         // whom to tell of a resolved conflict (D63): a holder from any run, or one of this run that held it;
@@ -380,7 +368,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta: MergedMeta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...(waiters.length ? { free: waiters } : {}) };
-        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters, ...all])], { event: CODE_EVENTS.merged.name, meta });
+        insertMessage(me, lines.join("\n"), null, "event", [...new Set([...told, ...agreed, ...waiters])], { event: CODE_EVENTS.merged.name, meta });
         // S28: the merged files are no longer the merger's to hold; its other claims stay for the work still open
         const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
         for (const rel of rels) release.run(me.repo, rel, me.id);

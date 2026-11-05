@@ -413,7 +413,7 @@ test("a stopped card keeps its doing line on its face", () => {
 
 // ── ClaimsRow ────────────────────────────────────────────────────────────────────
 
-const SHARED: BoardSnapshot = { ...LIVE, files: [...LIVE.files, { path: "src/shared.ts", holders: ["refresh-tokens/S3", "audit-log/S1"], interface: true }] };
+const SHARED: BoardSnapshot = { ...LIVE, files: [...LIVE.files, { path: "src/shared.ts", holders: ["refresh-tokens/S3", "audit-log/S1"] }] };
 
 test("the claims row is collapsed, counting files and those shared", () => {
   show([APP], 1, [SHARED]);

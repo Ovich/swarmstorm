@@ -90,7 +90,7 @@ describe("conversation: the pick (D1, D14)", () => {
 });
 
 describe("conversation: what an item is (D8, D16)", () => {
-  const FILES = [{ path: "a.ts", holders: ["alpha/S1"], interface: false }];
+  const FILES = [{ path: "a.ts", holders: ["alpha/S1"] }];
 
   test("a held file: a post --about a path mentioning its holder, by a member not holding it; answered once the holder posts about it", () => {
     const ask = item(2, "beta/S2", "@AL·S1 I add one call in a.ts", { about: "a.ts" });
@@ -223,8 +223,8 @@ describe("agents (D7, D20)", () => {
 
 describe("claimRows (D7)", () => {
   const files = [
-    { path: "a.ts", holders: ["alpha/S1", "beta/S2"], interface: true },
-    { path: "b.ts", holders: ["beta/S2"], interface: false },
+    { path: "a.ts", holders: ["alpha/S1", "beta/S2"] },
+    { path: "b.ts", holders: ["beta/S2"] },
   ];
   test("every held file under All, a run's under its tab; a file of two holders is shared", () => {
     const snap = board(RUNS, ROSTER, [], files);
@@ -238,7 +238,7 @@ describe("claimRows (D7)", () => {
 
   test("V-19: a brainswarm run has no claims row; a code run keeps it", () => {
     const roster = [member("alpha", "S1", "Old Owl", "working")];
-    const held = [{ path: "a.ts", holders: ["alpha/S1"], interface: false }];
+    const held = [{ path: "a.ts", holders: ["alpha/S1"] }];
     expect(claimRows(board([{ ...run(1, "alpha", "AL"), kind: "brainstorm" }], roster, [], held), 1)).toBeNull();
     expect(claimRows(board([run(1, "alpha", "AL")], roster, [], held), 1)!.map((r) => r.path)).toEqual(["a.ts"]);
   });
@@ -250,8 +250,8 @@ describe("claimRows (D7)", () => {
       { ...member("same", "S2", "New Owl", "working"), run: 6 },
     ];
     const held = [
-      { path: "old.ts", holders: ["same/S1"], interface: false },
-      { path: "new.ts", holders: ["same/S2"], interface: false },
+      { path: "old.ts", holders: ["same/S1"] },
+      { path: "new.ts", holders: ["same/S2"] },
     ];
     expect(claimRows(board(runs, roster, [], held), 6)!.map((r) => r.path)).toEqual(["new.ts"]);
     expect(claimRows(board(runs, roster, [], held), 5)!.map((r) => r.path)).toEqual(["old.ts"]);

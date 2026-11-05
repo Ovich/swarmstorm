@@ -297,15 +297,13 @@ function claimsOf(deps) {
     ).run();
   };
   const holdersOf = (repo, rel) => db.prepare("SELECT participant, kind, since_seq FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => ({ participant: Number(r.participant), kind: String(r.kind), since: Number(r.since_seq) })).filter((c) => isLive(c.participant));
-  const hold = (p, rel, kind) => transaction(() => {
+  const hold = (p, rel) => transaction(() => {
     const r = db.prepare(
-      `INSERT INTO claims (repo, path, participant, kind, since_seq) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT (repo, path, participant) DO UPDATE SET kind = excluded.kind WHERE claims.kind = 'inside' AND excluded.kind = 'interface'`
-    ).run(p.repo, rel, p.id, kind, lastSeq());
+      `INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`
+    ).run(p.repo, rel, p.id, lastSeq());
     db.prepare(
-      `INSERT INTO claim_log (repo, path, participant, kind) VALUES (?, ?, ?, ?)
-         ON CONFLICT (repo, path, participant) DO UPDATE SET kind = 'interface' WHERE excluded.kind = 'interface'`
-    ).run(p.repo, rel, p.id, kind);
+      "INSERT INTO claim_log (repo, path, participant) VALUES (?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING"
+    ).run(p.repo, rel, p.id);
     if (Number(r.changes) === 0) return false;
     bump(p.repo);
     return true;
@@ -413,7 +411,7 @@ function claimsOf(deps) {
         const gone = [...had].filter((x) => !now2.has(x));
         const fresh = [...now2].filter((x) => !had.has(x));
         for (const x of gone) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
-        for (const x of fresh) hold(me, x, "inside");
+        for (const x of fresh) hold(me, x);
         if (gone.length) {
           clearFlags();
           bump(me.repo);
@@ -470,7 +468,6 @@ function claimsOf(deps) {
       const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold2(slashes(f)))) : null;
       const wanted = new Set(rels);
       const told = /* @__PURE__ */ new Set();
-      const iface = /* @__PURE__ */ new Set();
       const sharers = [];
       let waiters = [];
       let onto = null;
@@ -489,7 +486,6 @@ function claimsOf(deps) {
         });
         for (const rel of rels) {
           for (const c of holdersOf(me.repo, rel)) {
-            if (c.kind === "interface") iface.add(rel);
             if (c.participant !== me.id) told.add(participantById(c.participant).name);
           }
         }
@@ -498,7 +494,6 @@ function claimsOf(deps) {
           for (const f of declared(Number(o.id))) {
             const rel = relPath(me.repo, f.path);
             if (!rel || !wanted.has(rel)) continue;
-            if (f.interface) iface.add(rel);
             if (Number(o.id) !== me.id) told.add(`${o.plan}/${o.seat}`);
           }
         }
@@ -510,12 +505,9 @@ function claimsOf(deps) {
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        const openPlans = db.prepare("SELECT DISTINCT plan, kind FROM runs WHERE repo = ? AND state = 'open'").all(me.repo).filter((r) => kindHasPack(String(r.kind))).map((r) => String(r.plan));
-        const all2 = iface.size ? openPlans.map((plan) => `${plan}/*`) : [];
         const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
         if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
-        if (iface.size) lines.push(`@swarm interface changed: ${[...iface].join(", ")}.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
         for (const rel of rels) {
@@ -527,7 +519,7 @@ function claimsOf(deps) {
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
         const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...waiters.length ? { free: waiters } : {} };
-        insertMessage(me, lines.join("\n"), null, "event", [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters, ...all2])], { event: CODE_EVENTS.merged.name, meta });
+        insertMessage(me, lines.join("\n"), null, "event", [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters])], { event: CODE_EVENTS.merged.name, meta });
         const release = db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?");
         for (const rel of rels) release.run(me.repo, rel, me.id);
         clearFlags();
@@ -554,12 +546,11 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
   const heldBy = db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid");
   const lockWaiters = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo).map((w) => Number(w.participant)).filter((id) => isLive(id) && id !== lockHolder).map(nameOf);
-  const live = db.prepare("SELECT c.path, c.kind, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
+  const live = db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
   for (const c of live) {
-    const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [], interface: false };
+    const f = files.get(String(c.path)) ?? { path: String(c.path), holders: [] };
     f.holders.push(`${c.plan}/${c.seat}`);
-    f.interface ||= c.kind === "interface";
     files.set(f.path, f);
   }
   const everClaimed = db.prepare("SELECT 1 FROM claim_log WHERE repo = ? AND path = ? AND participant = ?");
@@ -588,11 +579,11 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
       flags
     },
     factOf: (id) => id === lockHolder ? "merging" : null,
-    heldFilesOf: (id) => heldBy.all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface", shared: sharedBy(String(c.path), id) }))
+    heldFilesOf: (id) => heldBy.all(id).map((c) => ({ path: String(c.path), shared: sharedBy(String(c.path), id) }))
   };
 }
 function heldOf(db, id) {
-  return db.prepare("SELECT path, kind FROM claims WHERE participant = ? ORDER BY rowid").all(id).map((c) => ({ path: String(c.path), interface: c.kind === "interface" }));
+  return db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid").all(id).map((c) => ({ path: String(c.path) }));
 }
 function everClaimedOf(db, id) {
   return db.prepare("SELECT DISTINCT path FROM claim_log WHERE participant = ?").all(id).map((c) => String(c.path));
@@ -796,6 +787,7 @@ var init_liveness = __esm({
 
 // src/packs/code/changes.ts
 function changedSet(worktree, onto) {
+  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   if (base.status !== 0) return null;
   const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
@@ -9288,7 +9280,7 @@ var coreUsage = (cli) => [
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
   "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
   `  close   --run <id> [--force] [--as <member>]                    # (orchestrator; --force for the orchestrators board, else refused); ${CODE_IN_CORE_HELP.closeRemoves}`,
-  `  join    --run <id> --seat <id> --doing <t> [--files "<path>:interface,<path>:inside,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
+  `  join    --run <id> --seat <id> --doing <t> [--files "<path>,<path>,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
   "  doing   [--as <member>] <text>",
   "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent] [--task] [--after <seats>]   # prints the seq; --task (orchestrator): the post is the one seat it mentions's task, owed until its done; --after w1,w2 implies it and wakes that seat as each of them lands its work, is done or leaves; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
   "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
@@ -9530,7 +9522,7 @@ var ago = (at) => {
 var stateLine = (r, ages = false) => `${r.state}${r.activity ? ` (${r.activity})` : ""}` + (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 var HELD_SHOWN = 3;
 var heldLine = (files) => {
-  const shown = files.slice(0, HELD_SHOWN).map((f) => f.interface ? `${f.path} (interface)` : f.path).join(", ");
+  const shown = files.slice(0, HELD_SHOWN).map((f) => f.path).join(", ");
   return files.length > HELD_SHOWN ? `${shown} +${files.length - HELD_SHOWN} more (${files.length})` : shown;
 };
 var rosterLine = (r, roster, ages = false) => {
@@ -9645,9 +9637,7 @@ function aboutArg() {
   return repoRelative(resolveClaimPath(about, true));
 }
 function parseFile(spec) {
-  const m = spec.match(/^(.*):(interface|inside)$/);
-  const d = m ? { path: m[1], interface: m[2] === "interface" } : { path: spec, interface: false };
-  return { ...d, path: repoRelative(declaredPath(d.path)) };
+  return { path: repoRelative(declaredPath(spec)) };
 }
 var declaredPath = (file, root = worktreeOf(process.cwd())) => {
   const { abs, missing } = resolveIn(root, file);

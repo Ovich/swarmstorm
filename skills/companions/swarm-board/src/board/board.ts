@@ -32,7 +32,7 @@ export type Seat = SeatSpec & { state: SeatState };
 export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: SeatState };
 /** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
-export type Declared = { path: string; interface: boolean }; // repository-relative
+export type Declared = { path: string }; // repository-relative
 export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "event";
 
 /** The phase a run's orchestrator opened last (`phase <name> <text>`). */

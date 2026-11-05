@@ -43,7 +43,7 @@ const EVENTS = [
 ];
 const SNAP: BoardSnapshot = {
   repo: "/r/.git", name: "r", runs: [RUN], lock: null, lockHistory: [], roster: [member("S1", "Sleepy Otter"), member("S2", "Brave Badger"), member("orchestrator", "Calm Owl")],
-  events: EVENTS, queues: {}, files: [{ path: "a.ts", holders: ["alpha/S1"], interface: false }], flags: [],
+  events: EVENTS, queues: {}, files: [{ path: "a.ts", holders: ["alpha/S1"] }], flags: [],
 };
 
 const show = () => {
