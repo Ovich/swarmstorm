@@ -314,7 +314,7 @@ test("wait prints, before the message, the line that re-arms it with the exact c
   const script = CLI.replace(/\\/g, "/");
   assert.equal(
     hint,
-    `start this listener again, in the background while you work, in the foreground when you are waiting (it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 150000`,
+    `you received a new message: before reading it, start this listener again, in the background while you work, in the foreground when you are waiting (it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty): node ${script} wait --mentions --as review-tool/S5 --timeout 150000`,
   );
   assert.match(message.join("\n"), /review-tool\/S3[^\n]*\n@S5 your turn/);
   // the command it names runs as written: nothing more for S5, so it times out; idea 2 (B7): the empty return prints the
@@ -495,7 +495,7 @@ test("a mentions-only wait in a child process sleeps through a join and wakes on
   assert.equal(exitedAt, 0, `a join line woke the listener: ${out}`);
   run("post", "--as", "review-tool/S3", "@S5 your turn");
   assert.equal(await exited, 0);
-  assert.match(out, /^start this listener again[^\n]* \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 150000\n/);
+  assert.match(out, /^you received a new message: before reading it, start this listener again[^\n]* \(it holds 150 s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty\): node [^\n]* wait --mentions --as review-tool\/S5 --timeout 150000\n/);
   assert.match(out, /@S5 your turn/);
   // a join is no message to the member: it neither wakes it nor rides on its wake
   assert.equal(out.split("joined:").length - 1, 0, out);
@@ -520,7 +520,7 @@ test("a foreground wait supersedes the background listener in another process; t
   assert.deepEqual(JSON.parse(listener.out()), { full: [], superseded: true });
   run("post", "--as", "review-tool/S3", "@S5 rebase onto abc");
   assert.equal(await foreground.exited, 0);
-  assert.match(foreground.out(), /^start this listener again[^\n]*\n[^\n]*review-tool\/S3[^\n]*\n@S5 rebase onto abc/);
+  assert.match(foreground.out(), /^you received a new message: before reading it, start this listener again[^\n]*\n[^\n]*review-tool\/S3[^\n]*\n@S5 rebase onto abc/);
   // the human form, superseded by a short foreground wait
   const third = start();
   await new Promise((r) => setTimeout(r, 1500));
@@ -1096,7 +1096,7 @@ test("on a plan run too: the current phase heads wait, follows the roster at joi
   const header = "phase build: the first wave";
   const woken = run("wait", "--mentions", "--as", s3, "--timeout", "3000");
   // G7, G10: the re-arm line first; the phase's text once, in its own event
-  assert.match(woken.stdout.split("\n")[0], /^start this listener again/);
+  assert.match(woken.stdout.split("\n")[0], /^you received a new message: before reading it, start this listener again/);
   assert.equal(woken.stdout.split("the first wave").length - 1, 1, woken.stdout);
   assert.match(woken.stdout, /phase build: the first wave/);
 
