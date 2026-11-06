@@ -162,7 +162,7 @@ test("a member owing the phase whose only link is killed reads lost within 66 s 
   assert.equal(verb.status, 0, verb.stderr);
   assert.doesNotMatch(verb.stdout, /start your link now/, "the verb went through the agent's link");
   // it owes work (the open phase undone): a link down on it is lost, never away
-  h.r.cli(h.r.repo, "phase", "build", "build the client", "--as", "harness-plan/orchestrator");
+  h.r.cli(h.r.repo, "phase", "--confirm", "build", "build the client", "--as", "harness-plan/orchestrator");
   const took = spawnSync(process.execPath, [CLI, "wait", "--mentions", "--timeout", "200"], { cwd: h.r.wtA, encoding: "utf8", env: h.env, timeout: 30000 });
   assert.equal(took.status, 0, took.stderr);
   link.kill();

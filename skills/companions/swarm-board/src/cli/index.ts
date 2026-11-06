@@ -717,6 +717,11 @@ async function main(): Promise<void> {
       const only = args.list("--for");
       // V-44: an empty --for is refused, never read as a phase for every member
       if (args.has("--for") && !only.length) fail(WORDING.phaseForEmpty(name));
+      // two steps by the answer alone, as close: the first names the opt-ins to weigh and the confirming call
+      if (!args.has("--confirm") && p.seat === "orchestrator") {
+        const flags = (only.length ? ` --for ${only.join(",")}` : "") + (watch.length ? ` --watch ${watch.join(",")}` : "");
+        fail(rules.phaseStep(name, WORDING.phaseConfirm(self().join(" "), shellWord(name), shellWord(text), flags, shellWord(p.name))));
+      }
       const previous = (await board.currentPhase(p.run))?.name ?? null;
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...(watch.length ? { watch } : {}), ...(only.length ? { for: only } : {}) } : undefined);
       // V-6 (D62): the members that still owed the phase this one replaces, named once

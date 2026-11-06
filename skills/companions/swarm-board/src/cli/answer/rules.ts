@@ -109,6 +109,10 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
 export const lostMentionLines = (lost: string[], cli: string, as: string): string[] =>
   lost.map((member) => W.mentionLost(member, W.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
 
+/** The first `phase`'s answer: confirm the next phase, the fixed opt-ins weighed first, ending on the confirming call;
+ *  two steps by the answer alone, no state between them, as `close`. */
+export const phaseStep = (name: string, confirm: string): string => W.phaseConfirmStep(name, W.phaseOptIns, confirm);
+
 /** board-fixes#D6: the first `close`'s answer: while a member owes, who, and post no new task; else the closing steps,
  *  ending on the confirming call. */
 export const closeStep = (owing: string[], run: number, confirm: string, code: boolean): string =>

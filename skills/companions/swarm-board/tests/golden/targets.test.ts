@@ -19,7 +19,7 @@ const expect = (answer: Answer, target: string[]): void => {
 test("G7 target: the phase-open wake of a worker names the phase and its done once", async () => {
   const s = await scene("worker", "idle");
   try {
-    s.must("phase", "build", "build the thing", "--as", O);
+    s.must("phase", "--confirm", "build", "build the thing", "--as", O);
     expect(s.call("wait", "--mentions", "--as", s.me, "--timeout", "5000"), [
       REARM(s.me),
       `#<seq> ${O} (event)  <ts>`,

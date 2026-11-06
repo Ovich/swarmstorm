@@ -448,7 +448,7 @@ test("merged on a code run is refused without the merge lock, naming merge-lock;
 
 test("post and doing end on the listener line while no listener is pending, and not while one is (D61)", async () => {
   const id = String(openRun());
-  run("phase", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
+  run("phase", "--confirm", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const as = ["--as", "review-tool/S5"];
   const unheard = [run("post", ...as, "hello"), run("doing", ...as, "the page")];
@@ -908,7 +908,14 @@ test("phase opens a phase: prints its seq, then the listener and the next phase 
   const id = Number(run("open", "--kind", "brainstorm", "--group", "idea", "--title", "An idea", "--seats", seats).stdout.split("\n")[0]);
   const first = JSON.parse(SEATS)[0].id as string;
   assert.equal(run("join", "--run", String(id), "--seat", first, "--doing", "x").status, 0);
-  const r = run("phase", "diverge", "every", "idea", "--as", "idea/orchestrator");
+  // the first call opens nothing: confirm the next phase, the fixed opt-ins weighed first, then the confirming call
+  const ask = run("phase", "diverge", "every idea", "--watch", first, "--as", "idea/orchestrator");
+  assert.equal(ask.status, 1);
+  assert.match(ask.stderr, /phase diverge: confirm the next phase/);
+  for (const optIn of ["prototype:", "architecture:", "verify:", "reflect:", "simplify:", "the person:"]) assert.match(ask.stderr, new RegExp(`- ${optIn}`));
+  assert.match(ask.stderr, new RegExp(`phase diverge "every idea" --watch ${first} --confirm --as idea/orchestrator`));
+  assert.equal(run("status").stdout.includes("phase diverge"), false);
+  const r = run("phase", "--confirm", "diverge", "every", "idea", "--as", "idea/orchestrator");
   assert.equal(r.status, 0, r.stderr);
   const [seq, brief, next] = r.stdout.trim().split("\n");
   assert.match(seq, /^#\d+$/);
@@ -917,14 +924,14 @@ test("phase opens a phase: prints its seq, then the listener and the next phase 
   assert.match(next, /wait --mentions --as idea\/orchestrator.*open the next phase: .* phase <name> "<text>" --as idea\/orchestrator/);
   assert.match(next, new RegExp(`close --run ${id}`));
   assert.doesNotMatch(next, /end(s|ing)? (a|the|one) phase/);
-  const named = run("phase", "end", "the board is written", "--as", "idea/orchestrator");
+  const named = run("phase", "--confirm", "end", "the board is written", "--as", "idea/orchestrator");
   assert.equal(named.status, 0, named.stderr);
   assert.match(named.stdout, /phase end is open/);
-  const refused = run("phase", "x", "y", "--as", `idea/${first}`);
+  const refused = run("phase", "--confirm", "x", "y", "--as", `idea/${first}`);
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /only the orchestrator opens a phase/);
   const help = run("--help").stdout;
-  assert.match(help, /^ {2}phase {3}<name> <text> \[--for <seat>,…\] \[--watch <seat>,…\] \[--as <member>\] +# opens phase <name>; the current phase ends with it/m);
+  assert.match(help, /^ {2}phase {3}<name> <text> \[--for <seat>,…\] \[--watch <seat>,…\] \[--confirm\] \[--as <member>\] +# without --confirm: the opt-in phases to weigh and the confirming call; with it, opens phase <name>; the current phase ends with it/m);
   assert.match(help, /^ {2}done {4}<phase> \[--as <member>\]/m);
   assert.doesNotMatch(help, /phase end /);
 });
@@ -938,7 +945,7 @@ test("done: a member's done is counted, roster and status show n/m done, the las
   const none = run("done", "diverge", "--as", `idea/${a}`);
   assert.equal(none.status, 0, "no phase open yet: nothing to mark, no error");
   assert.match(none.stdout, /no phase is open: nothing to mark/);
-  run("phase", "diverge", "every idea", "--as", "idea/orchestrator");
+  run("phase", "--confirm", "diverge", "every idea", "--as", "idea/orchestrator");
   run("wait", "--mentions", "--timeout", "200", "--as", "idea/orchestrator");
   const wrong = run("done", "converge", "--as", `idea/${a}`);
   assert.equal(wrong.status, 1);
@@ -1084,7 +1091,7 @@ test("on a plan run too: the current phase heads wait, follows the roster at joi
   run("post", "@swarm before", "--as", "review-tool/orchestrator");
   assert.doesNotMatch(run("wait", "--mentions", "--timeout", "200", "--as", s3).stdout, /^phase /m);
 
-  const r = run("phase", "build", "the", "first", "wave", "--as", "review-tool/orchestrator");
+  const r = run("phase", "--confirm", "build", "the", "first", "wave", "--as", "review-tool/orchestrator");
   assert.equal(r.status, 0, r.stderr);
   const header = "phase build: the first wave";
   const woken = run("wait", "--mentions", "--as", s3, "--timeout", "3000");
@@ -1117,7 +1124,7 @@ test("a member owing the open phase is told to do it before any wait: at join, a
   assert.doesNotMatch(early.stdout, /is open and asks/);
   assert.match(early.stdout.trimEnd().split("\n").at(-1)!, /^wait now, in the foreground .*empty\): node \S+ wait --mentions --as idea\/architect --timeout 150000$/);
 
-  run("phase", "ping", "say", "hi", "--as", "idea/orchestrator");
+  run("phase", "--confirm", "ping", "say", "hi", "--as", "idea/orchestrator");
   const owed = /^phase ping is open and asks: say hi\. Do your part now, then mark it done: node \S+ done ping --as idea\/skeptic$/m;
   // a late join: the do-it step, then only then the wait
   const late = joinSeat(id, "skeptic");
@@ -1236,7 +1243,7 @@ test("C3, V4: open says next: once; no post repeats it, the first included; with
   assert.doesNotMatch(run("post", "@w1 task T1: do it", "--as", "c3/orchestrator").stdout, /^next:/m);
   assert.doesNotMatch(run("post", "@w1 task T2", "--as", "c3/orchestrator").stdout, /^next:/m);
   run("open", "--kind", "task", "--group", "c3b", "--title", "T", "--seats", seatsFile("c3b", ["w1"]));
-  run("phase", "build", "go", "--as", "c3b/orchestrator");
+  run("phase", "--confirm", "build", "go", "--as", "c3b/orchestrator");
   assert.doesNotMatch(run("post", "@w1 task T1", "--as", "c3b/orchestrator").stdout, /^next:/m);
   const open = run("open", "--kind", "brainstorm", "--group", "c3c", "--title", "T", "--seats", seatsFile("c3c", ["a"]));
   assert.doesNotMatch(open.stdout, /^next:/m);
@@ -1350,7 +1357,7 @@ test("G3: on a home other than the default, every printed command carries SWARMS
 test("the listener line follows the link's report of the member's listener, not its in-wait column (D4, G16)", async () => {
   const id = Number(openRun());
   run("join", "--run", String(id), "--seat", "S5", "--doing", "y");
-  run("phase", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
+  run("phase", "--confirm", "build", "build it", "--as", "review-tool/orchestrator"); // board-fixes#D3: owing, so the listener line
   const as = ["--as", "review-tool/S5"];
   const report = async (listener: { running: boolean; endedAt: number | null }): Promise<void> => {
     const board = await openBoard(path.join(toolRoot, "swarm.sqlite"));
@@ -1481,7 +1488,7 @@ test("board-fixes#D6: close takes two steps: the first lists who owes, or gives 
   const id = String(openRun());
   const as = ["--as", "review-tool/orchestrator"];
   assert.equal(run("join", "--run", id, "--seat", "S3", "--doing", "x").status, 0);
-  assert.equal(run("phase", "build", "build it", ...as).status, 0);
+  assert.equal(run("phase", "--confirm", "build", "build it", ...as).status, 0);
   const owing = run("close", "--run", id, ...as);
   assert.equal(owing.status, 1);
   assert.match(owing.stderr, new RegExp(`close: not yet, run ${id} has members still owing work: review-tool/S3\. Post no new task`));

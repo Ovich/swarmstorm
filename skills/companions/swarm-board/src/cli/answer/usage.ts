@@ -14,7 +14,7 @@ export const coreUsage = (cli: Command): string =>
     "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
     '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>"}]',
     "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--as <member>]   # adds a seat mid-run (orchestrator; any team orchestrator on the orchestrators board)",
-    "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+    "  phase   <name> <text> [--for <seat>,…] [--watch <seat>,…] [--confirm] [--as <member>]   # without --confirm: the opt-in phases to weigh and the confirming call; with it, opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
     "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
     `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person it waits on the person, the text its reason (orchestrator)`,
     "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
