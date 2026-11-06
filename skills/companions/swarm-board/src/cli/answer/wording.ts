@@ -172,6 +172,8 @@ export const WORDING = {
   packVerbRefused: (verb: string, seatKind: string) =>
     `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
   /** a member's end with messages to it not yet read: it reads them first, its wait returning them at once */
+  /** told at every other verb of a worker holding undelivered messages: its listener may have lapsed */
+  unreadNow: (unread: number, wait: Command) => `you have ${unread} unread message${unread === 1 ? "" : "s"} for you: read ${unread === 1 ? "it" : "them"} now, then start your listener again, in the background: ${wait}`,
   unreadBeforeEnd: (unread: number, wait: Command) => `you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${wait}\` first`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run: number, wait: Command) =>

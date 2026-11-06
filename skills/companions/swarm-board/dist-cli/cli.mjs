@@ -9083,6 +9083,8 @@ As planned, open it: ${confirm}`,
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
   packVerbRefused: (verb, seatKind) => `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
   /** a member's end with messages to it not yet read: it reads them first, its wait returning them at once */
+  /** told at every other verb of a worker holding undelivered messages: its listener may have lapsed */
+  unreadNow: (unread, wait) => `you have ${unread} unread message${unread === 1 ? "" : "s"} for you: read ${unread === 1 ? "it" : "them"} now, then start your listener again, in the background: ${wait}`,
   unreadBeforeEnd: (unread, wait) => `you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${wait}\` first`,
   /** board-split D30, D38: a member's own end while its run is open */
   endRefused: (run2, wait) => `end: refused, run ${run2} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
@@ -9215,6 +9217,7 @@ var owedLine = (s, opts = {}) => {
   return opts.brief ? WORDING.owedBrief(s.owed.name, done) : WORDING.owedOpen(s.owed.name, s.owed.text, done);
 };
 var openTaskLine = (s) => pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? WORDING.taskStillOpen(s.openTask, WORDING.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
+var unreadLine = (s, verb) => s.listens === "background" && verb !== "wait" && verb !== "join" && (s.unread ?? 0) > 0 ? WORDING.unreadNow(s.unread, WORDING.wait(s.cli, s.as)) : null;
 var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? WORDING.owesNothingEndTurn : null);
 var mentionReaches = (mentions2, name) => mentions2.includes(name) || mentions2.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
 var unreachedMentionLines = (targets) => targets.flatMap((t) => t.state === "away" ? [WORDING.postToAway(t.name)] : t.state === "lost" ? [WORDING.postToLost(t.name)] : []);
@@ -9333,7 +9336,8 @@ async function readSituation(board2, me, opts) {
     phaseFirst: shown ? shown.first : null,
     // board-fixes#D5: an open task owes, phase or not
     owesNothing: owed == null && own?.fact == null && own?.task == null,
-    openTask: own?.task ?? null
+    openTask: own?.task ?? null,
+    unread: run2 && !me.ended ? await board2.unreadMentions(me) : 0
   };
 }
 
@@ -9413,6 +9417,8 @@ var hiddenUsage = (cli, verb) => verb === "serve" ? `usage: ${cli} serve [stop] 
 var shownLines = (shown) => shown.flatMap((m) => m.next ? [m.text, m.next] : [m.text]);
 function answer(r, s) {
   const a = answerOf(r, s);
+  const unread = unreadLine(s, r.verb);
+  if (unread && !a.lines.some((l) => l.includes(" wait --mentions "))) a.lines.push(unread);
   const reminder = stillPausedLine(s);
   return reminder ? { ...a, lines: [reminder, ...a.lines], paused: reminder } : a;
 }

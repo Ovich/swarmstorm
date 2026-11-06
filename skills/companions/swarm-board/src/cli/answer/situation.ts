@@ -35,6 +35,8 @@ export type Situation = {
   owesNothing: boolean;
   /** board-fixes V1-3: the seq of the task posted to the member and still open, null when none */
   openTask?: number | null;
+  /** messages waking the member (a mention, an agreement about a path it holds, an urgent post) not yet delivered */
+  unread?: number;
 };
 
 /** Reads the member's situation. `show`: the verb shows the phase to the member (wait, join), which the board
@@ -65,5 +67,6 @@ export async function readSituation(board: ConnectedBoard, me: Participant, opts
     // board-fixes#D5: an open task owes, phase or not
     owesNothing: owed == null && own?.fact == null && own?.task == null,
     openTask: own?.task ?? null,
+    unread: run && !me.ended ? await board.unreadMentions(me) : 0,
   };
 }

@@ -1,3 +1,4 @@
 exit 0
 already done verify: 1/1 done; nothing new recorded
 you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task
+you have 1 unread message for you: read it now, then start your listener again, in the background: node <cli> wait --mentions --as g/w1
