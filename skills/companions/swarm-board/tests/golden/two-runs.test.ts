@@ -61,8 +61,8 @@ test("two runs on one server answer each its own members: no plain post, claim o
     };
 
     // interleaved: a phase and plain talk in each, a task mention in A, A's worker claims
-    must("phase", "build", "build alpha", "--as", A_ORCH);
-    must("phase", "ideas", "ideas for beta", "--as", B_ORCH);
+    must("phase", "--confirm", "build", "build alpha", "--as", A_ORCH);
+    must("phase", "--confirm", "ideas", "ideas for beta", "--as", B_ORCH);
     must("post", "alpha plain talk", "--as", A_ORCH);
     must("post", "beta plain talk", "--as", B_ORCH);
     must("post", "@w1 a-task-only: do it", "--as", A_ORCH);

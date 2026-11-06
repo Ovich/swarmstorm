@@ -9000,6 +9000,20 @@ only then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   closeRun: (cli, run2, as) => `${cli} close --run ${run2} --as ${as}`,
   /** board-fixes#D6: the second step of a close, the one that closes */
   closeConfirm: (cli, run2, as) => `${cli} close --run ${run2} --confirm --as ${as}`,
+  phaseConfirm: (cli, name, text, flags, as) => `${cli} phase ${name} ${text}${flags} --confirm --as ${as}`,
+  /** The opt-in phases, fixed, each with why it would come now: the orchestrator weighs them before every phase opens. */
+  phaseOptIns: [
+    "prototype: the work adds or changes a screen or a user story; a working prototype first, then the person's go",
+    "architecture: a new module, an interface that changes, or a shape still unclear; the system defined first, then the person's go",
+    "verify: the result must be seen working; verifiers who built none of it walk the running product",
+    "reflect: the same kind of fault keeps coming back; the work paused, every member asked once",
+    "simplify: the run nears its close and replaced old code; cut it back, parity verified",
+    "the person: a decision outside your authority; pause --person, the decision as its reason"
+  ],
+  phaseConfirmStep: (name, optIns, confirm) => `phase ${name}: confirm the next phase. Does the run need one of these first?
+${optIns.map((o) => `- ${o}`).join("\n")}
+- or a phase in your own words.
+As planned, open it: ${confirm}`,
   closeWaitRunning: (run2, owing, finish = "reported, done") => `close: not yet, run ${run2} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (${finish}), then run close again`,
   closeSteps: (run2, confirm, columns = "| task | seat | state | result |") => `close: one step first. Post the closing table to the run, written from status: one row per task, ${columns}, then the next steps (what is left, what follows). Then close run ${run2}: ${confirm}`,
   // board-fixes#D5: the roster's doing, its age once a minute old, `stale` once its work landed or an event to it came after it
@@ -9235,6 +9249,7 @@ var phaseHeaders = (s, showPause = true) => {
   return { printed: WORDING.phasePaused(short, why), full: WORDING.phasePaused(whole, why), first };
 };
 var lostMentionLines = (lost, cli, as) => lost.map((member) => WORDING.mentionLost(member, WORDING.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
+var phaseStep = (name, confirm) => WORDING.phaseConfirmStep(name, WORDING.phaseOptIns, confirm);
 var closeStep = (owing, run2, confirm, code) => code ? codeCloseStep(owing, run2, confirm) : owing.length ? WORDING.closeWaitRunning(run2, owing) : WORDING.closeSteps(run2, confirm);
 var closedLine = (s) => WORDING.closed(s.run, WORDING.end(s.cli, s.as));
 var gateLine = (s, listener = false) => {
@@ -9371,7 +9386,7 @@ var coreUsage = (cli) => [
   "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
   '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>"}]',
   "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--as <member>]   # adds a seat mid-run (orchestrator; any team orchestrator on the orchestrators board)",
-  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--as <member>]   # opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--confirm] [--as <member>]   # without --confirm: the opt-in phases to weigh and the confirming call; with it, opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
   "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
   `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person it waits on the person, the text its reason (orchestrator)`,
   "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
@@ -9953,6 +9968,10 @@ ${verbHelp()}`);
       const watch = args.list("--watch");
       const only = args.list("--for");
       if (args.has("--for") && !only.length) fail(WORDING.phaseForEmpty(name));
+      if (!args.has("--confirm") && p.seat === "orchestrator") {
+        const flags = (only.length ? ` --for ${only.join(",")}` : "") + (watch.length ? ` --watch ${watch.join(",")}` : "");
+        fail(phaseStep(name, WORDING.phaseConfirm(self().join(" "), shellWord2(name), shellWord2(text), flags, shellWord2(p.name))));
+      }
       const previous = (await board.currentPhase(p.run))?.name ?? null;
       const m = await board.phase(p, name, text, watch.length || only.length ? { ...watch.length ? { watch } : {}, ...only.length ? { for: only } : {} } : void 0);
       const stillOwed = previous !== null && m.stillOwed.length ? WORDING.phaseStillOwed(previous, m.stillOwed) : null;

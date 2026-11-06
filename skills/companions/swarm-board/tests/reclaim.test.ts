@@ -77,7 +77,7 @@ test("v1-2: after a phase opens, both members' links re-send their unchanged set
   await until("w1 claims src/a.ts", () => activeClaims(r, "rc", "w1").join() === "src/a.ts", HANG_GUARD_MS);
   await until("w2 claims src/c.ts", () => activeClaims(r, "rc", "w2").join() === "src/c.ts", HANG_GUARD_MS);
 
-  r.cli(r.repo, "phase", "build", "go", "--as", "rc/orchestrator");
+  r.cli(r.repo, "phase", "--confirm", "build", "go", "--as", "rc/orchestrator");
   const phaseSeq = phaseOpenedAt(r, "rc");
   // the phase dropped them, and neither worktree's set changed: only the reclaim sends them again; a claim made at or
   // after the phase event is a new one, never the old one left standing

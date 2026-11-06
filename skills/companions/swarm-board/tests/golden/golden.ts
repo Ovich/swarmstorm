@@ -138,7 +138,7 @@ export async function scene(role: Role, situation: Situation): Promise<Scene> {
     },
   };
   // the situation
-  const phase = () => must("phase", "build", "build the thing", "--as", orchestrator);
+  const phase = () => must("phase", "--confirm", "build", "build the thing", "--as", orchestrator);
   if (situation === "owes-first") phase();
   if (situation === "owes-again") {
     phase();

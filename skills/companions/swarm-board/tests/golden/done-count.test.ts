@@ -29,7 +29,7 @@ test("golden V-5: a done for a phase no longer open names what the member owes n
   try {
     const orch = s.me;
     const worker = s.other;
-    s.must("phase", "verify", "check it", "--as", orch);
+    s.must("phase", "--confirm", "verify", "check it", "--as", orch);
     const late = s.call("done", "build", "--as", worker);
     pin("done-count.worker.done-late", late);
     assert.match(late.text, /done build recorded late \(the open phase is verify; the orchestrator is told\)\nyou owe phase verify: /);
@@ -50,12 +50,12 @@ test("golden V-6: a phase opened while a member owes the last one names it", asy
   try {
     const orch = s.me;
     const worker = s.other;
-    const opened = s.call("phase", "verify", "check it", "--as", orch);
+    const opened = s.call("phase", "--confirm", "verify", "check it", "--as", orch);
     pin("done-count.orchestrator.phase-still-owed", opened);
     assert.match(opened.text, new RegExp(`${worker} had not run done for build`));
     // nobody owing: no such line
     s.must("done", "verify", "--as", worker);
-    assert.doesNotMatch(s.call("phase", "fix", "fix it", "--as", orch).text, /had not run done/);
+    assert.doesNotMatch(s.call("phase", "--confirm", "fix", "fix it", "--as", orch).text, /had not run done/);
   } finally {
     s.stop();
   }
@@ -89,7 +89,7 @@ test("golden V-27: the phase text and the done event say the --for set and the c
     const orch = s.me;
     const worker = s.other;
     const seat = worker.split("/")[1];
-    s.must("phase", "fix", `${seat} only`, "--for", seat, "--as", orch);
+    s.must("phase", "--confirm", "fix", `${seat} only`, "--for", seat, "--as", orch);
     const runLine = s.call("status").text.split("\n").find((l) => l.startsWith("run "))!;
     pin("done-count.status.phase-for", { status: 0, text: runLine });
     assert.doesNotMatch(runLine, new RegExp(`${seat} only ${seat}`));

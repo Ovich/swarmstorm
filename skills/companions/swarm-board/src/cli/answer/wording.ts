@@ -69,6 +69,18 @@ export const WORDING = {
   closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
   /** board-fixes#D6: the second step of a close, the one that closes */
   closeConfirm: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --confirm --as ${as}`,
+  phaseConfirm: (cli: Command, name: string, text: string, flags: string, as: string): Command => `${cli} phase ${name} ${text}${flags} --confirm --as ${as}`,
+  /** The opt-in phases, fixed, each with why it would come now: the orchestrator weighs them before every phase opens. */
+  phaseOptIns: [
+    "prototype: the work adds or changes a screen or a user story; a working prototype first, then the person's go",
+    "architecture: a new module, an interface that changes, or a shape still unclear; the system defined first, then the person's go",
+    "verify: the result must be seen working; verifiers who built none of it walk the running product",
+    "reflect: the same kind of fault keeps coming back; the work paused, every member asked once",
+    "simplify: the run nears its close and replaced old code; cut it back, parity verified",
+    "the person: a decision outside your authority; pause --person, the decision as its reason",
+  ] as readonly string[],
+  phaseConfirmStep: (name: string, optIns: readonly string[], confirm: Command) =>
+    `phase ${name}: confirm the next phase. Does the run need one of these first?\n${optIns.map((o) => `- ${o}`).join("\n")}\n- or a phase in your own words.\nAs planned, open it: ${confirm}`,
   closeWaitRunning: (run: number, owing: string[], finish = "reported, done") =>
     `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (${finish}), then run close again`,
   closeSteps: (run: number, confirm: Command, columns = "| task | seat | state | result |") =>

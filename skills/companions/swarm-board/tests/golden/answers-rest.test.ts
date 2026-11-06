@@ -23,7 +23,7 @@ for (const role of ROLES_REST) {
         pin(at("merge-lock.no-onto"), s.call("merge-lock", "--as", s.me));
         pin(at("merged.unknown"), s.call("merged", "0000000", "--files", "a.ts", "--report", "-", "--as", s.me));
         if (role === "orchestrator") {
-          pin(at("phase"), s.call("phase", "verify", "check it", "--as", s.me));
+          pin(at("phase"), s.call("phase", "--confirm", "verify", "check it", "--as", s.me));
           pin(at("pause"), s.call("pause", "hold", "--as", s.me));
           pin(at("resume"), s.call("resume", "go on", "--as", s.me));
         }
