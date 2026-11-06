@@ -18,6 +18,10 @@ You judge what was delivered, from one of two sources, the one your brief names:
   it as a finding, or on the board ask `@orchestrator` for a seat.
 - **The scope and inputs are your brief's or your phase message's**, the rest the skill's
   defaults: judge that scope only, never more, and open the report on the inputs.
+- **A screen with a prototype is judged against it.** When your message links one, open it beside
+  the built screen, state by state, at its widths: layout, spacing, type, colour and behaviour to
+  the pixel. Each difference is a finding citing the screen and state, unless the message says the
+  person accepted it.
 - **The report is one message**: the inputs, the verdict, then **the findings table**, as the
   `swarmstorm:orchestrate` skill's `references/findings.md` shapes it: ids kept from the last
   judged table, a new row the next number, prefixed by your seat (`V2-3`) when the run has

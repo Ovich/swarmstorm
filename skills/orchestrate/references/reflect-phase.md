@@ -40,8 +40,8 @@ one more pass; the members holding the work see that cause, each a different par
    change, post the proposal; each member answers against its own part, `holds` / `breaks` /
    `missing` / `change`, each with where. Rank the objections into the synthesis. A proposal
    checked only by its author misses what each member's part knows.
-5. **The person decides**, in one decisions post: resume the loop, amended; or a design phase
-   (`references/design-phase.md`) then the work; or the close. Until then no pass opens.
+5. **The person decides**, in one decisions post: resume the loop, amended; or an architecture phase
+   (`references/architecture-phase.md`) then the work; or the close. Until then no pass opens.
    **The next check is set where the faults lived**: what passed alone and failed where it is used
    is re-checked as it is used.
 

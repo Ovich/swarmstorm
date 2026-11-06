@@ -22,8 +22,11 @@ one run tuned to it, built on the closest example**.
 | debate | known questions to decide, with sources | brainswarm | `references/protocols/debate/protocol.md` |
 | editorial | a text for a given reader: a letter, a proposal, a README | brainswarm | `references/protocols/editorial/protocol.md` |
 
-**Any of them can open with a design phase** when the person asks (charter `design:`): the work
-designed on the board first, in the one design format, then the protocol runs: `references/design-phase.md`.
+**Any of them can open with a prototype phase** (charter `prototype:`) when the work adds or changes
+a screen: the swarm's ideas forwarded to the prototyper, the person's go: `references/prototype-phase.md`.
+**Then, or alone, an architecture phase** (charter `architecture:`) when the work brings a new module,
+changes an interface or its shape is unclear: the system defined on the board, the prototype as
+one of its inputs, the person's go: `references/architecture-phase.md`. Propose each, with why.
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.
