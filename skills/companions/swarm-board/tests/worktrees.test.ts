@@ -184,7 +184,7 @@ const commitOnly = (dir: string, file: string): void => {
 test("golden V-7 (D63): done with commits not merged is accepted, naming the branch, the count and the merge step; the orchestrator's done line carries unmerged <branch>; close names the branch", () => {
   const run = open("task", "g", ["w1"]);
   join(run, "g", "w1");
-  ok("phase", "build", "go", "--as", "g/orchestrator");
+  ok("phase", "--confirm", "build", "go", "--as", "g/orchestrator");
   commitOnly(wt(run, "w1"), "c.txt");
   const done = ok("done", "build", "--as", "g/w1");
   // V-27: the branch said once, the command last
