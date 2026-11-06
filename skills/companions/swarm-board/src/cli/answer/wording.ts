@@ -33,7 +33,7 @@ export const WORDING = {
   listenerStart: (wait: Command) => `start your listener now, in the background (your harness's background task): ${wait}`,
   waitNow: (afterPhase: boolean, wait: Command) =>
     `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is lost; ${FOREGROUND_NOTE}): ${wait}`,
-  rearmBackground: (wait: Command) => `start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND_NOTE}): ${wait}`,
+  rearmBackground: (wait: Command) => `you received a new message: before reading it, start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND_NOTE}): ${wait}`,
   rearmForeground: (wait: Command) => `wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
   rearmOrchestrator: (wait: Command) => `act on it, then start this listener again, in the background: ${wait}`,
   rearmAfterOwed: (owed: string, wait: Command) => `${owed}\nonly then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
