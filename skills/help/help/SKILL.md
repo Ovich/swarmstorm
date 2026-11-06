@@ -56,7 +56,7 @@ conversation):
   decisions).
 - **Decide with several voices**: the `brainswarm` skill (debate, brainstorm, editorial seats).
 - **Plan and build**: the `write-plan` and `execute-plan` skills; a `swarm` of workers, with
-  build-verify when the result must be walked, a design phase first when it must be designed.
+  build-verify when the result must be walked, a prototype phase first when it changes a screen, an architecture phase when its system must be defined.
 - **Design a screen**: the `design-prototype` skill. **Review**: the `pr-review` skill. **Keep
   conventions**: the `write-conventions` skill.
 - **Watch it all**: aiview, the documents and the board.

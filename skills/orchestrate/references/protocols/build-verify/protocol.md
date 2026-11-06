@@ -8,10 +8,11 @@ Out: the merged branch, and the last judged findings table with the goal's state
 skill, when the mandate's `verify:` is on). Board: `$S open --kind task --protocol build-verify`
 for a task swarm; a plan's run keeps `--kind plan` and adds `--protocol build-verify`.
 
-**Propose a design phase first whenever it would help** (the `orchestrate` skill's
-`references/design-phase.md`, charter `design:`): a new module, an interface that changes, several
+**Propose a prototype phase first when the work adds or changes a screen** (the `orchestrate`
+skill's `references/prototype-phase.md`, charter `prototype:`), **and an architecture phase whenever
+it would help** (`references/architecture-phase.md`, charter `architecture:`): a new module, an interface that changes, several
 builders on code that meets, or a shape still unclear. Say it in the proposal in one line, with
-why, the designer (a `d1` seat or you) and its short form; the person decides. A plan has its
+why, the seat (a `p1` prototyper, an `a1` architect, or you) and its short form; the person decides. A plan has its
 design in the plan already and needs none.
 
 ## Seats
@@ -84,7 +85,8 @@ the goal (with its cap), N iterations, or unbounded.
   on its first wait, but the run reads cleaner in order).
 - **The verify message scopes the pass in numbered steps**: the branch and its sha, what build
   `<k>` merged, the journeys or calls to walk, what to compare, what to report, and the rows of
-  the last judged table to look at again. An `instructed` verifier gets every step; a skill's
+  the last judged table to look at again, and the accepted prototype's link for every screen in
+  scope (the `orchestrate` skill's `references/prototype-phase.md`). An `instructed` verifier gets every step; a skill's
   verifier gets the scope and the inputs that differ from its defaults.
 - **One verify message per verifier**, its steps disjoint from the others' and split by
   estimated minutes, not by count, its port range named; open the phase with `phase verify …

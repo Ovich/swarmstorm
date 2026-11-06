@@ -18,7 +18,7 @@ skill says, the protocol filled in. On a no, do it yourself.
 ## Setting it up
 
 **Propose the run as the `orchestrate` skill's *Propose the run* says**, built on the closest example
-(build-verify when the work must be seen working; a design phase first when the person asks for one, its modules and entries settled before any code (charter `design:`); none for workers on call), with: how many
+(build-verify when the work must be seen working; a prototype phase first when it adds or changes a screen (charter `prototype:`), an architecture phase when its modules and entries must be settled before any code (charter `architecture:`), the prototype first when both; none for workers on call), with: how many
 workers (3 to start from, reconsidered against the estimate of the work as *Propose the run* says) and each one's area; under
 build-verify, the verifiers (sized from the verify's steps), their focus, source and port range, whether only one instance can run; the loop; each seat's model and effort (Opus; builders `low`, verifiers `medium`);
 **the branch** their work merges into, a new `swarm/<topic>` off the current branch by default.
@@ -48,11 +48,13 @@ build-verify, the verifiers (sized from the verify's steps), their focus, source
    You are verifier `<vN>` of task swarm run `<run id>` on `<repository>`, protocol build-verify, focus `<focus>`, ports `<range>` for your own instance<, one instance only: walk it in your phase's turn>. **Source**: <the `verify-<app>-<focus>` skill | instructed: each verify phase's message gives your steps>. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <vN> --doing "joining" --as <topic>/<vN>`; each verify phase's message scopes your pass.
    ```
 
-   With a design phase given to a seat, the designer too, on the plugin's `designer` agent
-   (`subagent_type: "swarmstorm:designer"`), no `isolation`, unless the charter gives the design to you:
+   With a prototype or an architecture phase given to seats, their members too, no `isolation`, unless
+   the charter gives the phase to you: a prototyper on the plugin's `prototyper` agent
+   (`subagent_type: "swarmstorm:prototyper"`), an architect on its `architect` agent
+   (`subagent_type: "swarmstorm:architect"`):
 
    ```markdown
-   You are the designer `d1` of task swarm run `<run id>` on `<repository>`, protocol `<protocol>` with a design phase, reading the code on `<branch>`. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat d1 --doing "joining" --as <topic>/d1`; the design phase's message gives your scope.
+   You are the <prototyper | architect> `<pN | aN>` of task swarm run `<run id>` on `<repository>`, protocol `<protocol>` with a <prototype | architecture> phase, reading the code on `<branch>`. Load the `swarm-board` skill and read its `references/worker.md`. Join now, with this line verbatim: `<S> join --run <run id> --seat <pN | aN> --doing "joining" --as <topic>/<pN | aN>`; the phase's message gives your scope.
    ```
 
 ## Giving work
@@ -79,11 +81,12 @@ The phases, the verify message, the judged table and the loop are the protocol's
 phase. A task is posted as above; build 1 holds the work asked, every later build the judged
 table's rows that stand.
 
-## With a design phase
+## With a prototype or an architecture phase
 
-The design phase, the designer's seat and when the design reopens are the `orchestrate` skill's
-`references/design-phase.md`, read before the first phase; the protocol's phases then run as
-above, every task quoting the accepted design's entries.
+Each phase, its seats and when it reopens are the `orchestrate` skill's
+`references/prototype-phase.md` and `references/architecture-phase.md`, read before the first
+phase; the prototype runs first when both. The protocol's phases then run as above, every task
+quoting the accepted architecture's entries and citing the prototype's screens it builds.
 
 ## Closing
 

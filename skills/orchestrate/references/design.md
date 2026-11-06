@@ -2,7 +2,7 @@
 
 **What gets built, settled before any code**, in one document whose sections every task points
 into. One format wherever a design is written: a plan's Design part (the `write-plan` skill) and
-a run's design phase on the board (`references/design-phase.md`). Written for an agent that
+a run's architecture phase on the board (`references/architecture-phase.md`). Written for an agent that
 was not in the conversation: read alone, it gives every decision, its reason and every detail the
 work needs. A section that does not apply is left out, and the header says which; a small
 change's section is a sentence.
@@ -58,7 +58,7 @@ has no decision yet is an open row in Decisions.
 
 ## The short form, on the board
 
-A run's design phase uses this form, never the nine sections: the architecture, shown. Each part
+A run's architecture phase uses this form, never the nine sections: the architecture, shown. Each part
 is a post, judged before the next.
 
 1. **Goal**: two or three lines: what changes, what is out.
