@@ -3,7 +3,7 @@
 // next step and its JSON. No verb of the cluster writes a next-step line or a command itself: the wording is WORDING's,
 // the choice the rules'.
 import type { Situation } from "./situation.ts";
-import { heardStep, openTaskLine, joinStep, owedLine, owesNothingLine, phaseHeaders, pausedLine, stillPausedLine, waitCommand } from "./rules.ts";
+import { heardStep, openTaskLine, joinStep, owedLine, owesNothingLine, phaseHeaders, pausedLine, stillPausedLine, unreadLine, waitCommand } from "./rules.ts";
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
@@ -48,6 +48,9 @@ const shownLines = (shown: Shown[]): string[] => shown.flatMap((m) => (m.next ? 
  *  reads that first, at every verb, so the pause is never forgotten. */
 export function answer(r: VerbResult, s: Situation): Answer {
   const a = answerOf(r, s);
+  const unread = unreadLine(s, r.verb);
+  // the answer already sends the member to its wait: the line would say it twice
+  if (unread && !a.lines.some((l) => l.includes(" wait --mentions "))) a.lines.push(unread);
   const reminder = stillPausedLine(s);
   return reminder ? { ...a, lines: [reminder, ...a.lines], paused: reminder } : a;
 }

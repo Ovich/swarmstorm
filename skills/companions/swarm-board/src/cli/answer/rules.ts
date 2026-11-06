@@ -42,6 +42,11 @@ export const openTaskLine = (s: Situation): string | null =>
 
 /** simple-states: the step of a member that owes nothing (task merged and reported, phase done): end its turn; the
  *  pause first; null while it owes, and for the orchestrator. */
+/** A worker whose messages wait undelivered, at any verb but a wait or a join (which deliver them): its listener lapsed
+ *  or never started, and nothing else would tell it while it works. */
+export const unreadLine = (s: Situation, verb: string): string | null =>
+  s.listens === "background" && verb !== "wait" && verb !== "join" && (s.unread ?? 0) > 0 ? W.unreadNow(s.unread!, W.wait(s.cli, s.as)) : null;
+
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
 
 /** Whether a post's stored mentions reach `name` (`<group>/<seat>`): by name, or by its group (`@swarm`, `@<CODE>` are stored as `<group>/*`). */
