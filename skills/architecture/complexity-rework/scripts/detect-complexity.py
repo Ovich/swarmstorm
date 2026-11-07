@@ -59,7 +59,7 @@ FIELD_CMP_COMMON = [
     R(r"\.(?:get)?(\w+)\(\)\s*\.equals\(\s*\""),                            # x.getType().equals("...")
     R(r"\"\w*\"\.equals\(\s*\w+\.(?:get)?(\w+)"),                           # "x".equals(o.type)
     R(r"\[\s*:(\w+)\s*\]\s*==\s*" + Q),                                     # x[:kind] == "..."
-    R(r"\$\w+\[\s*" + Q + r"(\w+)" + Q + r"\s*\]\s*[!=]==?\s*" + Q),      # $x['kind'] === "..."
+    R(r"[$]\w+\[\s*" + Q + r"(\w+)" + Q + r"\s*\]\s*[!=]==?\s*" + Q),      # $x['kind'] === "..."
     R(r"(?<![.\w\]])(\w+)\s*(?:===?|!==?)\s*" + Q),                          # kind == "..."
 ]
 CASE_LABEL = R(r"^\s*(?:case|when)\s+" + Q + r"|^\s*" + Q + r"[\w.\-]*" + Q + r"\s*(?:=>|->)", re.M)
