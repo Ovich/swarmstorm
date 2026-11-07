@@ -359,11 +359,8 @@ export function App() {
         {!onBoard && documentsShown && <DocumentsPanel docs={docs} groups={groups} activeProject={activeProject} currentId={currentId} onOpen={open} />}
         <main
           className={
-            onBoard || doc?.kind === "workbench"
-              ? "min-w-0 flex-1"
-              : format === "markdown"
-                ? "mx-auto w-full min-w-0 max-w-[1040px] flex-1 px-10 pb-20 pt-7 max-md:px-4 max-md:pt-5"
-                : "min-w-0 flex-1 px-10 pb-20 pt-7 max-md:px-4 max-md:pt-5"
+            // every document fills the right panel, markdown as html and pdf (decided 2026-08-27)
+            onBoard || doc?.kind === "workbench" ? "min-w-0 flex-1" : "min-w-0 flex-1 px-10 pb-20 pt-7 max-md:px-4 max-md:pt-5"
           }
         >
           {onBoard && <BoardPage repos={boardRepos} />}
