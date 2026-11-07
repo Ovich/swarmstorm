@@ -1,0 +1,46 @@
+# Rebuilds the `directory` branch when a release lands on main: the plugin's strict
+# minimum (scripts/directory-tree.sh), which the Claude plugin directory tracks. The
+# directory's validation times out on the whole repository, tests and source included.
+
+name: directory branch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .claude-plugin/plugin.json
+  workflow_dispatch:
+
+permissions:
+  contents: write # the branch
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Commit the minimum onto the directory branch
+        run: |
+          set -euo pipefail
+          version=$(jq -r .version .claude-plugin/plugin.json)
+          tree=$(mktemp -d)
+          scripts/directory-tree.sh "$tree"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git worktree add --detach "$RUNNER_TEMP/dir"
+          cd "$RUNNER_TEMP/dir"
+          if git ls-remote --exit-code --heads origin directory >/dev/null; then
+            git fetch -q origin directory && git checkout -q -B directory origin/directory
+          else
+            git checkout -q --orphan directory
+          fi
+          git rm -rqf . >/dev/null 2>&1 || true
+          cp -a "$tree"/. .
+          git add -A
+          if git diff --cached --quiet; then echo "directory branch already at v$version"; exit 0; fi
+          git commit -qm "directory: v$version from ${GITHUB_SHA::8}"
+          git push -q origin directory

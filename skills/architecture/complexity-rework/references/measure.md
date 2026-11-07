@@ -12,7 +12,7 @@ Two numbers per function: its complexity and its fingerprint hits. Use what the 
 ## Where the numbers come from, in order
 
 1. **The project's own linter**, when it has a complexity rule (the rule per language: `languages.md`). Run it with the rule on at a low threshold, from a scratch configuration when the project's own must not change.
-2. **A language-agnostic analyzer**, when the linter has no rule or the repository mixes languages. `lizard`, for example, parses most mainstream languages and prints cyclomatic complexity, length and parameter count per function:
+2. **A language-agnostic analyzer**, when the linter has no rule or the repository mixes languages. `lizard`, for example, parses most mainstream languages and prints cyclomatic complexity, length and parameter count per function. Not installed: ask the person to install it (it is theirs to add), then run it:
 
    ```bash
    pip install lizard
@@ -20,7 +20,6 @@ Two numbers per function: its complexity and its fingerprint hits. Use what the 
    lizard <path> --csv > cc.csv    # every function, for sorting
    ```
 
-   `scripts/detect-complexity.py` wraps lizard and adds the fingerprint score (`python3 <skill-path>/scripts/detect-complexity.py <path> --min-score 6`). An example, not a requirement.
 3. **By hand**, when neither is available or the code is small: search the fingerprints below, count the decision points in what they point to.
 
 A tool installed in a scratch folder only to measure is not a dependency; the no-dependency rule covers what lands in the repository. When two tools disagree on where a function starts, match by the enclosing function's line range: a closure counts toward its parent.

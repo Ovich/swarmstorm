@@ -127,7 +127,7 @@ test("a client finding a live server of its version starts none (D40)", async ()
 test("a stale state file and start lock (a dead pid) are replaced by one new server (D40)", async () => {
   const { home, launcher, client } = freshHome();
   const dead = deadPid();
-  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: dead, port: 1, secret: "x", version: "stale" }));
+  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: dead, port: 1, ticket: "x", version: "stale" }));
   fs.writeFileSync(serverStartLock(home), String(dead));
   const results = await Promise.all(Array.from({ length: 3 }, () => runClient(home, client)));
   for (const r of results) assert.equal(r.code, 0, r.err);

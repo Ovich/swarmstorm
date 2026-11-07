@@ -14,10 +14,10 @@ test("the test run carries AIVIEW_NO_BROWSER=1, so every child it spawns inherit
 });
 
 test("the opener refuses under AIVIEW_NO_BROWSER=1, and for a scratch or dev home even without it", () => {
-  assert.match(browserRefusal({ AIVIEW_NO_BROWSER: "1" }, path.join(os.homedir(), "swarmstorm_appdata"))!, /AIVIEW_NO_BROWSER/);
-  assert.match(browserRefusal({}, path.join(os.tmpdir(), "aiview-scratch"))!, /not the person's own/);
-  assert.match(browserRefusal({}, path.join(os.homedir(), "swarm-dev-home"))!, /not the person's own/);
-  assert.equal(browserRefusal({}, path.join(os.homedir(), "swarmstorm_appdata")), null);
+  assert.match(browserRefusal("1", path.join(os.homedir(), "swarmstorm_appdata"))!, /AIVIEW_NO_BROWSER/);
+  assert.match(browserRefusal("", path.join(os.tmpdir(), "aiview-scratch"))!, /not the person's own/);
+  assert.match(browserRefusal("", path.join(os.homedir(), "swarm-dev-home"))!, /not the person's own/);
+  assert.equal(browserRefusal("", path.join(os.homedir(), "swarmstorm_appdata")), null);
 });
 
 test("on Windows the URL reaches the protocol handler as one untouched argument, no cmd parsing it (D9)", () => {

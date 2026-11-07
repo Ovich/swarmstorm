@@ -1820,7 +1820,7 @@ async function runLink(opts) {
         socket?.close();
         return;
       }
-      if (f.reason === "shutdown" || f.reason === "secret") {
+      if (f.reason === "shutdown" || f.reason === "ticket") {
         socket?.close();
         return;
       }
@@ -1844,7 +1844,7 @@ async function runLink(opts) {
       return resolve(false);
     }
     socket = ws;
-    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), secret: s.secret, member: { name: opts.member, run: opts.run }, supersede: true }));
+    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), ticket: s.ticket, member: { name: opts.member, run: opts.run }, supersede: true }));
     ws.onmessage = (ev) => {
       try {
         onDown(decode(String(ev.data)));
@@ -8141,7 +8141,7 @@ async function runBoardServer(opts) {
   tracer.prune();
   tracer.event("server", { action: "start", pid: process.pid });
   const authority = makeAuthority(board2);
-  const secret = crypto4.randomBytes(24).toString("hex");
+  const ticket = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const serverSince = (/* @__PURE__ */ new Date()).toISOString();
   const speakers = /* @__PURE__ */ new Set();
@@ -8273,7 +8273,7 @@ async function runBoardServer(opts) {
     refuse(s, "closed");
   }
   const httpServer = http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
+    if (req.method === "POST" && req.url === STOP_PATH && req.headers[TICKET_HEADER] === ticket) {
       res.end("stopping");
       void close();
       return;
@@ -8298,7 +8298,7 @@ async function runBoardServer(opts) {
       }
       if (!welcomed) {
         if (f.type !== "hello") return socket.close();
-        if (f.secret !== secret) return refuse(s, "secret");
+        if (f.ticket !== ticket) return refuse(s, "ticket");
         if (f.version !== version) {
           try {
             fs13.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
@@ -8355,7 +8355,7 @@ async function runBoardServer(opts) {
     });
   });
   const port = await listen(httpServer, host, opts.port ?? 0);
-  const state = { pid: process.pid, port, secret, version };
+  const state = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
   fs13.mkdirSync(opts.dataRoot, { recursive: true });
   fs13.writeFileSync(stateFile, JSON.stringify(state));
@@ -8444,7 +8444,7 @@ async function stopBoardServer(dataRoot) {
     return false;
   }
   try {
-    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
+    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
     fs13.rmSync(file, { force: true });
@@ -8473,7 +8473,7 @@ function bind(server, host, port) {
     });
   });
 }
-var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, SLOW_CALL_MS, ENDED_LINK_QUIET_MS, SNAPSHOT_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
+var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, STOP_PATH, TICKET_HEADER, CLOSE_GRACE_MS, CALLABLE, SLOW_CALL_MS, ENDED_LINK_QUIET_MS, SNAPSHOT_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
 var init_server = __esm({
   "src/server/server.ts"() {
     "use strict";
@@ -8488,7 +8488,7 @@ var init_server = __esm({
     PONG_WITHIN_MS = 25 * 1e3;
     LOOP_LAG_FORGIVEN_MS = 2 * 1e3;
     STOP_PATH = "/stop";
-    SECRET_HEADER = "x-swarm-secret";
+    TICKET_HEADER = "x-swarm-ticket";
     CLOSE_GRACE_MS = 500;
     CALLABLE = new Set(RPC_METHODS);
     SLOW_CALL_MS = 10 * 1e3;
@@ -8527,7 +8527,18 @@ var SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
 var START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
 var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
-var homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
+function withEnv(vars, start) {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(vars)) process.env[k] = v;
+  try {
+    return start();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === void 0) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
 var pause2 = (ms) => new Promise((r) => setTimeout(r, ms));
 function isAlive2(pid) {
   try {
@@ -8569,7 +8580,10 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
 `);
     } catch {
     }
-    const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = withEnv(
+      { SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") },
+      () => hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
+    );
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
@@ -8613,7 +8627,7 @@ var linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", mem
 var HARNESS_LINK_WAIT_MS = 1e4;
 var LINK_DOWN_WAIT_MS = 1e3;
 var linkDownMarker = (dataRoot, member) => path10.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
-var inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
+var inHarnessSession = (sessionId = process.env.CLAUDE_CODE_SESSION_ID) => !!sessionId;
 async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
   const marker = linkDownMarker(dataRoot, member);
@@ -8640,13 +8654,10 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
     }
     return null;
   }
-  const child = hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
-    detached: true,
-    cwd: DETACHED_CWD,
-    stdio: "ignore",
-    windowsHide: true,
-    env: homeEnv(dataRoot)
-  });
+  const child = withEnv(
+    { SWARMSTORM_HOME: dataRoot },
+    () => hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
+  );
   child.on("error", () => {
   });
   child.unref();
@@ -8722,7 +8733,7 @@ async function connectServer(state, callsFor) {
   let closer = () => {
   };
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, ticket: state.ticket, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
@@ -8969,7 +8980,7 @@ function flowItems(list) {
   }
   return [...items, item];
 }
-function parseGuide(text, folder) {
+function parseGuide(text, folder, fallback = null) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
   if (!fm) return null;
   const lines = fm.split(/\r?\n/);
@@ -8989,10 +9000,11 @@ function parseGuide(text, folder) {
       while (i + 1 < lines.length && /^\s*-\s*/.test(lines[i + 1])) paths.push(unquote(lines[++i].replace(/^\s*-\s*/, "")));
     }
   }
+  if (!paths?.length) paths = fallback;
   if (!paths?.length) return null;
   return { name: folder.replace(/^guide-/, ""), skill, paths };
 }
-function guidesIn(dir, keep) {
+function guidesIn(dir, keep, fallback = () => null) {
   let folders;
   try {
     folders = fs12.readdirSync(dir).filter(keep).sort();
@@ -9002,15 +9014,17 @@ function guidesIn(dir, keep) {
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs12.readFileSync(path12.join(dir, f, "SKILL.md"), "utf8"), f);
+      const g = parseGuide(fs12.readFileSync(path12.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
       if (g) out.push(g);
     } catch {
     }
   }
   return out;
 }
+var SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
+var SHIPPED_GUIDES = /* @__PURE__ */ new Set(["guide-complexity", "guide-deepen-module"]);
 function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
-  const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
+  const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
   const here = repoRoot ? guidesIn(path12.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
   const names = new Set(project.map((g) => g.name));
@@ -10478,7 +10492,7 @@ ${verbHelp()}`);
         }
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
         const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", env: process.env, maxBuffer: 64 * 1024 * 1024 });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
@@ -10663,7 +10677,7 @@ if (args.verb === "--help") {
 var relaunchLink = async () => {
   await new Promise((r) => setTimeout(r, 300));
   const { hiddenSpawn: hiddenSpawn2 } = await Promise.resolve().then(() => (init_proc(), proc_exports));
-  const child = hiddenSpawn2(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env });
+  const child = hiddenSpawn2(process.execPath, process.argv.slice(1), { stdio: "inherit" });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };
 if (args.verb === "link") {

@@ -32,7 +32,7 @@ test("a refused connection that fires only error, never close, ends; the link gi
     globalThis.WebSocket = realWebSocket;
     fs.rmSync(home, { recursive: true, force: true });
   });
-  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port: 1, secret: "s3cret", version: bundleVersion() }));
+  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port: 1, ticket: "s3cret", version: bundleVersion() }));
 
   const stop = await runLink({
     dataRoot: home,

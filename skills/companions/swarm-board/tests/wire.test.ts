@@ -8,7 +8,7 @@ import { RPC_METHODS, bundleVersion, decode, encode, serverStateFile, type Frame
 
 test("a frame round-trips through encode and decode", () => {
   const frames: Frame[] = [
-    { type: "hello", version: "v", secret: "s", member: { name: "p/S1", run: 3 }, supersede: true },
+    { type: "hello", version: "v", ticket: "s", member: { name: "p/S1", run: 3 }, supersede: true },
     { type: "call", id: "c1", method: "post", args: [{ name: "p/S1" }, "hi"] },
     { type: "result", id: "c1", ok: false, error: "no" },
     { type: "refused", reason: "shutdown" },

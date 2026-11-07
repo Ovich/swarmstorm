@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverGuides, globRegex, guidesFor, guidesSettlement, parseGuide, projectGuidesAt } from "../src/cli/guides.ts";
+import { SHIPPED_GUIDE_PATHS, discoverGuides, globRegex, guidesFor, guidesSettlement, parseGuide, projectGuidesAt } from "../src/cli/guides.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
@@ -229,4 +229,12 @@ test("S4 target: merge-lock prints the --guides form merged takes; either name f
   git(wtA, "push", "-q", ".", "HEAD:main");
   const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", "guide-all:ok, guide-ui:ok");
   assert.match(out, /guides recorded as #\d+/);
+});
+
+test("the shipped guides carry no paths: key, and the board gives them every code file", () => {
+  const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const shipped = discoverGuides(toolRoot, null);
+  assert.deepEqual(shipped.map((g) => g.name).sort(), ["complexity", "deepen-module"]);
+  for (const g of shipped) assert.deepEqual(g.paths, SHIPPED_GUIDE_PATHS);
+  assert.equal(parseGuide("---\nname: guide-x\ndescription: d\n---\n", "guide-x"), null, "a project guide still needs its own paths");
 });

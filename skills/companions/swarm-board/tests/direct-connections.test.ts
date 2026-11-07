@@ -34,7 +34,7 @@ async function recordingServer(home: string): Promise<Hello[]> {
   await new Promise<void>((r) => wss.once("listening", () => r()));
   const port = (wss.address() as { port: number }).port;
   const version = bundleVersion(CLI);
-  const state: ServerState = { pid: process.pid, port, secret: "s", version };
+  const state: ServerState = { pid: process.pid, port, ticket: "s", version };
   fs.writeFileSync(serverStateFile(home), JSON.stringify(state));
   wss.on("connection", (socket) =>
     socket.on("message", (data) => {
@@ -92,7 +92,7 @@ async function realServer(): Promise<{ home: string; hello: (over: Partial<Hello
     });
     await new Promise<void>((r) => socket.addEventListener("open", () => r()));
     const next = (): Promise<Frame> => (queue.length ? Promise.resolve(queue.shift()!) : new Promise((r) => waiting.push(r)));
-    socket.send(encode({ type: "hello", version: st.version, secret: st.secret, ...over }));
+    socket.send(encode({ type: "hello", version: st.version, ticket: st.ticket, ...over }));
     return { reply: await next(), socket, next };
   };
   const local = await openBoard(path.join(home, "swarm.sqlite"));

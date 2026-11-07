@@ -161,7 +161,7 @@ test("a server of another version is stopped and replaced by the verb (D28)", as
   const old = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
   const gone = new Promise((resolve) => old.on("exit", resolve));
   try {
-    fs.writeFileSync(serverStateFile(r.home), JSON.stringify({ pid: old.pid, port: 1, secret: "x", version: "another" }));
+    fs.writeFileSync(serverStateFile(r.home), JSON.stringify({ pid: old.pid, port: 1, ticket: "x", version: "another" }));
     const out = r.cli(r.repo, "status");
     assert.match(out, /no open run/);
     await gone;

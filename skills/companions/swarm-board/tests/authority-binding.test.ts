@@ -55,7 +55,7 @@ const connect = async (): Promise<Client> => {
 };
 const hello = async (over: Partial<Hello> = {}): Promise<{ c: Client; reply: Frame }> => {
   const c = await connect();
-  c.send({ type: "hello", version: state().version, secret: state().secret, ...over });
+  c.send({ type: "hello", version: state().version, ticket: state().ticket, ...over });
   return { c, reply: await c.next() };
 };
 const welcomed = async (over: Partial<Hello> = {}): Promise<Client> => {

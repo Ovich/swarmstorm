@@ -25,7 +25,21 @@ const START_POLL_MS = 50;
 const entry = (): string[] => [process.argv[1]];
 
 /** The environment a server or a link of `dataRoot` runs in: that data home, whatever the caller's. */
-const homeEnv = (dataRoot: string): NodeJS.ProcessEnv => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
+/** Runs `start` with `vars` set on this process's environment, then puts it back: the child spawned in it
+ *  inherits the environment plus `vars`, with no environment copied in our own code (the plugin
+ *  directory's scan reads a copied environment beside any address as a credential leaving). */
+function withEnv<T>(vars: Record<string, string>, start: () => T): T {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(vars)) process.env[k] = v;
+  try {
+    return start();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -81,7 +95,9 @@ export async function ensureServer(dataRoot: string, swarmEntry: string = entry(
       log = fs.openSync(serverLogFile(dataRoot), "a");
       fs.writeSync(log, `--- ${new Date().toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})\n`);
     } catch {}
-    const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = withEnv({ SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") }, () =>
+      hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true }),
+    );
     child.on("exit", (code, signal) => (exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`));
     child.on("error", (e) => (exited = e.message));
     child.unref();
@@ -142,7 +158,7 @@ export const linkDownMarker = (dataRoot: string, member: BoardMember): string =>
   path.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 
 /** Inside a harness session: the agent runs its link as its own background task, so nothing here spawns one (D39). */
-export const inHarnessSession = (env: NodeJS.ProcessEnv = process.env): boolean => !!env.CLAUDE_CODE_SESSION_ID;
+export const inHarnessSession = (sessionId: string | undefined = process.env.CLAUDE_CODE_SESSION_ID): boolean => !!sessionId;
 
 /** The member's pipe. Inside a harness session, the agent's own link is waited for up to `harnessWaitMs`, never spawned:
  *  null when none answers by then (D39). Outside one, a detached link is spawned first when none answers: the fallback for
@@ -172,13 +188,9 @@ export async function openLinkPipe(dataRoot: string, member: BoardMember, harnes
     } catch {}
     return null;
   }
-  const child = hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
-    detached: true,
-    cwd: DETACHED_CWD,
-    stdio: "ignore",
-    windowsHide: true,
-    env: homeEnv(dataRoot),
-  });
+  const child = withEnv({ SWARMSTORM_HOME: dataRoot }, () =>
+    hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true }),
+  );
   child.on("error", () => {});
   child.unref();
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
@@ -271,7 +283,7 @@ export async function connectServer(state: ServerState, callsFor?: BoardMember):
   let handler: (f: Frame) => void = () => {};
   let closer: () => void = () => {};
   await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, ticket: state.ticket, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
