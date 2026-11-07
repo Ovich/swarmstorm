@@ -43,8 +43,6 @@ there is a `.cmd` shim that only a shell starts:
 - **Calls out, each made only when an agent runs that skill's script:**
   - `dependency-graph`, the first time it runs: `npm install` from the npm registry configured on
     your machine.
-  - `roadmap`'s `scripts/domains.mjs`, when names are checked for free domains: RDAP queries over
-    HTTPS to `data.iana.org` and to the registries it names.
   - `pr-review` and `recurring-review-findings`: GitHub, through `gh`, for the repository you
     named.
 - Documents an agent writes (prototypes, workbenches) are served by aiview as written. If one
@@ -153,8 +151,8 @@ and everything under `skills/companions/aiview/dist/`.
 ## Nothing outside this repository
 
 Installing and running swarmstorm needs nothing beyond this repository and Node 22.5 or later. The
-only outside sources are the ones the skills above contact when you use them: the npm registry,
-RDAP, and GitHub through your own `gh`.
+only outside sources are the ones the skills above contact when you use them: the npm registry
+and GitHub through your own `gh`.
 
 ## Reporting a vulnerability
 
