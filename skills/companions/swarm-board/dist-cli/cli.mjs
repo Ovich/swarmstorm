@@ -465,7 +465,7 @@ function makeTracer(dataRoot) {
   const warnedUnread = /* @__PURE__ */ new Map();
   const infoOf = (kind, f) => {
     if (kind === "server") say("info", "server", { action: f.action, pid: f.pid });
-    else if (kind === "post" && typeof f.event === "string" && INFO_EVENTS.has(f.event)) say("info", f.event, { run: f.run, member: f.author, seq: f.seq });
+    else if (kind === "post" && typeof f.event === "string" && (INFO_EVENTS.has(f.event) || f.lands === true)) say("info", f.event, { run: f.run, member: f.author, seq: f.seq });
     else if (kind === "link" && f.up === false) say("info", "link-down", { run: f.run, member: f.member, cause: f.cause });
     else if (kind === "lock" && f.action === "granted")
       say(typeof f.waitedMs === "number" && f.waitedMs > LONG_WAIT_MS ? "warn" : "info", "lock-granted", { run: f.run, member: f.member, waited: secs(f.waitedMs), queue: f.waiting });
@@ -518,7 +518,7 @@ var init_trace = __esm({
     HEALTH_MS = 5 * 6e4;
     LONG_WAIT_MS = 6e4;
     MANY_UNREAD = 5;
-    INFO_EVENTS = /* @__PURE__ */ new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume", "merged"]);
+    INFO_EVENTS = /* @__PURE__ */ new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume"]);
     traceRoot = (dataRoot) => path4.join(dataRoot, "logs");
     traceLevelFile = (dataRoot) => path4.join(traceRoot(dataRoot), "level");
     SILENT = { event() {
@@ -2943,7 +2943,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const r = db.prepare("INSERT INTO messages (repo, author, body, about, kind, mentions, at, by_board, run, endorses, event, meta) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run(p.repo, p.id, body, about, kind, JSON.stringify(mentions2), now(), named ? 1 : 0, run2, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
-    trace().event("post", { run: run2, seq, author: p.name, type: kind, event: extra.event ?? null, mentions: mentions2.length, about, chars: body.length });
+    trace().event("post", { run: run2, seq, author: p.name, type: kind, event: extra.event ?? null, lands: extra.event ? !!eventDef(extra.event).lands : false, mentions: mentions2.length, about, chars: body.length });
     trace().message(run2, { seq, author: p.name, type: kind, event: extra.event ?? null, mentions: mentions2, about, body });
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);

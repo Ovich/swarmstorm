@@ -941,7 +941,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
     // the trace: the post's facts at debug, its text at debug-extended
-    trace().event("post", { run, seq, author: p.name, type: kind, event: extra.event ?? null, mentions: mentions.length, about, chars: body.length });
+    trace().event("post", { run, seq, author: p.name, type: kind, event: extra.event ?? null, lands: extra.event ? !!eventDef(extra.event).lands : false, mentions: mentions.length, about, chars: body.length });
     trace().message(run, { seq, author: p.name, type: kind, event: extra.event ?? null, mentions, about, body });
     // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);

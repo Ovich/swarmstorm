@@ -21,8 +21,8 @@ export const KEEP_DAYS = 30;
 export const HEALTH_MS = 5 * 60_000;
 const LONG_WAIT_MS = 60_000;
 const MANY_UNREAD = 5;
-/** The board events told at info: a run's and a member's lifecycle. */
-const INFO_EVENTS = new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume", "merged"]);
+/** The board events told at info: a run's and a member's lifecycle; a pack's event that lands work (its `lands`) too. */
+const INFO_EVENTS = new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume"]);
 
 export const traceRoot = (dataRoot: string): string => path.join(dataRoot, "logs");
 export const traceLevelFile = (dataRoot: string): string => path.join(traceRoot(dataRoot), "level");
@@ -104,7 +104,7 @@ export function makeTracer(dataRoot: string): Tracer {
   const warnedUnread = new Map<string, number>();
   const infoOf = (kind: string, f: Record<string, unknown>): void => {
     if (kind === "server") say("info", "server", { action: f.action, pid: f.pid });
-    else if (kind === "post" && typeof f.event === "string" && INFO_EVENTS.has(f.event)) say("info", f.event, { run: f.run, member: f.author, seq: f.seq });
+    else if (kind === "post" && typeof f.event === "string" && (INFO_EVENTS.has(f.event) || f.lands === true)) say("info", f.event, { run: f.run, member: f.author, seq: f.seq });
     else if (kind === "link" && f.up === false) say("info", "link-down", { run: f.run, member: f.member, cause: f.cause });
     else if (kind === "lock" && f.action === "granted")
       say(typeof f.waitedMs === "number" && f.waitedMs > LONG_WAIT_MS ? "warn" : "info", "lock-granted", { run: f.run, member: f.member, waited: secs(f.waitedMs), queue: f.waiting });
