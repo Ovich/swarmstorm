@@ -92,13 +92,9 @@ describe("conversation: the pick (D1, D14)", () => {
 describe("conversation: what an item is (D8, D16)", () => {
   const FILES = [{ path: "a.ts", holders: ["alpha/S1"], past: [] }];
 
-  test("a held file: a post --about a path mentioning its holder, by a member not holding it; answered once the holder posts about it", () => {
+  test("a post --about a file mentioning its holder is a plain message", () => {
     const ask = item(2, "beta/S2", "@AL·S1 I add one call in a.ts", { about: "a.ts" });
-    const open = conversation(board(RUNS, ROSTER, [ask], FILES), { run: null, follow: null });
-    expect(open[0]).toMatchObject({ kind: "held", tier: "wait", word: "held file", state: null });
-    const answer = item(1, "alpha/S1", "@BE·S2 fine, after mine", { about: "a.ts" });
-    const answered = conversation(board(RUNS, ROSTER, [ask, answer], FILES), { run: null, follow: null });
-    expect(answered[0]).toMatchObject({ kind: "held", word: "held file · answered", state: "answered" });
+    expect(conversation(board(RUNS, ROSTER, [ask], FILES), { run: null, follow: null })[0]).toMatchObject({ kind: "message", tier: "talk", word: null });
   });
 
   test("a swarm stopped shows only while live, as one row, the latest; one something came after leaves the thread", () => {
