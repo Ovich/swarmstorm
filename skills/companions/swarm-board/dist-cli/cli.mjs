@@ -8527,7 +8527,18 @@ var SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
 var START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
 var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
-var homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
+function withEnv(vars, start) {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try {
+    return start();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === void 0) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
 var pause2 = (ms) => new Promise((r) => setTimeout(r, ms));
 function isAlive2(pid) {
   try {
@@ -8569,7 +8580,10 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
 `);
     } catch {
     }
-    const child = hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = withEnv(
+      { SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") },
+      () => hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
+    );
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
@@ -8640,13 +8654,10 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
     }
     return null;
   }
-  const child = hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], {
-    detached: true,
-    cwd: DETACHED_CWD,
-    stdio: "ignore",
-    windowsHide: true,
-    env: homeEnv(dataRoot)
-  });
+  const child = withEnv(
+    { SWARMSTORM_HOME: dataRoot },
+    () => hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
+  );
   child.on("error", () => {
   });
   child.unref();
@@ -10478,7 +10489,7 @@ ${verbHelp()}`);
         }
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
         const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", env: process.env, maxBuffer: 64 * 1024 * 1024 });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
@@ -10663,7 +10674,7 @@ if (args.verb === "--help") {
 var relaunchLink = async () => {
   await new Promise((r) => setTimeout(r, 300));
   const { hiddenSpawn: hiddenSpawn2 } = await Promise.resolve().then(() => (init_proc(), proc_exports));
-  const child = hiddenSpawn2(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env });
+  const child = hiddenSpawn2(process.execPath, process.argv.slice(1), { stdio: "inherit" });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };
 if (args.verb === "link") {

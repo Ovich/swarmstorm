@@ -9412,6 +9412,18 @@ import fs10 from "node:fs";
 import net from "node:net";
 import os4 from "node:os";
 import path12 from "node:path";
+function withEnv(vars, start) {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try {
+    return start();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === void 0) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
 function isAlive2(pid) {
   try {
     process.kill(pid, 0);
@@ -9450,7 +9462,10 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
 `);
     } catch {
     }
-    const child = hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true, env: { ...homeEnv(dataRoot), [SERVER_STARTER_ENV]: process.argv.join(" ") } });
+    const child = withEnv(
+      { SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") },
+      () => hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
+    );
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
@@ -9516,13 +9531,10 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
     }
     return null;
   }
-  const child = hiddenSpawn2(process.execPath, [...entry(), ...linkVerbArgs(member)], {
-    detached: true,
-    cwd: DETACHED_CWD,
-    stdio: "ignore",
-    windowsHide: true,
-    env: homeEnv(dataRoot)
-  });
+  const child = withEnv(
+    { SWARMSTORM_HOME: dataRoot },
+    () => hiddenSpawn2(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
+  );
   child.on("error", () => {
   });
   child.unref();
@@ -9684,7 +9696,7 @@ async function serverBoard(state, member) {
   conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
   return Object.assign(asRemote(calls.call), { close: conn.close });
 }
-var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, homeEnv, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
+var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
@@ -9695,7 +9707,6 @@ var init_remote = __esm({
     START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
     START_POLL_MS = 50;
     entry = () => [process.argv[1]];
-    homeEnv = (dataRoot) => ({ ...process.env, SWARMSTORM_HOME: dataRoot });
     pause = (ms) => new Promise((r) => setTimeout(r, ms));
     DETACHED_CWD = os4.tmpdir();
     isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
