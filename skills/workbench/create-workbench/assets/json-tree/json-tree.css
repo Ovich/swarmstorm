@@ -1,0 +1,13 @@
+.json-tree { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5; }
+.json-tree .jt-bar { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 2px 0 4px; background: var(--background); font-family: var(--font-sans, inherit); }
+.json-tree .jt-bar .btn { height: 18px; min-height: 0; padding: 0 6px; font-size: 10px; line-height: 16px; border-radius: 4px; }
+.json-tree .jt-levels { width: 3em; height: 18px; padding: 0 4px; font-size: 10px; border-radius: 4px; }
+.json-tree .jt-node > summary { display: flex; gap: 6px; cursor: pointer; padding: 1px 0; }
+.json-tree .jt-size { margin-left: auto; color: var(--muted-foreground); }
+.json-tree .jt-kids { padding-left: 14px; margin-left: 3px; border-left: 1px solid var(--border); }
+.json-tree .jt-leaf { padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
+.json-tree .jt-key, .json-tree .jt-count, .json-tree .jt-null { color: var(--muted-foreground); }
+.json-tree .jt-string { color: #15803d; }
+.json-tree .jt-number, .json-tree .jt-boolean { color: #b45309; }
+.dark .json-tree .jt-string { color: #86efac; }
+.dark .json-tree .jt-number, .dark .json-tree .jt-boolean { color: #fbbf24; }

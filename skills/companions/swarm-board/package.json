@@ -1,0 +1,22 @@
+{
+  "name": "swarm",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import ./tests/fixtures/outside-harness.ts --test --test-timeout=600000 \"tests/**/*.test.ts\"",
+    "test:load": "node --import ./tests/fixtures/outside-harness.ts --test tests/load.bench.ts",
+    "yardstick": "node --import ./tests/fixtures/outside-harness.ts --test tests/yardstick.harness.ts"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/ws": "8.18.1",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "ws": "8.18.3"
+  }
+}
