@@ -1,6 +1,6 @@
 # Harness: an HTTP or gRPC API
 
-**The tool**: the repository's own client or SDK first, else a small script (`fetch`, `grpcurl`); `curl` for one call. Driven as the documented contract says, over the network, with the authentication a real client obtains through the real flow.
+**The tool**: the repository's own client or SDK first, else a small script in the project's language, or its HTTP or gRPC command-line client for a single call. Driven as the documented contract says, over the network, with the authentication a real client obtains through the real flow.
 
 **The starting state** through the API itself: the ids a create returns are the ids the next call uses, never read from the database.
 
