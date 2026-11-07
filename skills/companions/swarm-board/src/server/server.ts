@@ -5,6 +5,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
+import { makeTracer, setTracer, trace } from "../board/trace.ts";
 import { openBoard, type Board, type LinkDropCause, type LinkFact, type Presence } from "../board/board.ts";
 import { makeAuthority, type Bound } from "./authority.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLockHolder, serverLogFile, serverStartLock, serverStateFile, SERVER_STARTER_ENV, type Call, type Frame, type Hello, type RpcMethod, type ServerState } from "../wire.ts";
@@ -73,6 +74,9 @@ function logStart(dataRoot: string): void {
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.appendFileSync(serverLogFile(dataRoot), `serve: home ${path.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}\n`);
 }
+
+/** The trace's snapshot period. */
+const SNAPSHOT_MS = 30_000;
 
 function appendLog(dataRoot: string, line: string): void {
   try {
@@ -157,6 +161,11 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => new Date());
   const board: Board = await openBoard(path.join(opts.dataRoot, "swarm.sqlite"));
+  // the trace (logs/<day>/): this server is its one writer
+  const tracer = makeTracer(opts.dataRoot);
+  setTracer(tracer);
+  tracer.prune();
+  tracer.event("server", { action: "start", pid: process.pid });
   const authority = makeAuthority(board);
   const secret = crypto.randomBytes(24).toString("hex");
   const version = bundleVersion();
@@ -185,6 +194,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   /** board-split D55: a link connected, or dropped for `cause`; a drop is its last sight. */
   const linked = (m: NonNullable<Speaker["member"]>, connected: boolean, cause: LinkDropCause | null = null): void => {
     const at = now().getTime();
+    trace().event("link", { run: m.run, member: m.name, up: connected, cause });
     keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null, seenAt: at, cause: null } : { connected: false, lostAt: at, seenAt: at, cause });
   };
   /** board-split D55: a heartbeat (every HEARTBEAT_MS) is the link's last sight, here and in the store. */
@@ -222,6 +232,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     rec.answer = text;
     rec.answeredAt = Date.now();
     const took = rec.answeredAt - rec.startedAt;
+    trace().event("call", { member: speakerName(rec.speaker), method: rec.method, startedAt: new Date(rec.startedAt).toISOString(), ms: took, ok: text.includes('"ok":true') });
     // board-fixes#D1: one line per call answered SLOW_CALL_MS or more after it came in
     if (took >= SLOW_CALL_MS && rec.method !== "wait") appendLog(opts.dataRoot, `slow: ${speakerName(rec.speaker)}, ${rec.method} answered in ${took} ms`);
     rec.cancelWait = null;
@@ -435,6 +446,26 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
     const t = Date.now();
     for (const [id, rec] of calls) if (rec.answer !== null && t - rec.answeredAt > RESULT_CACHE_MS) calls.delete(id);
   }, UPKEEP_LOOK_MS);
+  // the trace's snapshot: every member of every open run, its state, unread and doing; the old days pruned once a day
+  let prunedDay = new Date().toISOString().slice(0, 10);
+  const snapshot = setInterval(() => {
+    logged("trace snapshot", () => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (day !== prunedDay) {
+        prunedDay = day;
+        tracer.prune();
+      }
+      for (const repo of new Set(board.runs().map((r) => r.repo))) {
+        const roster = board.roster(repo);
+        for (const run of new Set(roster.map((m) => m.run))) {
+          const members = roster.filter((m) => m.run === run);
+          const states: Record<string, number> = {};
+          for (const m of members) states[String(m.state)] = (states[String(m.state)] ?? 0) + 1;
+          trace().event("snapshot", { run, states, members: members.map((m) => ({ seat: m.seat, state: m.state, unread: m.unread, doing: m.doing })) });
+        }
+      }
+    });
+  }, SNAPSHOT_MS);
   let lastPingRound = Date.now();
   const ping = setInterval(() => {
     const t = Date.now();
@@ -455,6 +486,8 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       clearInterval(upkeep);
+      clearInterval(snapshot);
+      setTracer(null);
       clearInterval(ping);
       stopTellingReaders();
       for (const s of speakers) {

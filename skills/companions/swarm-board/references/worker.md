@@ -48,6 +48,10 @@ never `end` while the run is open (it is refused). A turn ended while you owe wo
 6. **Merge, at the task's end**, and early when a file your task marks *interface* changed in a way
    other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
    **The lock is held only to rebase, check and fast-forward**: every other worker waits on it.
+   **In one call** (steps 1 to 6 done by the board): `$S merge-lock --onto <target> --check
+   "<the task's quick check>" --report "<your report>"` (`--guides` too when the grant would list
+   guides; it says so). Read its answer: merged, or a conflict to resolve then `--continue`, or a
+   failed check, the lock given back. The steps below are the same merge by hand.
    0. **Before the lock**: commit, then run the task's done-when on your branch. What fails is
       fixed here, never under the lock.
    1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in

@@ -31,6 +31,7 @@ export const coreUsage = (cli: Command): string =>
     "  roster  [--project <path>] [--as <member>]",
     "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
     "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
+    "  log-level [off|debug|debug-extended]                            # the board's trace in <data home>/logs/<day>/: debug (default) the events, debug-extended each post's text too; 30 days kept",
     "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it",
     CODE_IN_CORE_HELP.pruneLine,
     `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`,

@@ -17,6 +17,7 @@ import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsF
 export type { CoreMemberState, SeatState } from "./liveness.ts";
 import { type MemberActivity, ORCHESTRATORS_GROUP } from "../wire.ts";
 import { callLabel } from "./call-label.ts";
+import { trace } from "./trace.ts";
 
 export type RunId = number;
 export type { Kind } from "./kinds.ts";
@@ -939,6 +940,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       .run(p.repo, p.id, body, about, kind, JSON.stringify(mentions), now(), named ? 1 : 0, run, extra.endorses ?? null, extra.event ?? null, extra.meta ? JSON.stringify(extra.meta) : null);
     const seq = Number(r.lastInsertRowid);
     bump(p.repo);
+    // the trace: the post's facts at debug, its text at debug-extended
+    trace().event("post", { run, seq, author: p.name, type: kind, event: extra.event ?? null, mentions: mentions.length, about, chars: body.length });
+    trace().message(run, { seq, author: p.name, type: kind, event: extra.event ?? null, mentions, about, body });
     // board-fixes#D5: a merge or a done is the member's latest doing, set before its event; older events never stale it
     if (extra.event && (extra.event === EVENTS.done.name || !!eventDef(extra.event).lands)) db.prepare("UPDATE participants SET doing_at = ?, doing_seq = ? WHERE id = ?").run(now(), seq, p.id);
     if (extra.event && isAwaitedCause(extra.event)) tellAwaiting(p, extra.event);
@@ -1107,7 +1111,11 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
       // a wake in a whole-thread run brings every unread post of the run with it, never the waking one alone
       const rows = !unseen.some(woken) ? [] : unseen.filter((r) => woken(r) || (!(silentWhilePaused && fromWait) && ownPost(asMessage(r))));
       const mark = db.prepare("INSERT INTO deliveries (participant, seq, at) VALUES (?, ?, ?)");
-      for (const r of rows) mark.run(me.id, Number(r.seq), now());
+      for (const r of rows) {
+        mark.run(me.id, Number(r.seq), now());
+        // the trace: how long the message waited for this member
+        trace().event("delivered", { run: me.run, member: me.name, seq: Number(r.seq), waitedMs: Date.now() - Date.parse(String(r.at)), fromWait });
+      }
       // a delivery is a call to the board: the member's last call (D31)
       const at = now();
       db.prepare("UPDATE participants SET last_call = ? WHERE id = ?").run(at, me.id);

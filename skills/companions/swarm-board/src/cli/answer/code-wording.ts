@@ -24,6 +24,7 @@ export const CODE_WORDING = {
     [
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
       "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own",
+      "  merge-lock --check \"<cmd>\" --report <text>|--report-file <path> [--files <path>...] [--guides ...] [--continue]   # the board rebases, runs your check, fast-forwards and records merged; a conflict stops it, the lock kept: resolve, git add, --continue",
       "  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
 
@@ -51,6 +52,14 @@ export const CODE_WORDING = {
     `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
   ontoCheckedOutAtMerge: (onto: string, worktree: string, holder: string | null, detach: Command) =>
     `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
+  // merge-lock --check: the board runs the rebase, the check and the fast-forward; the worker only resolves a conflict
+  autoConflict: (onto: string, files: string[], cont: Command) => `rebase onto ${onto} stopped on a conflict in ${files.join(", ")}: the lock stays yours; resolve each file, git add it, then: ${cont}`,
+  autoRebaseFailed: (onto: string, why: string) => `rebase onto ${onto} failed (${why}); nothing merged, the lock released: commit or stash what is uncommitted, then merge-lock again`,
+  autoCheckFailed: (code: number | null, tail: string) => `the check failed (exit ${code ?? "none"}); nothing merged, the lock released: fix it on your branch, then merge-lock again
+${tail}`,
+  autoPushFailed: (onto: string, why: string) => `fast-forward of ${onto} refused (${why}); nothing merged, the lock released: merge-lock again`,
+  autoFreed: (waiters: string[], who: string) => `${waiters.map((w) => `@${w}`).join(" ")} the merge lock is free: ${who} merged nothing; take it now`,
+  autoNeedsGuides: (form: string) => `merge-lock --check: this merge falls under guides; settle them up front: --guides ${form}`,
   // V-27: the command last
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
 

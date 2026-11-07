@@ -7,6 +7,7 @@ import type { DriftedFile, Flag, MemberWorktree, MergedMeta } from "./types.ts";
 import type { EventName } from "../../board/events.ts";
 import type { PackMessageMeta } from "../registry.ts";
 import { CODE_EVENTS } from "./events.ts";
+import { trace } from "../../board/trace.ts";
 import { CODE_WORDING } from "../../cli/answer/code-wording.ts";
 
 export interface ClaimsDeps {
@@ -141,7 +142,14 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     });
   /** `id`'s merge lock and claim requests go; its flags and notices too, and the page is told, only when something it
    *  held changed (`changedBefore`: rows its caller already removed). */
+  /** The trace: members queued on the lock, and a release with how long it was held. */
+  const lockQueue = (repo: string): number => Number((db.prepare("SELECT COUNT(*) AS n FROM lock_waiters WHERE repo = ?").get(repo) as Row).n);
+  const traceRelease = (p: Participant, cause: string): void => {
+    const l = db.prepare("SELECT at FROM merge_locks WHERE participant = ?").get(p.id) as Row | undefined;
+    trace().event("lock", { action: "released", run: p.run, member: p.name, cause, heldMs: l ? Date.now() - Date.parse(String(l.at)) : null, waiting: lockQueue(p.repo) });
+  };
   const releaseLockOf = (id: number, changedBefore = 0): void => {
+    if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ?").get(id)) traceRelease(participantById(id), "ended");
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
     const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
     db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
@@ -223,6 +231,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== undefined;
       if (!held) return null;
       const waiters = takeLockWaiters(p.repo).filter((n) => n !== p.name);
+      traceRelease(p, "given back");
       db.prepare("DELETE FROM merge_locks WHERE repo = ? AND participant = ?").run(p.repo, p.id);
       bump(p.repo);
       return { waiters };
@@ -305,7 +314,9 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           const turn = openTurn(me);
           if (turn && turn.granted_at == null) db.prepare("UPDATE lock_requests SET refused = refused + 1 WHERE rowid = ?").run(Number(turn.id));
           else db.prepare("INSERT INTO lock_requests (repo, participant, asked_at, refused) VALUES (?, ?, ?, 1)").run(me.repo, me.id, now());
-          return { granted: false as const, holder: participantById(Number(r.participant)).name };
+          const holder = participantById(Number(r.participant)).name;
+          trace().event("lock", { action: "refused", run: me.run, member: me.name, holder, waiting: lockQueue(me.repo) });
+          return { granted: false as const, holder };
         }
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
@@ -321,6 +332,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
         grantTurn(me, at, true);
         bump(me.repo);
+        trace().event("lock", { action: "granted", run: me.run, member: me.name, waiting: lockQueue(me.repo) });
         return { granted: true as const };
       });
     },
@@ -355,6 +367,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             throw new Error(`the merge lock is held by ${participantById(Number(lock.participant)).name}, not ${me.name}`);
           }
           if (lock && Number(lock.participant) === me.id && lock.onto != null) onto = String(lock.onto);
+          if (lock && Number(lock.participant) === me.id) traceRelease(me, "merged");
           db.prepare("DELETE FROM merge_locks WHERE repo = ?").run(me.repo);
           // board-split D33 (S35): the merge is the member's latest fact, shown over an older doing
           db.prepare("UPDATE participants SET merged = 1, doing = ? WHERE id = ?").run(`merged ${sha.slice(0, 7)}`, me.id);
