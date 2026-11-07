@@ -10,6 +10,7 @@ import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
+import { TRACE_LEVELS, readTraceLevel, traceRoot, writeTraceLevel, type TraceLevel } from "../board/trace.ts";
 import { SERVER_CLOSED_CONNECTION, bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
@@ -572,6 +573,17 @@ async function main(): Promise<void> {
     return;
   }
   switch (args.verb) {
+    case "log-level": {
+      // the trace's level (logs/<day>/), read by the board server within seconds; no word: the level now
+      const word = args.positional[0];
+      if (word !== undefined) {
+        if (!TRACE_LEVELS.includes(word as TraceLevel)) fail(`log-level: ${word} is none of ${TRACE_LEVELS.join(", ")}`);
+        writeTraceLevel(DATA_ROOT, word as TraceLevel);
+      }
+      const level = readTraceLevel(DATA_ROOT);
+      emit({ level, logs: traceRoot(DATA_ROOT) }, `log level ${level}: ${traceRoot(DATA_ROOT)}`);
+      break;
+    }
     case "open": {
       const { kind, group } = openKindAndGroup();
       const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${verbHelp()}`);
@@ -1046,7 +1058,64 @@ async function main(): Promise<void> {
       const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
       const guides = guidesFor(guidesHere(p, ontoRef), changed);
+      const check = args.flag("--check");
+      if (check !== undefined) {
+        if (args.flag("--report") === undefined && args.flag("--report-file") === undefined) fail(CODE_WORDING.reportMissing);
+        if (guides.length && args.flag("--guides") === undefined) fail(CODE_WORDING.autoNeedsGuides(CODE_WORDING.guidesForm(guides.map((g) => g.name))));
+      }
       const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
+      // merge-lock --check: the board runs the merge itself, granted; a conflict alone hands it back, the lock kept
+      if (check !== undefined && r.granted && p.place) {
+        const wt = p.place;
+        const out = (line: string, code: number, extra: Record<string, unknown> = {}) => {
+          process.exitCode = code;
+          emit({ member: p.name, granted: true, merged: false, ...extra, next: line }, line);
+        };
+        const release = async (line: string, code: number) => {
+          const freed = (await packVerb(p, "release-merge-lock", {})) as { waiters: string[] } | null;
+          if (freed?.waiters.length) await board.post(p, CODE_WORDING.autoFreed(freed.waiters, p.name), { kind: "msg" });
+          out(line, code);
+        };
+        const sh = (argv: string[], opts: { shell?: boolean } = {}) =>
+          hiddenSpawnSync(argv[0], argv.slice(1), { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
+        const reportArgs = args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : ["--report", args.flag("--report")!];
+        const guidesArgs = args.flag("--guides") !== undefined ? ["--guides", args.flag("--guides")!] : [];
+        const given = args.list("--files");
+        const cont = [...self(), "merge-lock", "--onto", shellWord(onto), "--check", shellWord(check), ...[...reportArgs, ...guidesArgs, ...(given.length ? ["--files", ...given] : [])].map(shellWord), "--continue", "--as", shellWord(p.name)].join(" ");
+        const rebasing = (): boolean => {
+          const at = git(wt, "rev-parse", "--git-path", "rebase-merge");
+          return !!at && fs.existsSync(path.resolve(wt, at));
+        };
+        const rb = rebasing() ? sh(["git", "-c", "core.editor=true", "rebase", "--continue"]) : sh(["git", "rebase", "--end-of-options", ontoRef]);
+        if (rb.status !== 0) {
+          const unmerged = (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
+          if (unmerged.length) {
+            out(CODE_WORDING.autoConflict(onto, unmerged, cont), 2, { conflicts: unmerged });
+            break;
+          }
+          if (rebasing()) sh(["git", "rebase", "--abort"]);
+          await release(CODE_WORDING.autoRebaseFailed(onto, `${rb.stderr ?? ""}${rb.stdout ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
+          break;
+        }
+        const c = sh([check], { shell: true });
+        if (c.status !== 0) {
+          await release(CODE_WORDING.autoCheckFailed(c.status, `${c.stdout ?? ""}${c.stderr ?? ""}`.trim().split("\n").slice(-15).join("\n")), 3);
+          break;
+        }
+        const ff = sh(["git", "push", ".", `HEAD:${onto}`]);
+        if (ff.status !== 0) {
+          await release(CODE_WORDING.autoPushFailed(onto, `${ff.stderr ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
+          break;
+        }
+        // the merged step, as the worker would have called it: its checks, report, notices and next line, unchanged
+        const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
+        const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", env: process.env, maxBuffer: 64 * 1024 * 1024 });
+        process.stdout.write(m.stdout ?? "");
+        process.stderr.write(m.stderr ?? "");
+        process.exitCode = m.status ?? 1;
+        break;
+      }
       // a worker whose listener lapsed hears of its undelivered messages here too, before the lock step
       const unreadAtLock = rules.unreadLine(await situation(p), "merge-lock");
       emit({ member: p.name, ...r, ...(r.granted && guides.length ? { guides } : {}) }, () => {

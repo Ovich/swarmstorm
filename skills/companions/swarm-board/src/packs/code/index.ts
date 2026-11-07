@@ -51,6 +51,8 @@ const CLAIM_WRITES: Record<string, PackWrite> = {
   // spec §7: the member's link's changed set, not a call of its own; its drifted paths (claims-phase) none from an older link
   changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[], optional<DriftedFile[]>(i.drifted) ?? [])),
   "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional<string>(i.onto), optional<number>(i.reflogMark), optional<string[]>(i.guides))),
+  // merge-lock --check: a merge that stopped short (failed check, refused rebase) gives the lock back, naming who waited
+  "release-merge-lock": tableWrite(null, (c, m) => c.releaseLockOfLost(m)),
   merged: tableWrite("merged", (c, m, i) => c.merged(m, String(i.sha), i.files as string[], optional<Conflicts>(i.conflicts)), true),
 };
 
