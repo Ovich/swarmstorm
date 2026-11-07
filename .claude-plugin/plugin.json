@@ -42,5 +42,6 @@
     "./skills/help",
     "./skills/alignment",
     "./skills/guides"
-  ]
+  ],
+  "icon": "./.claude-plugin/icon.png"
 }
