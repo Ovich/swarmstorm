@@ -260,7 +260,7 @@ export function phaseCountText(p: PhaseCount): string {
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };
 /** What the conversation shows: one run (null = All), or the member followed. */
 export type Pick = { run: RunId | null; follow: string | null };
-export type ItemKind = "message" | "flag" | "urgent" | "held" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "gone";
+export type ItemKind = "message" | "flag" | "urgent" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "gone";
 export type Tier = "act" | "wait" | "decided" | "talk";
 export type Item =
   | { kind: ItemKind; tier: Tier; seq: number; at: string; run: RunId; from: string; word: string | null; tip: string | null; text: string; joined: boolean; state: string | null; about: string | null }
@@ -273,7 +273,6 @@ export const TIPS = {
   flag: "Flag: this member wrote a file it had not claimed, while another member holds it. The board found it when the member merged or ended. The two settle it here; the flag stays open until they agree.",
   settled: "Settled flag: the two members agreed on the file a flag was about.",
   urgent: "Urgent: an orchestrator interrupted this member to do this first. It wakes the member at once, whatever it was doing.",
-  held: "Held file: this member wanted a file another member holds. It said what it needs and waits for the holder's answer here.",
   question: "Question: a seat asks its orchestrator something the debate cannot settle alone. It waits for the answer.",
   quiet: "Quiet: this member has not called the board for a while. Its session may be waiting on you, or gone; its claims stay held.",
   agreement: "Agreed: two members settled something between them, and it binds both. An endorsement is another member backing it.",
@@ -370,15 +369,6 @@ export function openingRun(snap: BoardSnapshot): RunId | null {
   return Math.max(...open.map((r) => r.run));
 }
 
-/** A held file (D16): a post about a path that names one of its holders, by a member not holding it. */
-function heldFileOf(snap: BoardSnapshot, e: SnapshotEvent, ctx: MentionCtx): { path: string; holders: string[] } | null {
-  if (e.kind !== "msg" || !e.about) return null;
-  const holders = snap.files.find((f) => f.path === e.about)?.holders ?? [];
-  if (holders.includes(e.from)) return null;
-  const named = targets(e, ctx).filter((t) => holders.includes(t));
-  return named.length ? { path: e.about, holders: named } : null;
-}
-
 const QUESTION = /^@orchestrator new question:/;
 
 /** One event as an item: its tier, word, tip and state, read from the thread (D8, D9, D16). */
@@ -432,11 +422,6 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     const orch = orchestratorOf(run);
     const answered = snap.events.some((x) => x.seq > e.seq && x.from === orch && ((e.about != null && x.about === e.about) || targets(x, ctx).includes(e.from)));
     return said("question", "wait", `? question for ${memberText(snap, orch)}`, TIPS.question, answered ? "answered" : null);
-  }
-  const held = heldFileOf(snap, e, ctx);
-  if (held) {
-    const answered = snap.events.some((x) => x.seq > e.seq && x.about === held.path && held.holders.includes(x.from));
-    return said("held", "wait", answered ? "held file · answered" : "held file", TIPS.held, answered ? "answered" : null);
   }
   return said("message", e.kind === "endorsement" ? "decided" : "talk", null, null);
 }
@@ -513,7 +498,7 @@ export type KindFilter = "all" | "messages" | "agreements" | "flags";
 /** The conversation's narrowing after the pick: a kind, and a file its items are about. */
 export type Narrow = { kind: KindFilter; file: string | null };
 
-const MESSAGE_KINDS = new Set<Item["kind"]>(["message", "urgent", "held", "question"]);
+const MESSAGE_KINDS = new Set<Item["kind"]>(["message", "urgent", "question"]);
 const isFlagItem = (i: Item): boolean => i.kind === "flag" || i.kind === "settled";
 
 /** The items a kind keeps; Flags keeps each flag and the posts after it about its file. */

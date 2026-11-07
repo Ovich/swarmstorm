@@ -66,9 +66,9 @@ test("act now (urgent, an open flag): a red edge class; the open flag alone its 
   expect([...flag.classList]).toEqual(expect.arrayContaining(["item", "act", "flag", "open"]));
 });
 
-test("waiting (a held file, a question, quiet): the dashed edge class", () => {
+test("waiting (a question, quiet): the dashed edge class", () => {
   const { li } = show();
-  for (const text of [/I add a call in a\.ts/, /new question/, "quiet 12 min"]) {
+  for (const text of [/new question/, "quiet 12 min"]) {
     expect(li(text).classList.contains("wait"), String(text)).toBe(true);
   }
 });
@@ -100,7 +100,6 @@ test("every special word carries its tip, focusable (D9)", () => {
   };
   expect(tipOf("! urgent")).toBe(TIPS.urgent);
   expect(tipOf("⚑ flag · open")).toBe(TIPS.flag);
-  expect(tipOf("held file")).toBe(TIPS.held);
   expect(tipOf(/^\? question for/)).toBe(TIPS.question);
   expect(tipOf("◷ quiet 12 min")).toBe(TIPS.quiet);
   expect(tipOf(/^✔ agreed with/)).toBe(TIPS.agreement);
