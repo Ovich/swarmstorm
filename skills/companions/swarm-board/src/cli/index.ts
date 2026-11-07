@@ -1110,7 +1110,7 @@ async function main(): Promise<void> {
         // the merged step, as the worker would have called it: its checks, report, notices and next line, unchanged
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
         const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", env: process.env, maxBuffer: 64 * 1024 * 1024 });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
@@ -1334,7 +1334,7 @@ const relaunchLink = async (): Promise<number> => {
   // the old pipe is closing: give the named pipe a moment to be free before the new link listens on it
   await new Promise((r) => setTimeout(r, 300));
   const { hiddenSpawn } = await import("../proc.ts");
-  const child = hiddenSpawn(process.execPath, process.argv.slice(1), { stdio: "inherit", env: process.env });
+  const child = hiddenSpawn(process.execPath, process.argv.slice(1), { stdio: "inherit" });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };
 if (args.verb === "link") {
