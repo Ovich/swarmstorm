@@ -143,12 +143,15 @@ test("`merged`'s output, human and `--json`, carries no new field or line (D25)"
   const human = fresh();
   openTwoRunners(human);
   const sha = conflictAfterGrant(human, "src/a.ts");
+  // read first: an unread message would add its own line (the unread rule), not this guard's concern
+  human.cli(human.wtB, "wait", "--mentions", "--timeout", "1000");
   const out = human.cli(human.wtB, "merged", "--report", "-", sha, "--files", "src/a.ts");
   assert.equal(out, `merged ${sha}: lock released\n${TELL_S3("src/a.ts")}\n`);
 
   const json = fresh();
   openTwoRunners(json);
   const sha2 = conflictAfterGrant(json, "src/a.ts");
+  json.cli(json.wtB, "wait", "--mentions", "--timeout", "1000");
   assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", "--report", "-", sha2, "--files", "src/a.ts", "--json")), {
     member: "review-tool/S5",
     sha: sha2,

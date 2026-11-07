@@ -47,7 +47,7 @@ export const openTaskLine = (s: Situation): string | null =>
 export const unreadLine = (s: Situation, verb: string): string | null =>
   s.listens === "background" && verb !== "wait" && verb !== "join" && (s.unread ?? 0) > 0 ? W.unreadNow(s.unread!, W.wait(s.cli, s.as)) : null;
 
-export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? W.owesNothingEndTurn : null);
+export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? ((s.unread ?? 0) > 0 ? W.unreadNow(s.unread!, W.wait(s.cli, s.as)) : W.owesNothingEndTurn) : null);
 
 /** Whether a post's stored mentions reach `name` (`<group>/<seat>`): by name, or by its group (`@swarm`, `@<CODE>` are stored as `<group>/*`). */
 export const mentionReaches = (mentions: readonly string[], name: string): boolean =>

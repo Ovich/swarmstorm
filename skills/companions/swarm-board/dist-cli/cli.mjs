@@ -9218,7 +9218,7 @@ var owedLine = (s, opts = {}) => {
 };
 var openTaskLine = (s) => pausedLine(s) ?? (s.openTask != null && s.seat !== "orchestrator" ? WORDING.taskStillOpen(s.openTask, WORDING.done(s.cli, s.phase ? shellWord(s.phase.name) : "<phase>", s.as)) : null);
 var unreadLine = (s, verb) => s.listens === "background" && verb !== "wait" && verb !== "join" && (s.unread ?? 0) > 0 ? WORDING.unreadNow(s.unread, WORDING.wait(s.cli, s.as)) : null;
-var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? WORDING.owesNothingEndTurn : null);
+var owesNothingLine = (s) => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? (s.unread ?? 0) > 0 ? WORDING.unreadNow(s.unread, WORDING.wait(s.cli, s.as)) : WORDING.owesNothingEndTurn : null);
 var mentionReaches = (mentions2, name) => mentions2.includes(name) || mentions2.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
 var unreachedMentionLines = (targets) => targets.flatMap((t) => t.state === "away" ? [WORDING.postToAway(t.name)] : t.state === "lost" ? [WORDING.postToLost(t.name)] : []);
 var listenNow = (s, afterPhase = false) => s.listens === "foreground" ? WORDING.waitNow(afterPhase, waitCommand(s, true)) : WORDING.listenerStart(waitCommand(s));
@@ -10232,9 +10232,11 @@ ${verbHelp()}`);
       const reflogMark = p.place ? headReflogLength(p.place) ?? void 0 : void 0;
       const guides = guidesFor(guidesHere(p, ontoRef), changed);
       const r = await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) });
+      const unreadAtLock = unreadLine(await situation(p), "merge-lock");
       emit({ member: p.name, ...r, ...r.granted && guides.length ? { guides } : {} }, () => {
         if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
+        if (unreadAtLock) console.log(unreadAtLock);
         console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord2(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder, WORDING.wait(self().join(" "), shellWord2(p.name), FOREGROUND_WAIT_MS)));
       });
       break;
@@ -10288,7 +10290,8 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
-      const endTurn = reported ? owesNothingLine(await situation(p)) : null;
+      const after = await situation(p);
+      const endTurn = (reported ? owesNothingLine(after) : null) ?? unreadLine(after, "merged");
       emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {}, ...endTurn ? { next: endTurn } : {} }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
         for (const line of tell) console.log(line);

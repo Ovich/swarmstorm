@@ -1047,9 +1047,12 @@ async function main(): Promise<void> {
       // the guides the branch's changes fall under: merged refuses until each is settled
       const guides = guidesFor(guidesHere(p, ontoRef), changed);
       const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
+      // a worker whose listener lapsed hears of its undelivered messages here too, before the lock step
+      const unreadAtLock = rules.unreadLine(await situation(p), "merge-lock");
       emit({ member: p.name, ...r, ...(r.granted && guides.length ? { guides } : {}) }, () => {
         if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
+        if (unreadAtLock) console.log(unreadAtLock);
         console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, WORDING.wait(self().join(" "), shellWord(p.name), FOREGROUND_WAIT_MS)));
       });
       break;
@@ -1116,7 +1119,9 @@ async function main(): Promise<void> {
       const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
       // the worktree stays for the seat's next task; end, close and prune remove it
       // simple-states: merged and reported, a member owing nothing ends its turn
-      const endTurn = reported ? rules.owesNothingLine(await situation(p)) : null;
+      const after = await situation(p);
+      // the end-turn line, or the undelivered messages to read first (owesNothingLine says which); else those alone
+      const endTurn = (reported ? rules.owesNothingLine(after) : null) ?? rules.unreadLine(after, "merged");
       emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}), ...(endTurn ? { next: endTurn } : {}) }, () => {
         console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
         for (const line of tell) console.log(line);
