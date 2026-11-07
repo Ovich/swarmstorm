@@ -167,13 +167,10 @@ test("a body without a block never imports mermaid", async () => {
 });
 
 // The build leaves mermaid in chunks of its own, apart from the page's entry.
-test.skipIf(!safeExists(join(__dirname, "../dist/assets")))("dist holds mermaid apart from the entry chunk", () => {
+test.skipIf(!safeExists(join(__dirname, "../dist/assets")))("dist carries no mermaid: it loads from the CDN", () => {
   const dir = join(__dirname, "../dist/assets");
   const js = readdirSync(dir).filter((f) => f.endsWith(".js"));
-  const entry = js.filter((f) => f.startsWith("index-"));
-  expect(js.length).toBeGreaterThan(entry.length);
-  const big = js.filter((f) => statSync(join(dir, f)).size > 400_000 && !f.startsWith("index-"));
-  expect(big.length).toBeGreaterThan(0);
+  expect(js.filter((f) => /mermaid|Diagram/.test(f))).toEqual([]);
 });
 
 function safeExists(p: string) {

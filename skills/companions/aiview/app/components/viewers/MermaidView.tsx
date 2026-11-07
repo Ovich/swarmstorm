@@ -1,8 +1,11 @@
 import { useEffect, useId, useState } from "react";
 
-/** Lazy mermaid: the 3.5 MB chunk loads only when a doc actually contains a diagram. */
+/** Mermaid from the CDN, its version pinned to package.json's, loaded only when a doc contains a diagram.
+ *  Not bundled: its 3.5 MB of minified chunks made the plugin directory's validation time out. */
+export const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11.17.0/dist/mermaid.esm.min.mjs";
 let mermaidPromise: Promise<typeof import("mermaid")> | null = null;
-const loadMermaid = () => (mermaidPromise ??= import("mermaid"));
+// the tests mock the package; a build drops that branch, so dist carries no mermaid
+const loadMermaid = () => (mermaidPromise ??= import.meta.env.MODE === "test" ? import("mermaid") : import(/* @vite-ignore */ MERMAID_URL));
 
 /** A tracker's nodes are read down a column, line by line: the title, then its fields.
  *  Carried by the diagram's own init directive, so mermaid measures the labels as they

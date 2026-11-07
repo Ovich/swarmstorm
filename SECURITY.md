@@ -39,7 +39,7 @@ there is a `.cmd` shim that only a shell starts:
 - **Both servers listen on 127.0.0.1 only.** aiview listens on 4321 for the default data home.
   The board server takes a port the OS chooses. A member's link talks to its CLI over a named pipe
   (Windows) or a socket file in the temp folder.
-- **No telemetry, no account, no API key.** Neither CLI contacts any host outside your machine.
+- **No telemetry, no account, no API key.** Neither CLI contacts any host outside your machine. The viewer's page, in your browser, fetches one library, mermaid, from `cdn.jsdelivr.net` at a pinned version when a document holds a diagram; the request carries no document content.
 - **Calls out, each made only when an agent runs that skill's script:**
   - `dependency-graph`, the first time it runs: `npm install` from the npm registry configured on
     your machine.
