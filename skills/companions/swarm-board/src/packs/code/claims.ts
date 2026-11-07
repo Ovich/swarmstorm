@@ -332,7 +332,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
         grantTurn(me, at, true);
         bump(me.repo);
-        trace().event("lock", { action: "granted", run: me.run, member: me.name, waiting: lockQueue(me.repo) });
+        const asked = db.prepare("SELECT asked_at FROM lock_requests WHERE participant = ? ORDER BY rowid DESC LIMIT 1").get(me.id) as Row | undefined;
+        trace().event("lock", { action: "granted", run: me.run, member: me.name, waitedMs: asked ? Date.parse(at) - Date.parse(String(asked.asked_at)) : 0, waiting: lockQueue(me.repo) });
         return { granted: true as const };
       });
     },

@@ -290,20 +290,136 @@ var init_events = __esm({
   }
 });
 
-// src/board/trace.ts
+// src/wire.ts
+import crypto from "node:crypto";
 import fs3 from "node:fs";
 import path3 from "node:path";
+function encode(f) {
+  return JSON.stringify(f);
+}
+function decode(text) {
+  const f = JSON.parse(text);
+  const type = f && typeof f === "object" ? f.type : void 0;
+  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
+  return f;
+}
+function builtCliOf(entry2) {
+  const file = path3.resolve(entry2);
+  const bundle = path3.join(path3.dirname(file), "dist-cli", "cli.mjs");
+  return fs3.existsSync(bundle) ? bundle : file;
+}
+function bundleVersion(entry2) {
+  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
+  const file = builtCliOf(entry2);
+  const st = fs3.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
+  if (v === void 0) {
+    v = crypto.createHash("sha256").update(fs3.readFileSync(file)).digest("hex").slice(0, 16);
+    versionsByBuild.set(key, v);
+  }
+  return v;
+}
+function serverStateFile(dataRoot) {
+  return path3.join(dataRoot, "swarm-server.json");
+}
+function serverLogFile(dataRoot) {
+  return path3.join(dataRoot, "swarm-server.log");
+}
+function serverStartLock(dataRoot) {
+  return path3.join(dataRoot, "swarm-server.lock");
+}
+function serverLockHolder(dataRoot) {
+  try {
+    const pid = Number(fs3.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+function liveStartLockHolder(dataRoot) {
+  const holder = serverLockHolder(dataRoot);
+  if (holder === null || !isAlive(holder)) return null;
+  try {
+    if (JSON.parse(fs3.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+  } catch {
+  }
+  try {
+    return Date.now() - fs3.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+  } catch {
+    return null;
+  }
+}
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
+var RPC_METHODS, ORCHESTRATORS_GROUP, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var init_wire = __esm({
+  "src/wire.ts"() {
+    "use strict";
+    RPC_METHODS = [
+      "openRun",
+      "addSeat",
+      "closeRun",
+      "phase",
+      "currentPhase",
+      "showPhase",
+      "pause",
+      "resume",
+      "pausedOf",
+      "done",
+      "phaseProgress",
+      "lastActivity",
+      "owedPhase",
+      "idle",
+      "unreadMentions",
+      "guidesUntold",
+      "runs",
+      "packCall",
+      "join",
+      "participant",
+      "identify",
+      "setDoing",
+      "end",
+      "roster",
+      "endedMembers",
+      "owingMembers",
+      "heldBy",
+      "post",
+      "endorse",
+      "deliverMentions",
+      "wait",
+      "repos",
+      "snapshot",
+      "composition"
+    ];
+    ORCHESTRATORS_GROUP = "orchestrators";
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
+    versionsByBuild = /* @__PURE__ */ new Map();
+    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
+    START_LOCK_GRACE_MS = 15e3;
+  }
+});
+
+// src/board/trace.ts
+import fs4 from "node:fs";
+import path4 from "node:path";
 function readTraceLevel(dataRoot) {
   try {
-    const w = fs3.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
-    return TRACE_LEVELS.includes(w) ? w : "debug";
+    const w = fs4.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
+    return TRACE_LEVELS.includes(w) ? w : "info";
   } catch {
-    return "debug";
+    return "info";
   }
 }
 function writeTraceLevel(dataRoot, level) {
-  fs3.mkdirSync(traceRoot(dataRoot), { recursive: true });
-  fs3.writeFileSync(traceLevelFile(dataRoot), `${level}
+  fs4.mkdirSync(traceRoot(dataRoot), { recursive: true });
+  fs4.writeFileSync(traceLevelFile(dataRoot), `${level}
 `);
 }
 function makeTracer(dataRoot) {
@@ -313,7 +429,7 @@ function makeTracer(dataRoot) {
   const levelNow = () => {
     let m = 0;
     try {
-      m = fs3.statSync(traceLevelFile(dataRoot)).mtimeMs;
+      m = fs4.statSync(traceLevelFile(dataRoot)).mtimeMs;
     } catch {
     }
     if (m !== stamp) {
@@ -325,45 +441,86 @@ function makeTracer(dataRoot) {
   const made = /* @__PURE__ */ new Set();
   const append = (file, line) => {
     try {
-      const dir = path3.dirname(file);
+      const dir = path4.dirname(file);
       if (!made.has(dir)) {
-        fs3.mkdirSync(dir, { recursive: true });
+        fs4.mkdirSync(dir, { recursive: true });
         made.add(dir);
       }
-      fs3.appendFileSync(file, `${JSON.stringify(line)}
+      fs4.appendFileSync(file, `${JSON.stringify(line)}
 `);
     } catch {
     }
   };
   const dayOf = (d) => d.toISOString().slice(0, 10);
+  const kv = (o) => Object.entries(o).filter(([, v]) => v !== null && v !== void 0).map(([k, v]) => `${k}=${typeof v === "string" && /[s"=]/.test(v) ? JSON.stringify(v) : typeof v === "object" ? JSON.stringify(v) : v}`).join(" ");
+  const say = (sev, what, o) => {
+    try {
+      fs4.appendFileSync(serverLogFile(dataRoot), `${kv({ at: (/* @__PURE__ */ new Date()).toISOString(), level: sev, event: what, ...o })}
+`);
+    } catch {
+    }
+  };
+  const secs = (ms) => typeof ms === "number" ? `${Math.round(ms / 1e3)}s` : null;
+  const healthAt = /* @__PURE__ */ new Map();
+  const warnedUnread = /* @__PURE__ */ new Map();
+  const infoOf = (kind, f) => {
+    if (kind === "server") say("info", "server", { action: f.action, pid: f.pid });
+    else if (kind === "post" && typeof f.event === "string" && INFO_EVENTS.has(f.event)) say("info", f.event, { run: f.run, member: f.author, seq: f.seq });
+    else if (kind === "link" && f.up === false) say("info", "link-down", { run: f.run, member: f.member, cause: f.cause });
+    else if (kind === "lock" && f.action === "granted")
+      say(typeof f.waitedMs === "number" && f.waitedMs > LONG_WAIT_MS ? "warn" : "info", "lock-granted", { run: f.run, member: f.member, waited: secs(f.waitedMs), queue: f.waiting });
+    else if (kind === "lock" && f.action === "released") say("info", "lock-released", { run: f.run, member: f.member, held: secs(f.heldMs), cause: f.cause, queue: f.waiting });
+    else if (kind === "snapshot") {
+      const run2 = Number(f.run);
+      const members = f.members ?? [];
+      for (const m of members) {
+        const key = `${run2}/${m.seat}`;
+        if (m.unread >= MANY_UNREAD && m.unread !== warnedUnread.get(key)) say("warn", "unread", { run: run2, seat: m.seat, unread: m.unread, state: m.state });
+        warnedUnread.set(key, m.unread >= MANY_UNREAD ? m.unread : 0);
+      }
+      const t = Date.now();
+      if (t - (healthAt.get(run2) ?? 0) >= HEALTH_MS) {
+        healthAt.set(run2, t);
+        say("info", "health", { run: run2, ...f.states, unread: members.reduce((n, m) => n + m.unread, 0) });
+      }
+    }
+  };
   return {
     event(kind, fields) {
-      if (levelNow() === "off") return;
+      const l = levelNow();
+      if (l === "off") return;
+      infoOf(kind, fields);
+      if (l === "info") return;
       const at = /* @__PURE__ */ new Date();
-      append(path3.join(root, dayOf(at), "events.jsonl"), { ...fields, at: at.toISOString(), kind });
+      append(path4.join(root, dayOf(at), "events.jsonl"), { ...fields, at: at.toISOString(), kind });
     },
     message(run2, fields) {
       if (levelNow() !== "debug-extended") return;
       const at = /* @__PURE__ */ new Date();
-      append(path3.join(root, dayOf(at), "messages", `run-${run2}.jsonl`), { at: at.toISOString(), run: run2, ...fields });
+      append(path4.join(root, dayOf(at), "messages", `run-${run2}.jsonl`), { at: at.toISOString(), run: run2, ...fields });
     },
     prune(at = /* @__PURE__ */ new Date()) {
       const oldest = dayOf(new Date(at.getTime() - KEEP_DAYS * 864e5));
       try {
-        for (const d of fs3.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs3.rmSync(path3.join(root, d), { recursive: true, force: true });
+        for (const d of fs4.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs4.rmSync(path4.join(root, d), { recursive: true, force: true });
       } catch {
       }
     }
   };
 }
-var TRACE_LEVELS, KEEP_DAYS, traceRoot, traceLevelFile, SILENT, current, trace, setTracer;
+var TRACE_LEVELS, KEEP_DAYS, HEALTH_MS, LONG_WAIT_MS, MANY_UNREAD, INFO_EVENTS, traceRoot, traceLevelFile, SILENT, current, trace, setTracer;
 var init_trace = __esm({
   "src/board/trace.ts"() {
     "use strict";
-    TRACE_LEVELS = ["off", "debug", "debug-extended"];
+    init_wire();
+    TRACE_LEVELS = ["off", "info", "debug", "debug-extended"];
     KEEP_DAYS = 30;
-    traceRoot = (dataRoot) => path3.join(dataRoot, "logs");
-    traceLevelFile = (dataRoot) => path3.join(traceRoot(dataRoot), "level");
+    HEALTH_MS = 5 * 6e4;
+    LONG_WAIT_MS = 6e4;
+    MANY_UNREAD = 5;
+    INFO_EVENTS = /* @__PURE__ */ new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume", "merged"]);
+    traceRoot = (dataRoot) => path4.join(dataRoot, "logs");
+    traceLevelFile = (dataRoot) => path4.join(traceRoot(dataRoot), "level");
     SILENT = { event() {
     }, message() {
     }, prune() {
@@ -663,7 +820,8 @@ function claimsOf(deps) {
         db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
         grantTurn(me, at, true);
         bump(me.repo);
-        trace().event("lock", { action: "granted", run: me.run, member: me.name, waiting: lockQueue(me.repo) });
+        const asked = db.prepare("SELECT asked_at FROM lock_requests WHERE participant = ? ORDER BY rowid DESC LIMIT 1").get(me.id);
+        trace().event("lock", { action: "granted", run: me.run, member: me.name, waitedMs: asked ? Date.parse(at) - Date.parse(String(asked.asked_at)) : 0, waiting: lockQueue(me.repo) });
         return { granted: true };
       });
     },
@@ -1064,122 +1222,6 @@ var init_changes = __esm({
   "src/packs/code/changes.ts"() {
     "use strict";
     init_git();
-  }
-});
-
-// src/wire.ts
-import crypto from "node:crypto";
-import fs4 from "node:fs";
-import path4 from "node:path";
-function encode(f) {
-  return JSON.stringify(f);
-}
-function decode(text) {
-  const f = JSON.parse(text);
-  const type = f && typeof f === "object" ? f.type : void 0;
-  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
-  return f;
-}
-function builtCliOf(entry2) {
-  const file = path4.resolve(entry2);
-  const bundle = path4.join(path4.dirname(file), "dist-cli", "cli.mjs");
-  return fs4.existsSync(bundle) ? bundle : file;
-}
-function bundleVersion(entry2) {
-  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
-  const file = builtCliOf(entry2);
-  const st = fs4.statSync(file);
-  const key = `${file}|${st.mtimeMs}|${st.size}`;
-  let v = versionsByBuild.get(key);
-  if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs4.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByBuild.set(key, v);
-  }
-  return v;
-}
-function serverStateFile(dataRoot) {
-  return path4.join(dataRoot, "swarm-server.json");
-}
-function serverLogFile(dataRoot) {
-  return path4.join(dataRoot, "swarm-server.log");
-}
-function serverStartLock(dataRoot) {
-  return path4.join(dataRoot, "swarm-server.lock");
-}
-function serverLockHolder(dataRoot) {
-  try {
-    const pid = Number(fs4.readFileSync(serverStartLock(dataRoot), "utf8").trim());
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  } catch {
-    return null;
-  }
-}
-function liveStartLockHolder(dataRoot) {
-  const holder = serverLockHolder(dataRoot);
-  if (holder === null || !isAlive(holder)) return null;
-  try {
-    if (JSON.parse(fs4.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
-  } catch {
-  }
-  try {
-    return Date.now() - fs4.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
-  } catch {
-    return null;
-  }
-}
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-var RPC_METHODS, ORCHESTRATORS_GROUP, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
-var init_wire = __esm({
-  "src/wire.ts"() {
-    "use strict";
-    RPC_METHODS = [
-      "openRun",
-      "addSeat",
-      "closeRun",
-      "phase",
-      "currentPhase",
-      "showPhase",
-      "pause",
-      "resume",
-      "pausedOf",
-      "done",
-      "phaseProgress",
-      "lastActivity",
-      "owedPhase",
-      "idle",
-      "unreadMentions",
-      "guidesUntold",
-      "runs",
-      "packCall",
-      "join",
-      "participant",
-      "identify",
-      "setDoing",
-      "end",
-      "roster",
-      "endedMembers",
-      "owingMembers",
-      "heldBy",
-      "post",
-      "endorse",
-      "deliverMentions",
-      "wait",
-      "repos",
-      "snapshot",
-      "composition"
-    ];
-    ORCHESTRATORS_GROUP = "orchestrators";
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
-    versionsByBuild = /* @__PURE__ */ new Map();
-    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
-    START_LOCK_GRACE_MS = 15e3;
   }
 });
 
@@ -9552,7 +9594,7 @@ var coreUsage = (cli) => [
   "  roster  [--project <path>] [--as <member>]",
   "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
   "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
-  "  log-level [off|debug|debug-extended]                            # the board's trace in <data home>/logs/<day>/: debug (default) the events, debug-extended each post's text too; 30 days kept",
+  "  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept",
   "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it",
   CODE_IN_CORE_HELP.pruneLine,
   `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`

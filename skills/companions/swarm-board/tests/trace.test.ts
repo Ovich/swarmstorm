@@ -20,13 +20,14 @@ const events = (r: Repo) => {
 test("debug: calls, posts, deliveries and the lock are traced, no message text", async () => {
   const r = makeRepo();
   repos.push(r);
+  r.cli(r.repo, "log-level", "debug");
   openTwoRunners(r);
   r.cli(r.wtA, "post", "@S5 hello there");
   r.cli(r.wtB, "wait", "--mentions", "--timeout", "2000");
   r.cli(r.wtB, "merge-lock", "--onto", "main");
   const e = events(r);
   const kinds = new Set(e.map((x) => x.kind));
-  for (const k of ["server", "call", "post", "delivered", "lock"]) assert.ok(kinds.has(k), `no ${k} in the trace: ${[...kinds]}`);
+  for (const k of ["call", "post", "delivered", "lock"]) assert.ok(kinds.has(k), `no ${k} in the trace: ${[...kinds]}`);
   const delivered = e.find((x) => x.kind === "delivered" && x.member === "review-tool/S5");
   assert.ok(delivered && typeof delivered.waitedMs === "number");
   assert.ok(e.some((x) => x.kind === "lock" && x.action === "granted" && x.member === "review-tool/S5"));
@@ -47,4 +48,25 @@ test("debug-extended: each post's text in messages/run-<n>.jsonl; off: nothing m
   const before = events(r).length;
   r.cli(r.wtA, "post", "@S5 again");
   assert.equal(events(r).length, before);
+});
+
+/** A logfmt line's keys and values, a quoted value JSON-read. */
+const logfmt = (line: string): Record<string, string> =>
+  Object.fromEntries([...line.matchAll(/([\w-]+)=("(?:[^"\\]|\\.)*"|\S+)/g)].map((m) => [m[1], m[2].startsWith('"') ? JSON.parse(m[2]) : m[2]]));
+
+test("info (the default): logfmt lines in the server log, no day folder", () => {
+  const r = makeRepo();
+  repos.push(r);
+  assert.match(r.cli(r.repo, "log-level"), /^log level info/);
+  openTwoRunners(r);
+  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  const lines = fs
+    .readFileSync(path.join(r.home, "swarm-server.log"), "utf8")
+    .split("\n")
+    .filter((l) => l.startsWith("at="))
+    .map(logfmt);
+  assert.ok(lines.some((p) => p.level === "info" && p.event === "server"));
+  assert.ok(lines.some((p) => p.event === "joined" && p.member === "review-tool/S5"));
+  assert.ok(lines.some((p) => p.event === "lock-granted" && p.member === "review-tool/S5" && p.waited === "0s"));
+  assert.ok(!fs.existsSync(path.join(r.home, "logs", new Date().toISOString().slice(0, 10))));
 });
