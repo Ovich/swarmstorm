@@ -8980,7 +8980,7 @@ function flowItems(list) {
   }
   return [...items, item];
 }
-function parseGuide(text, folder) {
+function parseGuide(text, folder, fallback = null) {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
   if (!fm) return null;
   const lines = fm.split(/\r?\n/);
@@ -9000,10 +9000,11 @@ function parseGuide(text, folder) {
       while (i + 1 < lines.length && /^\s*-\s*/.test(lines[i + 1])) paths.push(unquote(lines[++i].replace(/^\s*-\s*/, "")));
     }
   }
+  if (!paths?.length) paths = fallback;
   if (!paths?.length) return null;
   return { name: folder.replace(/^guide-/, ""), skill, paths };
 }
-function guidesIn(dir, keep) {
+function guidesIn(dir, keep, fallback = () => null) {
   let folders;
   try {
     folders = fs12.readdirSync(dir).filter(keep).sort();
@@ -9013,15 +9014,17 @@ function guidesIn(dir, keep) {
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs12.readFileSync(path12.join(dir, f, "SKILL.md"), "utf8"), f);
+      const g = parseGuide(fs12.readFileSync(path12.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
       if (g) out.push(g);
     } catch {
     }
   }
   return out;
 }
+var SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
+var SHIPPED_GUIDES = /* @__PURE__ */ new Set(["guide-complexity", "guide-deepen-module"]);
 function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
-  const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true);
+  const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
   const here = repoRoot ? guidesIn(path12.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
   const names = new Set(project.map((g) => g.name));
