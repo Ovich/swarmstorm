@@ -30,7 +30,7 @@ const entry = (): string[] => [process.argv[1]];
  *  directory's scan reads a copied environment beside any address as a credential leaving). */
 function withEnv<T>(vars: Record<string, string>, start: () => T): T {
   const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
-  Object.assign(process.env, vars);
+  for (const [k, v] of Object.entries(vars)) process.env[k] = v;
   try {
     return start();
   } finally {
@@ -158,7 +158,7 @@ export const linkDownMarker = (dataRoot: string, member: BoardMember): string =>
   path.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 
 /** Inside a harness session: the agent runs its link as its own background task, so nothing here spawns one (D39). */
-export const inHarnessSession = (env: NodeJS.ProcessEnv = process.env): boolean => !!env.CLAUDE_CODE_SESSION_ID;
+export const inHarnessSession = (sessionId: string | undefined = process.env.CLAUDE_CODE_SESSION_ID): boolean => !!sessionId;
 
 /** The member's pipe. Inside a harness session, the agent's own link is waited for up to `harnessWaitMs`, never spawned:
  *  null when none answers by then (D39). Outside one, a detached link is spawned first when none answers: the fallback for

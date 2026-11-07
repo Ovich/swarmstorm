@@ -5,8 +5,8 @@ import { spawn } from "node:child_process"; // AGENTS EXCEPTION (D39): the brows
 import { DATA_ROOT, isPersonHome } from "./home.ts";
 
 /** Why a browser window may not open here, or null when it may. */
-export function browserRefusal(env: NodeJS.ProcessEnv = process.env, dataRoot: string = DATA_ROOT): string | null {
-  if (env.AIVIEW_NO_BROWSER === "1") return "AIVIEW_NO_BROWSER=1";
+export function browserRefusal(noBrowser: string | undefined = process.env.AIVIEW_NO_BROWSER, dataRoot: string = DATA_ROOT): string | null {
+  if (noBrowser === "1") return "AIVIEW_NO_BROWSER=1";
   if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
   return null;
 }
