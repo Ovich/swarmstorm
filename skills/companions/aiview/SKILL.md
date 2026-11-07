@@ -69,6 +69,6 @@ $A open "$F" --tag <topic>
 
 | Thought | Reality |
 |---|---|
-| "I'll show it as a claude.ai artifact instead" | Documents stay local and offline, in the data home. |
+| "I'll show it as a claude.ai artifact instead" | Documents stay local, in the data home. |
 | "I'll run serve in a background task and watch it" | `open` and `serve --detach` daemonise; `status` finds the server. |
 | "I'll add `--path` pointing at where the documents are" | `paths` are working directories. Documents live in `docs/<slug>/`. |
