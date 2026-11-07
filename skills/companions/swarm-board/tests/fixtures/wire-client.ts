@@ -47,7 +47,7 @@ export async function connectMember(served: ServedBoard, member: { name: string;
     socket.addEventListener("open", () => r());
     socket.addEventListener("error", () => j(new Error("no connection")));
   });
-  socket.send(encode({ type: "hello", version: served.state.version, secret: served.state.secret, ...(member ? { member, supersede: true } : {}) }));
+  socket.send(encode({ type: "hello", version: served.state.version, ticket: served.state.ticket, ...(member ? { member, supersede: true } : {}) }));
   const greeting = await welcome;
   if (greeting.type !== "welcome") throw new Error(`refused: ${greeting.type === "refused" ? greeting.reason : greeting.type}`);
   return {

@@ -96,7 +96,7 @@ function dataHome(port?: number): string {
   return home;
 }
 function writeState(home: string, port: number) {
-  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port, secret: "s3cret", version: bundleVersion() }));
+  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port, ticket: "s3cret", version: bundleVersion() }));
 }
 
 /** A link with no session to search: it sends no activity. */
@@ -214,11 +214,11 @@ for (const reason of ["version", "superseded", "closed"] as const) {
     });
     const hello = server.frames()[0];
     assert.equal(hello.type, "hello");
-    assert.deepEqual(hello.type === "hello" && [hello.member, hello.supersede, hello.secret], [{ name: MEMBER, run: RUN }, true, "s3cret"]);
+    assert.deepEqual(hello.type === "hello" && [hello.member, hello.supersede, hello.ticket], [{ name: MEMBER, run: RUN }, true, "s3cret"]);
   });
 }
 
-for (const reason of ["shutdown", "secret"] as const) {
+for (const reason of ["shutdown", "ticket"] as const) {
   test(`plan D56: refused ${reason} is a drop, never an exit: the link reconnects and says hello again`, async () => {
     let refusedOnce = false;
     const server = await stubServer((f, conn) => {
@@ -242,7 +242,7 @@ test("plan D56 (amended): a server restarted on a newer bundle is met once (its 
   // the rebuild: a new server of another bundle takes the state file; the old one drops the link
   const rebuilt = await stubServer((f, conn) => f.type === "hello" && conn.send({ type: "refused", reason: "version" }));
   servers.push(rebuilt);
-  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port: rebuilt.port, secret: "s3cret", version: "0000000000000000" }));
+  fs.writeFileSync(serverStateFile(home), JSON.stringify({ pid: process.pid, port: rebuilt.port, ticket: "s3cret", version: "0000000000000000" }));
   server.connections.at(-1)!.drop();
   assert.deepEqual(await link.done, { why: "new version" });
   assert.equal(rebuilt.frames().filter((f) => f.type === "hello").length, 1, "met the new server once");

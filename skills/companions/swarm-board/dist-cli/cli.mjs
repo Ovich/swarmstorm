@@ -1820,7 +1820,7 @@ async function runLink(opts) {
         socket?.close();
         return;
       }
-      if (f.reason === "shutdown" || f.reason === "secret") {
+      if (f.reason === "shutdown" || f.reason === "ticket") {
         socket?.close();
         return;
       }
@@ -1844,7 +1844,7 @@ async function runLink(opts) {
       return resolve(false);
     }
     socket = ws;
-    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), secret: s.secret, member: { name: opts.member, run: opts.run }, supersede: true }));
+    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), ticket: s.ticket, member: { name: opts.member, run: opts.run }, supersede: true }));
     ws.onmessage = (ev) => {
       try {
         onDown(decode(String(ev.data)));
@@ -8141,7 +8141,7 @@ async function runBoardServer(opts) {
   tracer.prune();
   tracer.event("server", { action: "start", pid: process.pid });
   const authority = makeAuthority(board2);
-  const secret = crypto4.randomBytes(24).toString("hex");
+  const ticket = crypto4.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const serverSince = (/* @__PURE__ */ new Date()).toISOString();
   const speakers = /* @__PURE__ */ new Set();
@@ -8273,7 +8273,7 @@ async function runBoardServer(opts) {
     refuse(s, "closed");
   }
   const httpServer = http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
+    if (req.method === "POST" && req.url === STOP_PATH && req.headers[TICKET_HEADER] === ticket) {
       res.end("stopping");
       void close();
       return;
@@ -8298,7 +8298,7 @@ async function runBoardServer(opts) {
       }
       if (!welcomed) {
         if (f.type !== "hello") return socket.close();
-        if (f.secret !== secret) return refuse(s, "secret");
+        if (f.ticket !== ticket) return refuse(s, "ticket");
         if (f.version !== version) {
           try {
             fs13.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
@@ -8355,7 +8355,7 @@ async function runBoardServer(opts) {
     });
   });
   const port = await listen(httpServer, host, opts.port ?? 0);
-  const state = { pid: process.pid, port, secret, version };
+  const state = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
   fs13.mkdirSync(opts.dataRoot, { recursive: true });
   fs13.writeFileSync(stateFile, JSON.stringify(state));
@@ -8444,7 +8444,7 @@ async function stopBoardServer(dataRoot) {
     return false;
   }
   try {
-    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
+    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
     fs13.rmSync(file, { force: true });
@@ -8473,7 +8473,7 @@ function bind(server, host, port) {
     });
   });
 }
-var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, STOP_PATH, SECRET_HEADER, CLOSE_GRACE_MS, CALLABLE, SLOW_CALL_MS, ENDED_LINK_QUIET_MS, SNAPSHOT_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
+var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, STOP_PATH, TICKET_HEADER, CLOSE_GRACE_MS, CALLABLE, SLOW_CALL_MS, ENDED_LINK_QUIET_MS, SNAPSHOT_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
 var init_server = __esm({
   "src/server/server.ts"() {
     "use strict";
@@ -8488,7 +8488,7 @@ var init_server = __esm({
     PONG_WITHIN_MS = 25 * 1e3;
     LOOP_LAG_FORGIVEN_MS = 2 * 1e3;
     STOP_PATH = "/stop";
-    SECRET_HEADER = "x-swarm-secret";
+    TICKET_HEADER = "x-swarm-ticket";
     CLOSE_GRACE_MS = 500;
     CALLABLE = new Set(RPC_METHODS);
     SLOW_CALL_MS = 10 * 1e3;
@@ -8733,7 +8733,7 @@ async function connectServer(state, callsFor) {
   let closer = () => {
   };
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, ticket: state.ticket, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();

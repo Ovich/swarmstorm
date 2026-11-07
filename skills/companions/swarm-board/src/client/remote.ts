@@ -283,7 +283,7 @@ export async function connectServer(state: ServerState, callsFor?: BoardMember):
   let handler: (f: Frame) => void = () => {};
   let closer: () => void = () => {};
   await new Promise<void>((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, ticket: state.ticket, ...(callsFor ? { member: callsFor, presence: false as const } : {}) })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();

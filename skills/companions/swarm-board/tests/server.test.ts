@@ -66,7 +66,7 @@ const connect = async (): Promise<Client> => {
 };
 const hello = async (over: Partial<Hello> = {}): Promise<{ c: Client; reply: Frame }> => {
   const c = await connect();
-  c.send({ type: "hello", version: state().version, secret: state().secret, ...over });
+  c.send({ type: "hello", version: state().version, ticket: state().ticket, ...over });
   return { c, reply: await c.next() };
 };
 const welcomed = async (over: Partial<Hello> = {}): Promise<Client> => {
@@ -88,10 +88,10 @@ const value = async (c: Client, method: string, ...args: unknown[]): Promise<any
   return f.type === "result" && f.ok ? f.value : undefined;
 };
 
-test("a hello with the secret and this version is welcomed; a wrong secret or version refused", async () => {
+test("a hello with the ticket and this version is welcomed; a wrong ticket or version refused", async () => {
   const c = await welcomed();
   c.socket.close();
-  assert.deepEqual((await hello({ secret: "nope" })).reply, { type: "refused", reason: "secret" });
+  assert.deepEqual((await hello({ ticket: "nope" })).reply, { type: "refused", reason: "ticket" });
   assert.deepEqual((await hello({ version: "other" })).reply, { type: "refused", reason: "version" });
   // U-F14: the refusal is evidence in the server's log: which server, its version, the hello's
   const logged = fs.readFileSync(serverLogFile(dir), "utf8").split(/\r?\n/).find((l) => l.startsWith(`swarm server ${process.pid} (version ${state().version}, since `));
@@ -244,7 +244,7 @@ test("the built bundle, alone in an empty folder, runs serve, answers a client a
     });
   socket.addEventListener("message", (e) => frames.push(decode(String(e.data))));
   await new Promise((r) => socket.addEventListener("open", r));
-  socket.send(encode({ type: "hello", version: st.version, secret: st.secret }));
+  socket.send(encode({ type: "hello", version: st.version, ticket: st.ticket }));
   await got(1);
   assert.equal(frames[0].type, "welcome");
   socket.send(encode({ type: "call", id: "r1", method: "runs", args: [] }));

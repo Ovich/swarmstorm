@@ -96,7 +96,7 @@ export type MemberActivity = {
 /** `member`: who the connection speaks for, bound by the server (trust-adaptations#D5). `presence: false`: a direct or
  *  fallback connection carrying a member's calls, not its link: bound to the member, writing no presence, superseding
  *  nothing, open to an ended member or a closed run. */
-export type Hello = { type: "hello"; version: string; secret: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
+export type Hello = { type: "hello"; version: string; ticket: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
 export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[] };
 /** a wait whose CLI went away */
 export type Cancel = { type: "cancel"; id: string };
@@ -113,7 +113,7 @@ export type Subscribe = { type: "subscribe" };
 export type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
 export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
 /** `member`: the Hello names a member that run does not have (trust-adaptations#D5). */
-export type Refused = { type: "refused"; reason: "secret" | "version" | "superseded" | "shutdown" | "closed" | "member" };
+export type Refused = { type: "refused"; reason: "ticket" | "version" | "superseded" | "shutdown" | "closed" | "member" };
 /** to a reader that called subscribe, after each commit */
 export type Changed = { type: "changed"; repo: string };
 /** claims-phase (v1-2): a phase opened and dropped the run's claims: the link sends its changes again, unchanged or not */
@@ -163,7 +163,7 @@ export function bundleVersion(entry?: string): string {
 }
 
 /** What the running server writes for its clients: `<dataRoot>/swarm-server.json` (D7, D17). */
-export type ServerState = { pid: number; port: number; secret: string; version: string };
+export type ServerState = { pid: number; port: number; ticket: string; version: string };
 
 export function serverStateFile(dataRoot: string): string {
   return path.join(dataRoot, "swarm-server.json");

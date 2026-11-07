@@ -267,9 +267,9 @@ export async function runLink(opts: {
         socket?.close();
         return;
       }
-      // plan D56: a server shutting down (or one restarted with a new secret) is a drop: the loop re-reads the state and
+      // plan D56: a server shutting down (or one restarted with a new ticket) is a drop: the loop re-reads the state and
       // reconnects within its minute; only a superseding link, a version, or the run's close ends the link
-      if (f.reason === "shutdown" || f.reason === "secret") {
+      if (f.reason === "shutdown" || f.reason === "ticket") {
         socket?.close();
         return;
       }
@@ -298,7 +298,7 @@ export async function runLink(opts: {
       }
       socket = ws;
       ws.onopen = () =>
-        ws.send(encode({ type: "hello", version: bundleVersion(), secret: s.secret, member: { name: opts.member, run: opts.run }, supersede: true }));
+        ws.send(encode({ type: "hello", version: bundleVersion(), ticket: s.ticket, member: { name: opts.member, run: opts.run }, supersede: true }));
       ws.onmessage = (ev) => {
         try {
           onDown(decode(String(ev.data)));
@@ -321,7 +321,7 @@ export async function runLink(opts: {
     });
 
   /** Connects, and after each drop reconnects (re-reading the state file: a restarted server has a
-   *  new port and secret); D27: no server answers for a minute after a drop, the link exits. */
+   *  new port and ticket); D27: no server answers for a minute after a drop, the link exits. */
   /** U-F14: one retry after a `refused version`, per link. */
   let versionRetried = false;
   const connectionLoop = async () => {

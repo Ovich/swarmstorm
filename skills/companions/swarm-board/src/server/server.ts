@@ -19,9 +19,9 @@ const PING_EVERY_MS = 10 * 1000;
 const PONG_WITHIN_MS = 25 * 1000;
 /** A ping round this much later than due means the server's loop was blocked (board-fixes#D1). */
 const LOOP_LAG_FORGIVEN_MS = 2 * 1000;
-/** `serve stop` asks the running server here, over HTTP, the secret in a header (D27). */
+/** `serve stop` asks the running server here, over HTTP, the ticket in a header (D27). */
 const STOP_PATH = "/stop";
-const SECRET_HEADER = "x-swarm-secret";
+const TICKET_HEADER = "x-swarm-ticket";
 /** How long a closing server lets its clients finish their close handshake. */
 const CLOSE_GRACE_MS = 500;
 
@@ -167,7 +167,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   tracer.prune();
   tracer.event("server", { action: "start", pid: process.pid });
   const authority = makeAuthority(board);
-  const secret = crypto.randomBytes(24).toString("hex");
+  const ticket = crypto.randomBytes(24).toString("hex");
   const version = bundleVersion();
   const serverSince = new Date().toISOString();
   const speakers = new Set<Speaker>();
@@ -330,7 +330,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   }
 
   const httpServer = http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === STOP_PATH && req.headers[SECRET_HEADER] === secret) {
+    if (req.method === "POST" && req.url === STOP_PATH && req.headers[TICKET_HEADER] === ticket) {
       res.end("stopping");
       void close();
       return;
@@ -357,7 +357,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
       }
       if (!welcomed) {
         if (f.type !== "hello") return socket.close();
-        if (f.secret !== secret) return refuse(s, "secret");
+        if (f.ticket !== ticket) return refuse(s, "ticket");
         if (f.version !== version) {
           // U-F14: every refusal for a version is evidence, appended to the server's log: which server, which hello
           try {
@@ -425,7 +425,7 @@ async function runBoardServer(opts: ServerOptions): Promise<{ url: string; close
   });
 
   const port = await listen(httpServer, host, opts.port ?? 0);
-  const state: ServerState = { pid: process.pid, port, secret, version };
+  const state: ServerState = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
   fs.mkdirSync(opts.dataRoot, { recursive: true });
   fs.writeFileSync(stateFile, JSON.stringify(state));
@@ -535,7 +535,7 @@ export async function stopBoardServer(dataRoot: string): Promise<boolean> {
     return false;
   }
   try {
-    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [SECRET_HEADER]: state.secret } });
+    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
     fs.rmSync(file, { force: true });
