@@ -139,19 +139,24 @@ test("a merger with no worktree merges, no tell line (D33)", () => {
   assert.match(out, /^merged abc123: lock released$/m);
 });
 
+// every wait delivers what is pending; one may land after the first wait returns: wait until one comes back empty
+const drain = (r: ReturnType<typeof fresh>) => {
+  for (let i = 0; i < 10 && r.cli(r.wtB, "wait", "--mentions", "--timeout", "1500").trim() !== ""; i++);
+};
+
 test("`merged`'s output, human and `--json`, carries no new field or line (D25)", () => {
   const human = fresh();
   openTwoRunners(human);
   const sha = conflictAfterGrant(human, "src/a.ts");
   // read first: an unread message would add its own line (the unread rule), not this guard's concern
-  human.cli(human.wtB, "wait", "--mentions", "--timeout", "1000");
+  drain(human);
   const out = human.cli(human.wtB, "merged", "--report", "-", sha, "--files", "src/a.ts");
   assert.equal(out, `merged ${sha}: lock released\n${TELL_S3("src/a.ts")}\n`);
 
   const json = fresh();
   openTwoRunners(json);
   const sha2 = conflictAfterGrant(json, "src/a.ts");
-  json.cli(json.wtB, "wait", "--mentions", "--timeout", "1000");
+  drain(json);
   assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", "--report", "-", sha2, "--files", "src/a.ts", "--json")), {
     member: "review-tool/S5",
     sha: sha2,
