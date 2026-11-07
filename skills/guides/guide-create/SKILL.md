@@ -1,6 +1,6 @@
 ---
 name: guide-create
-description: Use when a project needs a guide of its own: a rule for how a kind of code is shaped while written, scoped to the files it governs. Produces the project's `guide-<name>` skill at `<repo>/.claude/skills/guide-<name>/SKILL.md`. Not for a repository-wide convention (write-conventions) and not for a skill that does work (write-skills).
+description: "Use when a project needs a guide of its own: a rule for how a kind of code is shaped while written, scoped to the files it governs. Produces the project's `guide-<name>` skill at `<repo>/.claude/skills/guide-<name>/SKILL.md`. Not for a repository-wide convention (write-conventions) and not for a skill that does work (write-skills)."
 ---
 
 # Create a guide
