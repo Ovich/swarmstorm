@@ -12,8 +12,8 @@ on your own subscription. The full guide is at https://github.com/Ovich/swarmsto
   nothing read there leaves your machine.
 - aiview's page loads two libraries from cdn.jsdelivr.net, at pinned versions, when a document
   needs them: mermaid for diagrams, shiki for code.
-- Four skills reach the network when an agent runs their script: dependency-graph (npm, first
-  run), roadmap (domain lookups), pr-review and recurring-review-findings (GitHub, through gh).
+- Three skills reach the network when an agent runs their script: dependency-graph (npm, first
+  run), pr-review and recurring-review-findings (GitHub, through gh).
 - No hooks, no event handlers, no change to your settings.
 
 MIT licensed. Source, tests and build: https://github.com/Ovich/swarmstorm

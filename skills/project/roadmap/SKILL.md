@@ -35,7 +35,7 @@ The **roadmap** is the one document above the pieces of work: what is delivered 
 1. **Read everything that exists for the project**: its documents in aiview, its code and conventions file, any register the person names.
 2. **Name what is missing**: slots no document covers (accounts and login, billing, the foundation itself are the usual absences), foundation rows no decision covers, dependencies between slots that nothing states.
 3. **Draft both documents whole**, a recommendation in every open place with its reason, register and serve them, tell the person the URLs, and hand them over as something to correct.
-4. **Interview on the draft.** The tree: the order of iterations, which slot each existing piece belongs to, the foundation rows the first slot needs. Rows a later slot needs stay open with that slot named. Every answer lands in the documents as it is given. For the name and domain rows, run `scripts/domains.mjs <name>... --tld <the TLDs the product needs>` on the person's suggestions before asking; each option carries its domains as available, registered or unknown, and a name whose domain is taken is never the recommended one.
+4. **Interview on the draft.** The tree: the order of iterations, which slot each existing piece belongs to, the foundation rows the first slot needs. Rows a later slot needs stay open with that slot named. Every answer lands in the documents as it is given. For the name and domain rows, ask the person to check the candidate domains at their registrar; a name whose domain is taken is never the recommended one.
 5. **Close.** The state node names the first slot and its next step. Say so in chat.
 
 ## Redraw
