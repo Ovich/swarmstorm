@@ -8529,7 +8529,7 @@ var START_POLL_MS = 50;
 var entry = () => [process.argv[1]];
 function withEnv(vars, start) {
   const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
-  Object.assign(process.env, vars);
+  for (const [k, v] of Object.entries(vars)) process.env[k] = v;
   try {
     return start();
   } finally {
@@ -8627,7 +8627,7 @@ var linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", mem
 var HARNESS_LINK_WAIT_MS = 1e4;
 var LINK_DOWN_WAIT_MS = 1e3;
 var linkDownMarker = (dataRoot, member) => path10.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
-var inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
+var inHarnessSession = (sessionId = process.env.CLAUDE_CODE_SESSION_ID) => !!sessionId;
 async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
   const marker = linkDownMarker(dataRoot, member);

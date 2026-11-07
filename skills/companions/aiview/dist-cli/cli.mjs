@@ -82,8 +82,8 @@ var init_home = __esm({
 
 // src/core/browser.ts
 import { spawn as spawn2 } from "node:child_process";
-function browserRefusal(env = process.env, dataRoot = DATA_ROOT) {
-  if (env.AIVIEW_NO_BROWSER === "1") return "AIVIEW_NO_BROWSER=1";
+function browserRefusal(noBrowser = process.env.AIVIEW_NO_BROWSER, dataRoot = DATA_ROOT) {
+  if (noBrowser === "1") return "AIVIEW_NO_BROWSER=1";
   if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
   return null;
 }
@@ -9414,7 +9414,7 @@ import os4 from "node:os";
 import path12 from "node:path";
 function withEnv(vars, start) {
   const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
-  Object.assign(process.env, vars);
+  for (const [k, v] of Object.entries(vars)) process.env[k] = v;
   try {
     return start();
   } finally {
@@ -9714,7 +9714,7 @@ var init_remote = __esm({
     HARNESS_LINK_WAIT_MS = 1e4;
     LINK_DOWN_WAIT_MS = 1e3;
     linkDownMarker = (dataRoot, member) => path12.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
-    inHarnessSession = (env = process.env) => !!env.CLAUDE_CODE_SESSION_ID;
+    inHarnessSession = (sessionId = process.env.CLAUDE_CODE_SESSION_ID) => !!sessionId;
   }
 });
 
