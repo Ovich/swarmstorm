@@ -72,7 +72,7 @@ UNTYPED = {
     "csharp": R(r"\b(?:object|dynamic|Dictionary<string,\s*object>|JObject|JsonElement|JToken)\s+\w+"),
     "go": R(r"\w+\s+(?:interface\{\}|any|map\[string\](?:interface\{\}|any))"),
     "rust": R(r"\w+\s*:\s*&?(?:serde_json::)?Value\b|&?dyn\s+Any"),
-    "php": R(r"(?:array|mixed)\s+\$\w+"),
+    "php": R(r"(?:array|mixed)\s+[$]\w+"),
     "scala": R(r"\w+\s*:\s*(?:Any|Map\[String,\s*Any\])(?!\w)"),
     "swift": R(r"\w+\s*:\s*(?:Any|\[String:\s*Any\])(?!\w)"),
     "cpp": R(r"(?:void\s*\*|std::any)\s*\w+"), "c": R(r"void\s*\*\s*\w+"),
@@ -81,7 +81,7 @@ UNTYPED = {
 BOOL_PARAM = {
     "ts": R(r"\w+\??\s*:\s*boolean\b"), "python": R(r"\w+\s*:\s*bool\b|\w+\s*=\s*(?:True|False)\b"),
     "java": R(r"\bboolean\s+\w+"), "kotlin": R(r"\w+\s*:\s*Boolean\b"), "csharp": R(r"\bbool\s+\w+"),
-    "go": R(r"\w+\s+bool\b"), "rust": R(r"\w+\s*:\s*bool\b"), "php": R(r"\bbool\s+\$\w+"),
+    "go": R(r"\w+\s+bool\b"), "rust": R(r"\w+\s*:\s*bool\b"), "php": R(r"\bbool\s+[$]\w+"),
     "scala": R(r"\w+\s*:\s*Boolean\b"), "swift": R(r"\w+\s*:\s*Bool\b"), "cpp": R(r"\bbool\s+\w+"),
     "c": R(r"\bbool\s+\w+"), "ruby": R(r"\w+\s*[:=]\s*(?:true|false)\b"), "js": R(r"\w+\s*=\s*(?:true|false)\b"),
 }
@@ -94,7 +94,7 @@ CASTS = {
 DEFAULTS = R(r"\?\?\s*(?:0|\[\]|\"\"|''|\{\})|\bor\s+(?:0|\[\]|\{\}|\"\"|'')|getOrDefault\(|\.get\(\s*[\"']\w+[\"']\s*,\s*(?:0|\[\]|\{\}|\"\"|''|None)\)|\|\|\s*(?:0|\[\]|\{\}|\"\"|'')|unwrap_or(?:_default)?\(")
 HEADER_END = R(r"(?m)(?:\{|:|=>|\bdo|=)\s*$")
 # subject of a switch/match/when/case, e.g. switch m["kind"], match event.type, case x[:kind]
-SWITCH_SUBJECT = R(r"\b(?:switch|match|when|case)\s*\(?\s*\$?\w+(?:\.(?:get)?(\w+)(?:\(\))?|\[\s*[\"':]?(\w+)[\"']?\s*\])\s*\)?\s*(?:\{|:|$|\bof\b)", re.M)
+SWITCH_SUBJECT = R(r"\b(?:switch|match|when|case)\s*\(?\s*[$]?\w+(?:\.(?:get)?(\w+)(?:\(\))?|\[\s*[\"':]?(\w+)[\"']?\s*\])\s*\)?\s*(?:\{|:|$|\bof\b)", re.M)
 # words that look like fields but are control flow or noise
 FIELD_NOISE = {"return", "if", "else", "case", "when", "typeof", "not", "and", "or", "in", "is", "value", "length"}
 
