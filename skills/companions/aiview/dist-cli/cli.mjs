@@ -9610,7 +9610,7 @@ async function connectServer(state, callsFor) {
   let closer = () => {
   };
   await new Promise((resolve, reject) => {
-    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, secret: state.secret, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
+    ws.addEventListener("open", () => ws.send(encode({ type: "hello", version: state.version, ticket: state.ticket, ...callsFor ? { member: callsFor, presence: false } : {} })), { once: true });
     ws.addEventListener("message", (ev) => {
       const f = decode(String(ev.data));
       if (f.type === "welcome") resolve();
