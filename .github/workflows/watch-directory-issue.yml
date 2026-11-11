@@ -1,0 +1,57 @@
+# Once a day, reads the upstream issue where we asked how an organization becomes Verified for
+# the Claude plugin directory, and reports on a tracking issue here (which notifies the owner)
+# each comment from Anthropic (member, owner or collaborator of the upstream repository), each
+# comment that names us, and the issue closing. Other developers' "same here" comments are left
+# out: GitHub already notifies the subscribed thread of those.
+
+name: watch directory issue
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write # the tracking issue
+
+jobs:
+  check:
+    if: github.repository == 'Ovich/swarmstorm'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UPSTREAM: anthropics/claude-plugins-official
+      NUMBER: "7024"
+      OURS: Ovich
+      TITLE: "Watch: anthropics/claude-plugins-official#7024 (Verified organizations)"
+    steps:
+      - name: Report what is new upstream
+        run: |
+          set -euo pipefail
+          upstream="https://github.com/$UPSTREAM/issues/$NUMBER"
+          tracker=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number // empty')
+          if [ -z "$tracker" ]; then
+            url=$(gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The daily \`watch directory issue\` job comments here when Anthropic answers on $upstream, when a comment there names us, or when it closes. To stop it, remove \`.github/workflows/watch-directory-issue.yml\`.")
+            tracker=${url##*/}
+          fi
+          seen=$(gh api "repos/$GITHUB_REPOSITORY/issues/$tracker/comments" --paginate -q '.[].body')
+
+          gh api "repos/$UPSTREAM/issues/$NUMBER/comments" --paginate -q '
+            .[]
+            | select(.user.login != env.OURS)
+            | select(.author_association == "MEMBER" or .author_association == "OWNER" or .author_association == "COLLABORATOR"
+                     or (.body | test("swarmstorm|ovich"; "i")))
+            | [.html_url, .user.login, .author_association, (.body | split("\n")[0] | .[0:300])] | @tsv' |
+          while IFS=$'\t' read -r link who role first; do
+            grep -qF "$link" <<<"$seen" && continue
+            kind="names us"; [ "$role" != "NONE" ] && [ "$role" != "CONTRIBUTOR" ] && kind="from Anthropic ($role)"
+            gh issue comment "$tracker" -R "$GITHUB_REPOSITORY" --body "@$OURS new comment $kind by \`$who\`: $link
+
+          > $first"
+          done
+
+          state=$(gh api "repos/$UPSTREAM/issues/$NUMBER" -q '.state + " " + (.state_reason // "")')
+          if [ "${state%% *}" = closed ] && ! grep -qF "upstream closed" <<<"$seen"; then
+            gh issue comment "$tracker" -R "$GITHUB_REPOSITORY" --body "@$OURS upstream closed ($state): $upstream"
+          fi
+          echo "checked $upstream: $state"
