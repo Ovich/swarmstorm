@@ -31,7 +31,7 @@ jobs:
           upstream="https://github.com/$UPSTREAM/issues/$NUMBER"
           tracker=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number // empty')
           if [ -z "$tracker" ]; then
-            url=$(gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The daily \`watch directory issue\` job comments here when Anthropic answers on $upstream, when a comment there names us, or when it closes. To stop it, remove `.github/workflows/watch-directory-issue.yml`.")
+            url=$(gh issue create -R "$GITHUB_REPOSITORY" --title "$TITLE" --body "The daily \`watch directory issue\` job comments here when Anthropic answers on $upstream, when a comment there names us, or when it closes. To stop it, remove \`.github/workflows/watch-directory-issue.yml\`.")
             tracker=${url##*/}
           fi
           seen=$(gh api "repos/$GITHUB_REPOSITORY/issues/$tracker/comments" --paginate -q '.[].body')
