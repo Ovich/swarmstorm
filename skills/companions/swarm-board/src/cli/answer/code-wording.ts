@@ -23,9 +23,9 @@ export const CODE_WORDING = {
   usage: (cli: Command): string =>
     [
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-      "  merge-lock [--report <text>|--report-file <path>] [--guides ...] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock [--report <text>|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
       "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
-      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
+      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
@@ -38,15 +38,10 @@ export const CODE_WORDING = {
     `merge lock of ${project}  held by ${holder} since ${since}${waiters.length ? `  waiters: ${waiters.join(", ")}` : ""}`,
 
   // ── the merge (V12: every command runnable as printed) ──
-  mergeGuides: (guides: string) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
-  /** S4: the --guides form filled with this merge's guides, as merged takes it */
-  guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
-  mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
+  mergeGranted: (cli: Command, as: string) =>
     // board-fixes#D11: the tests the task asked for ran before the lock; under it only rebase, quick check, fast-forward
     // the lock alone (--lock-only, or a member with no worktree): the merge is made by hand
-    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
-  /** D2: an argument error names what is wrong, then usage, then one corrected form */
-  guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>); corrected: --guides ${corrected}`,
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --report "<your report>" --as ${as}`,
   /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
   detach: (worktree: string): Command => `git -C ${worktree} switch --detach`,
   ontoCheckedOutAtOpen: (onto: string, worktree: string, detach: Command) =>
@@ -62,13 +57,13 @@ export const CODE_WORDING = {
   autoNothing: (onto: string) => `nothing to deliver: your branch has no commit ${onto} lacks; the lock released`,
   autoPushFailed: (onto: string, why: string) => `fast-forward of ${onto} refused (${why}); nothing merged, the lock released: merge-lock again`,
   autoFreed: (waiters: string[], who: string) => `${waiters.map((w) => `@${w}`).join(" ")} the merge lock is free: ${who} merged nothing; take it now`,
-  autoNeedsGuides: (form: string) => `merge-lock: this merge falls under guides; settle them up front: --guides ${form}`,
   // V-27: the command last
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
 
   /** V-32 (D69): merged's report refusals, naming --report-file */
   reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
   reportIsAFile: (given: string) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
+  reportFileUnreadable: (file: string) => `merged: --report-file ${file} cannot be read`,
 
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",

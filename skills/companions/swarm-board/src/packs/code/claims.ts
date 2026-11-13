@@ -35,7 +35,7 @@ export interface Claims {
   setHoldings(p: Participant, files: string[], drifted: DriftedFile[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). `files`: the paths the
    *  holder's branch changed, read from git by its CLI: kept with the lock as the files of its merge, a later ask adding to them. */
-  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[], files?: string[]): { granted: true } | { granted: false; holder: string };
+  lockMerge(p: Participant, onto?: string, reflogMark?: number, files?: string[]): { granted: true } | { granted: false; holder: string };
   /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */
   mergeLockQueuedBehind(p: Participant): string | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
@@ -75,7 +75,7 @@ export interface Claims {
 /** `grantedAt` ISO; `onto` null for a lock taken without a branch; `reflogMark` the holder's HEAD reflog
  *  length at the grant, null when none was given (D36); `files` the paths its branch changed, null when its CLI
  *  read none from git (no worktree). */
-export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[]; files: string[] | null };
+export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; files: string[] | null };
 
 type Row = Record<string, unknown>;
 
@@ -310,7 +310,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       });
     },
 
-    lockMerge(me, onto, reflogMark, guides, files) {
+    lockMerge(me, onto, reflogMark, files) {
       return transaction(() => {
         const r = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo) as Row | undefined;
         if (r && Number(r.participant) !== me.id && isLive(Number(r.participant))) {
@@ -325,7 +325,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         }
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
-          if (guides) db.prepare("UPDATE merge_locks SET guides = ? WHERE repo = ?").run(JSON.stringify(guides), me.repo);
           // asked again (after a conflict, mid-rebase): what git shows now is added, never taken for the whole
           if (files) {
             const kept = (db.prepare("SELECT files FROM merge_locks WHERE repo = ?").get(me.repo) as Row).files;
@@ -339,7 +338,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(me.repo);
         // the mark is the grant's: a holder asking again keeps it, as it keeps the grant's time (D36)
         const at = now();
-        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides, files) VALUES (?, ?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null, files ? JSON.stringify(files) : null);
+        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, files) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, files ? JSON.stringify(files) : null);
         grantTurn(me, at, true);
         bump(me.repo);
         const asked = db.prepare("SELECT asked_at FROM lock_requests WHERE participant = ? ORDER BY rowid DESC LIMIT 1").get(me.id) as Row | undefined;
@@ -355,13 +354,12 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     },
 
     heldMergeLock(me) {
-      const r = db.prepare("SELECT at, onto, reflog_mark, guides, files FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
+      const r = db.prepare("SELECT at, onto, reflog_mark, files FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
       return r
         ? {
             grantedAt: String(r.at),
             onto: r.onto == null ? null : String(r.onto),
             reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark),
-            guides: r.guides == null ? [] : (JSON.parse(String(r.guides)) as string[]),
             files: r.files == null ? null : (JSON.parse(String(r.files)) as string[]),
           }
         : null;

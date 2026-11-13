@@ -1,10 +1,11 @@
 // Architecture guides: a skill folder whose SKILL.md frontmatter carries `paths:`, globs over the
 // repository the guide speaks for. Shipped guides sit in the plugin's skills/guides/*, a project's
-// in <repo>/.claude/skills/guide-*. The board names them to a member as its work touches them.
+// in <repo>/.claude/skills/guide-*. The board names them to a member once, at its join, as skills to
+// load; it checks nothing against them, at a merge or anywhere.
 import fs from "node:fs";
 import path from "node:path";
 
-/** `name`: what a member names in `merged --guides`; `skill`: the skill to load; `paths`: repo-relative globs. */
+/** `name`: the guide's short name; `skill`: the skill to load; `paths`: the repo-relative globs it speaks for. */
 export type Guide = { name: string; skill: string; paths: string[] };
 
 /** The frontmatter's `name` and `paths` (inline `[a, b]`, a block list, or one scalar); null without `paths`. */
@@ -81,93 +82,13 @@ const SHIPPED_GUIDES = new Set(["guide-complexity", "guide-deepen-module"]);
 
 /** The shipped guides (the plugin root is three levels above the swarm-board skill), then the project's;
  *  a project guide of the same name stands in for the shipped one. */
-export function discoverGuides(toolRoot: string, repoRoot: string | null, alsoProject: Guide[] = []): Guide[] {
+export function discoverGuides(toolRoot: string, repoRoot: string | null): Guide[] {
   const shipped = guidesIn(path.resolve(toolRoot, "..", "..", "..", "skills", "guides"), () => true, (f) => (SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null));
-  const here = repoRoot ? guidesIn(path.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
-  // the worktree's own stands in for one of the same name from elsewhere (the target's tree)
-  const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
+  const project = repoRoot ? guidesIn(path.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
-}
-
-/** A glob as a regex over a repo-relative, forward-slashed path: `**` any depth, `*` within a segment, `?` one character. */
-export function globRegex(glob: string): RegExp {
-  let re = "";
-  let depth = 0;
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
-    if (c === "*" && glob[i + 1] === "*") {
-      const slash = glob[i + 2] === "/";
-      re += slash ? "(?:.*/)?" : ".*";
-      i += slash ? 2 : 1;
-    } else if (c === "*") re += "[^/]*";
-    else if (c === "?") re += "[^/]";
-    // G41: `{a,b}` is one of its alternatives, nested ones too
-    else if (c === "{") {
-      re += "(?:";
-      depth++;
-    } else if (c === "}" && depth > 0) {
-      re += ")";
-      depth--;
-    } else if (c === "," && depth > 0) re += "|";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${re}$`);
-}
-
-/** The guides any of `files` (repo-relative) falls under, in discovery order. */
-export function guidesFor(guides: Guide[], files: string[]): Guide[] {
-  return guides.filter((g) => g.paths.some((glob) => files.some((f) => globRegex(glob).test(f))));
 }
 
 /** The line naming guides to load, or null for none. */
 export const guidesLine = (guides: Guide[]): string | null =>
   guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
-
-/** A guide as `merged --guides` names it: its own name, or its skill's (`guide-<name>`), both taken (S4). */
-const guideName = (token: string): string => token.replace(/^guide-/, "");
-
-/** How `merged --guides` settles the guides merge-lock listed: a separator other than a comma before a listed
- *  guide (`separator`, with `corrected`, the argument with commas), a token that is no `<name>:<verdict>`
- *  (`malformed`), those left out, names it never listed, and entries whose verdict is neither `ok` nor `n/a <why>`. */
-export function guidesSettlement(
-  arg: string,
-  listed: string[],
-): { separator: string | null; corrected: string; malformed: string[]; missing: string[]; unknown: string[]; unjudged: string[] } {
-  // a ";" (or "|", "&", a newline) before "<listed guide>:" separates guides: refused, never read as a verdict's text
-  const wrongSeparator = /\s*([;&|\n])\s*((?:guide-)?[^\s:,;&|]+)\s*:/g;
-  let separator: string | null = null;
-  const corrected = arg.replace(wrongSeparator, (whole, sep: string, name: string) => {
-    if (!listed.includes(guideName(name))) return whole;
-    separator ??= sep;
-    return `, ${name}:`;
-  });
-  const tokens = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((t) => t.trim()).filter(Boolean);
-  // a token with no colon, or a comma-piece opening on a listed guide's name with no colon after it ("ui ok")
-  const bare = arg.split(",").map((t) => t.trim()).filter((t) => !t.includes(":") && listed.includes(guideName(t.split(/\s+/)[0])));
-  const malformed = [...tokens.filter((t) => !/^[^:\s]+\s*:/.test(t)), ...bare];
-  const entries = tokens
-    .map((e) => /^([^:\s]+)\s*:\s*(.*)$/s.exec(e))
-    .filter((m): m is RegExpExecArray => !!m)
-    .map((m) => ({ name: guideName(m[1]), verdict: m[2].trim() }));
-  const named = entries.map((e) => e.name);
-  return {
-    separator,
-    corrected,
-    malformed,
-    missing: listed.filter((g) => !named.includes(g)),
-    unknown: named.filter((n) => !listed.includes(n)),
-    unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name),
-  };
-}
-
-/** The project guides in `ref`'s tree, read through git: what a branch will meet once rebased onto it. */
-export function projectGuidesAt(show: (spec: string) => string | null, list: string | null): Guide[] {
-  const out: Guide[] = [];
-  for (const folder of (list ?? "").split(/\r?\n/).map((l) => l.trim().split("/").pop() ?? "").filter((f) => f.startsWith("guide-")).sort()) {
-    const text = show(`.claude/skills/${folder}/SKILL.md`);
-    const g = text ? parseGuide(text, folder) : null;
-    if (g) out.push(g);
-  }
-  return out;
-}

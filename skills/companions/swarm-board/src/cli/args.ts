@@ -30,6 +30,9 @@ const VALUE_FLAGS = new Set([
   "--report",
   "--report-file",
   "--unlocked",
+  // retired, read and ignored: their value is never taken for a positional (merged's sha)
+  "--guides",
+  "--check",
 ]);
 /** Flags taking every value up to the next flag: `--files a b c`, or `--files "a,b,c"`. */
 // V-27: --for takes seats like --files takes paths; read as a value, never as part of the phase text

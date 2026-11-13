@@ -117,8 +117,6 @@ export function migrateCodeTables(db: DatabaseSync): void {
   upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
   // the branch a merge lands in, named by merge-lock --onto (D9)
   upkeep("merge_locks", "onto", "onto TEXT");
-  // the guides merge-lock listed for the branch, JSON; merged refuses until each is settled
-  upkeep("merge_locks", "guides", "guides TEXT");
   // the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
   // the paths the holder's branch changed, as its CLI read them from git at the grant, JSON: the files of its merge

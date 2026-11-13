@@ -99,6 +99,34 @@ test("work not committed is refused, nothing merged; with no report given, the d
   assert.equal(lockHeld(r), false);
 });
 
+test("a report file that cannot be read is refused before the lock and before anything is pushed", () => {
+  const r = fresh();
+  r.commitFile(r.wtB, "src/c.ts", edit(4, "export const five = 'b';"));
+  const before = r.git(r.repo, "rev-parse", "main").trim();
+  const res = r.swarm(r.wtB, ["merge-lock", "--onto", "main", "--report-file", "no-such-report.md"]);
+  assert.equal(res.status, 1);
+  assert.match(res.stderr, /^merged: --report-file no-such-report\.md cannot be read$/m);
+  assert.equal(r.git(r.repo, "rev-parse", "main").trim(), before, "nothing pushed");
+  assert.equal(lockHeld(r), false);
+});
+
+test("a delivery pushed and never recorded is recorded by the next call, not lost to nothing-to-deliver", () => {
+  const r = fresh();
+  r.commitFile(r.wtB, "src/a.ts", edit(4, "export const five = 'b';"));
+  // what a call cut between its push and its record leaves: the lock held with the branch's files, the target
+  // moved, no merged event
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
+  r.git(r.wtB, "push", "-q", ".", "HEAD:main");
+  const sha = r.git(r.wtB, "rev-parse", "HEAD").trim();
+  assert.equal(lockHeld(r), true);
+  const out = r.cli(r.wtB, "merge-lock", "--onto", "main", "--report", "T done");
+  assert.match(out, new RegExp(`^merged ${sha}: lock released; reported as #\\d+`, "m"));
+  const body = mergedEvent(r);
+  assert.match(body, /^files: src\/a\.ts$/m, "the files recorded at the first grant");
+  assert.match(body, /^@review-tool\/S3: you hold or declared a file it changed\.$/m);
+  assert.equal(lockHeld(r), false);
+});
+
 /** The body of the latest merged event, as the board stored it. */
 const mergedEvent = (r: Repo): string => {
   const db = openRawStore(r.store, { readOnly: true });

@@ -16,7 +16,7 @@ import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
-import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
+import { discoverGuides, guidesLine, type Guide } from "./guides.ts";
 import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "./conflicts.ts";
@@ -423,12 +423,25 @@ const emitHeard = async (p: Participant, json: object, result: string | string[]
 const slashed = (s: string): string => s.replace(/\\/g, "/");
 
 /** The guides of the caller's repository: shipped beside this tool, and the project's own. */
-const guidesHere = (p: Participant, onto?: string): Guide[] => {
-  const root = p.place ?? worktreeOf(process.cwd());
-  // with the branch merged into: its project guides too, the ones the rebase brings (G12)
-  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", "--end-of-options", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", "--end-of-options", `${onto}:.claude/skills`)) : [];
-  return discoverGuides(toolRoot(), root, ofOnto);
-};
+const guidesHere = (p: Participant): Guide[] => discoverGuides(toolRoot(), p.place ?? worktreeOf(process.cwd()));
+
+/** The report a merge carries, read and checked the same way wherever it is given: by `merged`, and by `merge-lock`
+ *  delivering, before anything is pushed. A file's text, else the text given; undefined when neither. Refused: a file
+ *  that cannot be read (G25), and a `--report` naming a file (V-32, D69). */
+function reportGiven(): string | undefined {
+  const reportFile = args.flag("--report-file");
+  let fromFile: string | undefined;
+  if (reportFile !== undefined) {
+    try {
+      fromFile = fs.readFileSync(path.resolve(reportFile), "utf8").trim();
+    } catch {
+      fail(CODE_WORDING.reportFileUnreadable(reportFile));
+    }
+  }
+  const given = args.flag("--report")?.trim();
+  if (given && given !== "-" && fs.existsSync(path.resolve(given)) && fs.statSync(path.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  return fromFile || given || undefined;
+}
 
 
 /** The worktree a member's paths are relative to: its board worktree once known, else the shell's checkout. */
@@ -858,7 +871,7 @@ async function main(): Promise<void> {
       const { member, roster, composition } = joined;
       // spec §7: the worktree is made at join, so its link reads its changes from the start (§8: still by the pack)
       if (own) await madeWorktree(member, "join");
-      // the project's guides, listed once at join; merge-lock names those the branch's changes fall under
+      // the project's guides, listed once at join: skills for the member to load, nothing the board checks
       const guidesAtJoin = own ? guidesLine(guidesHere(member)) : null;
       // the member's link, from now on how its verbs reach the board (D29), started by its agent (D32)
       const link = startLinkLine({ name: member.name, run: member.run });
@@ -1057,20 +1070,18 @@ async function main(): Promise<void> {
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
-      // what the branch changed, committed or not: the guides it falls under (V8: a base only on origin is read as
-      // origin's, as the worktree was made from it, G36)
+      // the target as the worktree reads it (V8: a base only on origin is read as origin's, as the worktree was made
+      // from it, G36)
       const ontoRef = p.place && fs.existsSync(p.place) ? baseRef(p.place, onto) : onto;
       // the delivery: a member in its board worktree calls merge-lock and the whole merge is run here; --lock-only takes
       // the lock alone, for a merge made by hand, as a member with no worktree always does
       const deliver = !!p.place && !args.has("--lock-only");
-      // its report, when it gives one; none: the subjects of the commits delivered, read once they are rebased
+      // its report, when it gives one, checked here as merged checks it: what would be refused is refused before the
+      // lock and before anything is pushed. None given: the subjects of the commits delivered, read once rebased
+      if (deliver) reportGiven();
       const reportArgs = args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : args.flag("--report") !== undefined ? ["--report", args.flag("--report")!] : [];
-      const guidesArgs = args.flag("--guides") !== undefined ? ["--guides", args.flag("--guides")!] : [];
-      // what merged would refuse is refused here, before anything is pushed: a --report naming a file (V-32)
-      const reportText = args.flag("--report")?.trim();
-      if (deliver && reportText && reportText !== "-" && fs.existsSync(path.resolve(reportText)) && fs.statSync(path.resolve(reportText)).isFile()) fail(CODE_WORDING.reportIsAFile(reportText));
       /** The same call, as the member runs it again once what was handed back is fixed. */
-      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...[...reportArgs, ...guidesArgs].map(shellWord), "--as", shellWord(p.name)].join(" ");
+      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...reportArgs.map(shellWord), "--as", shellWord(p.name)].join(" ");
       const unmergedIn = (wt: string): string[] => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt: string): boolean => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
@@ -1133,13 +1144,13 @@ async function main(): Promise<void> {
       const changed = p.place ? branchChangedIn(p.place, ontoRef) : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
-      // the guides the branch's changes fall under: merged refuses until each is settled
-      const guides = guidesFor(guidesHere(p, ontoRef), changed);
-      if (deliver && guides.length && args.flag("--guides") === undefined) fail(CODE_WORDING.autoNeedsGuides(CODE_WORDING.guidesForm(guides.map((g) => g.name))));
+      // the lock it already holds as it calls: a delivery pushed whose record never landed (it failed, or the call was
+      // cut), or a lock taken alone. Read before the ask, which a holder is always granted
+      const heldBefore = deliver ? ((await packVerb(p, "held-merge-lock", {})) as HeldMergeLock | null) : null;
       // what the branch changed rides on the lock: the files of its merge, read from git here, never typed by the member
-      const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name), ...(p.place ? { files: changed } : {}) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
-      // the delivery, granted: the board rebases, runs the check and fast-forwards, and only a clean merge passes. What
-      // does not pass is handed back with the lock released: nobody waits on a member fixing its branch
+      const r = (await packVerb(p, "lock-merge", { onto, reflogMark, ...(p.place ? { files: changed } : {}) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
+      // the delivery, granted: the board rebases and fast-forwards, and only a clean merge passes. What does not pass is
+      // handed back with the lock released: nobody waits on a member fixing its branch
       if (deliver && r.granted && p.place) {
         const wt = p.place;
         const out = (line: string, code: number, extra: Record<string, unknown> = {}) => {
@@ -1171,11 +1182,14 @@ async function main(): Promise<void> {
         }
         // what it delivers: its commits the target lacks; none, and there is nothing to merge
         const subjects = (git(wt, "log", "--reverse", "--format=%s", "--end-of-options", `${ontoRef}..HEAD`) ?? "").split("\n").filter(Boolean);
-        if (!subjects.length) {
+        // nothing left to push, yet it held the lock on files of its own as it called: an earlier call pushed them and
+        // its record never landed. The record is all that is owed, and is made now, never lost to "nothing to deliver"
+        const unrecorded = !subjects.length && !!heldBefore?.files?.length;
+        if (!subjects.length && !unrecorded) {
           await release(CODE_WORDING.autoNothing(onto), 0);
           break;
         }
-        const report = reportArgs.length ? reportArgs : ["--report", `delivered: ${subjects.join("; ")}`];
+        const report = reportArgs.length ? reportArgs : ["--report", subjects.length ? `delivered: ${subjects.join("; ")}` : "delivered"];
         const ff = sh(["git", "push", ".", `HEAD:${onto}`]);
         if (ff.status !== 0) {
           await release(CODE_WORDING.autoPushFailed(onto, `${ff.stderr ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
@@ -1183,23 +1197,23 @@ async function main(): Promise<void> {
         }
         // the conflicts the member resolved to get here, on this call or the ones before it: whom merged tells (D63)
         const resolved: Conflicts = { files: handedBack(wt) };
-        const kept = handedBackFile(wt);
-        if (kept) fs.rmSync(kept, { force: true });
         // the merged step, as the worker would have called it: its checks, report, notices and next line, unchanged
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, ...report, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, [MERGE_CONFLICTS_ENV]: JSON.stringify(resolved) } });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, ...report, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, [MERGE_CONFLICTS_ENV]: JSON.stringify(resolved) } });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
+        // recorded: the handed-back list has served. Not recorded: it is kept, with the lock, for the call that resumes
+        const kept = handedBackFile(wt);
+        if (m.status === 0 && kept) fs.rmSync(kept, { force: true });
         break;
       }
       // a worker whose listener lapsed hears of its undelivered messages here too, before the lock step
       const unreadAtLock = rules.unreadLine(await situation(p), "merge-lock");
-      emit({ member: p.name, ...r, ...(r.granted && guides.length ? { guides } : {}) }, () => {
-        if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+      emit({ member: p.name, ...r }, () => {
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
         if (unreadAtLock) console.log(unreadAtLock);
-        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder!, WORDING.wait(self().join(" "), shellWord(p.name), FOREGROUND_WAIT_MS)));
+        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord(p.name)) : CODE_WORDING.mergeHeld(r.holder!, WORDING.wait(self().join(" "), shellWord(p.name), FOREGROUND_WAIT_MS)));
       });
       break;
     }
@@ -1209,20 +1223,7 @@ async function main(): Promise<void> {
       refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
       // the report rides on the merge: one post, the orchestrator's one wake; "-" merges silently, recorded in the run only
-      // G25: a long report comes from a file
-      const reportFile = args.flag("--report-file");
-      let fromFile: string | undefined;
-      if (reportFile !== undefined) {
-        try {
-          fromFile = fs.readFileSync(path.resolve(reportFile), "utf8").trim();
-        } catch {
-          fail(`merged: --report-file ${reportFile} cannot be read`);
-        }
-      }
-      const given = args.flag("--report")?.trim();
-      // board-split V-32 (D69): a --report naming an existing file is refused: --report-file posts a file's text
-      if (given && given !== "-" && fs.existsSync(path.resolve(given)) && fs.statSync(path.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
-      const report = fromFile || given || fail(CODE_WORDING.reportMissing);
+      const report = reportGiven() ?? fail(CODE_WORDING.reportMissing);
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = (await packVerb(p, "held-merge-lock", {})) as HeldMergeLock | null;
       // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
@@ -1234,17 +1235,6 @@ async function main(): Promise<void> {
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
       }
-      // every guide merge-lock listed is settled, ok or n/a with why, before the merge is recorded
-      const guidesArg = args.flag("--guides")?.trim();
-      const listed = lock?.guides ?? [];
-      const settled = guidesSettlement(guidesArg ?? "", listed);
-      const form = CODE_WORDING.guidesForm(listed);
-      if (settled.separator) fail(CODE_WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
-      if (settled.malformed.length) fail(CODE_WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
-      if (settled.unknown.length) fail(CODE_WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
-      if (settled.missing.length)
-        fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
-      if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       // a commit git knows is on the branch the lock names, or it was not merged (V1)
       // V1: a sha git does not know was never merged
       if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", "--end-of-options", `${sha}^{commit}`))
@@ -1258,9 +1248,7 @@ async function main(): Promise<void> {
       // the lock at its grant; a lock taken with no worktree: the member's claims; past the lock: the commit's own change
       const files = lock ? (lock.files ?? (await board.heldBy(p))) : commitChanged(p.place ?? pathsRoot(), sha);
       const sharers = (await packVerb(p, "merged", { sha, files, conflicts })) as Sharer[];
-      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
-      // a silent merge still records how it settled its guides, in the run, waking no one (V3)
-      const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
       // a merge past the lock is recorded in the run, with its why
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       // the post after a resolved conflict, prompted by the command just run (D63)
@@ -1273,7 +1261,7 @@ async function main(): Promise<void> {
       // the end-turn line, or the undelivered messages to read first (owesNothingLine says which); else those alone
       const endTurn = (reported ? rules.owesNothingLine(after) : null) ?? rules.unreadLine(after, "merged");
       emit({ member: p.name, sha, files, tell, ...(reported ? { reported: reported.seq } : {}), ...(endTurn ? { next: endTurn } : {}) }, () => {
-        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
+        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
         if (endTurn) console.log(endTurn);
       });

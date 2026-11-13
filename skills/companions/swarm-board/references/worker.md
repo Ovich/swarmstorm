@@ -55,8 +55,7 @@ never `end` while the run is open (it is refused). A turn ended while you owe wo
    told to them by the post the answer ends on, `<how>` filled in); `held by …` (wait in the
    foreground for the merged event, then the same call); a conflict (the files it names carry
    the conflict, marked: edit each to what it must be, run no git command, the same call
-   again); work not committed (commit it, the same call again); guides to settle (the
-   `--guides` form it prints, added to the call). The report (step 7) rides on the merge, posted as
+   again); work not committed (commit it, the same call again). The report (step 7) rides on the merge, posted as
    `@orchestrator merged <sha>: <report>`, the orchestrator's one wake; a long one goes through
    `--report-file <path>`; `--report -` merges silently. After a change to an *interface* file,
    `$S post "@swarm <what changed in it>" --about <file>`. Your worktree stays for your next
