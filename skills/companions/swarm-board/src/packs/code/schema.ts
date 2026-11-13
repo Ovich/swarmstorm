@@ -6,32 +6,21 @@
 import type { DatabaseSync } from "node:sqlite";
 
 /** The code tables keyed by member (`participant`), every row of a pruned member deleted. */
-const MEMBER_TABLES = ["drift_notices", "claims", "lock_waiters", "merge_locks", "flag_posts", "lock_requests"];
+const MEMBER_TABLES = ["claims","lock_waiters", "merge_locks", "flag_posts", "lock_requests"];
 
 /** Creates the code tables a store lacks and brings an older store's up to date. */
 export function migrateCodeTables(db: DatabaseSync): void {
   db.exec(`
     -- claims are global by repository-relative path, across every run on a repository (D12, D20);
     -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed.
-    -- A claim lasts its run's phase (claims-phase): from the member's first change of the path until the next phase
-    -- opens or the run closes; state 'active' or 'merged', 'ended' read from the member; sha: its last merge this phase, kept when active again;
-    -- in_changes: the path is in the member's worktree changes as its link last read them
+    -- A claim is a path its member's worktree changes now, as its link last read it: made when the path enters the
+    -- changes, gone when it leaves them, at its merge, and at the member's end.
     CREATE TABLE IF NOT EXISTS claims (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
       participant INTEGER NOT NULL,
       kind TEXT NOT NULL DEFAULT 'inside',
       since_seq INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'active',
-      sha TEXT,
-      in_changes INTEGER NOT NULL DEFAULT 1,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a member told that a path merged this phase is not in its branch: once per member and path per phase
-    CREATE TABLE IF NOT EXISTS drift_notices (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
       PRIMARY KEY (repo, path, participant)
     );
     CREATE TABLE IF NOT EXISTS merge_locks (
@@ -57,10 +46,11 @@ export function migrateCodeTables(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- claims-phase: the kept claims replace the claim log, read by member as it was (board-fixes#D14); an older store's goes
+    -- read by member (board-fixes#D14); an older store's claim log and drift notices go
     CREATE INDEX IF NOT EXISTS claims_by_participant ON claims (participant);
     DROP INDEX IF EXISTS claim_log_by_participant;
     DROP TABLE IF EXISTS claim_log;
+    DROP TABLE IF EXISTS drift_notices;
   `);
   const upkeep = (table: string, column: string, ddl: string): void => {
     const cols = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
@@ -93,10 +83,12 @@ export function migrateCodeTables(db: DatabaseSync): void {
       COMMIT;
     `);
   }
-  // claims-phase: a claim's state, its last merge's sha, and whether its path is still in the member's changes
-  upkeep("claims", "state", "state TEXT NOT NULL DEFAULT 'active'");
-  upkeep("claims", "sha", "sha TEXT");
-  upkeep("claims", "in_changes", "in_changes INTEGER NOT NULL DEFAULT 1");
+  // a store from when a claim lasted its phase: the claims kept past their work (merged, or out of the changes) go, with
+  // the columns that marked them; what is left is what each worktree changed at its link's last look
+  const claimCols = (db.prepare("PRAGMA table_info(claims)").all() as { name: string }[]).map((c) => c.name);
+  if (claimCols.includes("state")) db.exec("DELETE FROM claims WHERE state != 'active'");
+  if (claimCols.includes("in_changes")) db.exec("DELETE FROM claims WHERE in_changes = 0");
+  for (const column of ["state", "sha", "in_changes"]) if (claimCols.includes(column)) db.exec(`ALTER TABLE claims DROP COLUMN ${column}`);
 }
 
 /** Deletes a pruned member's code rows, of every table. */

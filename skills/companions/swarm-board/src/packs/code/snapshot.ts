@@ -8,12 +8,9 @@ import type { CodeMemberFact } from "./types.ts";
 type Row = Record<string, unknown>;
 
 export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
-/** A file claimed this phase (claims-phase): who holds it, active, in claim order (D40), and who held it and merged it
- *  (`sha` the merge's) or ended; `holders` alone count for shared. The FileMap's rows. */
-export type SnapshotFile = { path: string; holders: string[]; past: PastHolder[] };
-/** A claim of the phase merged, with its merge's sha (its holder may be active on it again, v1-5: then it is in
- *  `holders` too), or no longer active because its member ended (sha null). */
-export type PastHolder = { member: string; state: "merged" | "ended"; sha: string | null };
+/** A file a live member's worktree changes now: who holds it, in claim order (D40); two holders or more make it shared.
+ *  The FileMap's rows. */
+export type SnapshotFile = { path: string; holders: string[] };
 /** The code fields of `BoardSnapshot`, as the page reads them. */
 export type CodeSnapshotFields = {
   /** V-46: `waiters`, the live members refused it and waiting for it, in the order they asked */
@@ -41,36 +38,28 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   const { db, isLive, nameOf, relPath } = deps;
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo) as Row | undefined;
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
-  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
+  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid");
   // V-46: who waits on the lock, in the order refused
   const lockWaiters = (db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo) as Row[])
     .map((w) => Number(w.participant))
     .filter((id) => isLive(id) && id !== lockHolder)
     .map(nameOf);
-  // every claim of the phase on the repository, in claim order: the FileMap's rows; the active ones say which paths
-  // are shared (D40)
-  const claimed = db
-    .prepare("SELECT c.path, c.participant, c.state, c.sha, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid")
-    .all(repo) as Row[];
-  const live = claimed.filter((c) => c.state === "active" && isLive(Number(c.participant)));
+  // every live member's claims on the repository, in claim order: the FileMap's rows, and which paths are shared (D40)
+  const live = (
+    db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo) as Row[]
+  ).filter((c) => isLive(Number(c.participant)));
   const files = new Map<string, SnapshotFile>();
-  const fileOf = (p: string): SnapshotFile => files.get(p) ?? files.set(p, { path: p, holders: [], past: [] }).get(p)!;
-  for (const c of claimed) {
-    const f = fileOf(String(c.path));
-    const member = `${c.plan}/${c.seat}`;
-    if (c.sha != null) f.past.push({ member, state: "merged", sha: String(c.sha) });
-    if (live.includes(c)) f.holders.push(member);
-    else if (c.state === "active" && c.sha == null) f.past.push({ member, state: "ended", sha: null });
+  for (const c of live) {
+    const path = String(c.path);
+    (files.get(path) ?? files.set(path, { path, holders: [] }).get(path)!).holders.push(`${c.plan}/${c.seat}`);
   }
-  // a file a live member declared at join but could not claim, held by another: it holds it too (D62);
-  // one it claimed this phase, merged or not, does not come back
-  const everClaimed = db.prepare("SELECT 1 FROM claims WHERE repo = ? AND path = ? AND participant = ?");
+  // a file a live member declared at join, held by another: it holds it too (D62)
   for (const r of people) {
     if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
     const name = `${r.plan}/${r.seat}`;
     for (const d of JSON.parse(String(r.files)) as Declared[]) {
       const f = files.get(relPath(repo, d.path) ?? d.path);
-      if (f && f.holders.length && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
+      if (f && !f.holders.includes(name)) f.holders.push(name);
     }
   }
   const sharedBy = (path: string, id: number): boolean => live.some((c) => String(c.path) === path && Number(c.participant) !== id);
@@ -96,13 +85,7 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   };
 }
 
-/** The active claims a member holds now (F27), repository-relative: the roster's `held`. */
+/** The claims a member holds now (F27), repository-relative: the roster's `held`. */
 export function heldOf(db: DatabaseSync, id: number): Declared[] {
-  return (db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid").all(id) as Row[]).map((c) => ({ path: String(c.path) }));
-}
-
-/** Every path the member claimed this phase, merged ones included (S28, claims-phase): the roster's declared files no
- *  longer waited on. */
-export function everClaimedOf(db: DatabaseSync, id: number): string[] {
-  return (db.prepare("SELECT DISTINCT path FROM claims WHERE participant = ?").all(id) as Row[]).map((c) => String(c.path));
+  return (db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid").all(id) as Row[]).map((c) => ({ path: String(c.path) }));
 }

@@ -96,11 +96,4 @@ export const CODE_WORDING = {
 
   // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
   overlapSettle: (cli: Command, other: string, otherName: string, about: string, as: string) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
-
-  // ── claims-phase: a drift, a path the member changed that another merged this phase and its branch lacks ──
-  /** the drift event's body, posted by the claims to `member` alone, once per path and phase */
-  driftNotice: (member: string, path: string, merger: string, sha: string) =>
-    `@${member} ${path} was merged by ${merger} (${sha.slice(0, 7)}) and is not in your branch: your delivery brings it in`,
-  /** the step under it: none owed, the delivery rebases; how to take the merged commit in at once, for a member that needs it */
-  driftRebase: (sha: string): Command => `nothing to do now; to work on top of it at once: commit what you have, then git rebase ${sha}`,
 } as const;

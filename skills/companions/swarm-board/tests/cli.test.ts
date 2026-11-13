@@ -370,13 +370,13 @@ test("D52 (U-F18): status and roster name the merge lock's holder and since", ()
   assert.match(run("roster").stdout, /^lock merge lock of .+  held by review-tool\/S3 since /m);
 });
 
-test("merged ends, for each merged path another member holds or held, on the line that tells them; --json carries the lines as tell (D63)", async () => {
+test("merged ends, for each merged path another member changes now, on the line that tells them; --json carries the lines as tell (D63)", async () => {
   const id = String(openRun());
   run("join", "--run", id, "--seat", "S3", "--doing", "x");
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const s3 = ["--as", "review-tool/S3"];
   const s5 = ["--as", "review-tool/S5"];
-  // spec §7: the holdings as each link would send its worktree's changes: S3 held src/held.ts, then only src/holds.ts
+  // spec §7: the holdings as each link would send its worktree's changes: S3 changed src/held.ts, then only src/holds.ts: it holds that one alone
   const holdings = await openBoard(path.join(toolRoot, "swarm.sqlite"));
   try {
     const member = (name: string) => holdings.participant(name)!;
@@ -405,12 +405,12 @@ test("merged ends, for each merged path another member holds or held, on the lin
   assert.equal(r.status, 0, r.stderr);
   // the board's worktree line follows (worktrees.test.ts)
   const said = r.stdout.trimEnd().split("\n").filter((l) => !l.startsWith("worktree ") && !l.startsWith("start your link"));
-  assert.deepEqual(said, [`merged ${all}: lock released`, TELL("src/held.ts"), TELL("src/holds.ts"), TELL("src/mine.ts")]);
+  assert.deepEqual(said, [`merged ${all}: lock released`, TELL("src/holds.ts"), TELL("src/mine.ts")]);
 
   // a typed --files is read and ignored: the commit says what it changed
-  const j = JSON.parse(run("merged", "--report", "-", ...orch, commit("held"), "--files", "src/mine.ts", "--json").stdout);
-  assert.deepEqual(j.files, ["src/held.ts"]);
-  assert.deepEqual(j.tell, [TELL("src/held.ts")]);
+  const j = JSON.parse(run("merged", "--report", "-", ...orch, commit("holds"), "--files", "src/mine.ts", "--json").stdout);
+  assert.deepEqual(j.files, ["src/holds.ts"]);
+  assert.deepEqual(j.tell, [TELL("src/holds.ts")]);
 
   // a path nobody else held: the merge line alone
   const lone = commit("nobody");

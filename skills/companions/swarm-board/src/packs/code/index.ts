@@ -7,11 +7,10 @@ import type { Conflicts, Participant } from "../../board/board.ts";
 import { baseAt } from "../../git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
-import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
+import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
-import type { DriftedFile } from "./types.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
 
@@ -48,8 +47,8 @@ const optional = <T>(v: unknown): T | undefined => (v === null || v === undefine
 
 /** The claims verbs a member calls through `packCall` (board-split T11, D9): the core's transaction around each. */
 const CLAIM_WRITES: Record<string, PackWrite> = {
-  // spec §7: the member's link's changed set, not a call of its own; its drifted paths (claims-phase) none from an older link
-  changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[], optional<DriftedFile[]>(i.drifted) ?? [])),
+  // spec §7: the member's link's changed set, not a call of its own
+  changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files as string[])),
   "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional<string>(i.onto), optional<number>(i.reflogMark), optional<string[]>(i.files))),
   // merge-lock, delivering: a merge that stopped short (a conflict, a refused rebase) gives the lock back, naming who waited
   "release-merge-lock": tableWrite(null, (c, m) => c.releaseLockOfLost(m)),
@@ -85,7 +84,6 @@ export const codePack: Pack = {
   },
   snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
   held: (db, member) => heldOf(db, member),
-  everClaimed: (db, member) => everClaimedOf(db, member),
   // the pack keeps nothing by run: its rows are a member's
   forget: (db, scope) => {
     if ("member" in scope) forgetMemberRows(db, scope.member);
@@ -147,9 +145,9 @@ export const codePack: Pack = {
   },
 
   onEnded(member, ctx) {
-    // a held lock released by the end frees whoever was refused it (D65); its claims stay, ended, until the phase ends
+    // a held lock released by the end frees whoever was refused it (D65); its claims go with it
     const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
-    tablesOf(ctx).releaseLockOf(member.id);
+    tablesOf(ctx).releaseAll(member.id);
     return {
       note: waiters.length ? `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}` : null,
       mentions: waiters,

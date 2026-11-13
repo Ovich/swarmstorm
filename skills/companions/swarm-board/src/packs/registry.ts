@@ -5,7 +5,7 @@ import { profileOf } from "../board/kinds.ts";
 import { codePack } from "./code/index.ts";
 import type { EventDef } from "../board/events.ts";
 import type { CodeEventName } from "./code/events.ts";
-import type { DriftMeta, FlagMeta, MergedMeta } from "./code/types.ts";
+import type { FlagMeta, MergedMeta } from "./code/types.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
@@ -60,10 +60,6 @@ export const registry = {
   heldOf(db: PackTablesDeps["db"], member: number): { path: string }[] {
     return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
   },
-  /** The paths the member ever claimed, every pack's (S28). */
-  everClaimedOf(db: PackTablesDeps["db"], member: number): string[] {
-    return Object.values(PACKS).flatMap((p) => p.everClaimed?.(db, member) ?? []);
-  },
   /** Every pack's rows of a pruned member deleted (D20). */
   forgetMember(db: PackTablesDeps["db"], member: number): void {
     for (const p of Object.values(PACKS)) p.forget?.(db, { member });
@@ -84,4 +80,4 @@ export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile }
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
 export type { HeldMergeLock } from "./code/claims.ts";
 /** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */
-export type PackMessageMeta = MergedMeta | DriftMeta | FlagMeta;
+export type PackMessageMeta = MergedMeta | FlagMeta;

@@ -105,8 +105,6 @@ export interface Pack {
   snapshot?(deps: PackSnapshotDeps, repo: string, people: Record<string, unknown>[], orchestratorSeat: string): PackSnapshot;
   /** What the member holds now, for the roster's `held` (F27). */
   held?(db: PackTablesDeps["db"], member: number): { path: string }[];
-  /** The paths the member ever claimed, repository-relative: a declared file it claimed and released since is no longer waited on (S28). */
-  everClaimed?(db: PackTablesDeps["db"], member: number): string[];
   /** Deletes its rows of a pruned member, or of a pruned run (D20): only the pack touches its tables. */
   forget?(db: PackTablesDeps["db"], scope: { member: number } | { run: RunId }): void;
 }

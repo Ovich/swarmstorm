@@ -154,8 +154,6 @@ export interface RosterEntry {
   files: Declared[];
   /** The claims it holds now (F27), repository-relative. */
   held: Declared[];
-  /** S28: the paths it ever claimed, released ones included; a declared file among them is no longer waited on. */
-  everClaimed: string[];
   /** board-split D36: its trouble beside its state (lost), null when none. */
   badge: Badge | null;
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
@@ -1864,8 +1862,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         // a phase opened again starts with no member done
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
-        // claims-phase: what the pack holds lasts the phase
-        packTables.phaseOpened(fresh.run);
         // D41: its all-done told once per opening
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
@@ -2175,7 +2171,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         doing: String(r.doing),
         files: JSON.parse(String(r.files)) as Declared[],
         held: registry.heldOf(db, Number(r.id)),
-        everClaimed: registry.everClaimedOf(db, Number(r.id)),
         badge: stateIn(Number(r.run), String(r.seat))?.badge ?? null,
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
