@@ -27,7 +27,6 @@ export const RPC_METHODS = [
   "owedPhase",
   "idle",
   "unreadMentions",
-  "guidesUntold",
   "runs",
   "packCall",
   "join",

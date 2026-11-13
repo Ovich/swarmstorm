@@ -103,32 +103,6 @@ test("the board sets holdings to the set, keeps what left it (claims-phase), and
   }
 });
 
-test("board-fixes#D8: an agreement clears the pair's overlap flags on its path, and only theirs", async () => {
-  const { DatabaseSync } = await import("node:sqlite");
-  const file = path.join(dir, "swarm.sqlite");
-  board = await openBoard(file);
-  try {
-    const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2", "w3"].map((id) => ({ id, blockers: [] })) });
-    const [w1, w2, w3] = ["w1", "w2", "w3"].map((seat) => board.join({ run: run.id, seat, doing: "x", files: [] }).member);
-    const code = codeVerbs(board);
-    code.changes(w1, ["src/a.ts", "src/c.ts"]);
-    code.changes(w2, ["src/a.ts"]);
-    code.changes(w3, ["src/a.ts", "src/c.ts"]);
-    const raw = new DatabaseSync(file);
-    for (const [p, id] of [["src/a.ts", w1.id], ["src/a.ts", w2.id], ["src/a.ts", w3.id], ["src/c.ts", w1.id]] as const) raw.prepare("INSERT INTO flags (repo, path, participant) VALUES (?, ?, ?)").run(REPO, p, id);
-    raw.prepare("INSERT INTO notices (repo, path, participant, other) VALUES (?, ?, ?, ?)").run(REPO, "src/a.ts", w1.id, w2.id);
-    raw.prepare("INSERT INTO notices (repo, path, participant, other) VALUES (?, ?, ?, ?)").run(REPO, "src/a.ts", w1.id, w3.id);
-    board.post(w1, "@w2 I change a.ts first, you after", { kind: "agreement", about: "src/a.ts" });
-    const flags = (raw.prepare("SELECT path, participant FROM flags ORDER BY path, participant").all() as { path: string; participant: number }[]).map((r) => `${r.path}:${r.participant}`);
-    assert.deepEqual(flags, [`src/a.ts:${w3.id}`, `src/c.ts:${w1.id}`], "the pair's flags on a.ts go; w3's and c.ts's stay");
-    const notices = (raw.prepare("SELECT other FROM notices").all() as { other: number }[]).map((r) => r.other);
-    assert.deepEqual(notices, [w3.id], "the pair's notice goes; w1's with w3 stays");
-    raw.close();
-  } finally {
-    board.close();
-  }
-});
-
 test("driftedSet (claims-phase): a changed file the target changed since the merge-base is drifted with that commit's sha; once the branch has it, not", () => {
   const repo = path.join(dir, "repo");
   fs.mkdirSync(repo);

@@ -101,7 +101,6 @@ export function makeAuthority(board: Board): Authority {
     done: self,
     idle: self,
     unreadMentions: self,
-    guidesUntold: self,
     showPhase: self,
     owedPhase: self,
     heldBy: self,

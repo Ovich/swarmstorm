@@ -168,7 +168,6 @@ export const LIVE: BoardSnapshot = {
   ],
   queues: { [RT]: queue(RT, RT_SLICES), [AL]: queue(AL, AL_SLICES) },
   files: [],
-  flags: [],
 };
 // the claims, as the Board derives them: one holder each here
 LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.member], past: [] })));
@@ -212,7 +211,6 @@ export const SITE: BoardSnapshot = {
   events: [named("14:03", "landing/orchestrator", "opened", "run 7 opened: plan landing, The landing page")],
   queues: {},
   files: [{ path: "site/hero.tsx", holders: ["landing/S1"], past: [] }],
-  flags: [],
 };
 
 /** The repositories as useBoard lists them. */

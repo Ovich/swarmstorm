@@ -47,16 +47,13 @@ export interface Claims {
   seated(p: Participant): void;
   /** `p` called `merged` since it joined (D66). */
   mergedSinceJoin(participant: number): boolean;
-  /** closeRun: every claim, the merge lock and the claim requests of `participant` go. */
+  /** closeRun: every claim and the merge lock of `participant` go. */
   releaseAll(participant: number): void;
-  /** At `p`'s end: the merge lock it holds and its claim requests go; its claims stay, read as ended, until the phase ends. */
+  /** At `p`'s end: the merge lock it holds goes; its claims stay, read as ended, until the phase ends. */
   releaseLockOf(participant: number): void;
-  /** claims-phase: a phase of `run` opens: every claim of its members goes, with its flags, overlap posts and drift notices;
+  /** claims-phase: a phase of `run` opens: every claim of its members goes, with its overlap posts and drift notices;
    *  their links claim again from their worktrees' changes. */
   phaseOpened(run: RunId): void;
-  clearFlags(): void;
-  /** board-fixes#D8: `author` agreed with `parties` (names) about `about`: their flags and notices on its paths go. */
-  settleOverlaps(author: Participant, parties: string[], about: string): void;
   /** board-split D59: `p` went lost holding the merge lock: the lock is released at once and the live members refused
    *  it are returned (cleared), as at a release; null when `p` held none. */
   releaseLockOfLost(p: Participant): { waiters: string[] } | null;
@@ -81,17 +78,6 @@ type Row = Record<string, unknown>;
 
 export function claimsOf(deps: ClaimsDeps): Claims {
   const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack } = deps;
-
-  /** claims-phase: a claim `c` (the alias) its holder still works on: active, its member not ended. */
-  const ACTIVE = "c.state = 'active' AND EXISTS (SELECT 1 FROM participants q WHERE q.id = c.participant AND q.ended_at IS NULL)";
-  /** A flag lives while an active claim on its path does; a notice while both its holders' active claims do. */
-  const clearFlags = (): void => {
-    db.prepare(`DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path AND ${ACTIVE})`).run();
-    db.prepare(
-      `DELETE FROM notices WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.participant AND ${ACTIVE})
-         OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.other AND ${ACTIVE})`,
-    ).run();
-  };
 
   /** Every active, live holder of `rel` by id, in claim order: of the path itself, or of a directory it is under (G42). */
   const activeHoldersOf = (repo: string, rel: string): number[] =>
@@ -143,23 +129,21 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       const other = Number(r.author) === a.id ? b : a;
       return about !== "" && (fold(rel) === about || fold(rel).endsWith(`/${about}`)) && (JSON.parse(String(r.mentions)) as string[]).includes(other.name);
     });
-  /** `id`'s merge lock and claim requests go; its flags and notices too, and the page is told, only when something it
-   *  held changed (`changedBefore`: rows its caller already removed). */
   /** The trace: members queued on the lock, and a release with how long it was held. */
   const lockQueue = (repo: string): number => Number((db.prepare("SELECT COUNT(*) AS n FROM lock_waiters WHERE repo = ?").get(repo) as Row).n);
   const traceRelease = (p: Participant, cause: string): void => {
     const l = db.prepare("SELECT at FROM merge_locks WHERE participant = ?").get(p.id) as Row | undefined;
     trace().event("lock", { action: "released", run: p.run, member: p.name, cause, heldMs: l ? Date.now() - Date.parse(String(l.at)) : null, waiting: lockQueue(p.repo) });
   };
+  /** `id`'s merge lock goes, and the page is told, only when something it held changed (`changedBefore`: rows its
+   *  caller already removed). */
   const releaseLockOf = (id: number, changedBefore = 0): void => {
     if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ?").get(id)) traceRelease(participantById(id), "ended");
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id) as Row | undefined;
     const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
-    db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
     // at an end its active claims read as ended from now on
     const active = Number((db.prepare("SELECT COUNT(*) AS n FROM claims WHERE participant = ? AND state = 'active'").get(id) as Row).n);
     if (changedBefore + locks + active === 0) return;
-    clearFlags();
     if (owner) bump(String(owner.repo));
   };
   const releaseAll = (id: number): void => {
@@ -199,7 +183,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       .map((r) => Number(r.id));
 
   return {
-    clearFlags,
     releaseAll,
     releaseLockOf,
 
@@ -208,26 +191,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       let dropped = 0;
       for (const table of ["claims", "drift_notices", "flag_posts"])
         dropped += Number(db.prepare(`DELETE FROM ${table} WHERE participant IN (SELECT id FROM participants WHERE run = ?)`).run(run).changes);
-      clearFlags();
       if (owner && dropped > 0) bump(String(owner.repo));
-    },
-
-    settleOverlaps(author, parties, about) {
-      const want = fold(relPath(author.repo, about) ?? slashes(about));
-      if (!want) return;
-      const pair = new Set([author.id, ...liveIdsNamed(author.repo, parties)]);
-      if (pair.size < 2) return;
-      const onPath = (x: string): boolean => fold(x) === want || fold(x).endsWith(`/${want}`);
-      let cleared = 0;
-      for (const r of db.prepare("SELECT path, participant FROM flags WHERE repo = ?").all(author.repo) as Row[]) {
-        if (!onPath(String(r.path)) || !pair.has(Number(r.participant))) continue;
-        cleared += Number(db.prepare("DELETE FROM flags WHERE repo = ? AND path = ? AND participant = ?").run(author.repo, String(r.path), Number(r.participant)).changes);
-      }
-      for (const r of db.prepare("SELECT path, participant, other FROM notices WHERE repo = ?").all(author.repo) as Row[]) {
-        if (!onPath(String(r.path)) || !pair.has(Number(r.participant)) || !pair.has(Number(r.other))) continue;
-        cleared += Number(db.prepare("DELETE FROM notices WHERE repo = ? AND path = ? AND participant = ? AND other = ?").run(author.repo, String(r.path), Number(r.participant), Number(r.other)).changes);
-      }
-      if (cleared) bump(author.repo);
     },
 
     releaseLockOfLost(p) {
@@ -448,7 +412,6 @@ export function claimsOf(deps: ClaimsDeps): Claims {
              ON CONFLICT (repo, path, participant) DO UPDATE SET state = 'merged', sha = excluded.sha`,
         );
         for (const rel of rels) markMerged.run(me.repo, rel, me.id, lastSeq(), sha);
-        clearFlags();
       });
       return sharers;
     },

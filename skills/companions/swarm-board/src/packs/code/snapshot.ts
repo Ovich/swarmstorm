@@ -21,7 +21,6 @@ export type CodeSnapshotFields = {
   /** The repository's merge-lock turns, newest first (at most 50): asked, granted, merged, refusals counted. */
   lockHistory: LockTurn[];
   files: SnapshotFile[];
-  flags: { path: string; member: string }[];
 };
 /** What the core needs from the store to read one repository's code fields. */
 export interface CodeSnapshotDeps {
@@ -76,10 +75,6 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
   }
   const sharedBy = (path: string, id: number): boolean => live.some((c) => String(c.path) === path && Number(c.participant) !== id);
 
-  const flags = (
-    db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo) as Row[]
-  ).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
-
   const lockHistory = (
     db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo) as Row[]
   ).map((t) => ({
@@ -95,7 +90,6 @@ export function codeSnapshotOf(deps: CodeSnapshotDeps, repo: string, people: Row
       lockHistory,
       lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow!.at), waiters: lockWaiters } : null,
       files: [...files.values()],
-      flags,
     },
     factOf: (id) => (id === lockHolder ? "merging" : null),
     heldFilesOf: (id) => (heldBy.all(id) as Row[]).map((c) => ({ path: String(c.path), shared: sharedBy(String(c.path), id) })),

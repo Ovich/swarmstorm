@@ -36,7 +36,7 @@ const SNAP: BoardSnapshot = {
     post("alpha/S1", "plain talk"),
     post("alpha/S1", "merged abc: rebase your branch onto it.", { kind: "event", event: "merged" }),
   ],
-  queues: {}, files: [], flags: [],
+  queues: {}, files: [],
 };
 
 function Harness() {

@@ -17,7 +17,7 @@ const item = (runId: number, from: string, body: string, over: Partial<SnapshotE
   seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: runId, channel: runId, ...over,
 });
 const board = (runs: RunSummary[], roster: SnapshotMember[] = [], events: SnapshotEvent[] = [], files: BoardSnapshot["files"] = []): BoardSnapshot => ({
-  repo: "/r/.git", name: "r", runs, lock: null, lockHistory: [], roster, events, queues: {}, files, flags: [],
+  repo: "/r/.git", name: "r", runs, lock: null, lockHistory: [], roster, events, queues: {}, files,
 });
 
 // alpha (AL, run 1) and beta (BE, run 2) open, gamma (GA, run 3) closed

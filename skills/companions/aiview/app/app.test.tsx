@@ -461,7 +461,7 @@ describe("the board page", () => {
   const standInBoard = () => {
     const fetchMock = vi.fn(async (url: string) => {
       const repo = new URL(url, "http://aiview").searchParams.get("repo") ?? REPO;
-      const snapshot = { repo, name: "one", runs: [], lock: null, roster: [], events: [], queues: {}, files: [], flags: [] };
+      const snapshot = { repo, name: "one", runs: [], lock: null, roster: [], events: [], queues: {}, files: [] };
       return { ok: true, status: 200, json: async () => ({ repos: [{ repo, name: "one", runs: [] }], snapshot }) };
     });
     vi.stubGlobal("fetch", fetchMock);

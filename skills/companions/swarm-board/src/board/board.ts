@@ -346,8 +346,6 @@ export interface Board {
   idle(p: Participant): boolean;
   /** How many undelivered messages wake `p` (a message to it, an urgent post): `end` refuses while any. */
   unreadMentions(p: Participant): number;
-  /** Of `guides`, those not yet named to `p`, now marked named: a guide is told to a member once. */
-  guidesUntold(p: Participant, guides: string[]): string[];
   /** The run's current phase, as `phase` last set it; null until one is opened. Throws on an unknown run. */
   currentPhase(run: RunId): Phase | null;
   /** The current phase for `p`'s header (B15): `first` the first time it is asked for this member since the phase
@@ -732,8 +730,6 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     ).run(at, ORCHESTRATORS_GROUP);
   };
   endClosedOrchestratorSeats();
-  // the architecture guides already named to a member, each once
-  db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   // idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
   upkeep("member_activity", "in_turn", "in_turn INTEGER");
   upkeep("member_activity", "last_line", "last_line TEXT");
@@ -2223,8 +2219,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       }
       return transaction(() => {
         const message = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", undefined, named ? { parties: named } : {});
-        // board-fixes#D8: the agreement settles the parties' overlap on its path
-        if (named && opts.about) packOf(fresh)?.onAgreement?.(fresh, named, opts.about, packCtxOf(fresh));
         if (task) db.prepare("UPDATE messages SET task = 1, after = ? WHERE seq = ?").run(after.length ? JSON.stringify(after) : null, message.seq);
         return message;
       });
@@ -2259,11 +2253,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
 
     unreadMentions(p) {
       return unreadOf(p.id);
-    },
-
-    guidesUntold(p, guides) {
-      const tell = db.prepare("INSERT OR IGNORE INTO guides_told (participant, guide) VALUES (?, ?)");
-      return transaction(() => guides.filter((g) => tell.run(p.id, g).changes > 0));
     },
 
     wait(p, opts = {}) {
@@ -2414,7 +2403,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const cutoff = t - STALE_MS;
       // board-fixes#D1: one read per participant for the whole snapshot, shared by the pack, the roster's unread and the events
       const authorOf = memoizedParticipants();
-      // the pack's fields of the project: the lock and its turns, the files held, the flags (D18)
+      // the pack's fields of the project: the lock and its turns, the files held (D18)
       const packPart = registry.snapshot({ db, isLive, nameOf: (id) => authorOf(id).name, relPath }, repo, people, ORCHESTRATOR);
 
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));

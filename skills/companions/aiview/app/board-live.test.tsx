@@ -104,7 +104,6 @@ const answer = () => {
       events: [...events, ev("orchestrator", "run 28 closed", "event", "closed", [], null, 28)],
       queues: {},
       files: [],
-      flags: [],
     },
   };
 };

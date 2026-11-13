@@ -8,7 +8,7 @@ import { baseAt } from "../../git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, everClaimedOf, heldOf } from "./snapshot.ts";
-import { forgetMemberRows, forgetRunRows, migrateCodeTables } from "./schema.ts";
+import { forgetMemberRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
 import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
 import type { DriftedFile } from "./types.ts";
@@ -65,10 +65,8 @@ export const codePack: Pack = {
     (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
   // an agreement with no party named binds the file's other holders (F25)
   defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
-  // board-fixes#D8: an agreement clears the pair's overlap flags on its path
   // board-fixes#D4: on a code run a done or a leave that is no merge says so
   awaitedWording: (cause) => (cause === CODE_EVENTS.merged.name ? cause : cause === "done" ? "done, nothing merged" : `${cause} without merging`),
-  onAgreement: (author, parties, about, ctx) => tablesOf(ctx).settleOverlaps(author, parties, about),
   // a member holding a claim or the merge lock is mid-work, never idle
   busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
   // holding the merge lock, the member is merging (D36), whatever its core state says
@@ -88,7 +86,10 @@ export const codePack: Pack = {
   snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
   held: (db, member) => heldOf(db, member),
   everClaimed: (db, member) => everClaimedOf(db, member),
-  forget: (db, scope) => ("member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run)),
+  // the pack keeps nothing by run: its rows are a member's
+  forget: (db, scope) => {
+    if ("member" in scope) forgetMemberRows(db, scope.member);
+  },
   writes: CLAIM_WRITES,
 
   run(verb, member, input, ctx, tables) {

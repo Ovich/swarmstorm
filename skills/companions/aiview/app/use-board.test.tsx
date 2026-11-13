@@ -21,7 +21,7 @@ class FakeEventSource {
 }
 
 const REPO = "/r/.git";
-const body = { repos: [{ repo: REPO, name: "r", runs: [] }], snapshot: { repo: REPO, name: "r", runs: [], lock: null, roster: [], events: [], queues: {}, files: [], flags: [] } };
+const body = { repos: [{ repo: REPO, name: "r", runs: [] }], snapshot: { repo: REPO, name: "r", runs: [], lock: null, roster: [], events: [], queues: {}, files: [] } };
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {

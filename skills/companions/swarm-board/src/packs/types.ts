@@ -87,8 +87,6 @@ export interface Pack {
   onJoin?(member: Participant, ctx: PackCtx, declared: Declared[]): JoinFacts;
   alsoFor?(member: Participant, message: Message, ctx: PackCtx): boolean;
   defaultParties?(about: string, ctx: PackCtx): string[];
-  /** After an agreement about `about` between `author` and `parties` (names) is posted, in its transaction. */
-  onAgreement?(author: Participant, parties: string[], about: string, ctx: PackCtx): void;
   busy?(member: Participant, ctx: PackCtx): boolean;
   /** board-fixes#D4: how a cause that wakes a waiting task reads on this pack's run (`done` with nothing landed); absent: the cause. */
   awaitedWording?(cause: string): string;
