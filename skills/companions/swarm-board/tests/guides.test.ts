@@ -89,14 +89,14 @@ afterEach(() => {
 test("merge-lock lists the branch's guides; merged refuses until every one is settled, then records them", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 1;\n");
   commit(wtA, "page");
-  const lock = cli(wtA, "merge-lock", "--onto", "main");
+  const lock = cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
   assert.match(lock, /guides of this merge: all \(guide-all\), ui \(guide-ui\)/);
   const sha = git(wtA, "rev-parse", "HEAD").trim();
-  const missing = swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits");
+  const missing = swarm(wtA, "merged", sha, "--report", "done", "--guides", "all:ok fits");
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /leaves out ui, which merge-lock listed/);
   git(wtA, "push", "-q", ".", "HEAD:main");
-  const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "done", "--guides", "all:ok fits, ui:n/a no screen, only a constant");
+  const out = cli(wtA, "merged", sha, "--report", "done", "--guides", "all:ok fits, ui:n/a no screen, only a constant");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
   assert.match(storedBody(seq), /guides: all:ok fits, ui:n\/a no screen, only a constant/);
@@ -111,10 +111,10 @@ test("a branch touching no guide's paths merges without --guides", () => {
   git(wtA, "rebase", "-q", "main");
   fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const b = 1;\n");
   commit(wtA, "a");
-  const lock = cli(wtA, "merge-lock", "--onto", "main");
+  const lock = cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
   assert.doesNotMatch(lock, /guides of this merge/);
   git(wtA, "push", "-q", ".", "HEAD:main");
-  cli(wtA, "merged", git(wtA, "rev-parse", "HEAD").trim(), "--files", "src/a.ts", "--report", "-");
+  cli(wtA, "merged", git(wtA, "rev-parse", "HEAD").trim(), "--report", "-");
 });
 
 test("guides: frontmatter forms, globs, shipped and project sources, settled names", () => {
@@ -142,15 +142,15 @@ test("guides: frontmatter forms, globs, shipped and project sources, settled nam
 test("merged refuses an unknown guide, a verdict that is neither ok nor n/a with a why, and a sha not on the branch", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 2;\n");
   commit(wtA, "page");
-  cli(wtA, "merge-lock", "--onto", "main");
+  cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
   const sha = git(wtA, "rev-parse", "HEAD").trim();
-  const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
+  const merged = (guides: string) => swarm(wtA, "merged", sha, "--report", "-", "--guides", guides);
   assert.match(merged("all:ok, ui:ok, bogus:ok").stderr, /names bogus, which merge-lock did not list/);
   assert.match(merged("all:ok, ui:n/a").stderr, /gives ui no verdict/);
   // not pushed onto main yet: not merged
   assert.match(merged("all:ok, ui:ok").stderr, /is not on main; fast-forward it first/);
   git(wtA, "push", "-q", ".", "HEAD:main");
-  const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", "all:ok, ui:ok");
+  const out = cli(wtA, "merged", sha, "--report", "-", "--guides", "all:ok, ui:ok");
   // a silent merge still records its guides in the run
   const seq = /guides recorded as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
@@ -164,7 +164,7 @@ test("merge-lock names a guide the target gained since the branch left it", () =
   git(repo, "checkout", "-q", "--detach");
   fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 1;\n");
   commit(wtA, "a");
-  assert.match(cli(wtA, "merge-lock", "--onto", "main"), /guides of this merge: all \(guide-all\), lib \(guide-lib\)/);
+  assert.match(cli(wtA, "merge-lock", "--lock-only", "--onto", "main"), /guides of this merge: all \(guide-all\), lib \(guide-lib\)/);
 });
 
 test("G41: a brace glob matches any of its alternatives; the shipped guides apply to source files", () => {
@@ -186,15 +186,15 @@ test("G41: a brace glob matches any of its alternatives; the shipped guides appl
 test("D11: merged refuses a sha git does not know, and takes a long report from --report-file (V1, G25)", () => {
   fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 3;\n");
   commit(wtA, "a");
-  cli(wtA, "merge-lock", "--onto", "main");
-  const unknown = swarm(wtA, "merged", "deadbeef", "--files", "src/a.ts", "--report", "-", "--guides", "all:ok");
+  cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
+  const unknown = swarm(wtA, "merged", "deadbeef", "--report", "-", "--guides", "all:ok");
   assert.equal(unknown.status, 1);
   assert.match(unknown.stderr, /deadbeef is no commit git knows/);
   git(wtA, "push", "-q", ".", "HEAD:main");
   const sha = git(wtA, "rev-parse", "HEAD").trim();
   const file = path.join(home, "report.md");
   fs.writeFileSync(file, "a long report\nover two lines\n");
-  const out = cli(wtA, "merged", sha, "--files", "src/a.ts", "--report-file", file, "--guides", "all:ok");
+  const out = cli(wtA, "merged", sha, "--report-file", file, "--guides", "all:ok");
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
   assert.match(storedBody(seq!), /a long report\nover two lines/);
@@ -203,12 +203,12 @@ test("D11: merged refuses a sha git does not know, and takes a long report from 
 test("golden V-32 (D69): merged --report naming an existing file is refused with the --report-file line", () => {
   fs.writeFileSync(path.join(wtA, "src", "a.ts"), "export const a = 4;\n");
   commit(wtA, "a");
-  cli(wtA, "merge-lock", "--onto", "main");
+  cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
   git(wtA, "push", "-q", ".", "HEAD:main");
   const sha = git(wtA, "rev-parse", "HEAD").trim();
   const file = path.join(home, "report-v32.md");
   fs.writeFileSync(file, "the report\n");
-  const refused = swarm(wtA, "merged", sha, "--files", "src/a.ts", "--report", file, "--guides", "all:ok");
+  const refused = swarm(wtA, "merged", sha, "--report", file, "--guides", "all:ok");
   assert.equal(refused.status, 1);
   assert.ok(refused.stderr.includes(`merged: --report takes the report's text, and ${file} is a file: pass it as --report-file ${file}`), refused.stderr);
 });
@@ -216,18 +216,18 @@ test("golden V-32 (D69): merged --report naming an existing file is refused with
 test("S4 target: merge-lock prints the --guides form merged takes; either name form is accepted", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 3;\n");
   commit(wtA, "page");
-  const lock = cli(wtA, "merge-lock", "--onto", "main").split("\n");
+  const lock = cli(wtA, "merge-lock", "--lock-only", "--onto", "main").split("\n");
   assert.ok(lock.includes("guides of this merge: all (guide-all), ui (guide-ui); check your change against each, then settle each in merged's --guides below"), lock.join("\n"));
-  assert.ok(lock.some((l) => l.startsWith("granted: under the lock only rebase, ") && l.includes("the tests your task asked for have finished before merge-lock") && l.includes(' --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
+  assert.ok(lock.some((l) => l.startsWith("granted: under the lock only rebase, ") && l.includes("the tests your task asked for have finished before merge-lock") && l.includes(' merged <sha> --report "<your report>" --guides "all:ok|n/a <why>, ui:ok|n/a <why>" --as ')), lock.join("\n"));
   const sha = git(wtA, "rev-parse", "HEAD").trim();
-  const merged = (guides: string) => swarm(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", guides);
+  const merged = (guides: string) => swarm(wtA, "merged", sha, "--report", "-", "--guides", guides);
   const usage = 'usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>)';
   assert.equal(merged("all:ok; ui:ok").stderr.trim(), `merged: --guides separates guides with ";"; ${usage}; corrected: --guides "all:ok, ui:ok"`);
   assert.equal(merged("all:ok, ui ok").stderr.trim(), `merged: --guides has "ui ok", which is no <name>:<verdict>; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);
   assert.equal(merged("all:ok, ui:ok, bogus:ok").stderr.trim(), `merged: --guides names bogus, which merge-lock did not list; ${usage}; corrected: --guides "all:ok|n/a <why>, ui:ok|n/a <why>"`);
   assert.equal(merged("all:ok").stderr.trim(), `merged: --guides leaves out ui, which merge-lock listed; ${usage}; corrected: --guides "all:ok, ui:ok|n/a <why>"`);
   git(wtA, "push", "-q", ".", "HEAD:main");
-  const out = cli(wtA, "merged", sha, "--files", "src/ui/page.ts", "--report", "-", "--guides", "guide-all:ok, guide-ui:ok");
+  const out = cli(wtA, "merged", sha, "--report", "-", "--guides", "guide-all:ok, guide-ui:ok");
   assert.match(out, /guides recorded as #\d+/);
 });
 

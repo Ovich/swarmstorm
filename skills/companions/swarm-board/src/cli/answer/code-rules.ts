@@ -44,8 +44,9 @@ export function codeEventStep(m: Message, me: Participant, cli: string, event: E
     return sha && m.mentions.includes(me.name) ? CW.driftRebase(sha) : null;
   }
   if (event !== "flag") return undefined;
-  // spec §7: an overlap mentions the two members whose worktrees changed the path: each settles it with the other
-  const [holder, writer] = m.mentions;
+  // spec §7: an overlap names the two members whose worktrees changed the path; the one it is posted to settles it
+  // with the other (a row from before the meta: its mentions, the holder then the writer)
+  const [holder, writer] = m.meta && "holder" in m.meta ? [m.meta.holder, m.meta.writer] : m.mentions;
   if (!m.about || !holder || !writer || (me.name !== holder && me.name !== writer)) return null;
   const other = me.name === holder ? writer : holder;
   return CW.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));

@@ -42,15 +42,15 @@ test("v1-1, v1-6: a drift notice wakes its member through wait, with the rebase 
     const heard = waitIn(r, r.wtB);
     assert.match(heard, /merged 9f1a2d77/, "the a.ts merge mentions S5");
     // the drift notice for c.ts reaches S5, posted in its own name; a.ts's is skipped: the merge already told it
-    assert.match(heard, /src\/c\.ts was merged by review-tool\/S3 \(0c85ce0\) and is not in your branch: rebase now/);
-    assert.match(heard, new RegExp(`commit what you have, then: git rebase ${SHA}`));
+    assert.match(heard, /src\/c\.ts was merged by review-tool\/S3 \(0c85ce0\) and is not in your branch: your delivery brings it in/);
+    assert.match(heard, new RegExp(`commit what you have, then git rebase ${SHA}`));
     assert.doesNotMatch(heard, /src\/a\.ts was merged by/, "v1-6: no drift notice for the file the merge told it of");
   } finally {
     r.cleanup();
   }
 });
 
-test("v1-7: the overlap flag wakes its writer too, with the agree step", async () => {
+test("v1-7: the overlap flag wakes its writer, with the agree step, and not the holder", async () => {
   const r = makeRepo("swarm-claims-wake-");
   try {
     openTwoRunners(r, PLAN);
@@ -59,7 +59,7 @@ test("v1-7: the overlap flag wakes its writer too, with the agree step", async (
     const writer = waitIn(r, r.wtB);
     assert.match(writer, /overlap: .* changes src\/a\.ts/);
     assert.match(writer, /settle it: .*agree/);
-    assert.match(waitIn(r, r.wtA), /overlap: .* changes src\/a\.ts/, "and the holder, as before");
+    assert.doesNotMatch(waitIn(r, r.wtA), /overlap:/, "the holder is not woken: the agreement tells it");
   } finally {
     r.cleanup();
   }
@@ -81,7 +81,7 @@ test("v1-4, v1-5: a merged file never reported, edited again, is active; active 
     assert.deepEqual(files, { path: "src/old.ts", holders: [`${PLAN}/S3`, `${PLAN}/S5`], past: [{ member: `${PLAN}/S3`, state: "merged", sha: SHA }] });
     const s5 = waitIn(r, r.wtB);
     assert.match(s5, /overlap: .* changes src\/old\.ts/, "v1-4: S3 is an active holder again");
-    assert.match(s5, /src\/old\.ts was merged by review-tool\/S3 \(0c85ce0\) and is not in your branch: rebase now/, "v1-5: drift finds the kept merge");
+    assert.match(s5, /src\/old\.ts was merged by review-tool\/S3 \(0c85ce0\) and is not in your branch: your delivery brings it in/, "v1-5: drift finds the kept merge");
   } finally {
     r.cleanup();
   }

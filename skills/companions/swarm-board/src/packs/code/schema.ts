@@ -121,6 +121,8 @@ export function migrateCodeTables(db: DatabaseSync): void {
   upkeep("merge_locks", "guides", "guides TEXT");
   // the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
+  // the paths the holder's branch changed, as its CLI read them from git at the grant, JSON: the files of its merge
+  upkeep("merge_locks", "files", "files TEXT");
   // a store from before D40 keys a claim by path alone: rebuild it keyed by holder too
   const claimKey = (db.prepare("PRAGMA table_info(claims)").all() as { name: string; pk: number }[]).find((c) => c.name === "participant");
   if (claimKey && claimKey.pk === 0) {

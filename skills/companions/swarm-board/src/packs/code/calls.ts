@@ -32,8 +32,8 @@ export function codeVerbs<B extends PackCaller>(board: B) {
   return {
     /** spec §7: `p`'s holdings set to its worktree's changed set, as its link sends it, with the paths of it its target changed since (claims-phase); the overlaps posted. */
     changes: (p: Participant, files: string[], drifted: DriftedFile[] = []) => call<Flag[]>(p, "changes", { files, drifted }),
-    lockMerge: (p: Participant, onto?: string, reflogMark?: number, guides?: string[]) =>
-      call<{ granted: true } | { granted: false; holder: string }>(p, "lock-merge", { onto, reflogMark, guides }),
+    lockMerge: (p: Participant, onto?: string, reflogMark?: number, guides?: string[], files?: string[]) =>
+      call<{ granted: true } | { granted: false; holder: string }>(p, "lock-merge", { onto, reflogMark, guides, files }),
     merged: (p: Participant, sha: string, files: string[], conflicts?: Conflicts) => call<Sharer[]>(p, "merged", { sha, files, conflicts }),
     /** The merge lock `p` holds, null when none (D33, D36). */
     heldMergeLock: (p: Participant) => call<HeldMergeLock | null>(p, "held-merge-lock", {}),

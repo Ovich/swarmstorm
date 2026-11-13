@@ -48,13 +48,13 @@ test("S25: an agreement of an earlier run's member of the same name wakes no one
     const runB = must("open", "--kind", "task", "--group", "g", "--title", "B", "--seats", seats, "--onto", "main").split("\n")[0].trim();
     must("join", "--run", runB, "--seat", "w1", "--doing", "x", "--as", "g/w1");
     must("join", "--run", runB, "--seat", "w3", "--doing", "x", "--as", "g/w3");
-    must("merge-lock", "--onto", "main", "--as", "g/w1");
+    must("merge-lock", "--lock-only", "--onto", "main", "--as", "g/w1");
     const listed = git(repo, "worktree", "list", "--porcelain");
     const wt = listed.split("\n").find((l) => l.startsWith("worktree ") && l.replace(/\\/g, "/").endsWith(`/${runB}/w1`))!.slice("worktree ".length);
     fs.writeFileSync(path.join(wt, "a.ts"), "export const a = 2;\n");
     git(wt, "commit", "-q", "-am", "a");
     git(wt, "push", "-q", ".", "HEAD:main");
-    must("merged", git(wt, "rev-parse", "HEAD"), "--files", "a.ts", "--report", "-", "--as", "g/w1");
+    must("merged", git(wt, "rev-parse", "HEAD"), "--report", "-", "--as", "g/w1");
     const heard = must("wait", "--mentions", "--timeout", "200", "--as", "g/w3");
     assert.doesNotMatch(heard, /you agreed on a file it changed/);
   } finally {

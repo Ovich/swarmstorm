@@ -29,17 +29,19 @@ export interface ClaimsDeps {
 export interface Claims {
   /** spec §7, claims-phase: `files` is `p`'s worktree's changed set as its link read it: a new path is held, active, until
    *  the phase ends (a path leaving the set keeps its claim); a merged path changed again after it left the set is active
-   *  again. Each new active path another member actively holds is posted once to both, unless they agreed on it.
+   *  again. Each new active path another member actively holds is posted once, to `p`, unless they agreed on it.
    *  `drifted`: paths of `files` its target changed past its branch; one merged this phase by another member is told
    *  to `p` once per path and phase, to rebase. */
   setHoldings(p: Participant, files: string[], drifted: DriftedFile[]): Flag[];
-  /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). */
-  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[]): { granted: true } | { granted: false; holder: string };
+  /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). `files`: the paths the
+   *  holder's branch changed, read from git by its CLI: kept with the lock as the files of its merge, a later ask adding to them. */
+  lockMerge(p: Participant, onto?: string, reflogMark?: number, guides?: string[], files?: string[]): { granted: true } | { granted: false; holder: string };
   /** board-split V-26: the holder of the merge lock `p` was refused and still waits on; null when it waits on none. */
   mergeLockQueuedBehind(p: Participant): string | null;
   /** The merge lock `p` holds: when it was granted and the branch it lands in (D33); null when `p` holds none. */
   heldMergeLock(p: Participant): HeldMergeLock | null;
-  /** `conflicts` absent: unknown. Known conflicts narrow the sharers to the conflicted paths (D5, D25). */
+  /** `files`: the paths the merge changed, as the caller's CLI derived them (the lock's, else its claims), never typed by
+   *  a member. `conflicts` absent: unknown. Known conflicts narrow the sharers to the conflicted paths (D5, D25). */
   merged(p: Participant, sha: string, files: string[], conflicts?: Conflicts): Sharer[];
   /** At a join or re-join: its record of merging starts fresh (D66). */
   seated(p: Participant): void;
@@ -71,8 +73,9 @@ export interface Claims {
 }
 
 /** `grantedAt` ISO; `onto` null for a lock taken without a branch; `reflogMark` the holder's HEAD reflog
- *  length at the grant, null when none was given (D36). */
-export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[] };
+ *  length at the grant, null when none was given (D36); `files` the paths its branch changed, null when its CLI
+ *  read none from git (no worktree). */
+export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; guides: string[]; files: string[] | null };
 
 type Row = Record<string, unknown>;
 
@@ -285,15 +288,17 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         for (const x of left) db.prepare("UPDATE claims SET in_changes = 0 WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
         if (left.length) bump(me.repo);
         const fresh = [...now].filter((x) => hold(me, x));
-        // once per path and pair (flag_posts); the post mentions the other holder, then the member (the flag's order, D10)
+        // once per path and pair (flag_posts); posted to the member whose change came second, who settles it: the holder
+        // is not woken twice for one overlap, it hears through the agreement (its parties, and a path it holds)
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
         const overlaps: Flag[] = [];
         for (const rel of fresh)
           for (const holder of activeHoldersOf(me.repo, rel).filter((id) => id !== me.id)) {
             const other = participantById(holder);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
-            const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
+            const m = insertMessage(me, `@${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [me.name], {
               event: CODE_EVENTS.flag.name,
+              meta: { holder: other.name, writer: me.name },
             });
             overlaps.push({ path: rel, holder: other.name, seq: m.seq });
           }
@@ -305,7 +310,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
       });
     },
 
-    lockMerge(me, onto, reflogMark, guides) {
+    lockMerge(me, onto, reflogMark, guides, files) {
       return transaction(() => {
         const r = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo) as Row | undefined;
         if (r && Number(r.participant) !== me.id && isLive(Number(r.participant))) {
@@ -321,6 +326,11 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
           if (guides) db.prepare("UPDATE merge_locks SET guides = ? WHERE repo = ?").run(JSON.stringify(guides), me.repo);
+          // asked again (after a conflict, mid-rebase): what git shows now is added, never taken for the whole
+          if (files) {
+            const kept = (db.prepare("SELECT files FROM merge_locks WHERE repo = ?").get(me.repo) as Row).files;
+            db.prepare("UPDATE merge_locks SET files = ? WHERE repo = ?").run(JSON.stringify([...new Set([...(kept == null ? [] : (JSON.parse(String(kept)) as string[])), ...files])]), me.repo);
+          }
           // a lock granted before the records began has no turn yet: it gets one, at the grant
           grantTurn(me, String((db.prepare("SELECT at FROM merge_locks WHERE repo = ?").get(me.repo) as Row).at), false);
           return { granted: true as const };
@@ -329,7 +339,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(me.repo);
         // the mark is the grant's: a holder asking again keeps it, as it keeps the grant's time (D36)
         const at = now();
-        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
+        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides, files) VALUES (?, ?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null, files ? JSON.stringify(files) : null);
         grantTurn(me, at, true);
         bump(me.repo);
         const asked = db.prepare("SELECT asked_at FROM lock_requests WHERE participant = ? ORDER BY rowid DESC LIMIT 1").get(me.id) as Row | undefined;
@@ -345,9 +355,15 @@ export function claimsOf(deps: ClaimsDeps): Claims {
     },
 
     heldMergeLock(me) {
-      const r = db.prepare("SELECT at, onto, reflog_mark, guides FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
+      const r = db.prepare("SELECT at, onto, reflog_mark, guides, files FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id) as Row | undefined;
       return r
-        ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark), guides: r.guides == null ? [] : (JSON.parse(String(r.guides)) as string[]) }
+        ? {
+            grantedAt: String(r.at),
+            onto: r.onto == null ? null : String(r.onto),
+            reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark),
+            guides: r.guides == null ? [] : (JSON.parse(String(r.guides)) as string[]),
+            files: r.files == null ? null : (JSON.parse(String(r.files)) as string[]),
+          }
         : null;
     },
 
@@ -403,7 +419,8 @@ export function claimsOf(deps: ClaimsDeps): Claims {
           const parties = [participantById(Number(a.author)).name, ...(JSON.parse(String(a.mentions)) as string[])];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
+        // nobody has to rebase for it: a member's own delivery rebases its branch
+        const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: your delivery brings it in; rebase now only if you need it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
         if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);

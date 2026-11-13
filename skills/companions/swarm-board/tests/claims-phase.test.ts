@@ -95,7 +95,7 @@ test("the drift notice: once per member and path per phase, only for a path merg
   const notice = drifts()[0];
   assert.deepEqual(notice.mentions, ["g/w2"], "the merger is not told");
   assert.equal(notice.about, "src/a.ts");
-  assert.match(notice.body, /src\/a\.ts was merged by g\/w1 \(a1b2c3d\) and is not in your branch: rebase now/);
+  assert.match(notice.body, /src\/a\.ts was merged by g\/w1 \(a1b2c3d\) and is not in your branch: your delivery brings it in/);
   board.phase(orchestrator, "fix", "the findings");
   code.changes(w1, ["src/a.ts"]);
   code.merged(w1, SHA, ["src/a.ts"]);

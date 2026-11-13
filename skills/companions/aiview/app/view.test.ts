@@ -311,6 +311,11 @@ describe("flags (D10)", () => {
     expect(flagOf({ ...at(31, "event", "p/S1", "merged x: rebase your branch onto it."), event: "merged", mentions: [] })).toBeNull();
   });
 
+  test("a flag posted to its writer alone names its two members in its meta", () => {
+    const toWriter: SnapshotEvent = { ...at(32, "event", "p/S1", "reworded"), event: "flag", mentions: ["p/S1"], meta: { holder: "p/S2", writer: "p/S1" } };
+    expect(flagOf(toWriter)).toEqual({ writer: "p/S1", path: P, holder: "p/S2" });
+  });
+
   test("Flags shows the flags and the posts answering them, and counts the flags", () => {
     const f = filters(events).find((x) => x.id === "flags")!;
     expect(f.label).toBe("Flags");

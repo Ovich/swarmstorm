@@ -268,21 +268,26 @@ const claimed = () => {
 };
 const holdersOf = (rel: string): string[] => board.snapshot(REPO).files.find((f) => f.path === rel)?.holders ?? [];
 
-test("spec §7: changes set the holdings, new paths held and gone ones kept until the phase ends (claims-phase); a new path another holds is posted once to both", () => {
+test("spec §7: changes set the holdings, new paths held and gone ones kept until the phase ends (claims-phase); a new path another holds is posted once, to the member whose change came second", () => {
   const { s3, s5 } = claimed();
   assert.deepEqual(codeVerbs(board).changes(s5, ["src/b.ts", "src/c.ts"]), []);
   assert.deepEqual(holdersOf("src/c.ts"), ["review-tool/S5"]);
   codeVerbs(board).changes(s5, ["src/c.ts"]);
   assert.deepEqual(holdersOf("src/b.ts"), ["review-tool/S5"], "a path gone from the set is kept (claims-phase)");
-  // S5's worktree now changes src/a.ts too, which S3 holds: one overlap, to both
+  // S5's worktree now changes src/a.ts too, which S3 holds: one overlap, to S5, naming both
   const overlaps = codeVerbs(board).changes(s5, ["src/c.ts", "src/a.ts"]);
   assert.deepEqual(overlaps.map((o) => [o.path, o.holder]), [["src/a.ts", "review-tool/S3"]]);
   const m = posted(overlaps[0].seq);
-  assert.deepEqual(m.mentions, ["review-tool/S3", "review-tool/S5"]);
+  assert.deepEqual(m.mentions, ["review-tool/S5"]);
+  assert.deepEqual(m.meta, { holder: "review-tool/S3", writer: "review-tool/S5" });
   assert.equal(m.about, "src/a.ts");
   assert.equal(m.event, "flag");
   assert.deepEqual(holdersOf("src/a.ts"), ["review-tool/S3", "review-tool/S5"]);
-  assert.deepEqual(board.deliverMentions(s3).full.map((x) => x.seq), [overlaps[0].seq]);
+  // the holder is not woken by the overlap: it hears once, through the agreement that settles it
+  assert.deepEqual(board.deliverMentions(s3).full.map((x) => x.seq), []);
+  assert.deepEqual(board.deliverMentions(s5).full.map((x) => x.seq), [overlaps[0].seq]);
+  const agreed = board.post(s5, "@S3 you keep the top, I append below", { kind: "agreement", about: "src/a.ts" });
+  assert.deepEqual(board.deliverMentions(s3).full.map((x) => x.seq), [agreed.seq]);
   // the same set again, or the path dropped and taken again: no second post
   assert.deepEqual(codeVerbs(board).changes(s5, ["src/c.ts", "src/a.ts"]), []);
   codeVerbs(board).changes(s5, ["src/c.ts"]);
@@ -305,7 +310,7 @@ test("merged mentions every other holder of a shared path", () => {
   codeVerbs(board).lockMerge(s3);
   codeVerbs(board).merged(s3, "abc123", ["src/a.ts"]);
   const m = board.deliverMentions(s5).full[0];
-  assert.match(m.body, /^merged abc123: rebase your branch onto it./);
+  assert.match(m.body, /^merged abc123: your delivery brings it in; rebase now only if you need it./);
   assert.deepEqual([...m.mentions].sort(), ["review-tool/S1", "review-tool/S5"]);
   assert.equal(board.deliverMentions(s1).full[0].seq, m.seq);
 });
@@ -406,7 +411,7 @@ test("merged releases the lock and mentions holders and declarers", () => {
   assert.equal(forS5.length, 1);
   assert.equal(forS1.length, 1);
   assert.equal(forS5[0].seq, forS1[0].seq);
-  assert.match(forS5[0].body, /^merged abc123: rebase your branch onto it./);
+  assert.match(forS5[0].body, /^merged abc123: your delivery brings it in; rebase now only if you need it./);
   assert.deepEqual([...forS5[0].mentions].sort(), ["review-tool/S1", "review-tool/S5"]);
   // S3 neither holds nor declared src/b.ts: not delivered
   assert.equal(board.deliverMentions(s3).full.length, 0);

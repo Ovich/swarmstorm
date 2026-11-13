@@ -19,7 +19,7 @@ import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-b
 import { discoverGuides, guidesFor, guidesLine, guidesSettlement, projectGuidesAt, type Guide } from "./guides.ts";
 import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git.ts";
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
-import { conflictsOf, headReflogLength } from "./conflicts.ts";
+import { conflictsOf, headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { pausedMergingStep } from "./answer/code-rules.ts";
 import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation } from "./answer/index.ts";
@@ -51,7 +51,7 @@ const EXAMPLES: Record<string, (as: string) => string> = {
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
-  merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
+  merged: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
   worktree: () => "worktree prune",
   close: () => "close --run 3 --as my-team/orchestrator",
 };
@@ -119,6 +119,13 @@ function branchChangedIn(worktree: string, onto: string): string[] {
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [...new Set([...committed, ...changedIn(worktree)])];
+}
+
+/** Paths the commit `sha` changed against its first parent; none when git does not know it here (D59: a rename gives both). */
+function commitChanged(worktree: string | null, sha: string): string[] {
+  if (!worktree) return [];
+  const r = gitAnswer(worktree, "diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${sha}^1`, sha);
+  return r.status === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
 
 /** The tool's folder (swarm.mjs's), the aiview skill beside it, whatever the entry: swarm.mjs, dist-cli/cli.mjs or src/cli/index.ts. */
@@ -1053,64 +1060,134 @@ async function main(): Promise<void> {
       // what the branch changed, committed or not: the guides it falls under (V8: a base only on origin is read as
       // origin's, as the worktree was made from it, G36)
       const ontoRef = p.place && fs.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      // the delivery: a member in its board worktree calls merge-lock and the whole merge is run here; --lock-only takes
+      // the lock alone, for a merge made by hand, as a member with no worktree always does
+      const deliver = !!p.place && !args.has("--lock-only");
+      // its report, when it gives one; none: the subjects of the commits delivered, read once they are rebased
+      const reportArgs = args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : args.flag("--report") !== undefined ? ["--report", args.flag("--report")!] : [];
+      const guidesArgs = args.flag("--guides") !== undefined ? ["--guides", args.flag("--guides")!] : [];
+      // what merged would refuse is refused here, before anything is pushed: a --report naming a file (V-32)
+      const reportText = args.flag("--report")?.trim();
+      if (deliver && reportText && reportText !== "-" && fs.existsSync(path.resolve(reportText)) && fs.statSync(path.resolve(reportText)).isFile()) fail(CODE_WORDING.reportIsAFile(reportText));
+      /** The same call, as the member runs it again once what was handed back is fixed. */
+      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...[...reportArgs, ...guidesArgs].map(shellWord), "--as", shellWord(p.name)].join(" ");
+      const unmergedIn = (wt: string): string[] => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
+      const rebasingIn = (wt: string): boolean => ["rebase-merge", "rebase-apply"].some((dir) => {
+        const at = git(wt, "rev-parse", "--git-path", dir);
+        return !!at && fs.existsSync(path.resolve(wt, at));
+      });
+      /** The conflicted files this delivery handed back, kept in the worktree's git dir until it lands: whom merged tells (D63). */
+      const handedBackFile = (wt: string): string | null => {
+        const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
+        return at ? path.resolve(wt, at) : null;
+      };
+      const handedBack = (wt: string): string[] => {
+        try {
+          return JSON.parse(fs.readFileSync(handedBackFile(wt)!, "utf8")) as string[];
+        } catch {
+          return [];
+        }
+      };
+      const handBack = (wt: string, files: string[]): void => {
+        const at = handedBackFile(wt);
+        if (at) fs.writeFileSync(at, JSON.stringify([...new Set([...handedBack(wt), ...files])]));
+      };
+      /** The line of a conflict handed back: nothing merged, no lock held, the files open in the member's worktree. */
+      const conflictHandedBack = (wt: string, files: string[], granted: boolean): void => {
+        handBack(wt, files);
+        process.exitCode = 2;
+        const line = CODE_WORDING.autoConflict(onto, files, again());
+        emit({ member: p.name, granted, merged: false, conflicts: files, next: line }, line);
+      };
+      // a rebase handed back on a conflict and still open in the worktree: the member edited the files, nothing else.
+      // Here they are staged and the rebase goes on, before the lock, which a conflict never holds; a file that still
+      // carries a conflict marker is refused again
+      if (deliver && p.place && rebasingIn(p.place)) {
+        const wt = p.place;
+        const open = unmergedIn(wt);
+        const marked = open.filter((f) => {
+          try {
+            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs.readFileSync(path.join(wt, f), "utf8"));
+          } catch {
+            return false; // a file the member removed: its removal is the resolution
+          }
+        });
+        if (marked.length) {
+          process.exitCode = 2;
+          const line = CODE_WORDING.autoStillConflicted(marked, again());
+          emit({ member: p.name, granted: false, merged: false, conflicts: marked, next: line }, line);
+          break;
+        }
+        if (open.length) hiddenSpawnSync("git", ["add", "-A", "--end-of-options", ...open], { cwd: wt, encoding: "utf8" });
+        const on = hiddenSpawnSync("git", ["-c", "core.editor=true", "rebase", "--continue"], { cwd: wt, encoding: "utf8" });
+        if (on.status !== 0) {
+          const next = unmergedIn(wt);
+          // the next of its commits conflicts too: handed back the same way
+          if (next.length) {
+            conflictHandedBack(wt, next, false);
+            break;
+          }
+          fail(CODE_WORDING.autoRebaseFailed(onto, `${on.stderr ?? ""}${on.stdout ?? ""}`.trim().split("\n").at(-1) ?? "git refused"));
+        }
+      }
       const changed = p.place ? branchChangedIn(p.place, ontoRef) : [];
       // where the worktree's HEAD reflog stands: merged replays only a rebase past it (D36)
       const reflogMark = p.place ? (headReflogLength(p.place) ?? undefined) : undefined;
       // the guides the branch's changes fall under: merged refuses until each is settled
       const guides = guidesFor(guidesHere(p, ontoRef), changed);
-      const check = args.flag("--check");
-      if (check !== undefined) {
-        if (args.flag("--report") === undefined && args.flag("--report-file") === undefined) fail(CODE_WORDING.reportMissing);
-        if (guides.length && args.flag("--guides") === undefined) fail(CODE_WORDING.autoNeedsGuides(CODE_WORDING.guidesForm(guides.map((g) => g.name))));
-      }
-      const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
-      // merge-lock --check: the board runs the merge itself, granted; a conflict alone hands it back, the lock kept
-      if (check !== undefined && r.granted && p.place) {
+      if (deliver && guides.length && args.flag("--guides") === undefined) fail(CODE_WORDING.autoNeedsGuides(CODE_WORDING.guidesForm(guides.map((g) => g.name))));
+      // what the branch changed rides on the lock: the files of its merge, read from git here, never typed by the member
+      const r = (await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name), ...(p.place ? { files: changed } : {}) })) as { granted: true; holder?: undefined } | { granted: false; holder: string };
+      // the delivery, granted: the board rebases, runs the check and fast-forwards, and only a clean merge passes. What
+      // does not pass is handed back with the lock released: nobody waits on a member fixing its branch
+      if (deliver && r.granted && p.place) {
         const wt = p.place;
         const out = (line: string, code: number, extra: Record<string, unknown> = {}) => {
           process.exitCode = code;
           emit({ member: p.name, granted: true, merged: false, ...extra, next: line }, line);
         };
-        const release = async (line: string, code: number) => {
+        const freeLock = async (): Promise<void> => {
           const freed = (await packVerb(p, "release-merge-lock", {})) as { waiters: string[] } | null;
           if (freed?.waiters.length) await board.post(p, CODE_WORDING.autoFreed(freed.waiters, p.name), { kind: "msg" });
+        };
+        const release = async (line: string, code: number) => {
+          await freeLock();
           out(line, code);
         };
         const sh = (argv: string[], opts: { shell?: boolean } = {}) =>
           hiddenSpawnSync(argv[0], argv.slice(1), { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
-        const reportArgs = args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : ["--report", args.flag("--report")!];
-        const guidesArgs = args.flag("--guides") !== undefined ? ["--guides", args.flag("--guides")!] : [];
-        const given = args.list("--files");
-        const cont = [...self(), "merge-lock", "--onto", shellWord(onto), "--check", shellWord(check), ...[...reportArgs, ...guidesArgs, ...(given.length ? ["--files", ...given] : [])].map(shellWord), "--continue", "--as", shellWord(p.name)].join(" ");
-        const rebasing = (): boolean => {
-          const at = git(wt, "rev-parse", "--git-path", "rebase-merge");
-          return !!at && fs.existsSync(path.resolve(wt, at));
-        };
-        const rb = rebasing() ? sh(["git", "-c", "core.editor=true", "rebase", "--continue"]) : sh(["git", "rebase", "--end-of-options", ontoRef]);
+        const rb = sh(["git", "rebase", "--end-of-options", ontoRef]);
         if (rb.status !== 0) {
-          const unmerged = (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
+          const unmerged = unmergedIn(wt);
           if (unmerged.length) {
-            out(CODE_WORDING.autoConflict(onto, unmerged, cont), 2, { conflicts: unmerged });
+            // the rebase stays open in the member's own worktree, stopped at the conflict: it edits the files and calls again
+            await freeLock();
+            conflictHandedBack(wt, unmerged, true);
             break;
           }
-          if (rebasing()) sh(["git", "rebase", "--abort"]);
+          if (rebasingIn(wt)) sh(["git", "rebase", "--abort"]);
           await release(CODE_WORDING.autoRebaseFailed(onto, `${rb.stderr ?? ""}${rb.stdout ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
           break;
         }
-        const c = sh([check], { shell: true });
-        if (c.status !== 0) {
-          await release(CODE_WORDING.autoCheckFailed(c.status, `${c.stdout ?? ""}${c.stderr ?? ""}`.trim().split("\n").slice(-15).join("\n")), 3);
+        // what it delivers: its commits the target lacks; none, and there is nothing to merge
+        const subjects = (git(wt, "log", "--reverse", "--format=%s", "--end-of-options", `${ontoRef}..HEAD`) ?? "").split("\n").filter(Boolean);
+        if (!subjects.length) {
+          await release(CODE_WORDING.autoNothing(onto), 0);
           break;
         }
+        const report = reportArgs.length ? reportArgs : ["--report", `delivered: ${subjects.join("; ")}`];
         const ff = sh(["git", "push", ".", `HEAD:${onto}`]);
         if (ff.status !== 0) {
           await release(CODE_WORDING.autoPushFailed(onto, `${ff.stderr ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
           break;
         }
+        // the conflicts the member resolved to get here, on this call or the ones before it: whom merged tells (D63)
+        const resolved: Conflicts = { files: handedBack(wt) };
+        const kept = handedBackFile(wt);
+        if (kept) fs.rmSync(kept, { force: true });
         // the merged step, as the worker would have called it: its checks, report, notices and next line, unchanged
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
-        const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, ...report, ...guidesArgs, "--as", p.name, ...(args.has("--json") ? ["--json"] : [])], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, [MERGE_CONFLICTS_ENV]: JSON.stringify(resolved) } });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
@@ -1146,7 +1223,6 @@ async function main(): Promise<void> {
       // board-split V-32 (D69): a --report naming an existing file is refused: --report-file posts a file's text
       if (given && given !== "-" && fs.existsSync(path.resolve(given)) && fs.statSync(path.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
       const report = fromFile || given || fail(CODE_WORDING.reportMissing);
-      const files = args.list("--files");
       // what a rebase since the lock's grant met, read before the lock goes (D3, D25, D36); no worktree, no lock or no mark: unknown (D33)
       const lock = (await packVerb(p, "held-merge-lock", {})) as HeldMergeLock | null;
       // a code run merges one at a time: no lock, no merged; the orchestrator alone may merge past it, saying why
@@ -1175,8 +1251,13 @@ async function main(): Promise<void> {
         fail(`merged: ${sha} is no commit git knows in ${slashed(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed(p.place)} rev-parse --short HEAD`);
       if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed(p.place)} push . HEAD:${lock.onto}, then merged again`);
-      const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
-      const sharers = (await packVerb(p, "merged", { sha, files: files.map((f) => declaredPath(f, pathsRoot())), conflicts })) as Sharer[];
+      // merge-lock, delivering, ran the merge and says what it handed back; by hand, the rebase since the grant says it
+      const handed = process.env[MERGE_CONFLICTS_ENV];
+      const conflicts = handed ? (JSON.parse(handed) as Conflicts) : p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : undefined;
+      // the files of the merge, never typed (a --files given is read and ignored): what the branch changed, recorded with
+      // the lock at its grant; a lock taken with no worktree: the member's claims; past the lock: the commit's own change
+      const files = lock ? (lock.files ?? (await board.heldBy(p))) : commitChanged(p.place ?? pathsRoot(), sha);
+      const sharers = (await packVerb(p, "merged", { sha, files, conflicts })) as Sharer[];
       const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `\nguides: ${guidesArg}` : ""}`, { kind: "msg" });
       // a silent merge still records how it settled its guides, in the run, waking no one (V3)
       const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
@@ -1236,7 +1317,7 @@ async function main(): Promise<void> {
         const { worktree: mine, left } = refusal;
         const who = `--as ${shellWord(p.name)}`;
         fail(
-          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`,
+          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} --report "<what you did>" ${who}; then end again`,
         );
       }
       // break-flow V-29: the orchestrator ending a seat is told the state its member was in, and what it is told now

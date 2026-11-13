@@ -23,9 +23,9 @@ export const CODE_WORDING = {
   usage: (cli: Command): string =>
     [
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-      "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own",
-      "  merge-lock --check \"<cmd>\" --report <text>|--report-file <path> [--files <path>...] [--guides ...] [--continue]   # the board rebases, runs your check, fast-forwards and records merged; a conflict stops it, the lock kept: resolve, git add, --continue",
-      "  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
+      "  merge-lock [--report <text>|--report-file <path>] [--guides ...] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
+      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--guides \"<name>:ok|n/a <why>, ...\"] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
@@ -43,7 +43,8 @@ export const CODE_WORDING = {
   guidesForm: (guides: string[]) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
   mergeGranted: (cli: Command, as: string, guidesForm: string | null) =>
     // board-fixes#D11: the tests the task asked for ran before the lock; under it only rebase, quick check, fast-forward
-    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
+    // the lock alone (--lock-only, or a member with no worktree): the merge is made by hand
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`,
   /** D2: an argument error names what is wrong, then usage, then one corrected form */
   guidesRefused: (problem: string, corrected: string) => `merged: --guides ${problem}; usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>); corrected: --guides ${corrected}`,
   /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
@@ -52,14 +53,16 @@ export const CODE_WORDING = {
     `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
   ontoCheckedOutAtMerge: (onto: string, worktree: string, holder: string | null, detach: Command) =>
     `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
-  // merge-lock --check: the board runs the rebase, the check and the fast-forward; the worker only resolves a conflict
-  autoConflict: (onto: string, files: string[], cont: Command) => `rebase onto ${onto} stopped on a conflict in ${files.join(", ")}: the lock stays yours; resolve each file, git add it, then: ${cont}`,
-  autoRebaseFailed: (onto: string, why: string) => `rebase onto ${onto} failed (${why}); nothing merged, the lock released: commit or stash what is uncommitted, then merge-lock again`,
-  autoCheckFailed: (code: number | null, tail: string) => `the check failed (exit ${code ?? "none"}); nothing merged, the lock released: fix it on your branch, then merge-lock again
-${tail}`,
+  // the delivery: the board rebases and fast-forwards; only a clean merge passes, and what does not is handed back
+  // with the lock released. On a conflict the worker's one part is the files: it edits them and runs the call again
+  autoConflict: (onto: string, files: string[], again: Command) =>
+    `rebasing onto ${onto} met a conflict in ${files.join(", ")}: nothing merged, the lock released; the rebase is stopped in your worktree with the conflict marked in each file: edit each to what it must be, run no git command, then: ${again}`,
+  autoStillConflicted: (files: string[], again: Command) => `still conflicted: ${files.join(", ")} carry conflict markers (<<<<<<< or >>>>>>>); edit each to what it must be, then: ${again}`,
+  autoRebaseFailed: (onto: string, why: string) => `rebase onto ${onto} failed (${why}); nothing merged, the lock released: commit what is uncommitted, then merge-lock again`,
+  autoNothing: (onto: string) => `nothing to deliver: your branch has no commit ${onto} lacks; the lock released`,
   autoPushFailed: (onto: string, why: string) => `fast-forward of ${onto} refused (${why}); nothing merged, the lock released: merge-lock again`,
   autoFreed: (waiters: string[], who: string) => `${waiters.map((w) => `@${w}`).join(" ")} the merge lock is free: ${who} merged nothing; take it now`,
-  autoNeedsGuides: (form: string) => `merge-lock --check: this merge falls under guides; settle them up front: --guides ${form}`,
+  autoNeedsGuides: (form: string) => `merge-lock: this merge falls under guides; settle them up front: --guides ${form}`,
   // V-27: the command last
   mergeHeld: (holder: string, wait: Command) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
 
@@ -96,13 +99,13 @@ ${tail}`,
   /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
   unmergedAtDone: (unmerged: string, cli: Command, onto: string, as: string) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
 
-  // ── spec §7: an overlap, a path two members' worktrees both changed: either settles it with the other ──
+  // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
   overlapSettle: (cli: Command, other: string, otherName: string, about: string, as: string) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
 
   // ── claims-phase: a drift, a path the member changed that another merged this phase and its branch lacks ──
   /** the drift event's body, posted by the claims to `member` alone, once per path and phase */
   driftNotice: (member: string, path: string, merger: string, sha: string) =>
-    `@${member} ${path} was merged by ${merger} (${sha.slice(0, 7)}) and is not in your branch: rebase now`,
-  /** the step under it: the merged commit taken in before the work goes on */
-  driftRebase: (sha: string): Command => `commit what you have, then: git rebase ${sha}`,
+    `@${member} ${path} was merged by ${merger} (${sha.slice(0, 7)}) and is not in your branch: your delivery brings it in`,
+  /** the step under it: none owed, the delivery rebases; how to take the merged commit in at once, for a member that needs it */
+  driftRebase: (sha: string): Command => `nothing to do now; to work on top of it at once: commit what you have, then git rebase ${sha}`,
 } as const;

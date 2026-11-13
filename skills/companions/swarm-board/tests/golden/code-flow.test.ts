@@ -77,13 +77,13 @@ test("golden code flow: two workers, one run onto main", async () => {
     const wt2 = worktreeOf(W2);
 
     // the merge lock: free, then held (the wait line), then a real merge and its event
-    pin("code.merge-lock.free", call("merge-lock", "--onto", "main", "--as", W1));
-    pin("code.merge-lock.held", call("merge-lock", "--onto", "main", "--as", W2));
+    pin("code.merge-lock.free", call("merge-lock", "--lock-only", "--onto", "main", "--as", W1));
+    pin("code.merge-lock.held", call("merge-lock", "--lock-only", "--onto", "main", "--as", W2));
     fs.writeFileSync(path.join(wt1, "a.ts"), "export const a = 2;\n");
     git(wt1, "commit", "-q", "-am", "w1 a");
     git(wt1, "push", "-q", ".", "HEAD:main");
     const sha1 = git(wt1, "rev-parse", "HEAD");
-    pin("code.merged", call("merged", sha1, "--files", "a.ts", "--report", "-", "--as", W1));
+    pin("code.merged", call("merged", sha1, "--report", "-", "--as", W1));
     // the merged event, as the orchestrator is given it; its wake lines name the file's holders and the agreement's own parties (S25)
     pin("code.merged.orchestrator", call("wait", "--mentions", "--timeout", "200", "--as", ORCHESTRATOR));
 
@@ -99,9 +99,9 @@ test("golden code flow: two workers, one run onto main", async () => {
     git(wt2, "commit", "-q", "-am", "w2 b");
     must("wait", "--mentions", "--timeout", "200", "--as", W2);
     pin("code.end.unmerged", call("end", "--seat", "w2", "--as", ORCHESTRATOR));
-    must("merge-lock", "--onto", "main", "--as", W2);
+    must("merge-lock", "--lock-only", "--onto", "main", "--as", W2);
     git(wt2, "push", "-q", ".", "HEAD:main");
-    must("merged", git(wt2, "rev-parse", "HEAD"), "--files", "b.ts", "--report", "w2 changed b.ts", "--as", W2);
+    must("merged", git(wt2, "rev-parse", "HEAD"), "--report", "w2 changed b.ts", "--as", W2);
     // the report rides on the merge, the orchestrator's one wake
     pin("code.merged.report", call("wait", "--mentions", "--timeout", "200", "--as", ORCHESTRATOR));
     must("wait", "--mentions", "--timeout", "200", "--as", W2);

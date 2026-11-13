@@ -5,7 +5,7 @@ import { profileOf } from "../board/kinds.ts";
 import { codePack } from "./code/index.ts";
 import type { EventDef } from "../board/events.ts";
 import type { CodeEventName } from "./code/events.ts";
-import type { DriftMeta, MergedMeta } from "./code/types.ts";
+import type { DriftMeta, FlagMeta, MergedMeta } from "./code/types.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
@@ -84,4 +84,4 @@ export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile }
 export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
 export type { HeldMergeLock } from "./code/claims.ts";
 /** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */
-export type PackMessageMeta = MergedMeta | DriftMeta;
+export type PackMessageMeta = MergedMeta | DriftMeta | FlagMeta;

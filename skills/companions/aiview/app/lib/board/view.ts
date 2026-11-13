@@ -104,7 +104,8 @@ const FLAG_BODY = /flag:\s*(\S+)\s+wrote\s+(\S+)\s+outside its claim;\s*(\S+)\s+
 /** The flag a post raises, or null. Read from the body, which old rows (a plain message) and
  *  the `flag` event share. */
 export function flagOf(e: SnapshotEvent): FlagLine | null {
-  // the board's own name for it (D11): mentions are the holder, then the writer
+  // the board's own name for it (D11): its meta names the two; a row from before the meta: mentions, the holder then the writer
+  if (e.event === "flag" && e.about && e.meta && "holder" in e.meta) return { writer: e.meta.writer, path: e.about, holder: e.meta.holder };
   if (e.event === "flag" && e.about && e.mentions && e.mentions.length >= 2) return { writer: e.mentions[1], path: e.about, holder: e.mentions[0] };
   // a row from before D11: the body says it
   if (e.kind !== "event" && e.kind !== "msg") return null;

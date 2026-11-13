@@ -24,7 +24,7 @@ test("debug: calls, posts, deliveries and the lock are traced, no message text",
   openTwoRunners(r);
   r.cli(r.wtA, "post", "@S5 hello there");
   r.cli(r.wtB, "wait", "--mentions", "--timeout", "2000");
-  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   const e = events(r);
   const kinds = new Set(e.map((x) => x.kind));
   for (const k of ["call", "post", "delivered", "lock"]) assert.ok(kinds.has(k), `no ${k} in the trace: ${[...kinds]}`);
@@ -59,7 +59,7 @@ test("info (the default): logfmt lines in the server log, no day folder", () => 
   repos.push(r);
   assert.match(r.cli(r.repo, "log-level"), /^log level info/);
   openTwoRunners(r);
-  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   const lines = fs
     .readFileSync(path.join(r.home, "swarm-server.log"), "utf8")
     .split("\n")

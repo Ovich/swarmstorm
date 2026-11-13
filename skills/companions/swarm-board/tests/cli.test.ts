@@ -353,7 +353,7 @@ test("join prints the link line, then the line that starts the listener, the exa
 const lock = (as: string[]) => {
   // a branch no checkout holds, at the run's base: merge-lock refuses one checked out
   spawnSync("git", ["branch", "-f", "trunk", "HEAD"], { cwd: repo });
-  const r = run("merge-lock", "--onto", "trunk", ...as);
+  const r = run("merge-lock", "--lock-only", "--onto", "trunk", ...as);
   assert.equal(r.status, 0, r.stderr + r.stdout);
 };
 
@@ -391,19 +391,30 @@ test("merged ends, for each merged path another member holds or held, on the lin
 
   const TELL = (f: string): string =>
     `if you resolved a conflict in ${f}, tell them: swarm post "@review-tool/${f === "src/mine.ts" ? "S5" : "S3"} I resolved ${f}: <how>" --about ${f}`;
-  // the orchestrator merges past the lock: no grant, so no rebase read, and every sharer is told (D33)
+  // the orchestrator merges past the lock: no grant, so no rebase read, and every sharer is told (D33); the files of
+  // its merge are the commit's own change, read from git
+  const commit = (...names: string[]): string => {
+    for (const f of names) fs.appendFileSync(path.join(repo, "src", `${f}.ts`), "// changed\n");
+    git(repo, "add", ".");
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", names.join(" "));
+    return spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+  };
   const orch = ["--as", "review-tool/orchestrator", "--unlocked", "test"];
-  const r = run("merged", "--report", "-", ...orch, "abc123", "--files", "src/held.ts", "src/holds.ts", "src/mine.ts", "src/nobody.ts");
+  const all = commit("held", "holds", "mine", "nobody");
+  const r = run("merged", "--report", "-", ...orch, all);
   assert.equal(r.status, 0, r.stderr);
   // the board's worktree line follows (worktrees.test.ts)
   const said = r.stdout.trimEnd().split("\n").filter((l) => !l.startsWith("worktree ") && !l.startsWith("start your link"));
-  assert.deepEqual(said, ["merged abc123: lock released", TELL("src/held.ts"), TELL("src/holds.ts"), TELL("src/mine.ts")]);
+  assert.deepEqual(said, [`merged ${all}: lock released`, TELL("src/held.ts"), TELL("src/holds.ts"), TELL("src/mine.ts")]);
 
-  const j = JSON.parse(run("merged", "--report", "-", ...orch, "def456", "--files", "src/held.ts", "--json").stdout);
+  // a typed --files is read and ignored: the commit says what it changed
+  const j = JSON.parse(run("merged", "--report", "-", ...orch, commit("held"), "--files", "src/mine.ts", "--json").stdout);
+  assert.deepEqual(j.files, ["src/held.ts"]);
   assert.deepEqual(j.tell, [TELL("src/held.ts")]);
 
   // a path nobody else held: the merge line alone
-  assert.equal(run("merged", "--report", "-", ...orch, "fed789", "--files", "src/nobody.ts").stdout.split("\n")[0], "merged fed789: lock released");
+  const lone = commit("nobody");
+  assert.equal(run("merged", "--report", "-", ...orch, lone).stdout.split("\n")[0], `merged ${lone}: lock released`);
 });
 
 test("merged carries the worker's report: refused without --report, naming it and `-`; posts @orchestrator merged <sha>: <report>; `-` posts nothing", () => {
@@ -414,17 +425,17 @@ test("merged carries the worker's report: refused without --report, naming it an
   run("wait", "--mentions", "--timeout", "200", ...orch);
   // V1: merged takes only a sha git knows on the branch: the repository's HEAD, trunk once locked, stands in for the merge
   const sha = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
-  const bare = run("merged", ...s5, sha, "--files", "src/a.ts");
+  const bare = run("merged", ...s5, sha);
   assert.notEqual(bare.status, 0);
   assert.match(bare.stderr, /--report "<what you did>".*--report - merges silently/);
   lock(s5);
-  const r = run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "T1 done, tests green", "--json");
+  const r = run("merged", ...s5, sha, "--report", "T1 done, tests green", "--json");
   assert.equal(r.status, 0, r.stderr);
   assert.equal(typeof JSON.parse(r.stdout).reported, "number");
   const heard = run("wait", "--mentions", "--timeout", "200", ...orch).stdout;
   assert.match(heard, new RegExp(`^@orchestrator merged ${sha}: T1 done, tests green$`, "m"));
   lock(s5);
-  assert.equal(run("merged", ...s5, sha, "--files", "src/a.ts", "--report", "-").stdout.split("\n")[0], `merged ${sha}: lock released`);
+  assert.equal(run("merged", ...s5, sha, "--report", "-").stdout.split("\n")[0], `merged ${sha}: lock released`);
   assert.equal(new RegExp(`@orchestrator merged ${sha}`).test(run("wait", "--mentions", "--timeout", "200", ...orch).stdout), false, "a silent merge posts no report");
 });
 
@@ -433,12 +444,12 @@ test("merged on a code run is refused without the merge lock, naming merge-lock;
   run("join", "--run", id, "--seat", "S5", "--doing", "y");
   const s5 = ["--as", "review-tool/S5"];
   const orch = ["--as", "review-tool/orchestrator"];
-  const bare = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-");
+  const bare = run("merged", ...s5, "abc123", "--report", "-");
   assert.equal(bare.status, 1);
   assert.match(bare.stderr, /you do not hold the merge lock; run .* merge-lock --onto \S+ --as review-tool\/S5 first/); // F3: the run's own branch, never a placeholder
-  const worker = run("merged", ...s5, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "hurry");
+  const worker = run("merged", ...s5, "abc123", "--report", "-", "--unlocked", "hurry");
   assert.match(worker.stderr, /--unlocked is the orchestrator's alone/);
-  const r = run("merged", ...orch, "abc123", "--files", "src/a.ts", "--report", "-", "--unlocked", "the lock holder died mid-merge");
+  const r = run("merged", ...orch, "abc123", "--report", "-", "--unlocked", "the lock holder died mid-merge");
   assert.equal(r.status, 0, r.stderr);
   const db = openRawStore(path.join(toolRoot, "swarm.sqlite"), { readOnly: true });
   const bodies = (db.prepare("SELECT body FROM messages").all() as { body: string }[]).map((m) => m.body).join(" ");
@@ -810,7 +821,7 @@ test("a seat's wait that receives an agreement prints the back-it line; a plan m
 test("board-split D12: the code verbs, called by a seat with no code pack, exit 1 on one line naming the verb and the seat kind", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
-  for (const argv of [["merge-lock", "--onto", "main"], ["merged", "--report", "-", "abc", "--files", "x"]]) {
+  for (const argv of [["merge-lock", "--lock-only", "--onto", "main"], ["merged", "--report", "-", "abc"]]) {
     const r = run(...argv, "--as", "idea/architect");
     assert.equal(r.status, 1, argv.join(" "));
     assert.equal(r.stderr, `swarm: ${argv[0]}: refused: ${argv[0]} is a worker's verb, and a seat holds no files; your verbs are in --help

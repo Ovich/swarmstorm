@@ -60,7 +60,7 @@ test("open --onto -f is refused with the message before any git runs", () => {
 });
 
 test("merged with a sha starting with '-' is refused before any git runs", () => {
-  const r = swarm(repo, "merged", "-f", "--files", "a.txt", "--report", "r", "--as", "g/w1");
+  const r = swarm(repo, "merged", "-f", "--report", "r", "--as", "g/w1");
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stderr, /merged: the sha cannot start with "-": -f/);
   assert.equal(fs.existsSync(gitTrace), false);

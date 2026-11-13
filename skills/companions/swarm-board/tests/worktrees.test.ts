@@ -83,8 +83,8 @@ test("merged keeps the worktree for the seat's next task", () => {
   join(run, "g", "w1");
   const sha = commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
   git(repo, "branch", "-f", "trunk", "main");
-  ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
-  const out = ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1");
+  ok("merge-lock", "--lock-only", "--onto", "trunk", "--as", "g/w1");
+  const out = ok("merged", sha, "--report", "-", "--as", "g/w1");
   assert.doesNotMatch(out, /removed/);
   assert.ok(fs.existsSync(wt(run, "w1")));
   assert.ok(hasBranch(`swarm/${run}-g/w1`));
@@ -225,7 +225,7 @@ test("golden V-36 (D71): a pause while a member holds the merge lock names it; i
   join(run, "g", "w2");
   const sha = commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
   git(repo, "branch", "-f", "trunk", "main");
-  ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
+  ok("merge-lock", "--lock-only", "--onto", "trunk", "--as", "g/w1");
   const paused = ok("pause", "rebasing", "--as", "g/orchestrator");
   assert.ok(paused.includes("g/w1 holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause"), paused);
   const holder = ok("wait", "--mentions", "--timeout", "200", "--as", "g/w1");
@@ -233,7 +233,7 @@ test("golden V-36 (D71): a pause while a member holds the merge lock names it; i
   // the pause event stays the board's fact; the holder's step under it is never the stop
   assert.doesNotMatch(holder, /land nothing/);
   assert.match(ok("wait", "--mentions", "--timeout", "200", "--as", "g/w2"), /land nothing/);
-  assert.match(ok("merged", sha, "--files", "b.txt", "--report", "-", "--as", "g/w1"), /lock released/);
+  assert.match(ok("merged", sha, "--report", "-", "--as", "g/w1"), /lock released/);
 });
 
 test("golden V-45: close while a member holds the merge lock names it: its merge did not land", () => {
@@ -241,7 +241,7 @@ test("golden V-45: close while a member holds the merge lock names it: its merge
   join(run, "g", "w1");
   commitAndMerge(wt(run, "w1"), "b.txt", `swarm/${run}-g/w1`);
   git(repo, "branch", "-f", "trunk", "main");
-  ok("merge-lock", "--onto", "trunk", "--as", "g/w1");
+  ok("merge-lock", "--lock-only", "--onto", "trunk", "--as", "g/w1");
   const closed = ok("close", "--run", run, "--confirm", "--as", "g/orchestrator");
   assert.ok(closed.includes("g/w1 held the merge lock: its merge did not land; the lock is released, its branch keeps the work"), closed);
 });

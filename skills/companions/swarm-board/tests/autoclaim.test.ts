@@ -1,5 +1,5 @@
 // spec §7: the link's changed set read from git in a member's worktree, and the board setting the member's holdings
-// to it, an overlap posted once to both members with the agree command.
+// to it, an overlap posted once, to the member whose change came second, with the agree command.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -69,7 +69,7 @@ test("changedSet: a worktree switched to another commit (a base to compare again
   assert.deepEqual(changedSet(repo, "main"), ["a.ts"]);
 });
 
-test("the board sets holdings to the set, keeps what left it (claims-phase), and posts an overlap once to both, never when they agreed", async () => {
+test("the board sets holdings to the set, keeps what left it (claims-phase), and posts an overlap once, to the member whose change came second, never when they agreed", async () => {
   board = await openBoard(path.join(dir, "swarm.sqlite"));
   try {
     const run = board.openRun({ repo: REPO, kind: "task", group: "g", title: "T", seats: ["w1", "w2", "w3"].map((id) => ({ id, blockers: [] })) });
@@ -80,13 +80,15 @@ test("the board sets holdings to the set, keeps what left it (claims-phase), and
     assert.deepEqual(board.heldBy(w1).sort(), ["src/a.ts", "src/b.ts"]);
     code.changes(w1, ["src/a.ts"]);
     assert.deepEqual(board.heldBy(w1).sort(), ["src/a.ts", "src/b.ts"], "a path that left the set is kept until the phase ends");
-    // w2 changes a.ts too: one post to both, about the path, each told the agree command with the other
+    // w2 changes a.ts too: one post, to w2 whose change came second, about the path, naming both; whoever reads it is
+    // told the agree command with the other
     code.changes(w2, ["src/a.ts"]);
     code.changes(w2, ["src/a.ts"]);
     assert.equal(overlaps().length, 1, "once");
     const post = board.snapshot(REPO).events.find((e) => e.event === "flag")!;
     assert.equal(post.about, "src/a.ts");
-    assert.deepEqual(post.mentions, ["g/w1", "g/w2"]);
+    assert.deepEqual(post.mentions, ["g/w2"]);
+    assert.deepEqual(post.meta, { holder: "g/w1", writer: "g/w2" });
     const message = post as unknown as Message;
     assert.equal(codeEventStep(message, w2, "swarm"), 'settle it: swarm agree "@w1 <who changes what>" --with g/w1 --about src/a.ts --as g/w2');
     assert.equal(codeEventStep(message, w1, "swarm"), 'settle it: swarm agree "@w2 <who changes what>" --with g/w2 --about src/a.ts --as g/w1');
@@ -174,9 +176,9 @@ test("claims-phase: a changes call without drifted (an older link) is still take
     codeVerbs(board).changes(w1, ["src/a.ts"], [{ path: "src/a.ts", sha: "abc1234def" }]);
     assert.deepEqual(board.heldBy(w1), ["src/a.ts"]);
     const drift = { mentions: [w1.name], about: "src/a.ts", meta: { event: "drift", sha: "abc1234def" } } as unknown as Message;
-    assert.equal(codeEventStep(drift, w1, "swarm", "drift"), "commit what you have, then: git rebase abc1234def");
+    assert.equal(codeEventStep(drift, w1, "swarm", "drift"), "nothing to do now; to work on top of it at once: commit what you have, then git rebase abc1234def");
     assert.equal(codeEventStep(drift, w2, "swarm", "drift"), null, "nothing asked of another member");
-    assert.equal(CODE_WORDING.driftNotice(w1.name, "src/a.ts", w2.name, "abc1234def"), "@g/w1 src/a.ts was merged by g/w2 (abc1234) and is not in your branch: rebase now");
+    assert.equal(CODE_WORDING.driftNotice(w1.name, "src/a.ts", w2.name, "abc1234def"), "@g/w1 src/a.ts was merged by g/w2 (abc1234) and is not in your branch: your delivery brings it in");
   } finally {
     board.close();
   }

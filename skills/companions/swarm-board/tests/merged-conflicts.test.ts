@@ -29,7 +29,7 @@ const TELL_S3 = (file: string) => `if you resolved a conflict in ${file}, tell t
 const conflictAfterGrant = (r: Repo, file: string): string => {
   r.commitFile(r.wtB, file, edit(0, "export const one = 'b';"));
   r.commitFile(r.repo, file, edit(0, "export const one = 'main';"));
-  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   assert.deepEqual(r.rebaseOntoMain(r.wtB, { [file]: edit(0, "export const one = 'both';") }).conflicted, [file]);
   return r.git(r.wtB, "rev-parse", "HEAD").trim();
 };
@@ -38,16 +38,16 @@ test("a conflicting rebase after the grant tells its holder (US4, D3, D5)", () =
   const r = fresh();
   openTwoRunners(r);
   const sha = conflictAfterGrant(r, "src/a.ts");
-  const out = r.cli(r.wtB, "merged", "--report", "-", sha, "--files", "src/a.ts");
+  const out = r.cli(r.wtB, "merged", "--report", "-", sha);
   assert.deepEqual(tellLines(out), [TELL_S3("src/a.ts")]);
 });
 
-test("v1-1: `merged --files` from a folder deep in the worktree, or in the main checkout, keeps the path repository-relative and wakes its holder", () => {
+test("v1-1: `merged` from a folder deep in the worktree, or in the main checkout, keeps the path repository-relative and wakes its holder", () => {
   for (const cwdOf of [(r: Repo) => path.join(r.wtB, "src"), (r: Repo) => path.join(r.repo, "src")]) {
     const r = fresh();
     openTwoRunners(r);
     const sha = conflictAfterGrant(r, "src/a.ts");
-    const merged = JSON.parse(r.cli(cwdOf(r), "merged", "--report", "-", sha, "--files", "src/a.ts", "--json", "--as", "review-tool/S5"));
+    const merged = JSON.parse(r.cli(cwdOf(r), "merged", "--report", "-", sha, "--json", "--as", "review-tool/S5"));
     assert.deepEqual(merged.files, ["src/a.ts"]);
     assert.deepEqual(merged.tell, [TELL_S3("src/a.ts")]);
     assert.match(r.cli(r.wtA, "wait", "--mentions", "--timeout", "2000"), /merged .*src\/a\.ts/s);
@@ -60,14 +60,14 @@ test("a clean rebase, or none since the grant, prints no tell line (D3, D5)", ()
   // a clean rebase: both sides edit the shared file, at its two ends
   r.commitFile(r.wtB, "src/a.ts", edit(4, "export const five = 'b';"));
   r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
-  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   assert.deepEqual(r.rebaseOntoMain(r.wtB).conflicted, []);
-  const clean = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
+  const clean = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim());
   assert.deepEqual(tellLines(clean), []);
   // none since the grant: S3 merges the file S5 now holds too, without a rebase
   r.commitFile(r.wtA, "src/a.ts", edit(2, "export const three = 'a';"));
-  r.cli(r.wtA, "merge-lock", "--onto", "main");
-  const none = r.cli(r.wtA, "merged", "--report", "-", r.git(r.wtA, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
+  r.cli(r.wtA, "merge-lock", "--lock-only", "--onto", "main");
+  const none = r.cli(r.wtA, "merged", "--report", "-", r.git(r.wtA, "rev-parse", "HEAD").trim());
   assert.deepEqual(tellLines(none), []);
 });
 
@@ -96,10 +96,10 @@ test("a rebase in the grant's own second, before the grant, is not replayed (D36
   assert.deepEqual(r.rebaseOntoMain(r.wtB, { "src/a.ts": edit(0, "export const one = 'both';") }).conflicted, ["src/a.ts"]);
   // the rebase and the grant share one second: the rebase's entries dated at the grant's second, read just before it
   const grantSecond = Math.floor(Date.now() / 1000);
-  r.cli(r.wtB, "merge-lock", "--onto", "main");
+  r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   rebaseAt(r, r.wtB, grantSecond);
   assert.equal(rebaseStartSecond(r, r.wtB), grantSecond);
-  const out = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim(), "--files", "src/a.ts");
+  const out = r.cli(r.wtB, "merged", "--report", "-", r.git(r.wtB, "rev-parse", "HEAD").trim());
   assert.deepEqual(tellLines(out), []);
 });
 
@@ -107,7 +107,7 @@ test("a conflicted file nobody else held prints no tell line (D5)", () => {
   const r = fresh();
   openTwoRunners(r);
   const sha = conflictAfterGrant(r, "src/old.ts");
-  const out = r.cli(r.wtB, "merged", "--report", "-", sha, "--files", "src/old.ts");
+  const out = r.cli(r.wtB, "merged", "--report", "-", sha);
   assert.deepEqual(tellLines(out), []);
 });
 
@@ -118,10 +118,10 @@ test("an old git: `merged` succeeds with today's tell line per shared file (US4,
   fs.writeFileSync(path.join(r.wtB, "src", "a.ts"), "export const b = 1;\n");
   fs.writeFileSync(path.join(r.wtB, "src", "c.ts"), "export const b = 1;\n");
   r.commitFile(r.wtB, "src/old.ts", edit(0, "export const one = 'b';"));
-  const lock = r.swarm(r.wtB, ["merge-lock", "--onto", "main"], { oldGit: true });
+  const lock = r.swarm(r.wtB, ["merge-lock", "--lock-only", "--onto", "main"], { oldGit: true });
   assert.equal(lock.status, 0, lock.stderr);
   const sha = r.git(r.wtB, "rev-parse", "HEAD").trim();
-  const merged = r.swarm(r.wtB, ["merged", "--report", "-", sha, "--files", "src/a.ts", "src/c.ts", "src/old.ts"], { oldGit: true });
+  const merged = r.swarm(r.wtB, ["merged", "--report", "-", sha], { oldGit: true });
   assert.equal(merged.status, 0, merged.stderr);
   assert.deepEqual(tellLines(merged.stdout), [TELL_S3("src/a.ts")]);
 });
@@ -134,8 +134,8 @@ test("a merger with no worktree merges, no tell line (D33)", () => {
   assert.notEqual(spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: plain }).status, 0, "setup: the folder is no worktree");
   r.cli(r.repo, "seat", "add", "S7", "--run", String(id), "--title", "the docs", "--as", "review-tool/orchestrator");
   r.cli(plain, "join", "--run", String(id), "--seat", "S7", "--doing", "the docs");
-  r.cli(plain, "merge-lock", "--onto", "main", "--as", "review-tool/S7");
-  const out = r.cli(plain, "merged", "--report", "-", "abc123", "--files", path.join(r.repo, "src", "a.ts"), "--as", "review-tool/S7");
+  r.cli(plain, "merge-lock", "--lock-only", "--onto", "main", "--as", "review-tool/S7");
+  const out = r.cli(plain, "merged", "--report", "-", "abc123", "--as", "review-tool/S7");
   assert.match(out, /^merged abc123: lock released$/m);
 });
 
@@ -150,14 +150,14 @@ test("`merged`'s output, human and `--json`, carries no new field or line (D25)"
   const sha = conflictAfterGrant(human, "src/a.ts");
   // read first: an unread message would add its own line (the unread rule), not this guard's concern
   drain(human);
-  const out = human.cli(human.wtB, "merged", "--report", "-", sha, "--files", "src/a.ts");
+  const out = human.cli(human.wtB, "merged", "--report", "-", sha);
   assert.equal(out, `merged ${sha}: lock released\n${TELL_S3("src/a.ts")}\n`);
 
   const json = fresh();
   openTwoRunners(json);
   const sha2 = conflictAfterGrant(json, "src/a.ts");
   drain(json);
-  assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", "--report", "-", sha2, "--files", "src/a.ts", "--json")), {
+  assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", "--report", "-", sha2, "--json")), {
     member: "review-tool/S5",
     sha: sha2,
     files: ["src/a.ts"],

@@ -69,3 +69,6 @@ export function conflictsOf(worktree: string, onto: string, reflogMark: number):
     return { unknown: "no-reflog" };
   }
 }
+
+/** The environment variable through which `merge-lock`, delivering, hands its merge's conflicts to the `merged` it runs. */
+export const MERGE_CONFLICTS_ENV = "SWARM_MERGE_CONFLICTS";

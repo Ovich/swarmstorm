@@ -18,6 +18,9 @@ export type DriftedFile = { path: string; sha: string };
 export type MergedMeta = { rebase: string[]; tell: string[]; free?: string[] };
 /** What a drift event carries (claims-phase): the sha of the merge the member's branch lacks. */
 export type DriftMeta = { sha: string };
+/** An overlap's two members: `holder` held the path, `writer`'s change came second. The event mentions the writer
+ *  alone, who settles it; the holder hears through the agreement. */
+export type FlagMeta = { holder: string; writer: string };
 
 /** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
 export interface MemberWorktree {

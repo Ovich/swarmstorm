@@ -18,5 +18,4 @@ protocol your brief names: the `swarmstorm:orchestrate` skill's `references/prot
   column, case per row), a flow, a sequence or a structure a fenced mermaid block with its
   caption the line above, a position prose naming its source.
 - **You record no worktree**: every board call carries `--as <group>/<seat id>`.
-- **One command per shell call, no `cd`**: call the board and tools by absolute path, never chained with `&&` or `;`.
 - **End your turn only when you owe nothing** (the phase done), without `end`: you read away, and the orchestrator resumes you by message. Waiting while you owe is a foreground `wait`.

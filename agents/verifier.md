@@ -57,5 +57,3 @@ You judge what was delivered, from one of two sources, the one your brief names:
   post what you have, and wait.
 - **The run closes**: run `end` as the closed line says, then return your last verdict and the
   findings still standing.
-
-**One command per shell call**, never chained with `&&` or `;`; tools by absolute path.
