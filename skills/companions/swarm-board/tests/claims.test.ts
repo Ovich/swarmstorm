@@ -1,6 +1,7 @@
 // A claim is a path its member's worktree changes now, as its link last read it: made when the path enters the changes,
 // gone when it leaves them, at its merge and at the member's end; a phase changes nothing. An overlap is posted once per
-// pair and path. Who merged a file is read from the merged events, never from a claim kept past its work.
+// pair and path for as long as someone changes the path, and is a new one once nobody did in between. Who merged a file is
+// read from the merged events, never from a claim kept past its work.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -72,6 +73,40 @@ test("an overlap is posted once per pair and path, a path that left the changes 
   code.changes(w1, ["src/b.ts"]);
   code.changes(w2, ["src/b.ts"]);
   assert.equal(overlaps().length, 2, "another path, another overlap");
+});
+
+test("an overlap on a path nobody changed in between is a new one: posted again, once, to whose change came second; never while one still changes it; never past an agreement", () => {
+  const { w1, w2, w3, code } = seated();
+  const flagged = () => overlaps().map((e) => [e.about, (e.mentions ?? [])[0]]);
+  for (const w of [w1, w2, w3]) code.changes(w, ["src/a.ts"]);
+  assert.equal(overlaps().length, 3, "w2 on w1, w3 on w1 and on w2");
+  // two of the three merge it and change it again while w3 still changes it: each is told of w3, whom it now comes after,
+  // and w2 is not told of w1 again
+  code.merged(w1, SHA, ["src/a.ts"]);
+  code.merged(w2, sha("b"), ["src/a.ts"]);
+  code.changes(w1, ["src/a.ts"]);
+  code.changes(w2, ["src/a.ts"]);
+  assert.equal(overlaps().length, 5, "w1 on w3 and w2 on w3; w2 on w1 was posted already");
+  // every one of them is out of it, by a merge, a revert and an end: the next overlap on it is posted again
+  code.merged(w1, sha("c"), ["src/a.ts"]);
+  code.changes(w2, []);
+  board.end(w3);
+  assert.equal(fileOf("src/a.ts"), undefined);
+  code.changes(w2, ["src/a.ts"]);
+  assert.equal(overlaps().length, 5, "alone on it: no overlap");
+  code.changes(w1, ["src/a.ts"]);
+  assert.equal(overlaps().length, 6);
+  assert.deepEqual(flagged().at(-1), ["src/a.ts", "g/w1"], "to w1, whose change came second");
+  code.changes(w1, []);
+  code.changes(w1, ["src/a.ts"]);
+  assert.equal(overlaps().length, 6, "w2 changed it throughout: not again");
+  // an agreement about the path outlasts it: these two are not told again
+  board.post(w1, "@w2 w1 keeps the top, w2 appends", { kind: "agreement", about: "src/a.ts" });
+  code.changes(w1, []);
+  code.changes(w2, []);
+  code.changes(w2, ["src/a.ts"]);
+  code.changes(w1, ["src/a.ts"]);
+  assert.equal(overlaps().length, 6);
 });
 
 test("a merged event carries its files; a resolved conflict is told to who merged the file since the merger's branch last met the target, and to who changes it now", () => {

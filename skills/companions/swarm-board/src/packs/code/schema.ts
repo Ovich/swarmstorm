@@ -34,7 +34,7 @@ export function migrateCodeTables(db: DatabaseSync): void {
       participant INTEGER NOT NULL,
       PRIMARY KEY (repo, participant)
     );
-    -- an overlap posted, once per member, path and other holder (D8)
+    -- an overlap posted, once per member, path and other holder (D8); a path's rows go once nobody changes it
     CREATE TABLE IF NOT EXISTS flag_posts (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,

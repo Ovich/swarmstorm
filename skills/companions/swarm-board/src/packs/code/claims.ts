@@ -27,8 +27,8 @@ export interface ClaimsDeps {
 
 export interface Claims {
   /** spec §7: `p`'s claims become `files`, its worktree's changed set as its link read it: a path that left the set is
-   *  released, a new one held. Each new path another live member holds is posted once per pair and path, to `p`, unless
-   *  they agreed on it. */
+   *  released, a new one held. Each new path another live member holds is posted to `p`, unless they agreed on it: once
+   *  per pair and path for as long as someone changes the path, and again once nobody did in between. */
   setHoldings(p: Participant, files: string[]): Flag[];
   /** `onto`: the branch the merge lands in, recorded with the lock for the merged event (D9). `files`: the paths the
    *  holder's branch changed, read from git by its CLI: kept with the lock as the files of its merge, a later ask adding to them. */
@@ -179,12 +179,17 @@ export function claimsOf(deps: ClaimsDeps): Claims {
         const fresh = [...now].filter((x) => !held.includes(x));
         for (const x of fresh) db.prepare("INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?)").run(me.repo, x, me.id, lastSeq());
         if (left.length + fresh.length) bump(me.repo);
-        // once per path and pair (flag_posts), a path that left the changes and came back included; posted to the member
-        // whose change came second, who settles it: the holder hears through the agreement (its parties, and a path it holds)
+        // once per path and pair (flag_posts) for as long as someone changes the path, one who left its changes and came
+        // back included; posted to the member whose change came second, who settles it: the holder hears through the
+        // agreement (its parties, and a path it holds)
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
+        const forget = db.prepare("DELETE FROM flag_posts WHERE repo = ? AND path = ?");
         const overlaps: Flag[] = [];
-        for (const rel of fresh)
-          for (const holder of holdersOf(me.repo, rel).filter((id) => id !== me.id)) {
+        for (const rel of fresh) {
+          const others = holdersOf(me.repo, rel).filter((id) => id !== me.id);
+          // nobody else changes it: who overlapped on it merged it, dropped it or ended, and a later overlap is a new one
+          if (!others.length) forget.run(me.repo, rel);
+          for (const holder of others) {
             const other = participantById(holder);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
             const m = insertMessage(me, `@${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [me.name], {
@@ -193,6 +198,7 @@ export function claimsOf(deps: ClaimsDeps): Claims {
             });
             overlaps.push({ path: rel, holder: other.name, seq: m.seq });
           }
+        }
         return overlaps;
       });
     },
