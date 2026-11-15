@@ -60,8 +60,8 @@ prompt): read `references/setup.md`.
   never through the shell's quoting.
 - **Talk is short**: what you change, what you need, what you settled.
 
-A code run's members also hold the files their worktree changed, read by their link, and take turns on a merge lock, held only to
-rebase, run a quick check and fast-forward, the full suite run before it: its
+A code run's members also hold the files their worktree changed, read by their link, and deliver one at a time through
+`merge-lock`: the board rebases and fast-forwards, and only a clean merge passes, the member's own checks run before it. Its
 verbs and their answers are the worker side's, `references/worker.md`.
 
 ## What reaches you

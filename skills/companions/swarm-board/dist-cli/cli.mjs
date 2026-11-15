@@ -281,10 +281,7 @@ var init_events = __esm({
       merged: { name: "merged", lands: true },
       // a write outside the writer's claim on a path another holds (D10); mentions: the holder, then the writer
       // posted in the writer's name, it reaches the writer too (v1-7)
-      flag: { name: "flag", toAuthor: true },
-      // claims-phase: a path the member changed that another member merged this phase and its branch lacks; mentions: the member
-      // posted in the member's name, to the member: it reaches its author (v1-1)
-      drift: { name: "drift", toAuthor: true }
+      flag: { name: "flag", toAuthor: true }
     };
     MERGE_LOCK = "merge-lock";
   }
@@ -378,7 +375,6 @@ var init_wire = __esm({
       "owedPhase",
       "idle",
       "unreadMentions",
-      "guidesUntold",
       "runs",
       "packCall",
       "join",
@@ -399,7 +395,7 @@ var init_wire = __esm({
       "composition"
     ];
     ORCHESTRATORS_GROUP = "orchestrators";
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed", "reclaim"]);
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
@@ -533,133 +529,10 @@ var init_trace = __esm({
   }
 });
 
-// src/cli/answer/code-wording.ts
-var CODE_IN_CORE_HELP, CODE_WORDING;
-var init_code_wording = __esm({
-  "src/cli/answer/code-wording.ts"() {
-    "use strict";
-    CODE_IN_CORE_HELP = {
-      codeVerbs: "the merge verbs",
-      ontoLine: "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
-      pauseRefuses: "merge-lock refused",
-      closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
-      joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at join, or reuses it",
-      pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
-      withoutAs: "the member joined from this worktree"
-    };
-    CODE_WORDING = {
-      // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
-      closeFinish: "merged, reported, done",
-      closeColumns: "| task | seat | state | merge sha |",
-      /** The code verbs' help, apart from the core (D22). */
-      usage: (cli) => [
-        `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-        "  merge-lock [--onto <branch>] [--as <member>]                    # one merge at a time per repository; --onto defaults to the run's own",
-        '  merge-lock --check "<cmd>" --report <text>|--report-file <path> [--files <path>...] [--guides ...] [--continue]   # the board rebases, runs your check, fast-forwards and records merged; a conflict stops it, the lock kept: resolve, git add, --continue',
-        `  merged  [--as <member>] <sha> --files <path>... --report <text>|- | --report-file <path> [--guides "<name>:ok|n/a <why>, ..."] [--unlocked <why>]   # --guides: one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who must rebase and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently`
-      ].join("\n"),
-      /** board-split D36: what the code pack says of a member beside its state, on its roster line */
-      /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
-      declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
-      // V-21: printed after the state word, which already reads `merging`
-      memberFact: { merging: "holds the merge lock" },
-      /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
-      mergeLockLine: (project, holder, since, waiters = []) => `merge lock of ${project}  held by ${holder} since ${since}${waiters.length ? `  waiters: ${waiters.join(", ")}` : ""}`,
-      // ── the merge (V12: every command runnable as printed) ──
-      mergeGuides: (guides) => `guides of this merge: ${guides}; check your change against each, then settle each in merged's --guides below`,
-      /** S4: the --guides form filled with this merge's guides, as merged takes it */
-      guidesForm: (guides) => `"${guides.map((g) => `${g}:ok|n/a <why>`).join(", ")}"`,
-      mergeGranted: (cli, as, guidesForm) => (
-        // board-fixes#D11: the tests the task asked for ran before the lock; under it only rebase, quick check, fast-forward
-        `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --files <path>... --report "<your report>"${guidesForm ? ` --guides ${guidesForm}` : ""} --as ${as}`
-      ),
-      /** D2: an argument error names what is wrong, then usage, then one corrected form */
-      guidesRefused: (problem, corrected) => `merged: --guides ${problem}; usage: --guides "<name>:ok, <name>:n/a <why>, ..." (one quoted argument, one entry per guide merge-lock listed, entries separated by commas only (never ; | &), each <name>:ok or <name>:n/a <why>); corrected: --guides ${corrected}`,
-      /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
-      detach: (worktree) => `git -C ${worktree} switch --detach`,
-      ontoCheckedOutAtOpen: (onto, worktree, detach) => `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
-      ontoCheckedOutAtMerge: (onto, worktree, holder, detach) => `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
-      // merge-lock --check: the board runs the rebase, the check and the fast-forward; the worker only resolves a conflict
-      autoConflict: (onto, files, cont) => `rebase onto ${onto} stopped on a conflict in ${files.join(", ")}: the lock stays yours; resolve each file, git add it, then: ${cont}`,
-      autoRebaseFailed: (onto, why) => `rebase onto ${onto} failed (${why}); nothing merged, the lock released: commit or stash what is uncommitted, then merge-lock again`,
-      autoCheckFailed: (code, tail) => `the check failed (exit ${code ?? "none"}); nothing merged, the lock released: fix it on your branch, then merge-lock again
-${tail}`,
-      autoPushFailed: (onto, why) => `fast-forward of ${onto} refused (${why}); nothing merged, the lock released: merge-lock again`,
-      autoFreed: (waiters, who) => `${waiters.map((w) => `@${w}`).join(" ")} the merge lock is free: ${who} merged nothing; take it now`,
-      autoNeedsGuides: (form) => `merge-lock --check: this merge falls under guides; settle them up front: --guides ${form}`,
-      // V-27: the command last
-      mergeHeld: (holder, wait) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
-      /** V-32 (D69): merged's report refusals, naming --report-file */
-      reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
-      reportIsAFile: (given) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
-      // S32: said at the grant, before the rebase and the report, never after the report is written
-      conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
-      tellResolved: (path15, member) => `if you resolved a conflict in ${path15}, tell them: swarm post "@${member} I resolved ${path15}: <how>" --about ${path15}`,
-      // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
-      /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
-      pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
-      /** V-36 (D71): the pause's answer names the merge lock's holder, who lands its merge first */
-      pauseLockHolder: (holder) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
-      /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
-      mergeLockFree: (cli, as) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
-      /** V-45: a close while a member of the run holds the merge lock: its merge did not land */
-      closedLockHolder: (holder) => `${holder} held the merge lock: its merge did not land; the lock is released, its branch keeps the work`,
-      /** V-40: the orchestrator ending a live seat whose branch holds work not merged */
-      endSeatUnmerged: (member, unmerged, close) => `end --seat: ${member} is not ended: ${unmerged}. Its member merges it first (tell it on the thread), or the run's close keeps the branch: ${close}`,
-      /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
-      unmergedFact: (branch, left) => left.startsWith("branch ") ? left : `branch ${branch} has ${left}`,
-      /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
-       *  was released when it went lost); the command last */
-      lockNotHeldAtJoin: (unmerged, cli, onto, as) => `you do not hold the merge lock; ${unmerged}: take the lock again to merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
-      /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
-      endedSeatUnmerged: (member, unmerged) => `${member} ended; ${unmerged}, kept: dispatch a member to the seat to merge it, or merge it yourself`,
-      /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
-      unmergedAtDone: (unmerged, cli, onto, as) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
-      // ── spec §7: an overlap, a path two members' worktrees both changed: either settles it with the other ──
-      overlapSettle: (cli, other, otherName, about, as) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
-      // ── claims-phase: a drift, a path the member changed that another merged this phase and its branch lacks ──
-      /** the drift event's body, posted by the claims to `member` alone, once per path and phase */
-      driftNotice: (member, path15, merger, sha) => `@${member} ${path15} was merged by ${merger} (${sha.slice(0, 7)}) and is not in your branch: rebase now`,
-      /** the step under it: the merged commit taken in before the work goes on */
-      driftRebase: (sha) => `commit what you have, then: git rebase ${sha}`
-    };
-  }
-});
-
 // src/packs/code/claims.ts
 function claimsOf(deps) {
   const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, kindHasPack } = deps;
-  const ACTIVE = "c.state = 'active' AND EXISTS (SELECT 1 FROM participants q WHERE q.id = c.participant AND q.ended_at IS NULL)";
-  const clearFlags = () => {
-    db.prepare(`DELETE FROM flags WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = flags.repo AND c.path = flags.path AND ${ACTIVE})`).run();
-    db.prepare(
-      `DELETE FROM notices WHERE NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.participant AND ${ACTIVE})
-         OR NOT EXISTS (SELECT 1 FROM claims c WHERE c.repo = notices.repo AND c.path = notices.path AND c.participant = notices.other AND ${ACTIVE})`
-    ).run();
-  };
-  const activeHoldersOf = (repo, rel) => db.prepare("SELECT participant FROM claims WHERE repo = ? AND state = 'active' AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => Number(r.participant)).filter(isLive);
-  const hold = (p, rel) => transaction(() => {
-    const made = db.prepare(`INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?) ON CONFLICT (repo, path, participant) DO NOTHING`).run(p.repo, rel, p.id, lastSeq());
-    const reopened = Number(made.changes) === 0 && Number(
-      db.prepare("UPDATE claims SET state = 'active', since_seq = ? WHERE repo = ? AND path = ? AND participant = ? AND state = 'merged' AND in_changes = 0").run(lastSeq(), p.repo, rel, p.id).changes
-    ) > 0;
-    db.prepare("UPDATE claims SET in_changes = 1 WHERE repo = ? AND path = ? AND participant = ? AND in_changes = 0").run(p.repo, rel, p.id);
-    if (Number(made.changes) === 0 && !reopened) return false;
-    bump(p.repo);
-    return true;
-  });
-  const markToldOfDrift = (repo, rel, id) => Number(db.prepare("INSERT OR IGNORE INTO drift_notices (repo, path, participant) VALUES (?, ?, ?)").run(repo, rel, id).changes) > 0;
-  const tellDrift = (p, rel, drifted) => {
-    const merges = db.prepare("SELECT participant, sha FROM claims WHERE repo = ? AND path = ? AND sha IS NOT NULL AND participant != ? ORDER BY rowid DESC").all(p.repo, rel, p.id);
-    if (!merges.length) return;
-    const merge = merges.find((m) => String(m.sha) === drifted.sha) ?? merges[0];
-    if (!markToldOfDrift(p.repo, rel, p.id)) return;
-    const sha = String(merge.sha);
-    insertMessage(p, CODE_WORDING.driftNotice(p.name, rel, participantById(Number(merge.participant)).name, sha), rel, "event", [p.name], {
-      event: CODE_EVENTS.drift.name,
-      meta: { sha }
-    });
-  };
+  const holdersOf = (repo, rel) => db.prepare("SELECT participant FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => Number(r.participant)).filter(isLive);
   const agreedOn = (a, b, rel) => db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND author IN (?, ?)").all(a.repo, a.id, b.id).some((r) => {
     const about = r.about == null ? "" : fold2(slashes(String(r.about)));
     const other = Number(r.author) === a.id ? b : a;
@@ -670,20 +543,12 @@ function claimsOf(deps) {
     const l = db.prepare("SELECT at FROM merge_locks WHERE participant = ?").get(p.id);
     trace().event("lock", { action: "released", run: p.run, member: p.name, cause, heldMs: l ? Date.now() - Date.parse(String(l.at)) : null, waiting: lockQueue(p.repo) });
   };
-  const releaseLockOf = (id, changedBefore = 0) => {
+  const releaseAll = (id) => {
     if (db.prepare("SELECT 1 FROM merge_locks WHERE participant = ?").get(id)) traceRelease(participantById(id), "ended");
     const owner = db.prepare("SELECT r.repo FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ?").get(id);
-    const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
-    db.prepare("DELETE FROM claim_requests WHERE participant = ?").run(id);
-    const active = Number(db.prepare("SELECT COUNT(*) AS n FROM claims WHERE participant = ? AND state = 'active'").get(id).n);
-    if (changedBefore + locks + active === 0) return;
-    clearFlags();
-    if (owner) bump(String(owner.repo));
-  };
-  const releaseAll = (id) => {
     const claims = Number(db.prepare("DELETE FROM claims WHERE participant = ?").run(id).changes);
-    db.prepare("DELETE FROM drift_notices WHERE participant = ?").run(id);
-    releaseLockOf(id, claims);
+    const locks = Number(db.prepare("DELETE FROM merge_locks WHERE participant = ?").run(id).changes);
+    if (owner && claims + locks > 0) bump(String(owner.repo));
   };
   const takeLockWaiters = (repo) => {
     const rows = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo);
@@ -701,36 +566,8 @@ function claimsOf(deps) {
     else if (!turn || anew) db.prepare("INSERT INTO lock_requests (repo, participant, asked_at, granted_at) VALUES (?, ?, ?, ?)").run(p.repo, p.id, at, at);
   };
   const declared = (id) => JSON.parse(String(db.prepare("SELECT files FROM participants WHERE id = ?").get(id).files));
-  const liveIdsNamed = (repo, names) => db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.ended_at IS NULL").all(repo).filter((r) => names.includes(`${r.plan}/${r.seat}`)).map((r) => Number(r.id));
   return {
-    clearFlags,
     releaseAll,
-    releaseLockOf,
-    phaseOpened(run2) {
-      const owner = db.prepare("SELECT repo FROM runs WHERE id = ?").get(run2);
-      let dropped = 0;
-      for (const table of ["claims", "drift_notices", "flag_posts"])
-        dropped += Number(db.prepare(`DELETE FROM ${table} WHERE participant IN (SELECT id FROM participants WHERE run = ?)`).run(run2).changes);
-      clearFlags();
-      if (owner && dropped > 0) bump(String(owner.repo));
-    },
-    settleOverlaps(author, parties, about) {
-      const want = fold2(relPath(author.repo, about) ?? slashes(about));
-      if (!want) return;
-      const pair = /* @__PURE__ */ new Set([author.id, ...liveIdsNamed(author.repo, parties)]);
-      if (pair.size < 2) return;
-      const onPath = (x) => fold2(x) === want || fold2(x).endsWith(`/${want}`);
-      let cleared = 0;
-      for (const r of db.prepare("SELECT path, participant FROM flags WHERE repo = ?").all(author.repo)) {
-        if (!onPath(String(r.path)) || !pair.has(Number(r.participant))) continue;
-        cleared += Number(db.prepare("DELETE FROM flags WHERE repo = ? AND path = ? AND participant = ?").run(author.repo, String(r.path), Number(r.participant)).changes);
-      }
-      for (const r of db.prepare("SELECT path, participant, other FROM notices WHERE repo = ?").all(author.repo)) {
-        if (!onPath(String(r.path)) || !pair.has(Number(r.participant)) || !pair.has(Number(r.other))) continue;
-        cleared += Number(db.prepare("DELETE FROM notices WHERE repo = ? AND path = ? AND participant = ? AND other = ?").run(author.repo, String(r.path), Number(r.participant), Number(r.other)).changes);
-      }
-      if (cleared) bump(author.repo);
-    },
     releaseLockOfLost(p) {
       const held = db.prepare("SELECT 1 FROM merge_locks WHERE repo = ? AND participant = ?").get(p.repo, p.id) !== void 0;
       if (!held) return null;
@@ -761,43 +598,44 @@ function claimsOf(deps) {
     holderNames(repo, about) {
       const f = fold2(relPath(repo, about) ?? slashes(about));
       if (!f) return [];
-      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ? AND state = 'active'").all(repo);
+      const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo);
       return [...new Set(rows.filter((r) => {
         const x = fold2(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       }).map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
     holdsAny(p) {
-      return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? AND state = 'active' AND in_changes = 1 LIMIT 1").get(p.id, p.id) !== void 0;
+      return db.prepare("SELECT 1 FROM merge_locks WHERE participant = ? UNION ALL SELECT 1 FROM claims WHERE participant = ? LIMIT 1").get(p.id, p.id) !== void 0;
     },
-    setHoldings(me, files, drifted) {
+    setHoldings(me, files) {
       return transaction(() => {
-        const relOf = (f) => relPath(me.repo, f) ?? slashes(f);
-        const now2 = new Set(files.map(relOf));
-        const inChanges = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ? AND in_changes = 1").all(me.repo, me.id).map((r) => String(r.path));
-        const left = inChanges.filter((x) => !now2.has(x));
-        for (const x of left) db.prepare("UPDATE claims SET in_changes = 0 WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
-        if (left.length) bump(me.repo);
-        const fresh = [...now2].filter((x) => hold(me, x));
+        const now2 = new Set(files.map((f) => relPath(me.repo, f) ?? slashes(f)));
+        const held = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ?").all(me.repo, me.id).map((r) => String(r.path));
+        const left = held.filter((x) => !now2.has(x));
+        for (const x of left) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, x, me.id);
+        const fresh = [...now2].filter((x) => !held.includes(x));
+        for (const x of fresh) db.prepare("INSERT INTO claims (repo, path, participant, since_seq) VALUES (?, ?, ?, ?)").run(me.repo, x, me.id, lastSeq());
+        if (left.length + fresh.length) bump(me.repo);
         const posted = db.prepare("INSERT OR IGNORE INTO flag_posts (repo, path, participant, holder) VALUES (?, ?, ?, ?)");
+        const forget = db.prepare("DELETE FROM flag_posts WHERE repo = ? AND path = ?");
         const overlaps = [];
-        for (const rel of fresh)
-          for (const holder of activeHoldersOf(me.repo, rel).filter((id) => id !== me.id)) {
+        for (const rel of fresh) {
+          const others = holdersOf(me.repo, rel).filter((id) => id !== me.id);
+          if (!others.length) forget.run(me.repo, rel);
+          for (const holder of others) {
             const other = participantById(holder);
             if (agreedOn(me, other, rel) || Number(posted.run(me.repo, rel, me.id, other.id).changes) === 0) continue;
-            const m = insertMessage(me, `@${other.name} @${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [other.name, me.name], {
-              event: CODE_EVENTS.flag.name
+            const m = insertMessage(me, `@${me.name} overlap: ${me.name} changes ${rel}, which ${other.name} changes too. Settle it here.`, rel, "event", [me.name], {
+              event: CODE_EVENTS.flag.name,
+              meta: { holder: other.name, writer: me.name }
             });
             overlaps.push({ path: rel, holder: other.name, seq: m.seq });
           }
-        for (const d of drifted) {
-          const rel = relOf(d.path);
-          if (now2.has(rel)) tellDrift(me, rel, d);
         }
         return overlaps;
       });
     },
-    lockMerge(me, onto, reflogMark, guides) {
+    lockMerge(me, onto, reflogMark, files) {
       return transaction(() => {
         const r = db.prepare("SELECT participant FROM merge_locks WHERE repo = ?").get(me.repo);
         if (r && Number(r.participant) !== me.id && isLive(Number(r.participant))) {
@@ -811,13 +649,16 @@ function claimsOf(deps) {
         }
         if (r && Number(r.participant) === me.id) {
           if (onto) db.prepare("UPDATE merge_locks SET onto = ? WHERE repo = ?").run(onto, me.repo);
-          if (guides) db.prepare("UPDATE merge_locks SET guides = ? WHERE repo = ?").run(JSON.stringify(guides), me.repo);
+          if (files) {
+            const kept = db.prepare("SELECT files FROM merge_locks WHERE repo = ?").get(me.repo).files;
+            db.prepare("UPDATE merge_locks SET files = ? WHERE repo = ?").run(JSON.stringify([.../* @__PURE__ */ new Set([...kept == null ? [] : JSON.parse(String(kept)), ...files])]), me.repo);
+          }
           grantTurn(me, String(db.prepare("SELECT at FROM merge_locks WHERE repo = ?").get(me.repo).at), false);
           return { granted: true };
         }
         db.prepare("DELETE FROM lock_waiters WHERE repo = ?").run(me.repo);
         const at = now();
-        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, guides) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, guides ? JSON.stringify(guides) : null);
+        db.prepare("INSERT OR REPLACE INTO merge_locks (repo, participant, at, onto, reflog_mark, files) VALUES (?, ?, ?, ?, ?, ?)").run(me.repo, me.id, at, onto ?? null, reflogMark ?? null, files ? JSON.stringify(files) : null);
         grantTurn(me, at, true);
         bump(me.repo);
         const asked = db.prepare("SELECT asked_at FROM lock_requests WHERE participant = ? ORDER BY rowid DESC LIMIT 1").get(me.id);
@@ -831,8 +672,13 @@ function claimsOf(deps) {
       return lock && Number(lock.participant) !== me.id ? participantById(Number(lock.participant)).name : null;
     },
     heldMergeLock(me) {
-      const r = db.prepare("SELECT at, onto, reflog_mark, guides FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id);
-      return r ? { grantedAt: String(r.at), onto: r.onto == null ? null : String(r.onto), reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark), guides: r.guides == null ? [] : JSON.parse(String(r.guides)) } : null;
+      const r = db.prepare("SELECT at, onto, reflog_mark, files FROM merge_locks WHERE repo = ? AND participant = ?").get(me.repo, me.id);
+      return r ? {
+        grantedAt: String(r.at),
+        onto: r.onto == null ? null : String(r.onto),
+        reflogMark: r.reflog_mark == null ? null : Number(r.reflog_mark),
+        files: r.files == null ? null : JSON.parse(String(r.files))
+      } : null;
     },
     merged(me, sha, files, conflicts) {
       const rels = [...new Set(files.map((f) => relPath(me.repo, f)).filter((x) => x !== null))];
@@ -857,7 +703,7 @@ function claimsOf(deps) {
           waiters = takeLockWaiters(me.repo).filter((n) => n !== me.name);
         });
         for (const rel of rels) {
-          for (const holder of activeHoldersOf(me.repo, rel)) if (holder !== me.id) told.add(participantById(holder).name);
+          for (const holder of holdersOf(me.repo, rel)) if (holder !== me.id) told.add(participantById(holder).name);
         }
         const everyone = db.prepare("SELECT p.id, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo);
         for (const o of everyone) {
@@ -875,29 +721,29 @@ function claimsOf(deps) {
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
-        const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: rebase your branch onto it.`];
+        const lines = [`merged ${sha}${onto ? ` into ${onto}` : ""}: your delivery brings it in; rebase now only if you need it.`];
         if (told.size) lines.push(`${[...told].map((n) => `@${n}`).join(" ")}: you hold or declared a file it changed.`);
         if (agreed.size) lines.push(`${[...agreed].map((n) => `@${n}`).join(" ")}: you agreed on a file it changed.`);
         if (waiters.length) lines.push(`the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}`);
         lines.push(`files: ${rels.join(", ") || "-"}`);
+        const metTarget = Number(
+          db.prepare("SELECT COALESCE((SELECT MAX(seq) FROM messages WHERE run = ? AND author = ? AND event = ?), (SELECT since_seq FROM participants WHERE id = ?), 0) AS seq").get(me.run, me.id, CODE_EVENTS.merged.name, me.id).seq
+        );
+        const mergedSince = db.prepare("SELECT author, meta FROM messages WHERE run = ? AND event = ? AND seq > ? AND author != ? ORDER BY seq").all(me.run, CODE_EVENTS.merged.name, metTarget, me.id).map((r) => ({
+          author: Number(r.author),
+          files: new Set(JSON.parse(String(r.meta ?? "{}")).files ?? [])
+        }));
         for (const rel of rels) {
           if (conflicted && !conflicted.has(fold2(rel))) continue;
-          const ids = new Set(activeHoldersOf(me.repo, rel));
-          const held = db.prepare("SELECT c.participant FROM claims c JOIN participants p ON p.id = c.participant WHERE c.repo = ? AND c.path = ? AND p.run = ? ORDER BY c.rowid").all(me.repo, rel, me.run);
-          for (const r of held) ids.add(Number(r.participant));
+          const ids = new Set(holdersOf(me.repo, rel));
+          for (const m of mergedSince) if (m.files.has(rel)) ids.add(m.author);
           ids.delete(me.id);
           for (const id of ids) sharers.push({ path: rel, member: participantById(id).name });
         }
-        const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...waiters.length ? { free: waiters } : {} };
+        const meta = { rebase: [...told], tell: [...new Set(sharers.map((o) => o.member))], ...waiters.length ? { free: waiters } : {}, files: rels };
         const mentioned = [.../* @__PURE__ */ new Set([...told, ...agreed, ...waiters])];
         insertMessage(me, lines.join("\n"), null, "event", mentioned, { event: CODE_EVENTS.merged.name, meta });
-        for (const id of liveIdsNamed(me.repo, mentioned)) for (const rel of rels) markToldOfDrift(me.repo, rel, id);
-        const markMerged = db.prepare(
-          `INSERT INTO claims (repo, path, participant, since_seq, state, sha, in_changes) VALUES (?, ?, ?, ?, 'merged', ?, 0)
-             ON CONFLICT (repo, path, participant) DO UPDATE SET state = 'merged', sha = excluded.sha`
-        );
-        for (const rel of rels) markMerged.run(me.repo, rel, me.id, lastSeq(), sha);
-        clearFlags();
+        for (const rel of rels) db.prepare("DELETE FROM claims WHERE repo = ? AND path = ? AND participant = ?").run(me.repo, rel, me.id);
       });
       return sharers;
     },
@@ -912,7 +758,6 @@ var init_claims = __esm({
     "use strict";
     init_events();
     init_trace();
-    init_code_wording();
   }
 });
 
@@ -921,30 +766,23 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const { db, isLive, nameOf, relPath } = deps;
   const lockRow = db.prepare("SELECT participant, at FROM merge_locks WHERE repo = ?").get(repo);
   const lockHolder = lockRow && isLive(Number(lockRow.participant)) ? Number(lockRow.participant) : null;
-  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid");
+  const heldBy = db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid");
   const lockWaiters = db.prepare("SELECT participant FROM lock_waiters WHERE repo = ? ORDER BY rowid").all(repo).map((w) => Number(w.participant)).filter((id) => isLive(id) && id !== lockHolder).map(nameOf);
-  const claimed = db.prepare("SELECT c.path, c.participant, c.state, c.sha, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo);
-  const live = claimed.filter((c) => c.state === "active" && isLive(Number(c.participant)));
+  const live = db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
-  const fileOf = (p) => files.get(p) ?? files.set(p, { path: p, holders: [], past: [] }).get(p);
-  for (const c of claimed) {
-    const f = fileOf(String(c.path));
-    const member = `${c.plan}/${c.seat}`;
-    if (c.sha != null) f.past.push({ member, state: "merged", sha: String(c.sha) });
-    if (live.includes(c)) f.holders.push(member);
-    else if (c.state === "active" && c.sha == null) f.past.push({ member, state: "ended", sha: null });
+  for (const c of live) {
+    const path15 = String(c.path);
+    (files.get(path15) ?? files.set(path15, { path: path15, holders: [] }).get(path15)).holders.push(`${c.plan}/${c.seat}`);
   }
-  const everClaimed = db.prepare("SELECT 1 FROM claims WHERE repo = ? AND path = ? AND participant = ?");
   for (const r of people) {
     if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
     const name = `${r.plan}/${r.seat}`;
     for (const d of JSON.parse(String(r.files))) {
       const f = files.get(relPath(repo, d.path) ?? d.path);
-      if (f && f.holders.length && !f.holders.includes(name) && !everClaimed.get(repo, f.path, Number(r.id))) f.holders.push(name);
+      if (f && !f.holders.includes(name)) f.holders.push(name);
     }
   }
   const sharedBy = (path15, id) => live.some((c) => String(c.path) === path15 && Number(c.participant) !== id);
-  const flags = db.prepare("SELECT f.path, p.seat, r.plan FROM flags f JOIN participants p ON p.id = f.participant JOIN runs r ON r.id = p.run WHERE f.repo = ? ORDER BY f.rowid").all(repo).map((f) => ({ path: String(f.path), member: `${f.plan}/${f.seat}` }));
   const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t) => ({
     member: `${t.plan}/${t.seat}`,
     askedAt: String(t.asked_at),
@@ -956,18 +794,14 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
     fields: {
       lockHistory,
       lock: lockHolder !== null ? { holder: nameOf(lockHolder), since: String(lockRow.at), waiters: lockWaiters } : null,
-      files: [...files.values()],
-      flags
+      files: [...files.values()]
     },
     factOf: (id) => id === lockHolder ? "merging" : null,
     heldFilesOf: (id) => heldBy.all(id).map((c) => ({ path: String(c.path), shared: sharedBy(String(c.path), id) }))
   };
 }
 function heldOf(db, id) {
-  return db.prepare("SELECT path FROM claims WHERE participant = ? AND state = 'active' ORDER BY rowid").all(id).map((c) => ({ path: String(c.path) }));
-}
-function everClaimedOf(db, id) {
-  return db.prepare("SELECT DISTINCT path FROM claims WHERE participant = ?").all(id).map((c) => String(c.path));
+  return db.prepare("SELECT path FROM claims WHERE participant = ? ORDER BY rowid").all(id).map((c) => ({ path: String(c.path) }));
 }
 var init_snapshot = __esm({
   "src/packs/code/snapshot.ts"() {
@@ -977,48 +811,18 @@ var init_snapshot = __esm({
 
 // src/packs/code/schema.ts
 function migrateCodeTables(db) {
-  const sharesAreNew = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shares'").get() === void 0;
   db.exec(`
     -- claims are global by repository-relative path, across every run on a repository (D12, D20);
     -- a path may have several holders (D40). since_seq: the thread's last seq when it was claimed.
-    -- A claim lasts its run's phase (claims-phase): from the member's first change of the path until the next phase
-    -- opens or the run closes; state 'active' or 'merged', 'ended' read from the member; sha: its last merge this phase, kept when active again;
-    -- in_changes: the path is in the member's worktree changes as its link last read them
+    -- A claim is a path its member's worktree changes now, as its link last read it: made when the path enters the
+    -- changes, gone when it leaves them, at its merge, and at the member's end.
     CREATE TABLE IF NOT EXISTS claims (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
       participant INTEGER NOT NULL,
       kind TEXT NOT NULL DEFAULT 'inside',
       since_seq INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'active',
-      sha TEXT,
-      in_changes INTEGER NOT NULL DEFAULT 1,
       PRIMARY KEY (repo, path, participant)
-    );
-    -- a member told that a path merged this phase is not in its branch: once per member and path per phase
-    CREATE TABLE IF NOT EXISTS drift_notices (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim granted beside a live holder of the path, kept past both claims' release: who held a path
-    -- at the same time as whom during a run, from the seq it began (D39); append-only, deleted with its run
-    CREATE TABLE IF NOT EXISTS shares (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
-    );
-    -- a holder of a shared path already told of another holder (D41): once per member and path
-    CREATE TABLE IF NOT EXISTS notices (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      other INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant, other)
     );
     CREATE TABLE IF NOT EXISTS merge_locks (
       repo TEXT PRIMARY KEY,
@@ -1031,22 +835,7 @@ function migrateCodeTables(db) {
       participant INTEGER NOT NULL,
       PRIMARY KEY (repo, participant)
     );
-    -- a path written outside its writer's claim, by reconcileWrites; lives while a claim on it does (D39)
-    CREATE TABLE IF NOT EXISTS flags (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a claim refused as held: the post that settles it claims it (D7)
-    CREATE TABLE IF NOT EXISTS claim_requests (
-      repo TEXT NOT NULL,
-      path TEXT NOT NULL,
-      participant INTEGER NOT NULL,
-      kind TEXT NOT NULL,
-      PRIMARY KEY (repo, path, participant)
-    );
-    -- a flag posted, once per writer, path and holder (D8)
+    -- an overlap posted, once per member, path and other holder (D8); a path's rows go once nobody changes it
     CREATE TABLE IF NOT EXISTS flag_posts (
       repo TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -1054,34 +843,24 @@ function migrateCodeTables(db) {
       holder INTEGER NOT NULL,
       PRIMARY KEY (repo, path, participant, holder)
     );
-    -- one row per merge, written by merged, deleted with its run by prune (D25): files and conflicts JSON, conflicts NULL for unknown
-    CREATE TABLE IF NOT EXISTS merges (
-      participant INTEGER NOT NULL,
-      run INTEGER NOT NULL,
-      sha TEXT NOT NULL,
-      at TEXT NOT NULL,
-      files TEXT NOT NULL,
-      conflicts TEXT
-    );
-    CREATE INDEX IF NOT EXISTS merges_run ON merges (run);
     -- one row per merge-lock turn: asked, granted, merged; refused counts the refusals (D25); deleted with its run
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- claims-phase: the kept claims replace the claim log, read by member as it was (board-fixes#D14); an older store's goes
+    -- read by member (board-fixes#D14); an older store's claim log and drift notices go
     CREATE INDEX IF NOT EXISTS claims_by_participant ON claims (participant);
     DROP INDEX IF EXISTS claim_log_by_participant;
     DROP TABLE IF EXISTS claim_log;
+    DROP TABLE IF EXISTS drift_notices;
   `);
-  if (sharesAreNew) db.prepare("INSERT OR IGNORE INTO settings (name, value) VALUES (?, ?)").run(SHARES_SINCE, (/* @__PURE__ */ new Date()).toISOString());
   const upkeep = (table, column, ddl) => {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
     if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
   upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
   upkeep("merge_locks", "onto", "onto TEXT");
-  upkeep("merge_locks", "guides", "guides TEXT");
   upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
+  upkeep("merge_locks", "files", "files TEXT");
   const claimKey = db.prepare("PRAGMA table_info(claims)").all().find((c) => c.name === "participant");
   if (claimKey && claimKey.pk === 0) {
     db.exec(`
@@ -1100,24 +879,19 @@ function migrateCodeTables(db) {
       COMMIT;
     `);
   }
-  upkeep("claims", "state", "state TEXT NOT NULL DEFAULT 'active'");
-  upkeep("claims", "sha", "sha TEXT");
-  upkeep("claims", "in_changes", "in_changes INTEGER NOT NULL DEFAULT 1");
+  const claimCols = db.prepare("PRAGMA table_info(claims)").all().map((c) => c.name);
+  if (claimCols.includes("state")) db.exec("DELETE FROM claims WHERE state != 'active'");
+  if (claimCols.includes("in_changes")) db.exec("DELETE FROM claims WHERE in_changes = 0");
+  for (const column of ["state", "sha", "in_changes"]) if (claimCols.includes(column)) db.exec(`ALTER TABLE claims DROP COLUMN ${column}`);
 }
 function forgetMemberRows(db, participant) {
   for (const table of MEMBER_TABLES) db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(participant);
-  db.prepare("DELETE FROM notices WHERE other = ?").run(participant);
-  db.prepare("DELETE FROM shares WHERE other = ?").run(participant);
 }
-function forgetRunRows(db, run2) {
-  db.prepare("DELETE FROM merges WHERE run = ?").run(run2);
-}
-var SHARES_SINCE, MEMBER_TABLES;
+var MEMBER_TABLES;
 var init_schema = __esm({
   "src/packs/code/schema.ts"() {
     "use strict";
-    SHARES_SINCE = "shares-since";
-    MEMBER_TABLES = ["drift_notices", "shares", "notices", "flags", "claims", "lock_waiters", "merge_locks", "claim_requests", "flag_posts", "lock_requests"];
+    MEMBER_TABLES = ["claims", "lock_waiters", "merge_locks", "flag_posts", "lock_requests"];
   }
 });
 
@@ -1204,19 +978,6 @@ function changedSet(worktree, onto, base = branchBase(worktree, onto)) {
     i += two ? 2 : 1;
   }
   return [...set].filter(Boolean).map((p) => p.split("\\").join("/")).sort();
-}
-function driftedSet(worktree, onto, files, base = branchBase(worktree, onto)) {
-  if (!base) return null;
-  if (!files.length) return [];
-  const log = gitAnswer(worktree, "-c", "core.quotePath=false", "log", "--format=%x01%H", "--name-only", "--end-of-options", `${base}..${onto}`);
-  if (log.status !== 0) return null;
-  const newest = /* @__PURE__ */ new Map();
-  let sha = "";
-  for (const line of log.stdout.split(/\r?\n/)) {
-    if (line.startsWith("")) sha = line.slice(1);
-    else if (line && !newest.has(line)) newest.set(line, sha);
-  }
-  return files.filter((path15) => newest.has(path15)).map((path15) => ({ path: path15, sha: newest.get(path15) }));
 }
 var init_changes = __esm({
   "src/packs/code/changes.ts"() {
@@ -1752,14 +1513,12 @@ async function runLink(opts) {
   let sentChanges = null;
   const watchChanges = () => {
     if (exiting || !watched || !welcomed) return;
-    const base = branchBase(watched.dir, watched.against);
-    const files = base ? changedSet(watched.dir, watched.against, base) : null;
-    const drifted = base && files ? driftedSet(watched.dir, watched.against, files, base) : null;
-    if (!files || !drifted) return;
-    const key = JSON.stringify([files, drifted]);
+    const files = changedSet(watched.dir, watched.against);
+    if (!files) return;
+    const key = JSON.stringify(files);
     if (key === sentChanges) return;
     sentChanges = key;
-    sendUp({ type: "changes", files, drifted });
+    sendUp({ type: "changes", files });
   };
   const resendChanges = () => (sentChanges = null, watchChanges());
   let transcript = null;
@@ -1807,8 +1566,6 @@ async function runLink(opts) {
       resendChanges();
       for (const { call } of unanswered.values()) sendUp(call);
       flushActivity();
-    } else if (f.type === "reclaim") {
-      resendChanges();
     } else if (f.type === "refused") {
       if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
         socket?.close();
@@ -2197,10 +1954,10 @@ var init_code = __esm({
     });
     optional = (v) => v === null || v === void 0 ? void 0 : v;
     CLAIM_WRITES = {
-      // spec §7: the member's link's changed set, not a call of its own; its drifted paths (claims-phase) none from an older link
-      changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files, optional(i.drifted) ?? [])),
-      "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional(i.onto), optional(i.reflogMark), optional(i.guides))),
-      // merge-lock --check: a merge that stopped short (failed check, refused rebase) gives the lock back, naming who waited
+      // spec §7: the member's link's changed set, not a call of its own
+      changes: tableWrite(null, (c, m, i) => c.setHoldings(m, i.files)),
+      "lock-merge": tableWrite("lockMerge", (c, m, i) => c.lockMerge(m, optional(i.onto), optional(i.reflogMark), optional(i.files))),
+      // merge-lock, delivering: a merge that stopped short (a conflict, a refused rebase) gives the lock back, naming who waited
       "release-merge-lock": tableWrite(null, (c, m) => c.releaseLockOfLost(m)),
       merged: tableWrite("merged", (c, m, i) => c.merged(m, String(i.sha), i.files, optional(i.conflicts)), true)
     };
@@ -2212,10 +1969,8 @@ var init_code = __esm({
       alsoFor: (member, message, ctx) => (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
       // an agreement with no party named binds the file's other holders (F25)
       defaultParties: (about, ctx) => tablesOf(ctx).holderNames(ctx.repo, about),
-      // board-fixes#D8: an agreement clears the pair's overlap flags on its path
       // board-fixes#D4: on a code run a done or a leave that is no merge says so
       awaitedWording: (cause) => cause === CODE_EVENTS.merged.name ? cause : cause === "done" ? "done, nothing merged" : `${cause} without merging`,
-      onAgreement: (author, parties, about, ctx) => tablesOf(ctx).settleOverlaps(author, parties, about),
       // a member holding a claim or the merge lock is mid-work, never idle
       busy: (member, ctx) => tablesOf(ctx).holdsAny(member),
       // holding the merge lock, the member is merging (D36), whatever its core state says
@@ -2233,8 +1988,10 @@ var init_code = __esm({
       },
       snapshot: (deps, repo, people, orchestratorSeat) => codeSnapshotOf(deps, repo, people, orchestratorSeat),
       held: (db, member) => heldOf(db, member),
-      everClaimed: (db, member) => everClaimedOf(db, member),
-      forget: (db, scope) => "member" in scope ? forgetMemberRows(db, scope.member) : forgetRunRows(db, scope.run),
+      // the pack keeps nothing by run: its rows are a member's
+      forget: (db, scope) => {
+        if ("member" in scope) forgetMemberRows(db, scope.member);
+      },
       writes: CLAIM_WRITES,
       run(verb, member, input, ctx, tables) {
         switch (verb) {
@@ -2288,7 +2045,7 @@ var init_code = __esm({
       },
       onEnded(member, ctx) {
         const waiters = tablesOf(ctx).lockWaitersFreedBy(member);
-        tablesOf(ctx).releaseLockOf(member.id);
+        tablesOf(ctx).releaseAll(member.id);
         return {
           note: waiters.length ? `the merge lock is free: ${waiters.map((n) => `@${n}`).join(" ")}` : null,
           mentions: waiters,
@@ -2357,10 +2114,6 @@ var init_registry = __esm({
       /** What the member holds now, every pack's (F27). */
       heldOf(db, member) {
         return Object.values(PACKS).flatMap((p) => p.held?.(db, member) ?? []);
-      },
-      /** The paths the member ever claimed, every pack's (S28). */
-      everClaimedOf(db, member) {
-        return Object.values(PACKS).flatMap((p) => p.everClaimed?.(db, member) ?? []);
       },
       /** Every pack's rows of a pruned member deleted (D20). */
       forgetMember(db, member) {
@@ -2795,7 +2548,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     ).run(at, ORCHESTRATORS_GROUP);
   };
   endClosedOrchestratorSeats();
-  db.exec("CREATE TABLE IF NOT EXISTS guides_told (participant INTEGER NOT NULL, guide TEXT NOT NULL, PRIMARY KEY (participant, guide))");
   upkeep("member_activity", "in_turn", "in_turn INTEGER");
   upkeep("member_activity", "last_line", "last_line TEXT");
   upkeep("member_activity", "bg_target", "bg_target TEXT");
@@ -3634,7 +3386,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const earlier = db.prepare("SELECT meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(fresh.run, EVENTS.phase.name).map((r) => String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""));
         db.prepare("UPDATE runs SET phase = ?, phase_text = ?, phase_watch = ?, phase_for = ?, phase_at = ? WHERE id = ?").run(name, said, watch.length ? JSON.stringify(watch) : null, only.length ? JSON.stringify(only) : null, now(), fresh.run);
         db.prepare("DELETE FROM phase_done WHERE run = ? AND phase = ?").run(fresh.run, name);
-        packTables.phaseOpened(fresh.run);
         db.prepare("DELETE FROM liveness_warned WHERE run = ? AND member = ? AND cond = ?").run(fresh.run, ORCHESTRATOR, `all-done ${name}`);
         const woken = only.length ? only.map((s) => `${fresh.plan}/${s}`) : [`${fresh.plan}/*`];
         return { ...insertMessage(fresh, `phase ${name}: ${said}`, null, "event", woken, { event: EVENTS.phase.name, meta: { phase: name } }), stillOwed, earlier };
@@ -3892,7 +3643,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         doing: String(r.doing),
         files: JSON.parse(String(r.files)),
         held: registry.heldOf(db, Number(r.id)),
-        everClaimed: registry.everClaimedOf(db, Number(r.id)),
         badge: stateIn(Number(r.run), String(r.seat))?.badge ?? null,
         worktree: r.place == null ? null : String(r.place),
         // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
@@ -3933,7 +3683,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       }
       return transaction(() => {
         const message = insertMessage(fresh, body, opts.about ?? null, opts.kind ?? "msg", void 0, named ? { parties: named } : {});
-        if (named && opts.about) packOf(fresh)?.onAgreement?.(fresh, named, opts.about, packCtxOf(fresh));
         if (task) db.prepare("UPDATE messages SET task = 1, after = ? WHERE seq = ?").run(after.length ? JSON.stringify(after) : null, message.seq);
         return message;
       });
@@ -3962,10 +3711,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
     },
     unreadMentions(p) {
       return unreadOf(p.id);
-    },
-    guidesUntold(p, guides) {
-      const tell = db.prepare("INSERT OR IGNORE INTO guides_told (participant, guide) VALUES (?, ?)");
-      return transaction(() => guides.filter((g) => tell.run(p.id, g).changes > 0));
     },
     wait(p, opts = {}) {
       const { timeoutMs, mentionsOnly = false, signal: abort } = opts;
@@ -7981,7 +7726,6 @@ function makeAuthority(board2) {
     done: self2,
     idle: self2,
     unreadMentions: self2,
-    guidesUntold: self2,
     showPhase: self2,
     owedPhase: self2,
     heldBy: self2,
@@ -8240,13 +7984,9 @@ async function runBoardServer(opts) {
       if (call.method === "closeRun") closed(Number(args2[0]));
       if (call.method === "end") ended(args2[0]?.name);
       if (call.method === "join") freshPresence(value);
-      if (call.method === "phase") reclaimAfterPhase(value.run);
     };
     if (out instanceof Promise) out.then(settle, (e) => calls.get(key) === rec && fail2(e.message));
     else settle(out);
-  };
-  const reclaimAfterPhase = (run3) => {
-    for (const s of speakers) if (s.member?.run === run3) send(s, { type: "reclaim" });
   };
   const closed = (run3) => {
     for (const s of speakers)
@@ -8341,7 +8081,7 @@ async function runBoardServer(opts) {
         logged("activity", () => board2.recordActivity(m.run, memberOf(m.name), f.activity, now()));
       } else if (f.type === "changes" && s.member) {
         const seat = board2.participant(s.member.name);
-        if (seat) logged("changes", () => board2.packCall(seat, "changes", { files: f.files, drifted: f.drifted ?? [] }));
+        if (seat) logged("changes", () => board2.packCall(seat, "changes", { files: f.files }));
       } else if (f.type === "subscribe") s.subscribed = true;
     });
     socket.on("close", () => {
@@ -8853,7 +8593,10 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--person",
   "--report",
   "--report-file",
-  "--unlocked"
+  "--unlocked",
+  // retired, read and ignored: their value is never taken for a positional (merged's sha)
+  "--guides",
+  "--check"
 ]);
 var LIST_FLAGS = /* @__PURE__ */ new Set(["--files", "--for"]);
 function parseArgs(argv) {
@@ -9023,71 +8766,13 @@ function guidesIn(dir, keep, fallback = () => null) {
 }
 var SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
 var SHIPPED_GUIDES = /* @__PURE__ */ new Set(["guide-complexity", "guide-deepen-module"]);
-function discoverGuides(toolRoot2, repoRoot, alsoProject = []) {
+function discoverGuides(toolRoot2, repoRoot) {
   const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
-  const here = repoRoot ? guidesIn(path12.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
-  const project = [...here, ...alsoProject.filter((g) => !here.some((h) => h.name === g.name))];
+  const project = repoRoot ? guidesIn(path12.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
 }
-function globRegex(glob) {
-  let re = "";
-  let depth = 0;
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
-    if (c === "*" && glob[i + 1] === "*") {
-      const slash = glob[i + 2] === "/";
-      re += slash ? "(?:.*/)?" : ".*";
-      i += slash ? 2 : 1;
-    } else if (c === "*") re += "[^/]*";
-    else if (c === "?") re += "[^/]";
-    else if (c === "{") {
-      re += "(?:";
-      depth++;
-    } else if (c === "}" && depth > 0) {
-      re += ")";
-      depth--;
-    } else if (c === "," && depth > 0) re += "|";
-    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  }
-  return new RegExp(`^${re}$`);
-}
-function guidesFor(guides, files) {
-  return guides.filter((g) => g.paths.some((glob) => files.some((f) => globRegex(glob).test(f))));
-}
 var guidesLine = (guides) => guides.length ? `guides for this work: ${guides.map((g) => `${g.name} (${g.skill})`).join(", ")}; load each before editing` : null;
-var guideName = (token) => token.replace(/^guide-/, "");
-function guidesSettlement(arg, listed) {
-  const wrongSeparator = /\s*([;&|\n])\s*((?:guide-)?[^\s:,;&|]+)\s*:/g;
-  let separator = null;
-  const corrected = arg.replace(wrongSeparator, (whole, sep, name) => {
-    if (!listed.includes(guideName(name))) return whole;
-    separator ??= sep;
-    return `, ${name}:`;
-  });
-  const tokens = arg.split(/,(?=\s*[^\s:,]+\s*:)/).map((t) => t.trim()).filter(Boolean);
-  const bare = arg.split(",").map((t) => t.trim()).filter((t) => !t.includes(":") && listed.includes(guideName(t.split(/\s+/)[0])));
-  const malformed = [...tokens.filter((t) => !/^[^:\s]+\s*:/.test(t)), ...bare];
-  const entries = tokens.map((e) => /^([^:\s]+)\s*:\s*(.*)$/s.exec(e)).filter((m) => !!m).map((m) => ({ name: guideName(m[1]), verdict: m[2].trim() }));
-  const named = entries.map((e) => e.name);
-  return {
-    separator,
-    corrected,
-    malformed,
-    missing: listed.filter((g) => !named.includes(g)),
-    unknown: named.filter((n) => !listed.includes(n)),
-    unjudged: entries.filter((e) => !/^ok\b/.test(e.verdict) && !/^n\/a\s+\S/.test(e.verdict)).map((e) => e.name)
-  };
-}
-function projectGuidesAt(show, list) {
-  const out = [];
-  for (const folder of (list ?? "").split(/\r?\n/).map((l) => l.trim().split("/").pop() ?? "").filter((f) => f.startsWith("guide-")).sort()) {
-    const text = show(`.claude/skills/${folder}/SKILL.md`);
-    const g = text ? parseGuide(text, folder) : null;
-    if (g) out.push(g);
-  }
-  return out;
-}
 
 // src/cli/index.ts
 init_git();
@@ -9137,13 +8822,92 @@ function conflictsOf(worktree, onto, reflogMark) {
     return { unknown: "no-reflog" };
   }
 }
+var MERGE_CONFLICTS_ENV = "SWARM_MERGE_CONFLICTS";
 
 // src/cli/index.ts
 init_link();
 
 // src/cli/answer/code-rules.ts
 init_events2();
-init_code_wording();
+
+// src/cli/answer/code-wording.ts
+var CODE_IN_CORE_HELP = {
+  codeVerbs: "the merge verbs",
+  ontoLine: "          # --onto: the branch a code run's worktrees branch from and merge into, default the checkout's branch",
+  pauseRefuses: "merge-lock refused",
+  closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
+  joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at join, or reuses it",
+  pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
+  withoutAs: "the member joined from this worktree"
+};
+var CODE_WORDING = {
+  // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
+  closeFinish: "merged, reported, done",
+  closeColumns: "| task | seat | state | merge sha |",
+  /** The code verbs' help, apart from the core (D22). */
+  usage: (cli) => [
+    `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
+    "  merge-lock [--report <text>|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+    "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
+    `  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently`
+  ].join("\n"),
+  /** board-split D36: what the code pack says of a member beside its state, on its roster line */
+  /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
+  declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
+  // V-21: printed after the state word, which already reads `merging`
+  memberFact: { merging: "holds the merge lock" },
+  /** board-split D52 (U-F18): the project's merge lock, beside the named locks in `locks` and `status` */
+  mergeLockLine: (project, holder, since, waiters = []) => `merge lock of ${project}  held by ${holder} since ${since}${waiters.length ? `  waiters: ${waiters.join(", ")}` : ""}`,
+  // ── the merge (V12: every command runnable as printed) ──
+  mergeGranted: (cli, as) => (
+    // board-fixes#D11: the tests the task asked for ran before the lock; under it only rebase, quick check, fast-forward
+    // the lock alone (--lock-only, or a member with no worktree): the merge is made by hand
+    `granted: under the lock only rebase, the task's quick check (the tests covering the files you touched; the tests your task asked for have finished before merge-lock), fast-forward (a long report: --report-file <path> in place of --report), then ${cli} merged <sha> --report "<your report>" --as ${as}`
+  ),
+  /** board-split#D66 (V-20): the target branch checked out in a worktree refuses every fast-forward into it */
+  detach: (worktree) => `git -C ${worktree} switch --detach`,
+  ontoCheckedOutAtOpen: (onto, worktree, detach) => `${onto} is checked out at ${worktree}: git refuses a worker's fast-forward into a checked-out branch; detach it before the first merge: ${detach}`,
+  ontoCheckedOutAtMerge: (onto, worktree, holder, detach) => `${onto} is checked out at ${worktree}${holder ? ` (${holder}'s worktree)` : ""}: git would refuse your fast-forward; ask the orchestrator to detach it (${detach}), then run merge-lock again`,
+  // the delivery: the board rebases and fast-forwards; only a clean merge passes, and what does not is handed back
+  // with the lock released. On a conflict the worker's one part is the files: it edits them and runs the call again
+  autoConflict: (onto, files, again) => `rebasing onto ${onto} met a conflict in ${files.join(", ")}: nothing merged, the lock released; the rebase is stopped in your worktree with the conflict marked in each file: edit each to what it must be, run no git command, then: ${again}`,
+  autoStillConflicted: (files, again) => `still conflicted: ${files.join(", ")} carry conflict markers (<<<<<<< or >>>>>>>); edit each to what it must be, then: ${again}`,
+  autoRebaseFailed: (onto, why) => `rebase onto ${onto} failed (${why}); nothing merged, the lock released: commit what is uncommitted, then merge-lock again`,
+  autoNothing: (onto) => `nothing to deliver: your branch has no commit ${onto} lacks; the lock released`,
+  autoPushFailed: (onto, why) => `fast-forward of ${onto} refused (${why}); nothing merged, the lock released: merge-lock again`,
+  autoFreed: (waiters, who) => `${waiters.map((w) => `@${w}`).join(" ")} the merge lock is free: ${who} merged nothing; take it now`,
+  // V-27: the command last
+  mergeHeld: (holder, wait) => `held by ${holder}: wait for its merged event, then take the lock again: ${wait}`,
+  /** V-32 (D69): merged's report refusals, naming --report-file */
+  reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
+  reportIsAFile: (given) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
+  reportFileUnreadable: (file) => `merged: --report-file ${file} cannot be read`,
+  // S32: said at the grant, before the rebase and the report, never after the report is written
+  conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
+  tellResolved: (path15, member) => `if you resolved a conflict in ${path15}, tell them: swarm post "@${member} I resolved ${path15}: <how>" --about ${path15}`,
+  // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
+  /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
+  pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
+  /** V-36 (D71): the pause's answer names the merge lock's holder, who lands its merge first */
+  pauseLockHolder: (holder) => `${holder} holds the merge lock: it finishes that merge, then stops; its merged still lands in the pause`,
+  /** V-22: a member refused the merge lock, told it is free (its holder went lost): the command last (rule 10) */
+  mergeLockFree: (cli, as) => `it is free: take it now: ${cli} merge-lock --as ${as}`,
+  /** V-45: a close while a member of the run holds the merge lock: its merge did not land */
+  closedLockHolder: (holder) => `${holder} held the merge lock: its merge did not land; the lock is released, its branch keeps the work`,
+  /** V-40: the orchestrator ending a live seat whose branch holds work not merged */
+  endSeatUnmerged: (member, unmerged, close) => `end --seat: ${member} is not ended: ${unmerged}. Its member merges it first (tell it on the thread), or the run's close keeps the branch: ${close}`,
+  /** V-27: what a seat's branch holds not merged, said once: the branch named by the fact, or before it */
+  unmergedFact: (branch, left) => left.startsWith("branch ") ? left : `branch ${branch} has ${left}`,
+  /** D59: a member joining a seat whose branch holds work not merged, not holding the merge lock (its last member's
+   *  was released when it went lost); the command last */
+  lockNotHeldAtJoin: (unmerged, cli, onto, as) => `you do not hold the merge lock; ${unmerged}: take the lock again to merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  /** D59: the orchestrator ended a seat whose worktree holds work not merged: accepted, the branch kept */
+  endedSeatUnmerged: (member, unmerged) => `${member} ended; ${unmerged}, kept: dispatch a member to the seat to merge it, or merge it yourself`,
+  /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
+  unmergedAtDone: (unmerged, cli, onto, as) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
+  // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
+  overlapSettle: (cli, other, otherName, about, as) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`
+};
 
 // src/cli/answer/wording.ts
 init_events2();
@@ -9388,12 +9152,8 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
     if (!m.meta || !("unlocked" in m.meta) || m.meta.unlocked !== MERGE_LOCK2) return void 0;
     return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
   }
-  if (event === "drift") {
-    const sha = m.meta && "sha" in m.meta && typeof m.meta.sha === "string" ? m.meta.sha : null;
-    return sha && m.mentions.includes(me.name) ? CODE_WORDING.driftRebase(sha) : null;
-  }
   if (event !== "flag") return void 0;
-  const [holder, writer] = m.mentions;
+  const [holder, writer] = m.meta && "holder" in m.meta ? [m.meta.holder, m.meta.writer] : m.mentions;
   if (!m.about || !holder || !writer || me.name !== holder && me.name !== writer) return null;
   const other = me.name === holder ? writer : holder;
   return CODE_WORDING.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
@@ -9542,9 +9302,6 @@ async function readSituation(board2, me, opts) {
   };
 }
 
-// src/cli/answer/index.ts
-init_code_wording();
-
 // src/cli/answer/orchestrators.ts
 init_wire();
 var seatOf = (r) => ({ id: r.group, ...r.authority?.length ? { role: r.authority.join(",") } : {}, blockers: [] });
@@ -9581,7 +9338,6 @@ function orchestratorsLines(runs, cli, writeSeats, only) {
 }
 
 // src/cli/answer/usage.ts
-init_code_wording();
 init_liveness();
 var coreUsage = (cli) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
@@ -9690,7 +9446,7 @@ var EXAMPLES = {
   phase: (as) => `phase build "build the slices" --as ${as}`,
   join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
   "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
-  merged: (as) => `merged 1a2b3c4 --files src/a.ts --report "what I did" --as ${as}`,
+  merged: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
   worktree: () => "worktree prune",
   close: () => "close --run 3 --as my-team/orchestrator"
 };
@@ -9745,6 +9501,11 @@ function branchChangedIn(worktree, onto) {
   if (r.status !== 0) return fail(`git diff failed in ${worktree}: ${r.stderr.trim()}`);
   const committed = r.stdout.split("\0").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...committed, ...changedIn(worktree)])];
+}
+function commitChanged(worktree, sha) {
+  if (!worktree) return [];
+  const r = gitAnswer(worktree, "diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${sha}^1`, sha);
+  return r.status === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
 var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path14.dirname(path14.resolve(process.argv[1])));
 var undoOpen = async (repo, group, why) => {
@@ -9848,7 +9609,7 @@ var heldLine = (files) => {
 var rosterLine = (r, roster, ages = false) => {
   const files = heldLine(r.held);
   const holderOf = (file) => roster.find((o) => o.name !== r.name && o.held.some((h) => h.path.toLowerCase() === file.toLowerCase()))?.name;
-  const mine = new Set([...r.held.map((h) => h.path), ...r.everClaimed].map((p) => p.split("\\").join("/").toLowerCase()));
+  const mine = new Set(r.held.map((h) => h.path).map((p) => p.split("\\").join("/").toLowerCase()));
   const unclaimed = r.files.map((f) => f.path.split("\\").join("/")).filter((f) => !mine.has(f.toLowerCase())).flatMap((f) => holderOf(f) ? [`${f} (${holderOf(f)})`] : []);
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} \xB7 ${r.name}`;
@@ -9938,11 +9699,21 @@ var emitHeard = async (p, json, result) => {
   });
 };
 var slashed2 = (s) => s.replace(/\\/g, "/");
-var guidesHere = (p, onto) => {
-  const root = p.place ?? worktreeOf(process.cwd());
-  const ofOnto = root && onto ? projectGuidesAt((spec) => git(root, "show", "--end-of-options", `${onto}:${spec}`), git(root, "ls-tree", "-d", "--name-only", "--end-of-options", `${onto}:.claude/skills`)) : [];
-  return discoverGuides(toolRoot(), root, ofOnto);
-};
+var guidesHere = (p) => discoverGuides(toolRoot(), p.place ?? worktreeOf(process.cwd()));
+function reportGiven() {
+  const reportFile = args.flag("--report-file");
+  let fromFile;
+  if (reportFile !== void 0) {
+    try {
+      fromFile = fs14.readFileSync(path14.resolve(reportFile), "utf8").trim();
+    } catch {
+      fail(CODE_WORDING.reportFileUnreadable(reportFile));
+    }
+  }
+  const given = args.flag("--report")?.trim();
+  if (given && given !== "-" && fs14.existsSync(path14.resolve(given)) && fs14.statSync(path14.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  return fromFile || given || void 0;
+}
 var callerWorktree = null;
 var pathsRoot = () => callerWorktree ?? worktreeOf(process.cwd());
 function resolveClaimPath(file, about = false) {
@@ -10440,70 +10211,121 @@ ${verbHelp()}`);
         break;
       }
       const ontoRef = p.place && fs14.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      const deliver = !!p.place && !args.has("--lock-only");
+      if (deliver) reportGiven();
+      const reportArgs = args.flag("--report-file") !== void 0 ? ["--report-file", path14.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
+      const again = () => [...self(), "merge-lock", "--onto", shellWord2(onto), ...reportArgs.map(shellWord2), "--as", shellWord2(p.name)].join(" ");
+      const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
+      const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
+        const at = git(wt, "rev-parse", "--git-path", dir);
+        return !!at && fs14.existsSync(path14.resolve(wt, at));
+      });
+      const handedBackFile = (wt) => {
+        const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
+        return at ? path14.resolve(wt, at) : null;
+      };
+      const handedBack = (wt) => {
+        try {
+          return JSON.parse(fs14.readFileSync(handedBackFile(wt), "utf8"));
+        } catch {
+          return [];
+        }
+      };
+      const handBack = (wt, files) => {
+        const at = handedBackFile(wt);
+        if (at) fs14.writeFileSync(at, JSON.stringify([.../* @__PURE__ */ new Set([...handedBack(wt), ...files])]));
+      };
+      const conflictHandedBack = (wt, files, granted) => {
+        handBack(wt, files);
+        process.exitCode = 2;
+        const line = CODE_WORDING.autoConflict(onto, files, again());
+        emit({ member: p.name, granted, merged: false, conflicts: files, next: line }, line);
+      };
+      if (deliver && p.place && rebasingIn(p.place)) {
+        const wt = p.place;
+        const open = unmergedIn(wt);
+        const marked = open.filter((f) => {
+          try {
+            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs14.readFileSync(path14.join(wt, f), "utf8"));
+          } catch {
+            return false;
+          }
+        });
+        if (marked.length) {
+          process.exitCode = 2;
+          const line = CODE_WORDING.autoStillConflicted(marked, again());
+          emit({ member: p.name, granted: false, merged: false, conflicts: marked, next: line }, line);
+          break;
+        }
+        if (open.length) hiddenSpawnSync("git", ["add", "-A", "--end-of-options", ...open], { cwd: wt, encoding: "utf8" });
+        const on = hiddenSpawnSync("git", ["-c", "core.editor=true", "rebase", "--continue"], { cwd: wt, encoding: "utf8" });
+        if (on.status !== 0) {
+          const next = unmergedIn(wt);
+          if (next.length) {
+            conflictHandedBack(wt, next, false);
+            break;
+          }
+          fail(CODE_WORDING.autoRebaseFailed(onto, `${on.stderr ?? ""}${on.stdout ?? ""}`.trim().split("\n").at(-1) ?? "git refused"));
+        }
+      }
       const changed = p.place ? branchChangedIn(p.place, ontoRef) : [];
       const reflogMark = p.place ? headReflogLength(p.place) ?? void 0 : void 0;
-      const guides = guidesFor(guidesHere(p, ontoRef), changed);
-      const check = args.flag("--check");
-      if (check !== void 0) {
-        if (args.flag("--report") === void 0 && args.flag("--report-file") === void 0) fail(CODE_WORDING.reportMissing);
-        if (guides.length && args.flag("--guides") === void 0) fail(CODE_WORDING.autoNeedsGuides(CODE_WORDING.guidesForm(guides.map((g) => g.name))));
-      }
-      const r = await packVerb(p, "lock-merge", { onto, reflogMark, guides: guides.map((g) => g.name) });
-      if (check !== void 0 && r.granted && p.place) {
+      const heldBefore = deliver ? await packVerb(p, "held-merge-lock", {}) : null;
+      const r = await packVerb(p, "lock-merge", { onto, reflogMark, ...p.place ? { files: changed } : {} });
+      if (deliver && r.granted && p.place) {
         const wt = p.place;
         const out = (line, code, extra = {}) => {
           process.exitCode = code;
           emit({ member: p.name, granted: true, merged: false, ...extra, next: line }, line);
         };
-        const release = async (line, code) => {
+        const freeLock = async () => {
           const freed = await packVerb(p, "release-merge-lock", {});
           if (freed?.waiters.length) await board.post(p, CODE_WORDING.autoFreed(freed.waiters, p.name), { kind: "msg" });
+        };
+        const release = async (line, code) => {
+          await freeLock();
           out(line, code);
         };
         const sh = (argv, opts = {}) => hiddenSpawnSync(argv[0], argv.slice(1), { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...opts });
-        const reportArgs = args.flag("--report-file") !== void 0 ? ["--report-file", path14.resolve(args.flag("--report-file"))] : ["--report", args.flag("--report")];
-        const guidesArgs = args.flag("--guides") !== void 0 ? ["--guides", args.flag("--guides")] : [];
-        const given = args.list("--files");
-        const cont = [...self(), "merge-lock", "--onto", shellWord2(onto), "--check", shellWord2(check), ...[...reportArgs, ...guidesArgs, ...given.length ? ["--files", ...given] : []].map(shellWord2), "--continue", "--as", shellWord2(p.name)].join(" ");
-        const rebasing = () => {
-          const at = git(wt, "rev-parse", "--git-path", "rebase-merge");
-          return !!at && fs14.existsSync(path14.resolve(wt, at));
-        };
-        const rb = rebasing() ? sh(["git", "-c", "core.editor=true", "rebase", "--continue"]) : sh(["git", "rebase", "--end-of-options", ontoRef]);
+        const rb = sh(["git", "rebase", "--end-of-options", ontoRef]);
         if (rb.status !== 0) {
-          const unmerged = (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
+          const unmerged = unmergedIn(wt);
           if (unmerged.length) {
-            out(CODE_WORDING.autoConflict(onto, unmerged, cont), 2, { conflicts: unmerged });
+            await freeLock();
+            conflictHandedBack(wt, unmerged, true);
             break;
           }
-          if (rebasing()) sh(["git", "rebase", "--abort"]);
+          if (rebasingIn(wt)) sh(["git", "rebase", "--abort"]);
           await release(CODE_WORDING.autoRebaseFailed(onto, `${rb.stderr ?? ""}${rb.stdout ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
           break;
         }
-        const c = sh([check], { shell: true });
-        if (c.status !== 0) {
-          await release(CODE_WORDING.autoCheckFailed(c.status, `${c.stdout ?? ""}${c.stderr ?? ""}`.trim().split("\n").slice(-15).join("\n")), 3);
+        const subjects = (git(wt, "log", "--reverse", "--format=%s", "--end-of-options", `${ontoRef}..HEAD`) ?? "").split("\n").filter(Boolean);
+        const unrecorded = !subjects.length && !!heldBefore?.files?.length;
+        if (!subjects.length && !unrecorded) {
+          await release(CODE_WORDING.autoNothing(onto), 0);
           break;
         }
+        const report = reportArgs.length ? reportArgs : ["--report", subjects.length ? `delivered: ${subjects.join("; ")}` : "delivered"];
         const ff = sh(["git", "push", ".", `HEAD:${onto}`]);
         if (ff.status !== 0) {
           await release(CODE_WORDING.autoPushFailed(onto, `${ff.stderr ?? ""}`.trim().split("\n").at(-1) ?? "git refused"), 1);
           break;
         }
+        const resolved = { files: handedBack(wt) };
         const sha = git(wt, "rev-parse", "HEAD") ?? fail("merge-lock: no HEAD after the fast-forward");
-        const files = given.length ? given : branchChangedIn(wt, `${sha}~${git(wt, "rev-list", "--count", `${ontoRef}..${sha}`) ?? "1"}`);
-        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, "--files", ...files, ...reportArgs, ...guidesArgs, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+        const m = hiddenSpawnSync(process.execPath, [...process.execArgv, process.argv[1], "merged", sha, ...report, "--as", p.name, ...args.has("--json") ? ["--json"] : []], { cwd: wt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, env: { ...process.env, [MERGE_CONFLICTS_ENV]: JSON.stringify(resolved) } });
         process.stdout.write(m.stdout ?? "");
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
+        const kept = handedBackFile(wt);
+        if (m.status === 0 && kept) fs14.rmSync(kept, { force: true });
         break;
       }
       const unreadAtLock = unreadLine(await situation(p), "merge-lock");
-      emit({ member: p.name, ...r, ...r.granted && guides.length ? { guides } : {} }, () => {
-        if (r.granted && guides.length) console.log(CODE_WORDING.mergeGuides(guides.map((g) => `${g.name} (${g.skill})`).join(", ")));
+      emit({ member: p.name, ...r }, () => {
         if (r.granted) console.log(CODE_WORDING.conflictsInReport);
         if (unreadAtLock) console.log(unreadAtLock);
-        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord2(p.name), guides.length ? CODE_WORDING.guidesForm(guides.map((g) => g.name)) : null) : CODE_WORDING.mergeHeld(r.holder, WORDING.wait(self().join(" "), shellWord2(p.name), FOREGROUND_WAIT_MS)));
+        console.log(r.granted ? CODE_WORDING.mergeGranted(self().join(" "), shellWord2(p.name)) : CODE_WORDING.mergeHeld(r.holder, WORDING.wait(self().join(" "), shellWord2(p.name), FOREGROUND_WAIT_MS)));
       });
       break;
     }
@@ -10512,19 +10334,7 @@ ${verbHelp()}`);
       if (await answeredGate(p)) break;
       refuseWithoutPack(p, "merged");
       const sha = args.positional[0] ?? fail("merged: which sha?");
-      const reportFile = args.flag("--report-file");
-      let fromFile;
-      if (reportFile !== void 0) {
-        try {
-          fromFile = fs14.readFileSync(path14.resolve(reportFile), "utf8").trim();
-        } catch {
-          fail(`merged: --report-file ${reportFile} cannot be read`);
-        }
-      }
-      const given = args.flag("--report")?.trim();
-      if (given && given !== "-" && fs14.existsSync(path14.resolve(given)) && fs14.statSync(path14.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
-      const report = fromFile || given || fail(CODE_WORDING.reportMissing);
-      const files = args.list("--files");
+      const report = reportGiven() ?? fail(CODE_WORDING.reportMissing);
       const lock = await packVerb(p, "held-merge-lock", {});
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
@@ -10534,32 +10344,22 @@ ${verbHelp()}`);
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
       }
-      const guidesArg = args.flag("--guides")?.trim();
-      const listed = lock?.guides ?? [];
-      const settled = guidesSettlement(guidesArg ?? "", listed);
-      const form = CODE_WORDING.guidesForm(listed);
-      if (settled.separator) fail(CODE_WORDING.guidesRefused(`separates guides with "${settled.separator}"`, `"${settled.corrected}"`));
-      if (settled.malformed.length) fail(CODE_WORDING.guidesRefused(`has "${settled.malformed[0]}", which is no <name>:<verdict>`, form));
-      if (settled.unknown.length) fail(CODE_WORDING.guidesRefused(`names ${settled.unknown.join(", ")}, which merge-lock did not list`, form));
-      if (settled.missing.length)
-        fail(CODE_WORDING.guidesRefused(`leaves out ${settled.missing.join(", ")}, which merge-lock listed`, `"${[guidesArg, ...settled.missing.map((g) => `${g}:ok|n/a <why>`)].filter(Boolean).join(", ")}"`));
-      if (settled.unjudged.length) fail(CODE_WORDING.guidesRefused(`gives ${settled.unjudged.join(", ")} no verdict: each is "<name>:ok" or "<name>:n/a <why>"`, form));
       if (lock?.onto && p.place && !git(p.place, "rev-parse", "--verify", "-q", "--end-of-options", `${sha}^{commit}`))
         fail(`merged: ${sha} is no commit git knows in ${slashed2(p.place)}; give the sha you pushed onto ${lock.onto}: git -C ${slashed2(p.place)} rev-parse --short HEAD`);
       if (lock?.onto && p.place && gitAnswer(p.place, "merge-base", "--is-ancestor", "--end-of-options", sha, lock.onto).status !== 0)
         fail(`merged: ${sha} is not on ${lock.onto}; fast-forward it first: git -C ${slashed2(p.place)} push . HEAD:${lock.onto}, then merged again`);
-      const conflicts = p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : void 0;
-      const sharers = await packVerb(p, "merged", { sha, files: files.map((f) => declaredPath(f, pathsRoot())), conflicts });
-      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}${guidesArg ? `
-guides: ${guidesArg}` : ""}`, { kind: "msg" });
-      const guidesRecord = report === "-" && guidesArg ? await board.post(p, `merged ${sha}, guides: ${guidesArg}`, { kind: "msg" }) : null;
+      const handed = process.env[MERGE_CONFLICTS_ENV];
+      const conflicts = handed ? JSON.parse(handed) : p.place && lock && lock.reflogMark !== null ? conflictsOf(p.place, lock.onto ?? "", lock.reflogMark) : void 0;
+      const files = lock ? lock.files ?? await board.heldBy(p) : commitChanged(p.place ?? pathsRoot(), sha);
+      const sharers = await packVerb(p, "merged", { sha, files, conflicts });
+      const reported = report === "-" ? null : await board.post(p, `@orchestrator merged ${sha}: ${report}`, { kind: "msg" });
       if (!lock && unlocked) await board.post(p, `merged ${sha} without the merge lock: ${unlocked}`, { kind: "msg" });
       const ended = new Set(await board.endedMembers(p.repo));
       const tell = sharers.filter((o) => !ended.has(o.member)).map((o) => CODE_WORDING.tellResolved(o.path, o.member));
       const after = await situation(p);
       const endTurn = (reported ? owesNothingLine(after) : null) ?? unreadLine(after, "merged");
       emit({ member: p.name, sha, files, tell, ...reported ? { reported: reported.seq } : {}, ...endTurn ? { next: endTurn } : {} }, () => {
-        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : guidesRecord ? `; guides recorded as #${guidesRecord.seq}` : ""}`);
+        console.log(`merged ${sha}: lock released${reported ? `; reported as #${reported.seq}` : ""}`);
         for (const line of tell) console.log(line);
         if (endTurn) console.log(endTurn);
       });
@@ -10593,7 +10393,7 @@ guides: ${guidesArg}` : ""}`, { kind: "msg" });
         const { worktree: mine2, left } = refusal;
         const who = `--as ${shellWord2(p.name)}`;
         fail(
-          `end: your worktree ${mine2} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} ${who}; rebase onto ${base ?? "it"} and push; ${self().join(" ")} merged <sha> --files <path>... --report "<what you did>" ${who}; then end again`
+          `end: your worktree ${mine2} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} --report "<what you did>" ${who}; then end again`
         );
       }
       const before = endedSeat === void 0 ? null : (await board.roster(p.repo)).find((r) => r.name === p.name) ?? null;

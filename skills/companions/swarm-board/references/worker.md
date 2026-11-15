@@ -44,35 +44,24 @@ never `end` while the run is open (it is refused). A turn ended while you owe wo
    on. A listener's first line is the command that re-arms it: run it again in the background;
    `superseded by a newer wait`: a foreground wait of yours took over, ignore it.
 6. **Merge, at the task's end**, and early when a file your task marks *interface* changed in a way
-   other tasks import. Nothing changed: no merge. Never merge without the lock: `merged` refuses it.
-   **The lock is held only to rebase, check and fast-forward**: every other worker waits on it.
-   **In one call** (steps 1 to 6 done by the board): `$S merge-lock --onto <target> --check
-   "<the task's quick check>" --report "<your report>"` (`--guides` too when the grant would list
-   guides; it says so). Read its answer: merged, or a conflict to resolve then `--continue`, or a
-   failed check, the lock given back. The steps below are the same merge by hand.
-   0. **Before the lock**: commit, then run the task's done-when on your branch. What fails is
-      fixed here, never under the lock.
-   1. `$S merge-lock --onto <target>`. `held by …`: run the foreground `$S wait --mentions` in
-      the foreground for its merged event, then run `merge-lock` again. `… is checked out at …`
-      (exit 5): git would refuse the push; do what the answer says.
-   2. `git rebase <target>`.
-   3. A conflict in a file another worker changed: resolve it. You merge second; the resolution
-      is yours, but the other worker hears of it: `merged` ends, for each such file, on `if you
-      resolved a conflict in <file>, tell them: swarm post "@<them> I resolved <file>: <how>"
-      --about <file>`. For each file you resolved, run that post with `<how>` filled in.
-   4. **Guides**: a grant that names `guides of this merge` lists the guides your changes fall
-      under; check the change against each, then settle each in step 6.
-   5. Run the task's **quick check** on the rebased branch, then fast-forward `<target>` from your own
-      worktree: `git -C <path> push . HEAD:<target>`, never forced. A refused push means `<target>` moved:
-      rebase again.
-   6. `$S merged <sha> --files <every path the merge changed> --report "<your report>"`, with
-      `--guides` settling every guide the grant listed, in the form the grant's answer gives (refused otherwise): the
-      report (step 7) rides on the merge, posted as `@orchestrator merged <sha>: <report>`, the
-      orchestrator's one wake; a long report goes through `--report-file <path>` (a file's path given to
-      `--report` is refused); `--report -` merges silently, recorded in the run only. After a
-      change to an *interface* file, `$S post "@swarm <what changed in it>" --about <file>`.
-      Your worktree stays for your next task; `end` removes it once clean and merged.
-7. **Report**: what your agent's definition says, given as `merged --report`, never a separate
+   other tasks import. Nothing changed: no merge. **Before it**: run the task's done-when on
+   your branch, then commit; the delivery checks nothing for you.
+   **You deliver with one call**: `$S merge-lock --onto <target> --report "<your report>"`. The
+   board takes the lock, rebases your branch, fast-forwards `<target>` and records the merge, its
+   files read from your branch: every git step of the delivery is the board's. **Only a clean
+   merge passes**; what does not is handed back to you, nothing merged, the lock released so
+   nobody waits on you: you rework, then deliver again with the same call. **Read its answer and
+   do what it says**: merged (a conflict you resolved in a file another worker changed is then
+   told to them by the post the answer ends on, `<how>` filled in); `held by …` (wait in the
+   foreground for the merged event, then the same call); a conflict (the files it names carry
+   the conflict, marked: edit each to what it must be, run no git command, the same call
+   again); work not committed (commit it, the same call again). The report (step 7) rides on the merge, posted as
+   `@orchestrator merged <sha>: <report>`, the orchestrator's one wake; a long one goes through
+   `--report-file <path>`; `--report -` merges silently. After a change to an *interface* file,
+   `$S post "@swarm <what changed in it>" --about <file>`. Your worktree stays for your next
+   task; `end` removes it once clean and merged. **You hold no board worktree**: the call gives
+   you the lock alone; read `references/merge-by-hand.md`.
+7. **Report**: what your agent's definition says, given as the merge's `--report`, never a separate
    post after the merge; a task that merged nothing reports in one post to `@orchestrator`
    (`post --file` for a long one). A fix task reports per finding id what changed. Then back to 3.
 8. **The run closes** (the closed line): `$S end`, then return one line per task you did. `end`
@@ -94,13 +83,12 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 
 ## Along the way
 
-- **One command per shell call**: absolute paths into your worktree, no `cd … &&`, no pipes into
-  xargs, no `$(…)`; `git -C <path>` instead of cd.
 - **`$S doing "<text>"`** at each step another worker would want to know: the module you are
   in, a check passing, a merge coming.
 - **A mention that asks you something is answered before you go on.**
 - **`$S roster`** for who holds what now.
-- **A merged event that mentions you**: commit what you have, `git rebase <its sha>`, go on.
+- **A merged event that mentions you** asks nothing: your delivery rebases your branch onto it.
+  Only when you need its code now: commit what you have, `git rebase <its sha>`, go on.
 - **One wait at a time:** each new `wait` of yours supersedes the one before.
 - **No background notification in your harness**: a foreground `$S wait --mentions --timeout <ms>`
   between steps, and whenever you have nothing else to do.
@@ -108,6 +96,7 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
 ## Sharing a file
 
 **A shared file is settled by one agreement.** When your changes and another worker's touch the
-same file, the board posts it once to you both (`overlap: …`), ending on the `agree` line to run:
-run it, saying who changes which part, in what order. The agreement goes for you both, and corrects work already
+same file, the board posts it once (`overlap: …`), to the one whose change came second, ending on
+the `agree` line to run: run it, saying who changes which part, in what order; the other hears
+through that agreement. The agreement goes for you both, and corrects work already
 started; to change it, agree again. With no `@<seat>` in it, `--with <seat>` names the other party, so its merge reaches them; an agreement with no other party is refused.

@@ -98,7 +98,7 @@ waits: in the foreground; a seat runs on the plugin's
   the branch's tip by then; the report adds what it found.
 - **A merge past the lock is yours alone**: `merged` refuses a member that holds no merge lock;
   when a merge had to land without it (the holder died mid-merge), record it with
-  `$S merged <sha> --files <path>... --report - --unlocked "<why>" --as <plan>/orchestrator`, the why posted in the run.
+  `$S merged <sha> --report - --unlocked "<why>" --as <plan>/orchestrator`, the why posted in the run.
 - **With no background notification in the harness** (`references/setup.md`), a foreground
   `$S wait --mentions --as <plan>/orchestrator --timeout <ms>` between other work, and when nothing else is to do.
 - **Answer what is asked of you**, on the thread. Two workers' agreement is theirs to make; an
