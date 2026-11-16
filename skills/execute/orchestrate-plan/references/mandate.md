@@ -33,6 +33,10 @@ message, each proposed from the work with its reason:
   as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`. Chosen
   with `verify: off`, recommend a verify after it, with why: removal breaks callers no test
   reaches; the person decides.
+- **`docs:`** `none` or `end`: a docs phase on the documents the plan's change leaves stale, as
+  the `orchestrate` skill's `references/docs-phase.md` says; asked with `simplify:`, proposed with
+  why when the plan touches a command, its options, configuration, a public interface or setup
+  steps.
 
 **`pace:`**
 

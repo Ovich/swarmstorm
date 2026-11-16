@@ -41,6 +41,4 @@ Stop for exactly three things:
 
 With a roadmap, say the plan finished and the roadmap may need redrawing; the person confirms the slot landed. When the plan delivered something a person looks at, recommend going over it with them through the `validate-delivery` skill.
 
-When the plan added what no document in the repository describes, or a report named a stale one left, offer the `technical-writing` skill once, as the `next-step` skill says.
-
 List the decisions whose source is `agent default` that shipped, and ask whether any is to be revisited; when one of them is a `contract`, recommend the `validate-delivery` skill even if nothing was delivered for a person to look at.

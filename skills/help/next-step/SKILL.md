@@ -30,6 +30,13 @@ over together → the `validate-delivery` skill; a run that changed code, its ve
 Its builders still know what they replaced; later it costs a fresh exploration."; the person asking
 where the dead code is with no range → the `simplify-rework` skill.
 
+**Before a run that changed code closes**, every member waiting and the run still open: with
+`docs: none` and a report that named a stale document → its docs phase (the `orchestrate` skill's
+`references/docs-phase.md`): "Bring `<the documents>` in line with the merged code before closing?
+One task per document, existing ones only." Offered with the close's proposal, so it waits on
+nothing the close did not; a no closes the run as planned. **At its close**, what the run added that
+no document describes → the `technical-writing` skill, once.
+
 ## How you offer
 
 - **One line, one recommendation**, the moment it fits, not before: what you would run, why now,

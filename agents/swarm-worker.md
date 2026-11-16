@@ -25,8 +25,7 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    misleading name. See who depends on what with the `dependency-graph` skill's script on the
    modules you touch (`--focus`, one or two hops, no `--out`). Refactor that neighbourhood, behaviour
    unchanged, in its own commits ahead of the task's; a rework that would change a decision is a stop.
-3. **Do the task**: its done-when and nothing beyond, the documents under its *Docs* updated with
-   the code. A comment citing a decision names its plan,
+3. **Do the task**: its done-when and nothing beyond. A comment citing a decision names its plan,
    `<topic>#D<n>`.
 4. **Name for purpose.** Every identifier you add or touch says what it is for, readable at the
    call site; no generic names (`data`, `handle`, `utils`, `manager`, `info`), none left from what
@@ -35,8 +34,8 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    `references/worker.md` says, onto the branch your brief names: the board rebases and
    fast-forwards, and hands back what does not merge clean for you to rework and deliver again;
    your report given with it; **report** to `@orchestrator`: the commit, each done-when with its
-   evidence, what the shaping changed and why, anything the task did not predict (a document
-   the change left stale and the task did not name, among them).
+   evidence, what the shaping changed and why, anything the task did not predict (a repository
+   document the change left stale among them: name it and its section; never edit it, never stop for it).
 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop
 the product the verifiers walk (each verifier owns its own instance), or edit the plan, unless your brief says so in those words. **End your turn only once your task is

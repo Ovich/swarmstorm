@@ -30,6 +30,10 @@ one of its inputs, the person's go: `references/architecture-phase.md`. Propose 
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.
+**Any that changes code can add a docs phase** (charter `docs:`): the repository's existing documents
+brought in line with the merged code, once, before the close: `references/docs-phase.md`. Propose
+it before the run when the work touches a command, its options, configuration, a public interface
+or setup steps, with why.
 **Any with a cycle, of any kind, can add a reflect phase** when the loop circles instead of converging, on the
 person's ask or your judgment: the work paused, every voice asked once, the person deciding how to
 go on: `references/reflect-phase.md`.
