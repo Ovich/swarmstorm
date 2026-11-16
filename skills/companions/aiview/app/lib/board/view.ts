@@ -385,10 +385,14 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
     state,
   });
   if (isPhase(e)) return { ...base, kind: "phase", about: null, ...phaseOf(e) };
-  if (flagOf(e)) {
+  const flag = flagOf(e);
+  if (flag) {
+    // the body mentions the member told and names the other bare: both read as mentions on the page, which wakes no one
+    const bare = (name: string): RegExp => new RegExp(`(^|[^@\\w/-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w/-])`, "g");
+    const text = [flag.writer, flag.holder].reduce((t, name) => t.replace(bare(name), (_m, pre: string) => `${pre}@${name}`), e.body);
     const answer = flagAnswer(e, snap.events);
-    if (answer.state === "settled") return said("settled", "decided", `⚑ flag settled by #${answer.seq}`, TIPS.settled, "settled");
-    return said("flag", "act", "⚑ flag · open", TIPS.flag, answer.state);
+    if (answer.state === "settled") return { ...said("settled", "decided", `⚑ flag settled by #${answer.seq}`, TIPS.settled, "settled"), text };
+    return { ...said("flag", "act", "⚑ flag · open", TIPS.flag, answer.state), text };
   }
   // the board server's liveness events, told apart from the board's plain lines (`swarm` liveness)
   // board-split#D51: an alarm's header names the member it tells of, never its author's card

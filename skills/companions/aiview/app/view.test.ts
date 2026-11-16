@@ -170,6 +170,13 @@ describe("conversation: what an item is (D8, D16)", () => {
     expect(items[1]).toMatchObject({ kind: "agreement", word: "✔ agreed with AL·S1 Sleepy Otter, endorsed", state: "endorsed" });
   });
 
+  test("a flag's text shows both its members as mentions: the one the body names bare too, an already mentioned one once", () => {
+    const body = "@alpha/S1 overlap: alpha/S1 changes a.ts, which beta/S2 changes too. Settle it here.";
+    const flag = item(1, "alpha/S1", body, { kind: "event", event: "flag", about: "a.ts", mentions: ["alpha/S1"], meta: { holder: "beta/S2", writer: "alpha/S1" } });
+    const [shown] = conversation(board(RUNS, ROSTER, [flag]), { run: null, follow: null });
+    expect(shown.text).toBe("@alpha/S1 overlap: @alpha/S1 changes a.ts, which @beta/S2 changes too. Settle it here.");
+  });
+
   test("consecutive messages of one member join; another member between them breaks the run", () => {
     const events = [item(1, "alpha/S1", "one"), item(1, "alpha/S1", "two"), item(2, "beta/S2", "three"), item(1, "alpha/S1", "four")];
     const items = conversation(board(RUNS, ROSTER, events), { run: null, follow: null });
