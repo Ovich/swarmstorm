@@ -20,6 +20,7 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 **Contract**: the decisions it must hold, by id (`D3`); an interface it creates or changes, as code (below).
 **Guides**: the plan's *Guides* decisions within this task's scope, quoted word for word; none, left out.
 **Files**: `path` interface · `path` inside — every file it will edit; an interface file is said so in words.
+**Docs**: the documents already in the repository that describe what it changes (a README section, an architecture doc, a runbook, an API guide, help text), each to update; none, left out.
 **Done when**: a command that exits 0, or what is observed; the tests the mandate asks for, by case.
 **Not this**: what a reader would assume is included and is not; the boundary it must not cross.
 ```
@@ -34,6 +35,11 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 - **A task that outgrows a post** (a module's design, a migration, a screen's states) links a
   short document in aiview, kind `task`, in the plan's group when there is a plan; the post keeps
   its goal, files and done-when. The exception, never the habit.
+- **A task that changes what a durable document describes updates that document in the same
+  merge.** Before the post, grep the repository's documents for the names, commands, flags and
+  behaviours the task changes; each hit is under *Docs*, in *Files* too, and its update is in the
+  done-when. A worker that finds a stale document the task did not name reports it. A task never
+  creates a document; a new one is the `technical-writing` skill's, offered at the close.
 - **A task that includes tests** says in its done-when that the test run has finished before the
   report or the merge lock.
 - **Its tests are the narrowest covering the seat's change**, named as files or a filter, never
@@ -61,9 +67,10 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 |---|---|
 | "Schema first, then the API, then the screens" | Nothing is verifiable until the last task. |
 | "I'll write the tasks with the plan" | They go stale at the first merge; a phase's tasks are written at its open. |
+| "The docs can be updated at the end" | The worker who knew what changed is gone by then; the doc is part of the task. |
 
 ## A report
 
 The worker's report is one post to `@orchestrator`, given with its merge as the swarm-board skill's `references/worker.md` says: done or not, the commit when it merged, each
 done-when with its evidence, what it shaped around the task and why, and anything the task did
-not predict. **Re-run the done-when on the merged branch** before the task counts as done.
+not predict, a stale document it did not update among them. **Re-run the done-when on the merged branch** before the task counts as done.

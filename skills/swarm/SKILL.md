@@ -92,4 +92,6 @@ quoting the accepted architecture's entries and citing the prototype's screens i
 
 When the person says so, or propose it once every worker waits and nothing is left: `$S close
 --run <run>`. Then the summary: what each task delivered, the branch and its commits, and the
-choice that is the person's, a pull request or a merge into their branch. Never delete a branch.
+choice that is the person's, a pull request or a merge into their branch. When the merged work
+adds what no document in the repository describes, or a report names a stale one left, offer the
+`technical-writing` skill once, as the `next-step` skill says. Never delete a branch.
