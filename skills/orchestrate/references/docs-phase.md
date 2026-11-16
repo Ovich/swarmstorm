@@ -6,11 +6,27 @@ has settled. **Existing documents only**: it never creates one, and never edits 
 conventions files (`AGENTS.md`, `CLAUDE.md`, the file the `write-conventions` skill keeps); a rule
 there that the run contradicts is a pause to the person, the rule and the change quoted.
 
-**Propose it** before the run, with why, when the work touches what a document describes: a CLI
-command or its options, configuration, a public interface, setup steps, or how the tool behaves for
-its user. **The person can turn it on mid-run**: a charter amendment (`references/charter.md`).
-Left at `none`, the stale documents the reports named are offered at the close, as the `next-step`
-skill says.
+**The person can turn it on mid-run**: a charter amendment (`references/charter.md`). Left at
+`none`, the stale documents the reports named are offered at the close, as the `next-step` skill
+says.
+
+## Proposing it
+
+**Checked once, before the run is proposed, by you**: the work asked (the person's ask, the
+plan's slices, the tasks foreseen) adds, removes, renames or changes one of these, **the trigger
+list**, also the one the inventory below reads:
+
+- a CLI command, subcommand or option, or its output;
+- a configuration key, an environment variable, a default;
+- a public interface: an exported function or type, a route, a file or message format;
+- a setup or install step, a dependency the user installs;
+- a behaviour the user sees: an error, a limit, what a command does.
+
+**A match is proposed with its evidence**, in the proposal's `docs:` line: what the work changes
+and, when its name is already known, the document that shows it, found by one search of the
+repository's documents for that name (`docs: end · proposed: the work renames --port, the README's
+Usage shows it`). One search per run, never per task. **No match, no proposal**: `docs: none`
+stands without a word. The person decides either way.
 
 ## When
 
@@ -23,9 +39,9 @@ skill says.
 
 1. **Inventory**: one task to one seat, read-only. From the run's range `<base>..<head>` (its diff,
    its commit messages and the stale documents the reports named), list what a document might
-   describe, as the list above; search the repository's documents for each, generated and vendored
-   files and the conventions files left out. Posted to you as one table: document, section, what is
-   stale, the change that made it so.
+   describe, as the trigger list says; search the repository's documents for each, generated and
+   vendored files and the conventions files left out. Posted to you as one table: document,
+   section, what is stale, the change that made it so.
 2. **Choose**: you judge the rows. A row that would need a new document is not a task: it is kept
    for the close, where the `next-step` skill offers the `technical-writing` skill.
 3. **Update**: **one task per document**, to the builder who knows that area, as

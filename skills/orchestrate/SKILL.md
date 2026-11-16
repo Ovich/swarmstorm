@@ -32,8 +32,7 @@ back after a verdict of ready, feature parity verified: `references/simplify-pha
 when a run that changed code nears its close, with why.
 **Any that changes code can add a docs phase** (charter `docs:`): the repository's existing documents
 brought in line with the merged code, once, before the close: `references/docs-phase.md`. Propose
-it before the run when the work touches a command, its options, configuration, a public interface
-or setup steps, with why.
+it when its trigger list matches the work, with the match, as its *Proposing it* says.
 **Any with a cycle, of any kind, can add a reflect phase** when the loop circles instead of converging, on the
 person's ask or your judgment: the work paused, every voice asked once, the person deciding how to
 go on: `references/reflect-phase.md`.

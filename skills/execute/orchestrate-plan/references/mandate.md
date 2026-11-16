@@ -34,9 +34,9 @@ message, each proposed from the work with its reason:
   with `verify: off`, recommend a verify after it, with why: removal breaks callers no test
   reaches; the person decides.
 - **`docs:`** `none` or `end`: a docs phase on the documents the plan's change leaves stale, as
-  the `orchestrate` skill's `references/docs-phase.md` says; asked with `simplify:`, proposed with
-  why when the plan touches a command, its options, configuration, a public interface or setup
-  steps.
+  the `orchestrate` skill's `references/docs-phase.md` says; asked with `simplify:`, `end`
+  proposed with the match as evidence when that file's *Proposing it* trigger list matches the
+  plan's slices, `none` otherwise.
 
 **`pace:`**
 
