@@ -30,6 +30,9 @@ one of its inputs, the person's go: `references/architecture-phase.md`. Propose 
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.
+**Any that changes the repository can add a docs phase**, whatever its shape (charter `docs:`): the
+existing documents brought in line with the settled work: `references/docs-phase.md`. Propose
+it when its trigger list matches the work, with the match, as its *Proposing it* says.
 **Any with a cycle, of any kind, can add a reflect phase** when the loop circles instead of converging, on the
 person's ask or your judgment: the work paused, every voice asked once, the person deciding how to
 go on: `references/reflect-phase.md`.

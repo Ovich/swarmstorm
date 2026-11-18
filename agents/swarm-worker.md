@@ -34,7 +34,8 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    `references/worker.md` says, onto the branch your brief names: the board rebases and
    fast-forwards, and hands back what does not merge clean for you to rework and deliver again;
    your report given with it; **report** to `@orchestrator`: the commit, each done-when with its
-   evidence, what the shaping changed and why, anything the task did not predict.
+   evidence, what the shaping changed and why, anything the task did not predict (a repository
+   document the change left stale among them: name it and its section; never edit it, never stop for it).
 
 **Never** force-push, delete a branch, deploy, run a migration against shared data, start or stop
 the product the verifiers walk (each verifier owns its own instance), or edit the plan, unless your brief says so in those words. **End your turn only once your task is
