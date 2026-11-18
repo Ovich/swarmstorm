@@ -22,9 +22,10 @@ beside it (`pace: run through, the person merges (D41)`), and reaches the next b
 - `simplify:` `none` (the default), `after-verify` or `end`: a simplify phase cuts back the code the
   run changed, as `references/simplify-phase.md` says, when the person asks for it; recommended
   with a verify after it, with why (removal breaks what no test reaches);
-- `docs:` `none` (the default) or `end`: a docs phase brings the repository's existing documents in
-  line with what the run changed, as `references/docs-phase.md` says; proposed, with the match
-  as evidence, only when its *Proposing it* trigger list matches the work;
+- `docs:` `none` (the default), `end` or `after-<phase>`: a docs phase brings the repository's
+  existing documents in line with what the run changed, in any protocol, as
+  `references/docs-phase.md` says; proposed, with the match as evidence, only when its
+  *Proposing it* trigger list matches the work;
 - `reflect:` `when-circling` (the default: proposed or opened as `references/reflect-phase.md`
   says) or `none`; the person may ask for one at any time;
 - `long-horizon:` `none` (the default) or the path of the long-horizon document the run keeps and

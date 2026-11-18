@@ -1,18 +1,22 @@
 # The docs phase
 
-**A building block any protocol's run that changes code can add** (charter `docs:`): the
-repository's existing documents brought in line with what the run changed, once, after the code
-has settled. **Existing documents only**: it never creates one, and never edits the project's
+**A building block any run can add, whatever its protocol's shape** (charter `docs:`), when it
+changes the repository: the built-in protocols, a project's own `protocol-<name>`, a plan run.
+The repository's existing documents are brought in line with what the run changed, once the work
+they describe has settled. It depends on no other phase: a run with no verify and no simplify
+takes it the same way. **Existing documents only**: it never creates one, and never edits the project's
 conventions files (`AGENTS.md`, `CLAUDE.md`, the file the `write-conventions` skill keeps); a rule
 there that the run contradicts is a pause to the person, the rule and the change quoted.
 
-**The person can turn it on mid-run**: a charter amendment (`references/charter.md`). Left at
-`none`, the stale documents the reports named are offered at the close, as the `next-step` skill
-says.
+**The person can turn it on mid-run**: a charter amendment (`references/charter.md`); in a run
+whose work arrives as it goes, a new piece of work that matches the trigger list below is the
+moment to propose it. Left at `none` without the person declining it, the stale documents the
+reports named are offered at the close, as the `next-step` skill says.
 
 ## Proposing it
 
-**Checked once, before the run is proposed, by you**: the work asked (the person's ask, the
+**Checked once, before the run is proposed, by you**, and again for each new piece of work a run
+on call takes: the work asked (the person's ask, the
 plan's slices, the tasks foreseen) adds, removes, renames or changes one of these, **the trigger
 list**, also the one the inventory below reads:
 
@@ -32,8 +36,13 @@ stands without a word. The person decides either way.
 
 | `docs:` | Runs |
 |---|---|
-| `end` | once, after the last verdict of ready and after the simplify phase when there is one, before the run closes |
+| `end` | once, when the run's work has settled: after its last merge, and after its last verify and simplify phase when it has them, before the run closes |
+| `after-<phase>` | after each pass of the phase the protocol names (`after-build`), for a long or looping run whose documents should not wait for the close; `end` then needs no pass of its own unless a later phase changed what they show |
 | `none` | no docs phase (the default) |
+
+**Its place follows from the rule, never from a protocol**: after whatever last changes what the
+documents describe (a build, a fix, a simplify), before whatever only reads it. A protocol that
+names its phases places it the same way.
 
 ## The phase
 
