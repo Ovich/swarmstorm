@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, FileText, LayoutTemplate, Lightbulb, ListChecks, Wrench, type LucideIcon } from "lucide-react";
+import { ChevronRight, FileText, LayoutTemplate, Lightbulb, ListChecks, PenLine, Wrench, type LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils.ts";
 import type { DocumentWithState } from "../../lib/api.ts";
 import { PinToggle } from "../docs/PinToggle.tsx";
@@ -9,6 +9,7 @@ const ICONS: Record<string, LucideIcon> = {
   prototype: LayoutTemplate,
   plan: ListChecks,
   brainstorm: Lightbulb,
+  sketch: PenLine,
 };
 
 /** "workbench" -> "Workbenches", "pr-analysis" -> "Pr analyses". */

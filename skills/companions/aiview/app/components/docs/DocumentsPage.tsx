@@ -10,6 +10,17 @@ import { KindChip } from "./KindChip.tsx";
 import { DocItem } from "./DocItem.tsx";
 import { DocGroup } from "./DocGroup.tsx";
 
+/** The two lists the panel holds: the documents, and the sketches, kept apart so the pages an
+ *  agent makes to align on one question never crowd the documents that stay. */
+export type ListSection = "documents" | "sketches";
+/** The kind a sketch is registered under. */
+export const SKETCH_KIND = "sketch";
+/** Whether a document belongs to `section`'s list; the board (`swarm`) is the menu's Board, in neither. */
+export function inSection(d: { kind: string }, section: ListSection): boolean {
+  if (d.kind === "swarm") return false;
+  return section === "sketches" ? d.kind === SKETCH_KIND : d.kind !== SKETCH_KIND;
+}
+
 /** How many tags show before the rest fold behind "+ n more": the most recent ones. */
 export const TAGS_SHOWN = 12;
 /** Whether the kind and tag chips are shown, remembered in this browser. */
@@ -35,19 +46,23 @@ export function DocumentsPanel({
   activeProject,
   currentId,
   onOpen,
+  section = "documents",
 }: {
   docs: DocumentWithState[];
   groups: Record<string, string>;
   activeProject: string;
   currentId: number | null;
   onOpen: (id: number) => void;
+  section?: ListSection;
 }) {
-  // project scope first, so the kind and tag chips below are themselves scoped
-  const f = useFilters(docs, activeProject);
-  const listed = f.shown.filter((d) => d.kind !== "swarm"); // the board is the menu's Board
+  // the section first, then project scope, so the kind and tag chips below are themselves scoped
+  const f = useFilters(docs.filter((d) => inSection(d, section)), activeProject);
+  const listed = f.shown;
+  const label = section === "sketches" ? "Sketches" : "Documents";
+  const noun = section === "sketches" ? "sketches" : "documents";
   // grouping happens after filtering, so a group shows only its matching members
   const entries = sidebarEntries(listed, groups);
-  const kinds = f.allKinds.filter((k) => k !== "swarm");
+  const kinds = section === "sketches" ? [] : f.allKinds;
   const [allTagsOpen, setAllTagsOpen] = useState(false);
   const hidden = Math.max(0, f.allTags.length - TAGS_SHOWN);
   const tagsShown = allTagsOpen ? f.allTags : f.allTags.filter((t, i) => i < TAGS_SHOWN || f.tags.has(t));
@@ -69,7 +84,7 @@ export function DocumentsPanel({
   return (
     <section
       data-component="DocumentsPanel"
-      aria-label="Documents"
+      aria-label={label}
       className="sticky top-12 flex h-[calc(100vh-48px)] w-[300px] shrink-0 flex-col border-r border-border bg-surface max-[860px]:static max-[860px]:h-auto max-[860px]:max-h-[50vh] max-[860px]:w-full max-[860px]:border-b max-[860px]:border-r-0"
     >
       {currentId !== null && (
@@ -80,14 +95,14 @@ export function DocumentsPanel({
           onClick={() => setNarrowListOpen((o) => !o)}
           className="hidden h-9 w-full cursor-pointer items-center gap-1.5 px-3 text-left text-[13px] text-muted-foreground hover:bg-surface-2 max-[860px]:flex"
         >
-          <span className="font-medium text-foreground">Documents</span> · {listed.length} · <span className="text-accent">{narrowListOpen ? "hide" : "show"}</span>
+          <span className="font-medium text-foreground">{label}</span> · {listed.length} · <span className="text-accent">{narrowListOpen ? "hide" : "show"}</span>
         </button>
       )}
       <div className={cn("px-3 pb-2.5 pt-3", foldOnNarrow)}>
         <div className="flex items-center gap-1.5">
           <div className="relative min-w-0 flex-1">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder={`Find in ${listed.length} documents`} className="pl-8" value={f.query} onChange={(e) => f.setQuery(e.target.value)} />
+            <Input placeholder={`Find in ${listed.length} ${noun}`} className="pl-8" value={f.query} onChange={(e) => f.setQuery(e.target.value)} />
           </div>
           <button
             type="button"
@@ -107,12 +122,16 @@ export function DocumentsPanel({
         </div>
         {filtersOpen && (
           <>
-            <FilterLabel>Kind</FilterLabel>
-            <div className="flex flex-wrap gap-1" data-component="KindChips">
-              {kinds.map((k) => (
-                <KindChip key={k} kind={k} dim={f.kinds.size > 0 && !f.kinds.has(k)} onClick={() => f.toggleKind(k)} />
-              ))}
-            </div>
+            {kinds.length > 0 && (
+              <>
+                <FilterLabel>Kind</FilterLabel>
+                <div className="flex flex-wrap gap-1" data-component="KindChips">
+                  {kinds.map((k) => (
+                    <KindChip key={k} kind={k} dim={f.kinds.size > 0 && !f.kinds.has(k)} onClick={() => f.toggleKind(k)} />
+                  ))}
+                </div>
+              </>
+            )}
             {f.allTags.length > 0 && (
               <>
                 <FilterLabel>Tags</FilterLabel>
@@ -143,7 +162,9 @@ export function DocumentsPanel({
                 <code className="mt-1 block rounded bg-surface-2 px-1.5 py-1 font-mono text-[11px]">aiview open &lt;file&gt;</code>
               </>
             ) : filtering ? (
-              "No documents match: clear filters?"
+              `No ${noun} match: clear filters?`
+            ) : section === "sketches" ? (
+              "No sketches in this project yet: an agent makes one when an idea is clearer seen than read."
             ) : (
               "No documents in this project yet."
             )}

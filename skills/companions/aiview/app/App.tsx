@@ -5,7 +5,7 @@ import { useDocuments } from "./hooks/useDocuments.ts";
 import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
 import { Sidebar } from "./components/shell/Sidebar.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
-import { DocumentsPanel } from "./components/docs/DocumentsPage.tsx";
+import { DocumentsPanel, type ListSection } from "./components/docs/DocumentsPage.tsx";
 import { DocHeader } from "./components/docs/DocHeader.tsx";
 import { MarkdownView } from "./components/viewers/MarkdownView.tsx";
 import { PendingCards } from "./components/docs/PendingCards.tsx";
@@ -144,22 +144,32 @@ export function App() {
   };
   /** The Documents view: the list panel left of the open document. Opening a document from the
    *  panel keeps it; Board or a pinned item from the menu leaves it. Remembered for this tab. */
+  /** Which list the panel holds: the documents, or the sketches (kept apart from them). */
+  const [section, setSectionState] = useState<ListSection>(() => {
+    try {
+      return sessionStorage.getItem(DOCUMENTS_VIEW_KEY) === "sketches" ? "sketches" : "documents";
+    } catch {
+      return "documents";
+    }
+  });
   const [documentsShown, setDocumentsShownState] = useState(() => {
     try {
-      return sessionStorage.getItem(DOCUMENTS_VIEW_KEY) === "1";
+      const v = sessionStorage.getItem(DOCUMENTS_VIEW_KEY);
+      return v === "1" || v === "sketches";
     } catch {
       return false;
     }
   });
-  const setDocumentsShown = (on: boolean) => {
+  const setDocumentsShown = (on: boolean, next: ListSection = section) => {
     setDocumentsShownState(on);
+    setSectionState(next);
     try {
-      sessionStorage.setItem(DOCUMENTS_VIEW_KEY, on ? "1" : "0");
+      sessionStorage.setItem(DOCUMENTS_VIEW_KEY, on ? (next === "sketches" ? "sketches" : "1") : "0");
     } catch {
       // storage unavailable: the view lasts this page only
     }
   };
-  const showDocuments = () => {
+  const showDocuments = (next: ListSection = "documents") => {
     // a document of another project is not this project's: the view opens on its list alone
     const current = docs.find((d) => d.id === currentId);
     if (current && activeProject !== "" && current.project !== activeProject) {
@@ -169,12 +179,12 @@ export function App() {
       if (onBoard) leaveBoard("");
       else history.replaceState(null, "", "/");
       setPath("/");
-      setDocumentsShown(true);
+      setDocumentsShown(true, next);
       return;
     }
     if (onBoard) leaveBoard(currentId !== null ? `#doc=${currentId}` : "");
     setPath("/");
-    setDocumentsShown(true);
+    setDocumentsShown(true, next);
   };
   /** Where this tab was before the agent's pointer moved it, as a hash: what the person
    *  was reading, and where they go back to once the question is answered. Set by the
@@ -337,8 +347,10 @@ export function App() {
         onPickProject={pickProject}
         onBoard={() => showBoard()}
         boardShown={onBoard}
-        documentsShown={!onBoard && documentsShown}
-        onDocuments={showDocuments}
+        documentsShown={!onBoard && documentsShown && section === "documents"}
+        sketchesShown={!onBoard && documentsShown && section === "sketches"}
+        onDocuments={() => showDocuments("documents")}
+        onSketches={() => showDocuments("sketches")}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
@@ -356,7 +368,7 @@ export function App() {
           }}
         />
         <div className="flex min-w-0 flex-1 max-[860px]:flex-col">
-        {!onBoard && documentsShown && <DocumentsPanel docs={docs} groups={groups} activeProject={activeProject} currentId={currentId} onOpen={open} />}
+        {!onBoard && documentsShown && <DocumentsPanel docs={docs} groups={groups} activeProject={activeProject} currentId={currentId} onOpen={open} section={section} />}
         <main
           className={
             // every document fills the right panel, markdown as html and pdf (decided 2026-08-27)
@@ -387,6 +399,7 @@ export function App() {
                   pointedVariant={pointer?.id === doc.id ? pointer.variant : undefined}
                   onClearPointer={stopPointing}
                   workbench={doc.kind === "workbench"}
+                  sketch={doc.kind === "sketch"}
                   doc={doc}
                   dataTick={dataId === doc.id ? dataTick : 0}
                 />

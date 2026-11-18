@@ -39,13 +39,14 @@ $A open "$F" --tag <topic>
 ## Registering a document
 
 - **File name `YYYY-MM-DD-<topic>.<kind>.md`**, flat in the project's folder.
-- **Kind is mandatory**, from the filename or `--kind`: `brainstorm`, `plan`, `task`, `module`, `reference`, `prototype`, `workbench`, `pr-analysis`, `report`, `pdf`, `long-horizon`, `roadmap` (one per project). A kind is a type of document; a topic is a tag.
+- **Kind is mandatory**, from the filename or `--kind`: `brainstorm`, `plan`, `task`, `module`, `reference`, `prototype`, `workbench`, `pr-analysis`, `report`, `pdf`, `long-horizon`, `roadmap` (one per project), `sketch`. A kind is a type of document; a topic is a tag.
 - **One `--group <slug>` per piece of work**, titled once with `--group-title`, at most one group per document.
 - **A plan takes its own group, `<topic>-plan`**, shared with its task documents and nothing else.
 - **`--started <ISO>` when the discussion began before the file existed.**
 - **One document per subject**: iterate the file, never a v2. A rejected variant is removed from the index.
 - **Fix metadata with `update`.** `aiview.sqlite` is the tool's to write, and scratch files stay unregistered.
 - **Prototypes are self-contained HTML**, per the `design-prototype` skill.
+- **A sketch is one self-contained HTML page made to align on one question, per the `sketch` skill**; the viewer lists sketches in their own Sketches, never among the documents.
 - **A workbench is one HTML page, its data optionally in a sidecar `<stem>/` beside it, read only through the frame's bridge, per the `create-workbench` skill**; a trace is a workbench. `move` carries the sidecar with the page.
 - **The project's board is aiview's board page, `#board&project=<name>`, never a document**: `swarm open` adds the run's repository to it with `aiview board --repo <path>`, and `aiview board` alone prints its link. aiview draws it through swarm's `client/reader.ts`, a client of swarm's board server, and never opens swarm's store. `&run=<id>` opens one run's tab; an older `repo=` link and `/board#run=<id>` still open.
 

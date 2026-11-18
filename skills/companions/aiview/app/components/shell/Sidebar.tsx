@@ -5,6 +5,7 @@ import type { DocumentWithState } from "../../lib/api.ts";
 import { type ConnectionState } from "../../hooks/useDocuments.ts";
 import { LiveIndicator } from "../docs/LiveIndicator.tsx";
 import { PinnedNav } from "./PinnedNav.tsx";
+import { inSection } from "../docs/DocumentsPage.tsx";
 
 export { TAGS_SHOWN } from "../docs/DocumentsPage.tsx";
 
@@ -35,6 +36,16 @@ function BoardIcon() {
       <rect x="2" y="2.5" width="3.5" height="11" rx="1" />
       <rect x="6.5" y="2.5" width="3.5" height="7" rx="1" />
       <rect x="11" y="2.5" width="3" height="9" rx="1" />
+    </svg>
+  );
+}
+
+function SketchesIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+      <path d="M2.5 13.5c1.6-.4 2.6-1.4 3.4-2.9" />
+      <path d="M10.6 2.6 13.4 5.4 7 11.8 4.2 9z" />
+      <path d="M9.4 3.8l2.8 2.8" />
     </svg>
   );
 }
@@ -106,6 +117,8 @@ export function Sidebar({
   boardShown = false,
   documentsShown = false,
   onDocuments,
+  sketchesShown = false,
+  onSketches,
 }: {
   docs: DocumentWithState[];
   groups?: Record<string, string>;
@@ -124,10 +137,14 @@ export function Sidebar({
   /** The Documents page is what is shown. */
   documentsShown?: boolean;
   onDocuments?: () => void;
+  /** The Sketches list is what is shown. */
+  sketchesShown?: boolean;
+  onSketches?: () => void;
 }) {
   // the tab's project alone (board-split#D41): there is no All projects
   const inScope = docs.filter((d) => d.project === activeProject);
-  const listed = inScope.filter((d) => d.kind !== "swarm").length;
+  const listed = inScope.filter((d) => inSection(d, "documents")).length;
+  const sketches = inScope.filter((d) => inSection(d, "sketches")).length;
 
   const [kept, setKept] = useState(readKept);
   const [hovered, setHovered] = useState(false);
@@ -227,7 +244,16 @@ export function Sidebar({
             active={documentsShown}
             onClick={go(() => onDocuments?.())}
           />
-          <PinnedNav docs={inScope} currentId={documentsShown || boardShown ? null : currentId} onOpen={(id) => go(() => onOpen(id))()} folded={!open} />
+          <NavItem
+            component="SketchesNav"
+            icon={<SketchesIcon />}
+            label="Sketches"
+            count={sketches}
+            active={sketchesShown}
+            title="Pages an agent made to align on one question, kept apart from the documents"
+            onClick={go(() => onSketches?.())}
+          />
+          <PinnedNav docs={inScope} currentId={documentsShown || sketchesShown || boardShown ? null : currentId} onOpen={(id) => go(() => onOpen(id))()} folded={!open} />
         </nav>
 
         <div data-component="SidebarFooter" className="flex h-10 shrink-0 items-center gap-1.5 border-t border-border px-4 text-[12px] max-md:border-t-0 max-md:px-3 text-muted-foreground">

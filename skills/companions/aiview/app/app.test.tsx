@@ -900,3 +900,51 @@ describe("pinned documents in the menu", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("sketches, a list apart from the documents", () => {
+  const docs = [
+    doc({ id: 1, kind: "plan", title: "Plan" }),
+    doc({ id: 2, kind: "sketch", title: "Options side by side", file_path: "docs/x.sketch.html", format: "html" }),
+    doc({ id: 3, kind: "swarm", title: "Run" }),
+  ];
+
+  test("a document is in one list: a sketch in Sketches alone, the board in neither", async () => {
+    const { inSection } = await import("./components/docs/DocumentsPage.tsx");
+    expect(docs.filter((d) => inSection(d, "documents")).map((d) => d.id)).toEqual([1]);
+    expect(docs.filter((d) => inSection(d, "sketches")).map((d) => d.id)).toEqual([2]);
+  });
+
+  test("the menu counts each list apart and opens Sketches", () => {
+    const onSketches = vi.fn();
+    render(<Sidebar docs={docs} groups={{}} projects={{ JOBS: "JOBS" }} activeProject="JOBS"
+      connection="live" currentId={null} onOpen={() => {}} onSketches={onSketches} />);
+    const nav = document.querySelector('[data-component="SketchesNav"]') as HTMLElement;
+    expect(nav.textContent).toContain("1");
+    expect(document.querySelector('[data-component="DocumentsNav"]')!.textContent).toContain("1");
+    fireEvent.click(nav);
+    expect(onSketches).toHaveBeenCalled();
+  });
+
+  test("the documents panel leaves sketches out; the sketches panel lists them alone, without kind chips", () => {
+    render(<DocumentsPage docs={docs} groups={{}} activeProject="JOBS" currentId={null} onOpen={() => {}} />);
+    expect(screen.queryByText("Options side by side")).toBeNull();
+    expect(screen.getByText("Plan")).toBeTruthy();
+    cleanup();
+    render(<DocumentsPage docs={docs} groups={{}} activeProject="JOBS" currentId={null} onOpen={() => {}} section="sketches" />);
+    expect(screen.getByText("Options side by side")).toBeTruthy();
+    expect(screen.queryByText("Plan")).toBeNull();
+    expect(screen.getByLabelText("Sketches")).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-component="FiltersToggle"]')!);
+    expect(document.querySelector('[data-component="KindChips"]')).toBeNull();
+  });
+
+  test("a sketch frame offers viewport and theme, never Composition", async () => {
+    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    localStorage.setItem("aiview.prototypeMode", "composition");
+    render(<PrototypeFrame html="<html><body><p>h</p></body></html>" sketch />);
+    expect(document.querySelector('[data-component="PrototypeViewportToggle"]')).not.toBeNull();
+    expect(document.querySelector('[data-component="PrototypeThemeToggle"]')).not.toBeNull();
+    expect(document.querySelector('[data-component="PrototypeModeToggle"]')).toBeNull();
+    localStorage.clear();
+  });
+});

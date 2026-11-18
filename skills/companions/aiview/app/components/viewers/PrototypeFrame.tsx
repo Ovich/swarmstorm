@@ -50,6 +50,8 @@ export interface PrototypeFrameProps {
   onClearPointer?: () => void;
   /** A workbench, a tool used at full size: no viewport and no Composition, the theme alone. */
   workbench?: boolean;
+  /** A sketch, a page made to align on one question: viewport and theme, no Composition (nothing in it is bound). */
+  sketch?: boolean;
   /** The document shown: a workbench reads its sidecar folder and keeps its place by it. */
   doc?: { id: number; file_path: string };
   /** Bumped when a workbench's feed commits: the frame is told, not reloaded. */
@@ -60,7 +62,7 @@ const NONE: readonly string[] = [];
 const NO_DOC = { id: 0, file_path: "" };
 const NO_FRAME = { current: null };
 
-export function PrototypeFrame({ html, bindings, target, onOpenSource, pointed = NONE, pointedVariant, onClearPointer, workbench = false, doc, dataTick = 0 }:PrototypeFrameProps) {
+export function PrototypeFrame({ html, bindings, target, onOpenSource, pointed = NONE, pointedVariant, onClearPointer, workbench = false, sketch = false, doc, dataTick = 0 }:PrototypeFrameProps) {
   const [storedViewport, setViewport] = useState(() => stored("aiview.viewport", "full"));
   const [storedMode, setMode] = useState<PrototypeMode>(() =>
     stored("aiview.prototypeMode", stored(legacyModeKey, "rendered")) === "composition" ? "composition" : "rendered",
@@ -68,7 +70,7 @@ export function PrototypeFrame({ html, bindings, target, onOpenSource, pointed =
   // A workbench ignores the stored choices without overwriting them: the next prototype
   // opens at the viewport and in the view the person left it.
   const viewport = workbench ? "full" : storedViewport;
-  const mode: PrototypeMode = workbench ? "rendered" : storedMode;
+  const mode: PrototypeMode = workbench || sketch ? "rendered" : storedMode;
   const [theme, setTheme] = useState<Theme>(() => {
     const s = stored("aiview.theme", "system");
     return THEMES.includes(s as Theme) ? (s as Theme) : "system";
@@ -194,14 +196,18 @@ export function PrototypeFrame({ html, bindings, target, onOpenSource, pointed =
               ))}
             </ToggleGroup>
             <span className="font-mono">{width ? `${width}px` : ""}</span>
-            <span className="ml-3">view</span>
-            <ToggleGroup type="single" value={mode} onValueChange={selectMode} data-component="PrototypeModeToggle">
-              {MODES.map((m) => (
-                <ToggleGroupItem key={m} value={m}>
-                  {m}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            {!sketch && (
+              <>
+                <span className="ml-3">view</span>
+                <ToggleGroup type="single" value={mode} onValueChange={selectMode} data-component="PrototypeModeToggle">
+                  {MODES.map((m) => (
+                    <ToggleGroupItem key={m} value={m}>
+                      {m}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </>
+            )}
           </>
         )}
         {!workbench && (

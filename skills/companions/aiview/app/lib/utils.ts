@@ -49,6 +49,8 @@ const KIND_COLORS: Record<string, { h: number; s: number; tone: KindTone }> = {
   brainstorm: { h: 295, s: 60, tone: "light" },
   "pr-analysis": { h: 330, s: 65, tone: "strong" },
   workbench: { h: 345, s: 70, tone: "light" },
+  // A sketch sits apart from the documents, in its own list: a hue between spec and plan, held by no other kind.
+  sketch: { h: 185, s: 70, tone: "strong" },
   pdf: { h: 0, s: 0, tone: "light" },
 };
 
