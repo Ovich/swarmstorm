@@ -22,6 +22,9 @@ the page takes no mouse: it is looked at, not operated. *Variant*: the variants 
 actions the prototype declares in its `PrototypeBar` (the `design-prototype` skill), mirrored
 here; the in-page bar is hidden, the chosen variant persists across reloads.
 
+**A sketch's toolbar.** Viewport and theme, as a prototype's; no Composition, since nothing in a
+sketch is bound. Variants it declares are mirrored the same way.
+
 **A workbench's toolbar.** Theme alone, the page at full width: a workbench is a tool
 used at its size, so viewport and Composition are not offered, and the person's choices
 for prototypes are kept for the next one.
@@ -33,6 +36,10 @@ chip in the toolbar says what is pointed at. Its cross stops it and takes the ta
 to what the person was reading before the agent pointed, as the agent's `show --done`
 does; a tab the person has since moved is left where it is. The address bar
 holds the pointer (`#doc=12&show=Strip,Menu&variant=step-2`), so the link can be kept.
+
+**Sketches.** The menu's entry after Documents: the tab's project's sketches alone, in the same
+panel as the documents, with search and tags and no kind chips. Documents never lists a sketch,
+so the pages made to align on one question never crowd the ones that stay.
 
 **The board.** Board, first in the menu, is the page `#board&project=<name>`: the tab's project's swarm
 board, drawn by aiview itself from swarm's store, for the repositories the project's runs

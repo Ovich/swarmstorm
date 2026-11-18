@@ -23,6 +23,7 @@ The board, in this order:
 - **Decisions table**: the row core of the `interview` skill's `references/decisions.md`, plus `Log` (the entry `Q7`). The interview's `experiments` option is its first row.
 - **Context being built on.**
 - **Diagrams**, through the `write-diagrams` skill, drawn during the questions.
+- **Sketches**, through the `sketch` skill: a link beside the decision each one served.
 - **What ran**: the recipes the experiments hand back.
 - **Interview log**, or a brainswarm's log, last: per question, verbatim, the options and the recommendation, then the answer as given.
 

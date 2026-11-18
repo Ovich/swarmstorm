@@ -13,7 +13,8 @@ The object is a tree of decisions. Each is answered by what can be read or by th
 **Throw ideas in as you go.** An option the person did not list, a consequence they did not
 name, a neighbouring decision the conversation points at: one line, marked as yours, beside
 the question it belongs to. The interview draws the person out; it also gives them something
-to push against.
+to push against. **A decision clearer seen than read** (options side by side, a change, a
+structure): the `sketch` skill, made unasked, its link in the question.
 
 **Research every decision that rests on a claim about the world**: a tool exists, it works
 with our versions, the industry does it this way. Read the official source, the
