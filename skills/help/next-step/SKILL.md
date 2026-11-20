@@ -21,6 +21,7 @@ or something else. A yes loads that skill; it takes over from there.
 | a screen to build or change | the `design-prototype` skill | a prototype in the project's design language |
 | work on one subject going on past this session, with findings judged as it goes and no plan holding them | the `long-horizon` skill: "Keep this as a long-horizon document, so any session can resume it?" | the document in aiview: a summary and the elements, each with its status |
 | a project's conventions just decided, or about to be | the `write-conventions` skill | the rule in the conventions file |
+| two or more plans awaiting approval, or the person answering an approval request with a question | the `interview` skill's walkthrough: "Walk you through them before you approve, one part at a time?" | each plan understood part by part, its entries in its own log as `write-plan` step 9 says, the approval opening on what was left open |
 
 **At a run's close**, its follow-up: a brainstorm or a debate settled → a plan; a plan approved →
 its run, with build-verify when the result must be walked (with a prototype phase first when it changes a screen, an architecture phase when its modules must be defined); a run whose setup will recur → keep it
@@ -29,6 +30,12 @@ over together → the `validate-delivery` skill; a run that changed code, its ve
 `simplify` skill on its range: "Simplify this run's range `<base>..<head>`, parity verified after?
 Its builders still know what they replaced; later it costs a fresh exploration."; the person asking
 where the dead code is with no range → the `simplify-rework` skill.
+
+**At a walkthrough's end**, finished or stopped, the questions the person asked → one question for
+the whole list, never one per item: the list with its answers, then where to keep them: an
+existing project document (named when one covers the subject), a new one through the
+`technical-writing` skill, the plan itself (in the section each answer belongs to), or nowhere;
+your recommendation marked, with why. Written only on the answer; assume no glossary.
 
 **Before a run that changed the repository closes**, every member waiting and the run still open:
 with `docs: none`, the docs phase never declined in this run, and a report that named a stale

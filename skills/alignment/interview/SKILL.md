@@ -1,6 +1,6 @@
 ---
 name: interview
-description: Use when a person says "interview me" or asks to be interviewed about an idea or an existing design document (a board, a plan, a change) until it is understood the same way by them and the agent, or when another skill needs open decisions resolved one by one. Runs in chat and leaves the resolved decisions there, for the caller to write where they belong. Keeping the discussion as a document is brainstorm's, turning it into a plan is write-plan's.
+description: Use when a person says "interview me" or asks to be interviewed about an idea or an existing design document (a board, a plan, a change) until it is understood the same way by them and the agent, or when another skill needs open decisions resolved one by one; also its walkthrough, when a person asks to have a document awaiting their approval explained ("walk me through", "explain it before I approve") or a caller offers it, one part at a time, the person answering understood, need more or disagree. Runs in chat and leaves the resolved decisions there (a walkthrough, its entries and the disagreements, questions and missing facts it found), for the caller to write where they belong. Keeping the discussion as a document is brainstorm's, turning it into a plan is write-plan's.
 ---
 
 # Interview
@@ -41,6 +41,9 @@ is one the implementation makes silently.
 at most, on the decisions that change an output (kind `contract`) only, each with the
 recommendation first. Every decision it leaves unasked is closed as the agent's default,
 and named so.
+
+**The walkthrough**, the agent explaining a document and the person answering, read-only:
+read `references/walkthrough.md` when it is asked for or a caller offers it.
 
 **Close in chat**, once understanding is shared: every decision with its status and source. The caller decides where
 that goes. **The caller writes decisions as rows**: read `references/decisions.md`.

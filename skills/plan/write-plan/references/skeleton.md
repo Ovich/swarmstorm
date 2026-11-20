@@ -39,5 +39,6 @@ The orchestrator's mandate, as answered.
 
 ## Interview log
 One entry per question, verbatim: the options and the recommendation, then the answer as
-given.
+given. A walkthrough adds its `W<n>` entries as a table under `### Walkthrough <date>`, in the
+format the `interview` skill's `references/walkthrough.md` owns.
 ```

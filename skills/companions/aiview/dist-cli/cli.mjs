@@ -10628,12 +10628,13 @@ var APPROVED = /^approved\b/i;
 var CONFIRMED = /defaults confirmed\s*:\s*([^;]*)/i;
 var DECISIONS = /^#{2,3}\s*(\d+\.\s*)?decisions\b/i;
 var HEADING = /^#{1,6}\s/;
+var WALKTHROUGH = /^###\s+walkthrough\b/i;
 var DEFAULT_SOURCE = /\bagent'?s? default\b/i;
 var cell = (s) => s.replace(/[`*_]/g, "").trim();
-var cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell);
+var PIPE = /(?<!\\)\|/;
+var cells = (row) => row.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "").split(PIPE).map((c) => cell(c.replace(/\\\|/g, "|")));
 var isRule = (row) => /^\s*\|?[\s:|-]+\|?\s*$/.test(row) && row.includes("-");
-function readDecisions(lines) {
-  const start = lines.findIndex((l) => DECISIONS.test(l));
+function readTable(lines, start) {
   if (start < 0) return [];
   const out = [];
   let header2;
@@ -10649,11 +10650,37 @@ function readDecisions(lines) {
       header2 = row.map((h) => h.toLowerCase());
       continue;
     }
-    const at = (name) => row[header2.indexOf(name)] ?? "";
-    const id = at("id");
-    if (id) out.push({ id, kind: at("kind").toLowerCase(), source: at("source"), line: i + 1 });
+    const names = header2;
+    out.push({ at: (name) => row[names.indexOf(name)] ?? "", line: i + 1 });
   }
   return out;
+}
+function readDecisions(lines) {
+  return readTable(lines, lines.findIndex((l) => DECISIONS.test(l))).filter((r) => r.at("id")).map((r) => ({ id: r.at("id"), kind: r.at("kind").toLowerCase(), source: r.at("source"), line: r.line }));
+}
+var ANSWERS = {
+  understood: "understood",
+  "need more": "need more",
+  disagree: "disagree"
+};
+var LEADING = new RegExp(`^(${Object.keys(ANSWERS).join("|")})\\b`);
+var DECISION_ID = /\bD\d+\b/g;
+function lastAnswer(chain) {
+  const last = chain.split("\u2192").pop().trim().toLowerCase().replace(/\s+/g, " ");
+  return ANSWERS[LEADING.exec(last)?.[1] ?? ""] ?? "not walked";
+}
+function readWalkthrough(lines) {
+  let start = -1;
+  lines.forEach((l, i) => {
+    if (WALKTHROUGH.test(l)) start = i;
+  });
+  return readTable(lines, start).filter((r) => r.at("id")).map((r) => ({
+    id: r.at("id"),
+    unit: r.at("unit"),
+    decisions: r.at("decisions").match(DECISION_ID) ?? [],
+    answer: lastAnswer(r.at("answers")),
+    line: r.line
+  }));
 }
 function readApproval(text) {
   const lines = text.split("\n");
@@ -10669,7 +10696,8 @@ function readApproval(text) {
     approved: APPROVED.test(status),
     confirmed,
     decisions,
-    defaults
+    defaults,
+    walkthrough: readWalkthrough(lines)
   };
 }
 function check2(plan) {
@@ -11438,10 +11466,17 @@ function cmdPlan() {
       decisions: plan.decisions.length,
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),
       confirmed: plan.confirmed ?? null,
-      findings
+      findings,
+      walkthrough: plan.walkthrough.map((w) => ({ id: w.id, unit: w.unit, decisions: w.decisions, answer: w.answer, line: w.line }))
     },
     () => {
       for (const f of findings) console.log(`warn  line ${f.line}  ${f.text}`);
+      const walked = plan.walkthrough;
+      if (walked.length) {
+        const ids = (answer) => walked.filter((w) => w.answer === answer).map((w) => w.id);
+        const open = ["need more", "disagree", "not walked"].map((answer) => ({ answer, ids: ids(answer) })).filter((g) => g.ids.length).map((g) => `; ${g.answer}: ${g.ids.join(", ")}`).join("");
+        console.log(`info  walkthrough: ${ids("understood").length} of ${walked.length} units understood${open}`);
+      }
       const state = plan.approved ? "approved" : "not approved";
       const tail = !plan.defaults.length ? "no agent defaults" : plan.approved ? `${plan.defaults.length} agent default(s), ${findings.length ? "not all confirmed" : "all confirmed"}` : `${plan.defaults.length} agent default(s) to list at approval: ${plan.defaults.map((d) => d.id).join(", ")}`;
       console.log(`${findings.length ? "warn" : "ok"}  ${state}, ${plan.decisions.length} decisions, ${tail}`);
