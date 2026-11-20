@@ -62,3 +62,78 @@ test("a plan with no status line is named", () => {
   const f = check(readApproval("# a plan\n"));
   assert.match(f[0]!.text, /no status line/);
 });
+
+/** A plan with its interview log, the walkthrough tables under it as `interview`'s
+ *  `references/walkthrough.md` writes them. */
+const walked = (...tables: string[]) => `${plan("draft", rows)}
+## Interview log
+
+**Q1 · D1.** Options: (1) ship it. **Answer: 1.**
+${tables
+  .map(
+    (body, n) => `
+### Walkthrough 2026-11-${19 + n}
+
+Understanding, not approval: the defaults are confirmed only at the approval.
+
+| id | Unit | Decisions | Answers | Parts asked about |
+|---|---|---|---|---|
+${body}
+`,
+  )
+  .join("")}`;
+
+test("no walkthrough table, no rows", () => {
+  assert.deepEqual(readApproval(plan("draft", rows)).walkthrough, []);
+});
+
+test("the last walkthrough table counts; a second walk never merges with the first", () => {
+  const p = readApproval(
+    walked(
+      "| W1 | The feed | D1 | need more → disagree | cache |\n| W2 | The cache | D2 | |  |",
+      "| W1 | The feed, again | D1, D3 | understood | |",
+    ),
+  );
+  assert.equal(p.walkthrough.length, 1);
+  const w = p.walkthrough[0]!;
+  assert.deepEqual({ ...w, line: 0 }, { id: "W1", unit: "The feed, again", decisions: ["D1", "D3"], answer: "understood", line: 0 });
+});
+
+test("a chain's last segment counts, matched on its leading words; empty Answers is not walked", () => {
+  const p = readApproval(
+    walked(
+      [
+        "| W1 | Phase 1 | D1, D2 | need more → Disagree: the cache should be on disk | cache, D2 |",
+        "| W2 | Phase 2 | see D3 and D10 | understood → need more on the retry |  |",
+        "| W3 | Phase 3 | | Understood. | |",
+        "| W4 | Phase 4 | D4 | | |",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    p.walkthrough.map((w) => [w.id, w.answer, w.decisions]),
+    [
+      ["W1", "disagree", ["D1", "D2"]],
+      ["W2", "need more", ["D3", "D10"]],
+      ["W3", "understood", []],
+      ["W4", "not walked", ["D4"]],
+    ],
+  );
+});
+
+test("each walked row keeps its own 1-based line", () => {
+  const text = walked("| W1 | A | D1 | understood | |\n| W2 | B | D2 | | |");
+  const p = readApproval(text);
+  const lines = text.split("\n");
+  assert.match(lines[p.walkthrough[0]!.line - 1]!, /^\| W1 \|/);
+  assert.match(lines[p.walkthrough[1]!.line - 1]!, /^\| W2 \|/);
+});
+
+test("an escaped pipe inside a §8 cell is text, so the row's source reads right", () => {
+  const p = readApproval(
+    plan("draft", `| D1 | contract | The status is \`draft \\| approved\` | agreed | agent default | 1 |\n| D2 | purpose | Ship | agreed | interview | 1 |`),
+  );
+  assert.deepEqual(p.defaults.map((d) => d.id), ["D1"]);
+  assert.equal(p.decisions[0]!.kind, "contract");
+  assert.equal(p.decisions[1]!.source, "interview");
+});

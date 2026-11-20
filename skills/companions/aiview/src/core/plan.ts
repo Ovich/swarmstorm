@@ -14,6 +14,8 @@ const CONFIRMED = /defaults confirmed\s*:\s*([^;]*)/i;
 /** `## 8. Decisions`, numbered or not. */
 const DECISIONS = /^#{2,3}\s*(\d+\.\s*)?decisions\b/i;
 const HEADING = /^#{1,6}\s/;
+/** `### Walkthrough 2026-11-19`: the date after it is not read. */
+const WALKTHROUGH = /^###\s+walkthrough\b/i;
 const DEFAULT_SOURCE = /\bagent'?s? default\b/i;
 
 export interface Decision {
@@ -36,7 +38,24 @@ export interface PlanApproval {
   readonly decisions: readonly Decision[];
   /** The rows whose source is `agent default`, `contract` ones first. */
   readonly defaults: readonly Decision[];
+  /** The rows of the last `### Walkthrough` table, empty when the plan has none. */
+  readonly walkthrough: readonly Walked[];
 }
+
+/** One unit of a walkthrough (interview skill's `references/walkthrough.md`), by the
+ *  last answer the person gave on it. Understanding only, never an approval. */
+export interface Walked {
+  /** `W1`, `W2`, … */
+  readonly id: string;
+  readonly unit: string;
+  /** The `D<n>` the unit cites. */
+  readonly decisions: readonly string[];
+  readonly answer: Answer;
+  /** 1-based line in the file. */
+  readonly line: number;
+}
+
+export type Answer = "understood" | "need more" | "disagree" | "not walked";
 
 export interface Finding {
   readonly line: number;
@@ -44,15 +63,30 @@ export interface Finding {
 }
 
 const cell = (s: string): string => s.replace(/[`*_]/g, "").trim();
-const cells = (row: string): string[] => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell);
+/** A pipe with a backslash before it is text inside a cell, not a column break. */
+const PIPE = /(?<!\\)\|/;
+const cells = (row: string): string[] =>
+  row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "")
+    .split(PIPE)
+    .map((c) => cell(c.replace(/\\\|/g, "|")));
 const isRule = (row: string): boolean => /^\s*\|?[\s:|-]+\|?\s*$/.test(row) && row.includes("-");
 
-/** The §8 table: its header names the columns, so a plan that orders them otherwise
- *  still reads. */
-function readDecisions(lines: readonly string[]): Decision[] {
-  const start = lines.findIndex((l) => DECISIONS.test(l));
+interface Row {
+  /** The cell under a header name (lowercased), empty when the column is absent. */
+  readonly at: (name: string) => string;
+  /** 1-based line in the file. */
+  readonly line: number;
+}
+
+/** The first table under the heading at `start`, read by its header, so a table whose
+ *  columns are ordered otherwise still reads. Ends at the next heading, or at the first
+ *  non-table line after its rows. */
+function readTable(lines: readonly string[], start: number): Row[] {
   if (start < 0) return [];
-  const out: Decision[] = [];
+  const out: Row[] = [];
   let header: string[] | undefined;
   for (let i = start + 1; i < lines.length && !HEADING.test(lines[i]!); i++) {
     const l = lines[i]!;
@@ -66,11 +100,50 @@ function readDecisions(lines: readonly string[]): Decision[] {
       header = row.map((h) => h.toLowerCase());
       continue;
     }
-    const at = (name: string) => row[header!.indexOf(name)] ?? "";
-    const id = at("id");
-    if (id) out.push({ id, kind: at("kind").toLowerCase(), source: at("source"), line: i + 1 });
+    const names = header;
+    out.push({ at: (name) => row[names.indexOf(name)] ?? "", line: i + 1 });
   }
   return out;
+}
+
+/** The §8 table. */
+function readDecisions(lines: readonly string[]): Decision[] {
+  return readTable(lines, lines.findIndex((l) => DECISIONS.test(l)))
+    .filter((r) => r.at("id"))
+    .map((r) => ({ id: r.at("id"), kind: r.at("kind").toLowerCase(), source: r.at("source"), line: r.line }));
+}
+
+/** An answer's leading words, the one place they are named. */
+const ANSWERS: Readonly<Record<string, Answer>> = {
+  understood: "understood",
+  "need more": "need more",
+  disagree: "disagree",
+};
+const LEADING = new RegExp(`^(${Object.keys(ANSWERS).join("|")})\\b`);
+const DECISION_ID = /\bD\d+\b/g;
+
+/** The last segment of an `a → b → c` chain counts; empty, or words no answer starts
+ *  with, is a unit not walked. */
+function lastAnswer(chain: string): Answer {
+  const last = chain.split("→").pop()!.trim().toLowerCase().replace(/\s+/g, " ");
+  return ANSWERS[LEADING.exec(last)?.[1] ?? ""] ?? "not walked";
+}
+
+/** The last walkthrough table: a second walk adds a table below, never edits the old. */
+function readWalkthrough(lines: readonly string[]): Walked[] {
+  let start = -1;
+  lines.forEach((l, i) => {
+    if (WALKTHROUGH.test(l)) start = i;
+  });
+  return readTable(lines, start)
+    .filter((r) => r.at("id"))
+    .map((r) => ({
+      id: r.at("id"),
+      unit: r.at("unit"),
+      decisions: r.at("decisions").match(DECISION_ID) ?? [],
+      answer: lastAnswer(r.at("answers")),
+      line: r.line,
+    }));
 }
 
 export function readApproval(text: string): PlanApproval {
@@ -95,6 +168,7 @@ export function readApproval(text: string): PlanApproval {
     confirmed,
     decisions,
     defaults,
+    walkthrough: readWalkthrough(lines),
   };
 }
 

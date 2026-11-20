@@ -908,9 +908,20 @@ function cmdPlan(): void {
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),
       confirmed: plan.confirmed ?? null,
       findings,
+      walkthrough: plan.walkthrough.map((w) => ({ id: w.id, unit: w.unit, decisions: w.decisions, answer: w.answer, line: w.line })),
     },
     () => {
       for (const f of findings) console.log(`warn  line ${f.line}  ${f.text}`);
+      const walked = plan.walkthrough;
+      if (walked.length) {
+        const ids = (answer: string) => walked.filter((w) => w.answer === answer).map((w) => w.id);
+        const open = (["need more", "disagree", "not walked"] as const)
+          .map((answer) => ({ answer, ids: ids(answer) }))
+          .filter((g) => g.ids.length)
+          .map((g) => `; ${g.answer}: ${g.ids.join(", ")}`)
+          .join("");
+        console.log(`info  walkthrough: ${ids("understood").length} of ${walked.length} units understood${open}`);
+      }
       const state = plan.approved ? "approved" : "not approved";
       const tail = !plan.defaults.length
         ? "no agent defaults"
