@@ -16,7 +16,7 @@ description: "Use when [the bench's scope, a kind of work on a part of the produ
 
 [The bench's scope, one sentence.] [Its views, one line each: the question each answers.] [What the person does on it.]
 
-This bench is a dev tool for iterating on ideas with the person: a clear UI for them, cheap to read, change and check for you. A new question in this scope is a new view or mode here, never a second bench; an idea dropped takes its view, its code and its feed fields with it, in the same change. Every JSON on the page is shown through `jsonTree`, with its toolbar.
+This bench is a dev tool for iterating on ideas with the person: a clear UI for them, cheap to read, change and check for you. A new question in this scope is a new view or mode here, never a second bench; an idea dropped takes its view, its code and its feed fields with it, in the same change. Every JSON on the page is shown through `jsonTree`, with its toolbar. **Never write a test for this bench**, its page, feed or scripts: it changes with every idea, and is checked by running it.
 
 **The page** is `[YYYY-MM-DD-bench.workbench.html]` in aiview, kind `workbench`
 ([the aiview link]). It is a working document of the data home and never enters this

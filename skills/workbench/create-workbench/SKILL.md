@@ -26,6 +26,10 @@ holds the feed that fills the page and the steps to operate it.
 keeps the page, the feed and the scripts true, fast and easy to drive, adapting them in place
 when the project moves on. No other skill maintains them.
 
+**A bench is never tested.** No test file for its page, feed or scripts, by any agent, at any
+time: a bench changes with every idea, and tests would freeze it. It is checked by being
+run: the feed's loud failures, `check.mjs`, the screenshot, the person.
+
 **The person is in the build.** Every change is shown in the watched browser before the
 next question, as the `design-prototype` skill paces a prototype. A bench described in chat
 was not seen.
@@ -172,4 +176,5 @@ The page's URL, the skill's path, the sources and the feed's kind, what was walk
 | "Quicker to paste the data into the page" | Only the feed writes the sidecar. A pasted copy is stale on the next run and nothing says so. |
 | "I'll keep the old view in case" | A dropped idea leaves with its view, its code and its feed fields, in the same change. A bench that only grows is slow for both users. |
 | "This JSON is small, a `<pre>` will do" | Every JSON goes through `jsonTree`, with its toolbar. One reader, read the same way everywhere. |
+| "I'll add a test so the feed doesn't break" | A bench is never tested. Its scripts fail loudly and are adapted in place; a test is one more thing to change at every idea. |
 | "The feed can sit next to the page in the data home" | It reads the project, so it lives in the project's skill. In the data home it breaks without anyone seeing. |
