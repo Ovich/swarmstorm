@@ -16,7 +16,7 @@ built on a guess.
    where you need it to understand a part. Do not edit anything.
 2. **Answer, in this order**:
    1. **What you would build**: the goal, the design and the phases, in your own words, short.
-      The writer compares it with what they meant.
+      The writer compares it with what they meant, and you with the plan's *Intent*.
    2. **Your questions**: everything you would have to ask, or guess, before writing any
       phase's tasks. Each one says where in the plan it arises.
    3. **Your verdict**: `ready` when no question is left, `not ready` otherwise.
@@ -30,6 +30,9 @@ built on a guess.
 
 ## What to check
 
+- **The plan builds its *Intent***, as the person confirmed it: every part of it delivered by a
+  phase, and every phase serving part of it. A part no phase delivers, or a phase nothing in it
+  asks for, is a question.
 - **Every term** is defined or plainly the codebase's.
 - **Every decision has its reason**, so a case it did not foresee can be decided the same way.
 - **The plan agrees with itself**: the design, the decisions, the phases and the tracker say
