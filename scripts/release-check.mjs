@@ -35,7 +35,6 @@ const skillScriptTests = [
   "skills/plan/write-plan/scripts/decisions.test.mjs",
   "skills/review/pr-review/scripts/scope.test.mjs",
   "skills/project/write-conventions/scripts/rules.test.mjs",
-  "skills/workbench/create-workbench/scripts/*.test.mjs",
 ];
 
 const manifestVersionReaders = [

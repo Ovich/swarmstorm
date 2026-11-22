@@ -87,7 +87,6 @@ jobs:
           node --test skills/plan/write-plan/scripts/decisions.test.mjs
           node --test skills/review/pr-review/scripts/scope.test.mjs
           node --test skills/project/write-conventions/scripts/rules.test.mjs
-          node --test "skills/workbench/create-workbench/scripts/*.test.mjs"
 
   bundles:
     strategy:

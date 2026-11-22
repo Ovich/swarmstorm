@@ -37,7 +37,8 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 - **A task that includes tests** says in its done-when that the test run has finished before the
   report or the merge lock.
 - **Its tests are the narrowest covering the seat's change**, named as files or a filter, never
-  the full suites; the full check is the orchestrator's, on the merged branch.
+  the full suites; the full check is the orchestrator's, on the merged branch. Never a test for
+  a workbench (the `create-workbench` skill).
 - **The design is the plan's**: a decision the task needs that the plan does not carry is a
   question to the person, never one taken in the task.
 
