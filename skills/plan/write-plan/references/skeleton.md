@@ -8,6 +8,7 @@ out, and the header says which. A small change's section is a sentence.
 # <topic>, plan
 
 > **Status**: draft | approved: <who>, <date>, in their words; defaults confirmed: <ids | all>
+> **Intent**: what the person wants and why, the problem it solves and the constraint that decides it, as they confirmed it at the interview's close
 > **Delivers**: the increment, in one sentence, and what is accepted as proof of it
 > **Hard rule**: what must not change, when there is one
 > **Read against**: `<branch>` at `<sha>`; every `file:line` cited holds there
