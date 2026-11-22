@@ -45,5 +45,11 @@ and named so.
 **The walkthrough**, the agent explaining a document and the person answering, read-only:
 read `references/walkthrough.md` when it is asked for or a caller offers it.
 
-**Close in chat**, once understanding is shared: every decision with its status and source. The caller decides where
+**Before closing, restate.** When you think the interview is ending, say in your own words, in
+one short paragraph and the person's terms, their intent (what they want and why), the problem
+it solves and the constraint that decides it, then ask one question: "Is this what you mean? What did I get wrong
+or leave out?" A correction reopens the decision it touches; restate again after it. Close only
+on their yes. In the short mode too; never in the walkthrough, which decides nothing.
+
+**Close in chat**, once the person confirmed the restatement: every decision with its status and source. The caller decides where
 that goes. **The caller writes decisions as rows**: read `references/decisions.md`.
