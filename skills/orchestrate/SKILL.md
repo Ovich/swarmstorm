@@ -27,6 +27,10 @@ a screen: the swarm's ideas forwarded to the prototyper, the person's go: `refer
 **Then, or alone, an architecture phase** (charter `architecture:`) when the work brings a new module,
 changes an interface or its shape is unclear: the system defined on the board, the prototype as
 one of its inputs, the person's go: `references/architecture-phase.md`. Propose each, with why.
+**Any with a verify can add a shakedown phase** (charter `shakedown:`): a walk that stops at each
+blocker or major, has it fixed through you and checks that step again, before a fresh verify, the
+verifier and the worker never trading roles: `references/shakedown-phase.md`. Offer it when the
+verify's steps are long, with why.
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.

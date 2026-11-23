@@ -29,6 +29,9 @@ message, each proposed from the work with its reason:
   also when a skill exists but misses what the plan changes; no is `verify: off`. On, a validator seat runs it alone in its own phases, scoped by you to what the
   phases before merged. What the person adds to watch is written into the *Mandate* in their
   words. Any other special seat (a reviewer of every merge) is asked the same way.
+- **`shakedown:`** `none`, `before-verify` or `first`: a shakedown phase before the verify, as the
+  `orchestrate` skill's `references/shakedown-phase.md` says; asked with `verify:`, only when
+  `verify:` is on; on, one verifier seat more, the shakedown's.
 - **`simplify:`** `none`, `after-verify` or `end`: a simplify phase on the code the plan changed,
   as the `orchestrate` skill's `references/simplify-phase.md` says; asked with `verify:`. Chosen
   with `verify: off`, recommend a verify after it, with why: removal breaks callers no test
