@@ -57,7 +57,7 @@ never `end` while the run is open (it is refused). A turn ended while you owe wo
    the conflict, marked: edit each to what it must be, run no git command, the same call
    again); work not committed (commit it, the same call again). The report (step 7) rides on the merge, posted as
    `@orchestrator merged <sha>: <report>`, the orchestrator's one wake; a long one goes through
-   `--report-file <path>`; `--report -` merges silently. After a change to an *interface* file,
+   `--report-stdin`, piped in (a heredoc), never a file left behind to be read again stale; `--report -` merges silently. After a change to an *interface* file,
    `$S post "@swarm <what changed in it>" --about <file>`. Your worktree stays for your next
    task; `end` removes it once clean and merged. **You hold no board worktree**: the call gives
    you the lock alone; read `references/merge-by-hand.md`.

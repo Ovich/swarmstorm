@@ -428,7 +428,19 @@ const guidesHere = (p: Participant): Guide[] => discoverGuides(toolRoot(), p.pla
 /** The report a merge carries, read and checked the same way wherever it is given: by `merged`, and by `merge-lock`
  *  delivering, before anything is pushed. A file's text, else the text given; undefined when neither. Refused: a file
  *  that cannot be read (G25), and a `--report` naming a file (V-32, D69). */
+let stdinReport: string | undefined;
 function reportGiven(): string | undefined {
+  // a long report piped in (a heredoc): no quoting to break, and no file left behind to be read again stale
+  if (args.has("--report-stdin")) {
+    if (stdinReport === undefined) {
+      try {
+        stdinReport = fs.readFileSync(0, "utf8").trim();
+      } catch {
+        stdinReport = "";
+      }
+    }
+    return stdinReport || fail(CODE_WORDING.reportStdinEmpty);
+  }
   const reportFile = args.flag("--report-file");
   let fromFile: string | undefined;
   if (reportFile !== undefined) {
@@ -1079,9 +1091,10 @@ async function main(): Promise<void> {
       // its report, when it gives one, checked here as merged checks it: what would be refused is refused before the
       // lock and before anything is pushed. None given: the subjects of the commits delivered, read once rebased
       if (deliver) reportGiven();
-      const reportArgs = args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : args.flag("--report") !== undefined ? ["--report", args.flag("--report")!] : [];
+      const piped = deliver && args.has("--report-stdin") ? reportGiven()! : undefined;
+      const reportArgs = piped !== undefined ? ["--report", piped] : args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : args.flag("--report") !== undefined ? ["--report", args.flag("--report")!] : [];
       /** The same call, as the member runs it again once what was handed back is fixed. */
-      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...reportArgs.map(shellWord), "--as", shellWord(p.name)].join(" ");
+      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...(piped !== undefined ? ["--report-stdin"] : reportArgs.map(shellWord)), "--as", shellWord(p.name)].join(" ");
       const unmergedIn = (wt: string): string[] => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt: string): boolean => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);

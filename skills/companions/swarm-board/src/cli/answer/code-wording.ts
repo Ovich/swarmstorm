@@ -23,7 +23,7 @@ export const CODE_WORDING = {
   usage: (cli: Command): string =>
     [
       `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-      "  merge-lock [--report <text>|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
       "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
       "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
     ].join("\n"),
@@ -64,6 +64,7 @@ export const CODE_WORDING = {
   reportMissing: 'merged: --report "<what you did>" is your report to the orchestrator, its one wake (--report-file <path> for a long one); --report - merges silently',
   reportIsAFile: (given: string) => `merged: --report takes the report's text, and ${given} is a file: pass it as --report-file ${given}`,
   reportFileUnreadable: (file: string) => `merged: --report-file ${file} cannot be read`,
+  reportStdinEmpty: "merged: --report-stdin read no report: pipe it in, a heredoc for a long one",
 
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",

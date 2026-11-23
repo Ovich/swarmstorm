@@ -110,6 +110,21 @@ test("a report file that cannot be read is refused before the lock and before an
   assert.equal(lockHeld(r), false);
 });
 
+test("a report piped in through --report-stdin rides on the merge as given, quotes and all; an empty pipe is refused before the lock", () => {
+  const r = fresh();
+  r.commitFile(r.wtB, "src/c.ts", edit(4, "export const five = 'b';"));
+  const before = r.git(r.repo, "rev-parse", "main").trim();
+  const empty = r.swarm(r.wtB, ["merge-lock", "--onto", "main", "--report-stdin"], { input: "" });
+  assert.equal(empty.status, 1);
+  assert.match(empty.stderr, /^merged: --report-stdin read no report/m);
+  assert.equal(r.git(r.repo, "rev-parse", "main").trim(), before, "nothing pushed");
+  assert.equal(lockHeld(r), false);
+  const report = 'F1 fixed: `--port` "quoted" $HOME\nline two';
+  const res = r.swarm(r.wtB, ["merge-lock", "--onto", "main", "--report-stdin"], { input: report });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stdout, /reported as #\d+/);
+});
+
 test("a delivery pushed and never recorded is recorded by the next call, not lost to nothing-to-deliver", () => {
   const r = fresh();
   r.commitFile(r.wtB, "src/a.ts", edit(4, "export const five = 'b';"));
