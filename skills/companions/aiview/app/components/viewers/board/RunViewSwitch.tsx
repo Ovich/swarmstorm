@@ -40,10 +40,13 @@ export function RunViewSwitch({
   phases = [],
   pause = null,
   progress = null,
+  onPhase,
 }: {
   phase?: Phase | null;
   /** Every phase the run opened, in order: drawn as a strip, the last one current. Empty: the current phase alone. */
-  phases?: { name: string; text: string }[];
+  phases?: { name: string; text: string; seq?: number }[];
+  /** A phase segment clicked: its separator's seq, for the conversation to scroll back to its first messages. */
+  onPhase?: (seq: number) => void;
   /** The run's pause (`On you` or `Paused`, its reason), null when it runs: shown in the head (D57). */
   pause?: PauseChip | null;
   /** The open phase's one done count (board-split D62), the lost named on hover; null before the first phase. */
@@ -73,12 +76,29 @@ export function RunViewSwitch({
           {phases.slice(-PHASES_SHOWN).map((p, k, shownPhases) => {
             const now = k === shownPhases.length - 1;
             const label = labels[phases.length - shownPhases.length + k];
+            const tip = p.text ? `${label}: ${p.text}` : label;
+            if (p.seq === undefined || !onPhase)
+              return (
+                <span key={`${k}-${p.name}`} className={now ? "pseg now" : "pseg done"} data-phase={p.name} title={tip}>
+                  <span className="name">{label}</span>
+                  {now && p.text && <span className="said">{p.text}</span>}
+                  {!now && <span className="ok" aria-label="done">✓</span>}
+                </span>
+              );
+            const seq = p.seq;
             return (
-              <span key={`${k}-${p.name}`} className={now ? "pseg now" : "pseg done"} data-phase={p.name} title={p.text ? `${label}: ${p.text}` : label}>
+              <button
+                type="button"
+                key={`${k}-${p.name}`}
+                className={now ? "pseg now" : "pseg done"}
+                data-phase={p.name}
+                title={`${tip}. Click to go to its start`}
+                onClick={() => onPhase(seq)}
+              >
                 <span className="name">{label}</span>
                 {now && p.text && <span className="said">{p.text}</span>}
                 {!now && <span className="ok" aria-label="done">✓</span>}
-              </span>
+              </button>
             );
           })}
         </span>

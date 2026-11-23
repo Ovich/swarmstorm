@@ -337,11 +337,11 @@ function tabOf(snap: BoardSnapshot, run: RunSummary): RunTab {
   return { run: run.run, code: run.code, title: run.title, kind: run.kind, state, done: run.done, of: run.of, protocol: run.protocol ?? null, progress: run.progress ?? null };
 }
 
-/** The open runs, in opening order. */
+/** The open runs, the newest first: the run just opened sits leftmost. */
 export function runTabs(snap: BoardSnapshot): RunTab[] {
   return snap.runs
     .filter((r) => r.open)
-    .sort((a, b) => a.run - b.run)
+    .sort((a, b) => b.run - a.run)
     .map((r) => tabOf(snap, r));
 }
 

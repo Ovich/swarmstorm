@@ -93,7 +93,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
   const phases = useMemo(
     () =>
       snapshot && picked !== null
-        ? conversation(snapshot, { run: picked, follow: null }).flatMap((i) => (i.kind === "phase" ? [{ name: i.name, text: i.text }] : []))
+        ? conversation(snapshot, { run: picked, follow: null }).flatMap((i) => (i.kind === "phase" ? [{ name: i.name, text: i.text, seq: i.seq }] : []))
         : [],
     [snapshot, picked],
   );
@@ -107,6 +107,8 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
     setMenuOpen(false);
   };
   const closeMenu = useCallback(() => setMenuOpen(false), []);
+  // a phase picked in the strip: the conversation scrolls to its separator, its first messages under it
+  const toPhase = (seq: number): void => document.getElementById(`seq-${seq}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
 
   const notYet = (state: "error" | "loading", text: string) => (
     <div className="board" data-component="BoardView" data-state={state}>
@@ -146,7 +148,7 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             </p>
           ) : (
             <>
-              {selectedRun && <RunViewSwitch pause={pauseChip(selectedRun)} phase={selectedRun.phase ?? null} progress={selectedRun.progress ?? null} phases={phases} />}
+              {selectedRun && <RunViewSwitch pause={pauseChip(selectedRun)} phase={selectedRun.phase ?? null} progress={selectedRun.progress ?? null} phases={phases} onPhase={toPhase} />}
               {/* the roster sits left of the conversation, under a run tab only: All has none */}
               <div className={selectedRun && members.length > 0 ? (rosterOpen ? "run-body with-roster" : "run-body with-roster roster-folded") : "run-body"}>
                 {selectedRun && members.length > 0 && (

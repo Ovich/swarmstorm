@@ -49,15 +49,15 @@ const tabOf = (title: string) => tabs().getByText(title).closest("button")!;
 
 // ── RunTabs ────────────────────────────────────────────────────────────────────────
 
-test("the tab row: the Archive icon, then each open run with its code, title and slices done/total, a brainstorm its seats; no closed run, no All (SL10)", () => {
+test("the tab row: the Archive icon, then each open run, the newest first, with its code, title and slices done/total, a brainstorm its seats; no closed run, no All (SL10)", () => {
   show([APP], null);
   const names = tabs().getAllByRole("button").map((b) => b.textContent);
   expect(names[0]).toBe("");
   expect(tabs().getAllByRole("button")[0].getAttribute("aria-label")).toBe("Archive");
   expect(tabs().queryByText("All")).toBeNull();
-  // the run tabs, then the merge lock at the row's end
+  // the run tabs, the newest leftmost, then the merge lock at the row's end
   // a brainstorm's seat rows are seats, never slices to merge: never "0/1"
-  expect(names.slice(1, -1)).toEqual(["RTSessions with refresh tokens", "ALAudit log", "NMNaming the kinds"]);
+  expect(names.slice(1, -1)).toEqual(["NMNaming the kinds", "ALAudit log", "RTSessions with refresh tokens"]);
   expect(names.slice(-1)).toEqual(["merge lock free"]);
   for (const r of CLOSED) expect(tabs().queryByText(r.title)).toBeNull();
   expect(pressed()).toBe(tabOf("Naming the kinds"));
@@ -89,7 +89,7 @@ test("a run's code in its tab carries no tip (D9)", () => {
   expect(code.closest("[data-tip]")).toBeNull();
 });
 
-test("a closed run in the URL opens as an archived tab, read only, × back to the first open run", () => {
+test("a closed run in the URL opens as an archived tab, read only, × back to the newest open run", () => {
   show([APP], 4);
   const archived = screen.getByText("The login page").closest('[data-component="ArchivedTab"]') as HTMLElement;
   expect(archived.getAttribute("aria-pressed")).toBe("true");
@@ -97,7 +97,7 @@ test("a closed run in the URL opens as an archived tab, read only, × back to th
   expect(convo().getByText(/read only · 4 of 4 slices/)).toBeTruthy();
   expect(convo().getByText(/merged 9f0c1d2/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Close the archived run" }));
-  expect(pressed()).toBe(tabOf("Sessions with refresh tokens"));
+  expect(pressed()).toBe(tabOf("Naming the kinds"));
 });
 
 test("an unknown run picks no tab and says so", () => {
@@ -553,6 +553,16 @@ test("a phase opened more than once reads its iteration: build 1, verify 1, buil
   render(<RunViewSwitch phases={loop} />);
   const names = [...document.querySelectorAll('[data-component="PhaseStrip"] .name')].map((n) => n.textContent);
   expect(names).toEqual(["build 1", "verify 1", "build 2", "verify 2"]);
+});
+
+test("a phase segment clicked hands back its separator's seq, for the conversation to scroll to its start", async () => {
+  const { RunViewSwitch } = await import("./components/viewers/board/RunViewSwitch.tsx");
+  const picked: number[] = [];
+  render(<RunViewSwitch phases={[{ name: "build", text: "", seq: 3 }, { name: "verify", text: "walk", seq: 9 }]} onPhase={(s) => picked.push(s)} />);
+  const segs = document.querySelectorAll<HTMLButtonElement>('[data-component="PhaseStrip"] button.pseg');
+  fireEvent.click(segs[0]);
+  fireEvent.click(segs[1]);
+  expect(picked).toEqual([3, 9]);
 });
 
 test("a run that names a protocol shows it on its tab's hover, the kind otherwise; the tab prints only dot, code, title", () => {

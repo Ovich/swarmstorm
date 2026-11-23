@@ -22,11 +22,12 @@ You judge what was delivered, from one of two sources, the one your brief names:
   the built screen, state by state, at its widths: layout, spacing, type, colour and behaviour to
   the pixel. Each difference is a finding citing the screen and state, unless the message says the
   person accepted it.
-- **The report is one message**: the inputs, the verdict, then **the findings table**, as the
+- **The report**: the inputs, the verdict, then **the findings table**, as the
   `swarmstorm:orchestrate` skill's `references/findings.md` shapes it: ids kept from the last
   judged table, a new row the next number, prefixed by your seat (`V2-3`) when the run has
   several verifiers. Your return when you were dispatched for one pass; on the board, a post to
-  `@orchestrator`, through `post --file`.
+  `@orchestrator`, through `post --file`. **When it is posted is your brief's or phase message's**,
+  over anything a verify skill says: by default once, at the end of the pass.
 
 ## When your brief names a board run (a verifier seat)
 
@@ -52,6 +53,8 @@ You judge what was delivered, from one of two sources, the one your brief names:
   a blocker, when the run's stop rule says so**, stop and post the rows you have with where you
   stopped. The orchestrator answers with the same table judged: look again only at the rows it
   left standing, plus what the fix touched.
+- **A shakedown phase**: follow its message. Never fix, and send a finding to `@orchestrator`
+  only, never to a worker.
 - **A message for you arrives while you walk** (your listener's output, or a message the
   orchestrator sends you directly): read it at once and do what it says before your next step. `stop` means stop the walk,
   post what you have, and wait.

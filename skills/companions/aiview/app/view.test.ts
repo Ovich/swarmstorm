@@ -41,19 +41,19 @@ const badged = (badges: Record<string, string>) =>
   [...ROSTER, ...(badges["alpha/S9"] ? [member("alpha", "S9", "Tidy Wombat")] : [])].map((r) => (badges[r.member] ? { ...r, badge: { name: badges[r.member], reason: "x", since: null } } : r)) as SnapshotMember[];
 
 describe("runTabs", () => {
-  test("the open runs in opening order; a closed run has none", () => {
+  test("the open runs, the newest first; a closed run has none", () => {
     expect(runTabs(board([run(5, "e", "EE"), ...RUNS])).map((t) => [t.run, t.code, t.state])).toEqual([
-      [1, "AL", "live"],
-      [2, "BE", "live"],
       [5, "EE", "live"],
+      [2, "BE", "live"],
+      [1, "AL", "live"],
     ]);
   });
 
   test("a run whose orchestrator is quiet reads quiet until it is back (D15)", () => {
     const quiet = item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>);
-    expect(runTabs(board(RUNS, ROSTER, [quiet]))[0].state).toBe("quiet");
+    expect(runTabs(board(RUNS, ROSTER, [quiet])).find((t) => t.run === 1)!.state).toBe("quiet");
     const back = item(1, "alpha/orchestrator", "back", { kind: "event", event: "back" } as unknown as Partial<SnapshotEvent>);
-    expect(runTabs(board(RUNS, ROSTER, [quiet, back]))[0].state).toBe("live");
+    expect(runTabs(board(RUNS, ROSTER, [quiet, back])).find((t) => t.run === 1)!.state).toBe("live");
   });
 });
 

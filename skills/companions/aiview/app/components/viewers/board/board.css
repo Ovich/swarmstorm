@@ -435,6 +435,9 @@
 .board .runhead { flex-wrap: wrap; row-gap: 8px; }
 .board .runhead .phases { flex: 1 1 100%; min-width: 0; display: flex; gap: 6px; }
 .board .pseg { display: flex; align-items: center; gap: 8px; min-width: 0; height: 28px; padding: 0 10px; border-radius: var(--radius-sm); white-space: nowrap; overflow: hidden; }
+.board button.pseg { border: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.board button.pseg:hover { filter: brightness(0.96); }
+.board button.pseg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .board .pseg .name { font-size: 13px; font-weight: 600; color: var(--foreground); overflow: hidden; text-overflow: ellipsis; }
 .board .pseg .said { font-size: 12.5px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; }
 .board .pseg.done { flex: 0 1 auto; background: var(--ok-soft); box-shadow: inset 3px 0 0 var(--ok); max-width: 220px; }
