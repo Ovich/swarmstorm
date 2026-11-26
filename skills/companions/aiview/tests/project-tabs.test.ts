@@ -118,9 +118,7 @@ test("a board key names its project: a slug as itself, a repository on a board b
   assert.equal((await of("alpha")).project, "alpha");
   assert.equal((await of("shop")).project, "beta");
   assert.equal((await fetch(`${base}/api/project-board?project=nowhere`)).status, 404);
-  // D47: an older `?repo=` link still answers, as `?project=`
-  assert.equal(((await (await fetch(`${base}/api/project-board?repo=shop`)).json()) as { project?: string }).project, "beta");
-  // U-F32: an older `#board&repo=<git dir>` names its project by the git dir itself
+  // a repository's git dir names its project too
   assert.equal((await of(encodeURIComponent(path.join(tmp, "beta", "shop", ".git")))).project, "beta");
   assert.equal((await fetch(`${base}/api/project-board?project=${encodeURIComponent(path.join(tmp, "elsewhere", ".git"))}`)).status, 404);
 });
@@ -131,7 +129,4 @@ test("the board hash: written, read, and given its project once", () => {
   assert.deepEqual(readBoardHash("#board&run=7"), { project: null });
   assert.equal(readBoardHash("#doc=3"), null);
   assert.equal(hashWithBoardProject("#board&run=7", "alpha"), "#board&project=alpha&run=7");
-  // D47: a kept `repo=` link still reads as the project, and is rewritten as `project=`, never written back
-  assert.deepEqual(readBoardHash("#board&repo=shop&run=7"), { project: "shop" });
-  assert.equal(hashWithBoardProject("#board&repo=shop&run=7", "shop"), "#board&project=shop&run=7");
 });

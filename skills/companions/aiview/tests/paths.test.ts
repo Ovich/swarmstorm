@@ -8,7 +8,6 @@ import { formatOf, kindFromName, repoRootOf, titleOf, toAbs, toStored } from "..
 test("kindFromName follows <name>.<kind>.<ext>", () => {
   assert.equal(kindFromName("2026-08-23-topic.brainstorm.md"), "brainstorm");
   assert.equal(kindFromName("x.prototype.html"), "prototype");
-  assert.equal(kindFromName("x.mockup.html"), "prototype"); // the migration: the old kind name reads as the new
   assert.equal(kindFromName("x.Spec.md"), "spec"); // lowercased
   assert.equal(kindFromName("plain.md"), "");
   assert.equal(kindFromName("cv-live.pdf"), "");

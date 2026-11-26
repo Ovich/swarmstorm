@@ -3,7 +3,7 @@
 import { hiddenSpawnSync } from "./proc.ts";
 
 /** git's exit and output; `status` null when git could not be run at all. */
-export type GitAnswer = { status: number | null; stdout: string };
+type GitAnswer = { status: number | null; stdout: string };
 
 export const gitAnswer = (cwd: string, ...argv: string[]): GitAnswer => {
   // a worktree's whole reflog is read (D36): room past the 1 MB default

@@ -7,10 +7,10 @@ import { shellWord, WORDING as W, type Command } from "./wording.ts";
 export { ORCHESTRATORS_GROUP };
 
 /** What the rule reads of an open run: its seats, to tell which runs the board already seats. */
-export type OrchestratorRun = { id: number; repo: string; group: string; authority?: readonly string[]; seats?: readonly { id: string }[] };
+type OrchestratorRun = { id: number; repo: string; group: string; authority?: readonly string[]; seats?: readonly { id: string }[] };
 
 /** A seat of the orchestrators board: one per run, named for its group, its roles (if any) the seat's role. */
-export type OrchestratorSeat = { id: string; role?: string; blockers: string[] };
+type OrchestratorSeat = { id: string; role?: string; blockers: string[] };
 
 /** Writes the orchestrators board's seats file for a project and returns its path (AGENTS rule 10: the printed command runs as printed). */
 export type WriteOrchestratorSeats = (repo: string, seats: OrchestratorSeat[]) => string;

@@ -73,17 +73,9 @@ export const awaitedLine = (seat: string, what: string, nth: number, of: number)
 let all: Record<string, EventDef> | null = null;
 const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...registry.events() });
 export const isEvent = (s: string): s is EventName => Object.hasOwn(allEvents(), s);
-/** board-fixes#D14: the events that wake every member (`always`), core and pack, as their names are stored, renamed
- *  ones included: what a store's query narrows the unread to before `wakes` decides. */
-export const alwaysEventNames = (): { events: string[]; stored: string[] } => {
-  const events = Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
-  return { events, stored: [...events, ...Object.keys(RENAMED_EVENTS).filter((old) => events.includes(RENAMED_EVENTS[old]))] };
-};
-/** board-split D36: the events renamed or folded into a badge's event, old name to new; a stored message under an old
- *  name reads as the new one. */
-export const RENAMED_EVENTS: Readonly<Record<string, EventName>> = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };
-/** The name as the board knows it now: an old name renamed, else itself. */
-export const currentEventName = (s: string): string => RENAMED_EVENTS[s] ?? s;
+/** board-fixes#D14: the events that wake every member (`always`), core and pack: what a store's query narrows the
+ *  unread to before `wakes` decides. */
+export const alwaysEventNames = (): string[] => Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
 /** The definition of a known event. */
 export const eventDef = (name: EventName): EventDef => allEvents()[name];
 /** The events, core and pack, a member receives though it is their author (`toAuthor`), by name (v1-1). */
@@ -91,8 +83,7 @@ export const toAuthorEventNames = (): string[] => Object.values(allEvents()).fil
 
 /** The message's event: its stored name, else what its kind is (agreement, endorsement, urgent); null for a plain post. */
 export function eventOf(m: Message): EventName | null {
-  const stored = m.event ? currentEventName(m.event) : null;
-  if (stored && isEvent(stored)) return stored;
+  if (m.event && isEvent(m.event)) return m.event;
   return m.kind === "agreement" || m.kind === "endorsement" || m.kind === "urgent" ? m.kind : null;
 }
 

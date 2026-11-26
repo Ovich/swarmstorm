@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { sidecarOf } from "./paths.ts";
 
-export interface WatchableDoc {
+interface WatchableDoc {
   id: number;
   abs_path: string;
 }
@@ -29,7 +29,7 @@ const SIDECAR_MANIFEST = "manifest.json";
 
 
 /** resolve(dir, filename) -> the watched doc that file belongs to, if any. */
-export type DocResolver = (dir: string, filename: string) => WatchableDoc | undefined;
+type DocResolver = (dir: string, filename: string) => WatchableDoc | undefined;
 
 export class DocWatcher extends EventEmitter {
   private watched = new Map<string, fs.FSWatcher>();

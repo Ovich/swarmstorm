@@ -761,22 +761,10 @@ test("a seat's --files is refused by the board", () => {
   assert.match(r.stderr, /join: a brainstorm run has no claims/);
 });
 
-test("post, agree and endorse --main exit 2 naming the mention to use, writing nothing; a cross-run mention posts as any other (D12)", () => {
+test("one conversation: a post in the run and a cross-run mention post alike (D12)", () => {
   const id = openBrainstorm();
   joinSeat(id, "architect");
   joinSeat(id, "skeptic");
-  const agreed = run("agree", "we keep D3", "--about", "D3", "--as", "idea/architect");
-  for (const argv of [
-    ["post", "hello all", "--main"],
-    ["agree", "we keep D4", "--about", "D4", "--main"],
-    ["endorse", seqOf(agreed.stdout), "--main"],
-  ]) {
-    const r = run(...argv, "--as", "idea/skeptic");
-    assert.equal(r.status, 2, argv[0]);
-    assert.match(r.stderr, /there is no Main any more: the conversation is one; mention who you mean \(@IW, @IW·SL3, @swarm\)/);
-  }
-  assert.notEqual(storedBody(seqOf(agreed.stdout)), null);
-  assert.equal(storedBody(Number(seqOf(agreed.stdout)) + 1), null, "nothing was written");
   const inRun = run("post", "in the run", "--about", "D3", "--as", "idea/architect");
   assert.match(inRun.stdout, /^#\d+$/m);
   const other = openRun();
@@ -1049,21 +1037,12 @@ test("how a member listens: a seat's wait re-arms in the foreground, the orchest
   assert.match(member.at(-1)!, /^start your listener now, in the background/);
 });
 
-test("open --transcript, seat --transcript and the seats file's transcript are refused as unknown, and the help names none (D24)", () => {
-  const seats = path.join(toolRoot, "seats.json");
-  fs.writeFileSync(seats, SEATS);
-  const flagged = run("open", "--kind", "brainstorm", "--group", "idea", "--title", "I", "--seats", seats, "--transcript", "t.jsonl");
-  assert.equal(flagged.status, 1);
-  assert.match(flagged.stderr, /^open: unknown flag --transcript/);
+test("the seats file's transcript is refused as unknown, and the help names none (D24)", () => {
   const named = path.join(toolRoot, "named.json");
   fs.writeFileSync(named, JSON.stringify([{ id: "a", blockers: [], transcript: "t.jsonl" }]));
   const fielded = run("open", "--kind", "brainstorm", "--group", "idea", "--title", "I", "--seats", named);
   assert.equal(fielded.status, 1);
   assert.match(fielded.stderr, /unknown field transcript in a/);
-  const id = String(openBrainstorm());
-  const sliced = run("seat", "architect", "--run", id, "--state", "running", "--transcript", "t.jsonl");
-  assert.equal(sliced.status, 1);
-  assert.match(sliced.stderr, /^seat: unknown flag --transcript/);
   for (const help of [run("--help").stdout, run("--help", "code").stdout]) assert.doesNotMatch(help, /transcript/);
 });
 
@@ -1342,15 +1321,15 @@ test("board-split D30, D38: a member's own end is refused while its run is open;
   assert.match(run("end", "--seat", "S3", "--as", "review-tool/orchestrator").stdout, /^$/, "S3 already ended: nothing to say");
 });
 
-test("seat is the verb; slice is its silent alias, accepted but never shown in --help (AGENTS rule 12)", () => {
+test("seat add is the seat verb's one form; the old name slice is no verb (AGENTS rule 12)", () => {
   const id = String(openRun());
-  const added = run("slice", "add", "S9", "--run", id, "--as", "review-tool/orchestrator");
+  const added = run("seat", "add", "S9", "--run", id, "--as", "review-tool/orchestrator");
   assert.equal(added.status, 0, added.stderr);
   assert.match(added.stdout, /S9 added/);
-  // board-split D36: a seat's state is derived; setting it is refused, by either name, with one answer-module line
-  const set = run("slice", "S9", "--run", id, "--state", "running");
+  const set = run("seat", "S9", "--run", id);
   assert.equal(set.status, 1);
-  assert.match(set.stderr, /^seat: --state is gone: .* end --seat S9 --as \S+\n$/);
+  assert.match(set.stderr, /^seat: add <id>, the one thing it does/);
+  assert.equal(run("slice", "add", "S10", "--run", id, "--as", "review-tool/orchestrator").status, 1);
   const help = run("--help");
   assert.match(help.stdout, /^ {2}seat +add /m);
   assert.doesNotMatch(help.stdout, /^ {2}slice /m);
@@ -1428,18 +1407,11 @@ test("open prints one shape for every kind: the bare run id, then its board URL,
   }
 });
 
-test("D47: roster takes --project; the old --repo is read as it, with one line naming the new word", () => {
+test("D47: roster takes --project", () => {
   openRun();
-  const other = os.tmpdir();
-  const now = runIn(other, "roster", "--project", repo);
+  const now = runIn(os.tmpdir(), "roster", "--project", repo);
   assert.equal(now.status, 0, now.stderr);
   assert.equal(now.stderr, "");
-  const old = runIn(other, "roster", "--repo", repo);
-  assert.equal(old.status, 0, old.stderr);
-  // the two outputs a second apart may read the ages differently (0 s vs 1 s ago): compared without them
-  const ageless = (out: string): string => out.replace(/progress [^,]*, link [^ ]*( ago)?/g, "progress <age>, link <age>");
-  assert.equal(ageless(old.stdout), ageless(now.stdout));
-  assert.equal(old.stderr, "--repo is now --project: read as --project, write that next time\n");
   assert.doesNotMatch(run("--help").stdout, /--repo\b/);
 });
 

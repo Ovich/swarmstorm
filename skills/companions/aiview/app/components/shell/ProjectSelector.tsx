@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils.ts";
 import type { DocumentWithState } from "../../lib/api.ts";
 
 /** The project's colour square: a stable hue from its slug. */
-export function ProjectDot({ slug }: { slug: string }) {
+function ProjectDot({ slug }: { slug: string }) {
   let h = 0;
   for (const c of slug) h = (h * 31 + c.charCodeAt(0)) % 360;
   return (

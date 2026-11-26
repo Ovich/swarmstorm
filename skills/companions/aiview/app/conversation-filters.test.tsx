@@ -18,12 +18,12 @@ const AT = "2026-10-14T10:00:00Z";
 const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
 const member = (seat: string, nick: string): SnapshotMember => ({
   badge: null,
-  member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working", stale: false,
+  member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working",
   files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
 });
 let seq = 0;
 const post = (from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({
-  seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: 1, channel: 1, ...over,
+  seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: 1, ...over,
 });
 const SNAP: BoardSnapshot = {
   repo: "/r/.git", name: "r", runs: [RUN], lock: null, lockHistory: [], roster: [member("S1", "Sleepy Otter"), member("S2", "Brave Badger")],

@@ -108,10 +108,6 @@ test("answers only the repository asked: no fallback, and no run of another repo
   const otherRuns = (await writer.runs()).filter((x) => x.repo === OTHER).map((x) => x.id);
   assert.ok(otherRuns.length > 0);
   assert.ok(!byKey.snapshot.runs.some((r) => otherRuns.includes(r.run)), "repo A's answer carries no run of repo B");
-  // D47: an older `?repo=` still answers, as `?project=` does
-  const other = (await (await fetch(`${base}/api/board?repo=${encodeURIComponent(OTHER)}`)).json()) as BoardBody;
-  assert.deepEqual(other.repos.map((x) => x.repo), [OTHER]);
-  assert.deepEqual(other.snapshot, await writer.snapshot(OTHER));
 });
 
 test("answers a run's repository", async () => {
@@ -135,7 +131,7 @@ test("404 for an unknown run", async () => {
 
 test("a repository asked in another spelling (/ for \\, aiview's stored form) answers the board's own", async () => {
   const other = process.platform === "win32" ? REPO.split("\\").join("/").toUpperCase() : REPO.split("/").join("//");
-  const r = await fetch(`${base}/api/board?repo=${encodeURIComponent(other)}`);
+  const r = await fetch(`${base}/api/board?project=${encodeURIComponent(other)}`);
   assert.equal(r.status, 200);
   assert.equal(((await r.json()) as BoardBody).snapshot.repo, REPO);
 });
@@ -190,7 +186,7 @@ test("the board server restarted: the reader reconnects and each repository is t
   writer = board.writer;
   const changed = (await seen).filter((e) => e.type === "board-changed").map((e) => e.repo);
   assert.deepEqual(changed.sort(), [REPO, OTHER].sort());
-  assert.equal(((await (await fetch(`${base}/api/board?repo=${encodeURIComponent(REPO)}`)).json()) as BoardBody).snapshot.repo, REPO);
+  assert.equal(((await (await fetch(`${base}/api/board?project=${encodeURIComponent(REPO)}`)).json()) as BoardBody).snapshot.repo, REPO);
 });
 
 test("document events unchanged", async () => {

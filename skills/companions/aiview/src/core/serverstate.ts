@@ -7,9 +7,9 @@ import { DATA_ROOT, ensureHome } from "./home.ts";
 
 export const PID_FILE = path.join(DATA_ROOT, "aiview.pid");
 export const PORT_FILE = path.join(DATA_ROOT, "aiview.port");
-export const VERSION_FILE = path.join(DATA_ROOT, "aiview.version");
+const VERSION_FILE = path.join(DATA_ROOT, "aiview.version");
 /** The running server's token (trust-adaptations#D4): every POST carries it; the CLI reads it here. */
-export const TOKEN_FILE = path.join(DATA_ROOT, "aiview.token");
+const TOKEN_FILE = path.join(DATA_ROOT, "aiview.token");
 
 export interface ServerStatus {
   running: boolean;

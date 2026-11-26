@@ -12,7 +12,7 @@ export const codeCloseStep = (owing: string[], run: number, confirm: string): st
   owing.length ? W.closeWaitRunning(run, owing, CW.closeFinish) : W.closeSteps(run, confirm, CW.closeColumns);
 
 /** A member as `me` mentions it: `@<seat>` in its own run, `@<CODE>·<seat>` in another. */
-export const mentionFrom = (me: Participant, member: string): string => {
+const mentionFrom = (me: Participant, member: string): string => {
   const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];
   return plan === me.plan ? `@${seat}` : `@${planCode(plan)}·${seat}`;
 };

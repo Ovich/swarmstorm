@@ -70,7 +70,7 @@ test("a declared seat tasked in the open phase owes it before it joins; a declar
 });
 
 test("a task posted before the phase opened does not make an unjoined seat owe it", () => {
-  const { run, orchestrator, w1 } = openTaskRun(["w1", "w2"]);
+  const { orchestrator, w1 } = openTaskRun(["w1", "w2"]);
   board.post(orchestrator, "@w2 an earlier task");
   board.phase(orchestrator, "build", "build it");
   assert.equal(board.done(w1, "build").all, true);

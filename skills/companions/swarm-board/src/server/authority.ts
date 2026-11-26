@@ -7,7 +7,7 @@ import { ORCHESTRATORS_GROUP, type Hello, type RpcMethod } from "../wire.ts";
 /** The member a connection speaks for; null for an anonymous one (a reader, a CLI before it joins or opens). */
 export type Bound = { id: number; name: string; run: number; seat: string } | null;
 
-export type Authority = {
+type Authority = {
   /** At the Hello: the member it names, which must exist in that run (ended members included). */
   bind(hello: Hello): Bound | "unknown member";
   /** The refusal text for `method` called with `args` over a connection bound to `bound`, or null when allowed. */
@@ -74,8 +74,6 @@ export function makeAuthority(board: Board): Authority {
   const PACK_VERBS_WITHOUT_MEMBER: Record<string, Rule> = {
     // before a join: where the joining seat's folder goes
     place: open,
-    // at every CLI start: the folders left by an older layout
-    legacy: open,
     // with no run: every repository's folders judged
     prune: open,
     // a read of the runs' seat folders

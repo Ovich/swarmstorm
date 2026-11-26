@@ -31,14 +31,12 @@ export function cn(...inputs: ClassValue[]) {
  * A kind not listed here still gets a stable colour from the old hash, moved off the
  * spokes above so a new kind cannot be born looking like an existing one.
  */
-export type KindTone = "strong" | "light";
+type KindTone = "strong" | "light";
 const KIND_COLORS: Record<string, { h: number; s: number; tone: KindTone }> = {
   roadmap: { h: 0, s: 70, tone: "strong" },
   report: { h: 30, s: 70, tone: "light" },
   verification: { h: 50, s: 80, tone: "strong" },
   prototype: { h: 85, s: 65, tone: "light" },
-  // legacy: a mockup row not yet migrated keeps the prototype colour
-  mockup: { h: 85, s: 65, tone: "light" },
   // A swarm run sits beside its plan and slices: off both in hue, more saturated than the slice.
   swarm: { h: 110, s: 80, tone: "strong" },
   seat: { h: 130, s: 55, tone: "strong" },

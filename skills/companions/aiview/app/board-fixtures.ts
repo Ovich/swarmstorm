@@ -61,7 +61,6 @@ const member = (
     role,
     doing,
     state,
-    stale: false,
     files: files.map(([path]) => ({ path, shared: false })),
     joined: at(joined),
     ended: ended === null ? null : at(ended),
@@ -72,7 +71,7 @@ const member = (
 };
 
 let seq = 0;
-/** An item, stored with its author's run (plan D13); `channel` mirrors it, as the snapshot keeps it. */
+/** An item, stored with its author's run (plan D13). */
 const ev = (hm: string, kind: SnapshotEvent["kind"], from: string, body: string, about: string | null = null): SnapshotEvent => ({
   seq: ++seq,
   at: at(hm),
@@ -81,7 +80,6 @@ const ev = (hm: string, kind: SnapshotEvent["kind"], from: string, body: string,
   body,
   about,
   run: runOf(from),
-  channel: runOf(from),
 });
 /** A board event, its name stored (D11). */
 const named = (hm: string, from: string, event: NonNullable<SnapshotEvent["event"]>, body: string): SnapshotEvent => ({
@@ -105,8 +103,8 @@ const AL_SLICES: [string, string, string, string[]][] = [
   ["S3", "The audit page", "blocked", ["S1"]],
 ];
 /** The audit-log plan and its first slice carry their documents' links (D44); the rest none. */
-export const AL_LINK = "http://localhost:4321/d/41";
-export const AL_S1_LINK = "http://localhost:4321/d/42";
+const AL_LINK = "http://localhost:4321/d/41";
+const AL_S1_LINK = "http://localhost:4321/d/42";
 const queue = (plan: string, seats: [string, string, string, string[]][]) =>
   seats.map(([seat, role, state, blockers]) => ({
     seat,
@@ -173,7 +171,7 @@ export const LIVE: BoardSnapshot = {
 LIVE.files = LIVE.roster.flatMap((r) => r.files.map((f) => ({ path: f.path, holders: [r.member] })));
 
 /** The same repository with only the brainstorm and the closed runs: no claims, no merge lock (D3). */
-export const BRAINSTORM_ONLY: BoardSnapshot = {
+const BRAINSTORM_ONLY: BoardSnapshot = {
   ...LIVE,
   runs: [...CLOSED, BRAINSTORM],
   roster: LIVE.roster.filter((r) => r.plan === NM),
@@ -219,4 +217,3 @@ export const REPOS: RepoSummary[] = [
   { repo: OTHER, name: SITE.name, runs: SITE.runs },
 ];
 
-export const at1414 = at("14:14");

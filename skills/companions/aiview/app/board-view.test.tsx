@@ -306,19 +306,6 @@ test("the liveness never takes the word: a busy or waiting activity leaves the b
   }
 });
 
-// plan D55 (4): aiview derives no badge; an older board's liveness words (quiet, gone, a rule, stale) carry none
-test.each([
-  ["quiet", { state: "quiet", doing: "Bash", since: minutesAgo(16), reason: "no progress", tokens: null, movedAt: null }],
-  ["gone", { state: "gone", doing: "Read", since: null, reason: "link lost", tokens: null, movedAt: null }],
-  ["a stall rule", { state: "busy", rule: "call", doing: "Bash npm test", since: minutesAgo(2), reason: "x", tokens: null, movedAt: null }],
-])("a snapshot with no badge draws none, its liveness reading %s", (_name, liveness) => {
-  show([APP], 1, [withActivity(liveness)]);
-  expect(badgeOf(activeCard())).toBeNull();
-  expect(activeCard().querySelector(".state")!.textContent).toBe(WORKING_WORD);
-  cleanup();
-  show([APP], 1, [withMember({ badge: undefined, liveness, stale: true, lastCall: new Date(minutesAgo(30)).toISOString() })]);
-  expect(badgeOf(activeCard())).toBeNull();
-});
 
 // board-split#D36: the board's own badge, its reason on hover, beside the word; none on an ended member
 test.each([
@@ -332,8 +319,8 @@ test.each([
   expect(card.classList.contains("lost")).toBe(name === "lost");
 });
 
-test("the board's badge wins over the liveness words: a null badge on a quiet liveness shows none", () => {
-  show([APP], 1, [withMember({ badge: null, liveness: { state: "quiet", doing: "Read", since: minutesAgo(2), reason: "x", tokens: null, movedAt: null } })]);
+test("the board's badge wins over the liveness words: a null badge shows none", () => {
+  show([APP], 1, [withMember({ badge: null, liveness: { state: "busy", doing: "Read", since: minutesAgo(2), reason: "x", tokens: null, movedAt: null } })]);
   expect(badgeOf(activeCard())).toBeNull();
 });
 
@@ -374,12 +361,9 @@ test("a long label is cut to the card's line", () => {
   expect(text).toMatch(/^▸ Run the whole .*…  12m$/);
 });
 
-test("nothing open: no activity line; an older board's busy activity, the call it runs", () => {
-  show([APP], 1, [withActivity({ state: "working", doing: "Edit", since: null, tokens: null, movedAt: null })]);
+test("nothing open: no activity line", () => {
+  show([APP], 1, [withActivity({ state: "busy", doing: "Edit", since: minutesAgo(3), tokens: null, movedAt: null })]);
   expect(activityOfCard(activeCard())).toBeNull();
-  cleanup();
-  show([APP], 1, [withActivity({ state: "busy", doing: "browser_click /jobs", since: minutesAgo(3), tokens: null, movedAt: null })]);
-  expect(activityOfCard(activeCard())).toBe("▸ browser_click /jobs  3m");
 });
 
 test("a member with no activity renders its word and no activity line", () => {
@@ -394,7 +378,8 @@ test("a member with no activity renders its word and no activity line", () => {
 const agesOf = (card: HTMLElement) => card.querySelector('[data-component="MemberAges"]');
 
 test("each card shows progress <age> and alive <age>, also in its hover title with the activity", () => {
-  show([APP], 1, [withActivity({ state: "busy", doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null, progressAt: minutesAgo(4), aliveAt: Date.now() - 20000 })]);
+  const liveness = { state: "busy", doing: "Bash", since: minutesAgo(3), tokens: null, movedAt: null, progressAt: minutesAgo(4), aliveAt: Date.now() - 20000 };
+  show([APP], 1, [withMember({ liveness, badge: undefined, activity: { open: { name: "Bash", target: "Bash", since: minutesAgo(3), boardWait: false }, background: null } })]);
   const card = activeCard();
   expect(agesOf(card)!.textContent).toBe("progress 4 min · alive 20 s");
   expect(card.title).toContain("progress 4 min · alive 20 s");

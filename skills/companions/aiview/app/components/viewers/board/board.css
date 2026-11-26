@@ -144,7 +144,6 @@
 .board .run.closed { opacity: .5; }
 .board .run .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; background: var(--faint-foreground); }
 .board .run .dot.live { background: var(--ok); }
-.board .run .dot.quiet { background: #d97706; }
 .board .run .code { font: 600 11px var(--mono, ui-monospace, monospace); }
 .board .run .of { font-size: 11px; color: var(--faint-foreground); }
 .board .run .x { margin-left: 2px; color: var(--faint-foreground); padding: 0 2px; }
@@ -252,8 +251,6 @@
 .board .agent-strip .card.ended, .board .agent-strip .card.away, .board .agent-strip .card.stopped, .board .agent-strip .card.lost { opacity: .55; }
 .board .agent-strip .doing { min-height: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* the member's token counter: flat at the run's stall threshold marked amber, unreadable faint */
-.board .state.quiet { color: var(--amber); }
-.board .state.quiet i { background: var(--amber); }
 /* the member's activity (swarm-relay#D9): busy a solid dot, gone faded and struck but kept, the open or last tool beneath */
 .board .agent-strip .card.lost { opacity: .55; box-shadow: none; background: var(--surface); }
 .board .agent-strip .card:has(.activity) .doing { -webkit-line-clamp: 1; }
@@ -336,7 +333,6 @@
 .board .runs, .board .run-tabs { background: var(--card); }
 .board .runs .lockwrap { background: linear-gradient(to right, transparent, var(--card) 20px); }
 .board .run[aria-pressed="true"] { border-bottom-color: var(--accent); font-weight: 500; }
-.board .run .dot.quiet { background: var(--warn); }
 .board .run .code { font: 600 11px var(--font-sans); }
 .board .lock { height: 28px; padding: 0 10px; border-radius: 14px; font-size: 12px; background: var(--card); }
 .board .item .head { font-size: 13px; }
@@ -362,7 +358,6 @@
 .board .run .st { font-size: 11px; padding: 0 7px; border-radius: 10px; font-weight: 500; line-height: 18px; background: var(--surface-2); color: var(--muted-foreground); }
 .board .run .st .of { color: inherit; font-size: inherit; }
 .board .run .st.s-live { background: var(--ok-soft); color: var(--ok); }
-.board .run .st.s-quiet { background: var(--warn-soft); color: var(--warn); }
 .board .runs .lockwrap { gap: 6px; padding-left: 16px; }
 .board .menu.pill, .board .lock { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 14px; font-size: 12px; color: var(--muted-foreground); background: var(--card); white-space: nowrap; }
 .board .menu.pill:hover { color: var(--foreground); }
@@ -572,6 +567,5 @@
 /* the simpler run tab: a state dot, the code, the title (2026-10-29) */
 .board .run .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--faint-foreground); }
 .board .run .dot.s-live { background: var(--ok); }
-.board .run .dot.s-quiet { background: var(--warn); }
 .board .run .dot.s-closed { background: transparent; box-shadow: inset 0 0 0 1.5px var(--faint-foreground); }
 .board .runhead .runpause .code { font-size: 11px; font-weight: 600; letter-spacing: .06em; opacity: .8; }

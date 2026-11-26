@@ -6,7 +6,6 @@ import { hiddenSpawnSync } from "../../proc.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DATA_ROOT } from "../../board/home.ts";
 import { baseRef, git } from "../../git.ts";
 import { stopLinks } from "../../link/link.ts";
 import { canonicalPath, worktreeOf } from "../../place/place.ts";
@@ -107,41 +106,9 @@ function sweep(wt: string, repo: string, into: string | null): { removed: boolea
   return { removed: why === null, why };
 }
 
-/** Where the board made worktrees before D6: under the data home. */
-const LEGACY_ROOT = path.join(DATA_ROOT, "worktrees");
-const LEGACY_SWEPT = path.join(LEGACY_ROOT, ".swept");
-
-/** D6: the legacy data-home root, swept once as a migration, never by prune: each clean worktree in it is removed
- *  (its branch kept, so no commit is lost), one with uncommitted changes is kept and named. The root goes when empty;
- *  else a marker keeps the sweep from running again. Returns one line per kept worktree; [] when nothing was there. */
-function sweepLegacyRoot(): string[] {
-  if (!fs.existsSync(LEGACY_ROOT) || fs.existsSync(LEGACY_SWEPT)) return [];
-  const kept: string[] = [];
-  const sub = (d: string) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)) : []);
-  for (const wt of sub(LEGACY_ROOT).flatMap(sub)) {
-    const common = git(wt, "rev-parse", "--git-common-dir");
-    if (!common) {
-      // not a worktree any more: an empty folder goes, anything else stays
-      if (!fs.readdirSync(wt).length) fs.rmdirSync(wt);
-      else kept.push(`${wt}: not a git worktree, left as it is`);
-      continue;
-    }
-    const status = run(wt, "status", "--porcelain", "--untracked-files=all");
-    if (!status.ok || status.out) {
-      kept.push(`${wt}: uncommitted changes, kept`);
-      continue;
-    }
-    const why = removeWorktree(wt, path.resolve(wt, common));
-    if (why) kept.push(`${wt}: ${why}`);
-  }
-  for (const runDir of sub(LEGACY_ROOT)) if (!fs.readdirSync(runDir).length) fs.rmdirSync(runDir);
-  if (!fs.readdirSync(LEGACY_ROOT).length) fs.rmdirSync(LEGACY_ROOT);
-  else fs.writeFileSync(LEGACY_SWEPT, `${new Date().toISOString()}\n`);
-  return kept;
-}
 
 /** A seat's worktree as its callers hold it: the run, the member whose link holds it open, its folder. */
-export type SeatRef = { run: number; member: string; worktree: string };
+type SeatRef = { run: number; member: string; worktree: string };
 /** A worktree folder's owner as the board recorded it. */
 export type WorktreeRecord = { run: number; open: boolean; repo: string; base: string | null };
 
@@ -190,5 +157,3 @@ export function sweepAll(repos: Iterable<string>, recordOf: (dir: string) => Wor
   });
 }
 
-/** D6: the worktrees an older board made under the data home, swept once; one line per kept worktree. */
-export const sweepLegacy = (): string[] => sweepLegacyRoot();

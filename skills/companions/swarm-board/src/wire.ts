@@ -100,23 +100,23 @@ export type MemberActivity = {
 export type Hello = { type: "hello"; version: string; ticket: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
 export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[] };
 /** a wait whose CLI went away */
-export type Cancel = { type: "cancel"; id: string };
+type Cancel = { type: "cancel"; id: string };
 export type Activity = { type: "activity"; at: number; activity: MemberActivity };
 /** spec §7: what its member's worktree changed since it left its target, sent on a change */
-export type Changes = { type: "changes"; files: string[] };
+type Changes = { type: "changes"; files: string[] };
 /** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
-export type Beat = { type: "beat" };
+type Beat = { type: "beat" };
 export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
 /** a reader (aiview) asks to hear every commit as `changed` (swarm-relay D23) */
-export type Subscribe = { type: "subscribe" };
+type Subscribe = { type: "subscribe" };
 // down: the server to a link or a CLI
 /** `watched`: the member's folder and the branch it is read against, for its link's changes (spec §7); absent for none */
-export type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
+type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
 export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
 /** `member`: the Hello names a member that run does not have (trust-adaptations#D5). */
 export type Refused = { type: "refused"; reason: "ticket" | "version" | "superseded" | "shutdown" | "closed" | "member" };
 /** to a reader that called subscribe, after each commit */
-export type Changed = { type: "changed"; repo: string };
+type Changed = { type: "changed"; repo: string };
 
 export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
 

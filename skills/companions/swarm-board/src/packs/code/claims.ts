@@ -21,8 +21,6 @@ export interface ClaimsDeps {
   relPath(repo: string, file: string): string | null;
   fold(s: string): string;
   slashes(rel: string): string;
-  /** A run of `kind` gives its members claims by default (D22): an interface change is announced to those runs. */
-  kindHasPack(kind: string): boolean;
 }
 
 export interface Claims {
@@ -69,7 +67,7 @@ export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark
 type Row = Record<string, unknown>;
 
 export function claimsOf(deps: ClaimsDeps): Claims {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes, kindHasPack } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold, slashes } = deps;
 
   /** Every live holder of `rel` by id, in claim order: of the path itself, or of a directory it is under (G42). */
   const holdersOf = (repo: string, rel: string): number[] =>

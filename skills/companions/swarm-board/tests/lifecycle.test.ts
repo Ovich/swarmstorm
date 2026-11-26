@@ -57,10 +57,6 @@ const closedAgo = (run: number, ms: number): void => {
   raw.prepare("UPDATE messages SET at = ? WHERE run = ?").run(ago(ms + DAY), run);
 };
 
-/** Makes rows read as a store from before runs labelled every item: run null, dated `ms` ago (D13). */
-const storedBeforeRuns = (seqs: number[], ms: number): void => {
-  for (const seq of seqs) raw.prepare("UPDATE messages SET run = NULL, at = ? WHERE seq = ?").run(ago(ms), seq);
-};
 
 test("a closed run refuses a post; its messages stay readable", () => {
   const { run, s1, s2 } = runWithMembers("alpha");
@@ -126,31 +122,6 @@ test("close posts the closed event with the run it closes (D67)", () => {
   const closed = board.snapshot(REPO).events.filter((e) => e.kind === "event" && e.body === `run ${run.id} closed`);
   assert.equal(closed.length, 1);
   assert.equal(closed[0].run, run.id);
-});
-
-test("prune reaches only old rows stored before runs (run null): plain talk goes, agreements and their endorsements stay with their pruned author; an open run's old talk stays (D23)", () => {
-  const alpha = runWithMembers("alpha");
-  const beta = runWithMembers("beta");
-  const plain = board.post(alpha.s1, "old news");
-  const agreement = board.post(alpha.s1, "alpha owns the header", { kind: "agreement", with: ["orchestrator"] });
-  const endorsement = board.endorse(beta.s1, agreement.seq);
-  const recentOld = board.post(alpha.s2, "old row, recent");
-  storedBeforeRuns([plain.seq, agreement.seq, endorsement.seq], 40 * DAY);
-  storedBeforeRuns([recentOld.seq], 5 * DAY);
-  const openTalk = board.post(beta.s2, "an open run's talk, long ago");
-  raw.prepare("UPDATE messages SET at = ? WHERE seq = ?").run(ago(40 * DAY), openTalk.seq);
-  closedAgo(alpha.run.id, 31 * DAY);
-
-  const removed = board.prune();
-  assert.equal(removed.runs, 1);
-  assert.equal(stored(plain.seq), undefined);
-  assert.equal(stored(agreement.seq)!.sender, "alpha/S1");
-  assert.equal(stored(agreement.seq)!.run, alpha.run.id); // still labelled with its author's run
-  assert.equal(stored(endorsement.seq)!.endorses, agreement.seq);
-  assert.equal(stored(recentOld.seq)!.body, "old row, recent");
-  assert.equal(stored(openTalk.seq)!.body, "an open run's talk, long ago");
-  // kept only as the agreement's author: never listed
-  assert.deepEqual(board.repos().flatMap((r) => r.runs.map((x) => x.run)), [beta.run.id]);
 });
 
 test("a second prune removes nothing", () => {

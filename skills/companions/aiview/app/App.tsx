@@ -115,7 +115,7 @@ export function App() {
         ? fetchBoardOfKey(boardProjectKey).then((b) => {
             if (cancelled) return b.repos;
             chooseProject(b.project);
-            // an older key (`#board&repo=<git dir>`, U-F32) is rewritten to the project's own name, as `/board?repo=` is
+            // a repository's name as key is rewritten to the project's own name
             if (b.project !== boardProjectKey) {
               history.replaceState(history.state, "", `${location.pathname}${hashWithBoardProject(location.hash, b.project)}`);
               setBoardKey({ project: b.project });

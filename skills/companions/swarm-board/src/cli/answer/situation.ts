@@ -4,7 +4,7 @@ import type { Participant } from "../../board/board.ts";
 import { profileOf } from "../../board/kinds.ts";
 import type { ConnectedBoard } from "../../client/remote.ts";
 
-export type Listening = "foreground" | "background" | "orchestrator";
+type Listening = "foreground" | "background" | "orchestrator";
 
 export type Situation = {
   /** this CLI as the member calls it, home included, as one command prefix */

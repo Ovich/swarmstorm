@@ -7,13 +7,13 @@
 import type { BoardSnapshot, RepoSummary } from "../board/board.ts";
 import type { Frame, RpcMethod } from "../wire.ts";
 
-export type { BoardSnapshot, CoreMemberState, LockTurn, Liveness, Phase, PhaseProgress, RepoSummary, RunSummary, SeatState, SnapshotMember, SnapshotMemberState, SnapshotEvent } from "../board/board.ts";
+export type { BoardSnapshot, Liveness, Phase, PhaseProgress, RepoSummary, RunSummary, SnapshotMember, SnapshotEvent } from "../board/board.ts";
 // The pure helpers the board page needs, so the page too reaches swarm through this door (D18).
 export { planCode, nameHandle, parseMentions, BOARD_AUTHOR } from "../board/mentions.ts";
 export type { Kind } from "../board/kinds.ts";
 
 /** board-split D47: a project as aiview reads it, the one word; `RepoSummary` is its older name, kept for readers built on it. */
-export type ProjectSummary = RepoSummary;
+type ProjectSummary = RepoSummary;
 
 export interface BoardReader {
   /** Most recently active first, as Board.repos(). */

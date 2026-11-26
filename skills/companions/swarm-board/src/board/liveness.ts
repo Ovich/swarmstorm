@@ -4,9 +4,9 @@
 import fs from "node:fs";
 
 /** Where a read of a transcript stopped: the byte offset of the next unread line and the tokens counted so far. */
-export type Cursor = { offset: number; tokens: number };
+type Cursor = { offset: number; tokens: number };
 
-export interface TranscriptAdapter {
+interface TranscriptAdapter {
   name: string;
   /** Reads `chunk`, the file's bytes from `from.offset` on; null when this
    *  adapter does not recognise the format. Only complete lines are consumed. */
@@ -54,7 +54,7 @@ export const ADAPTERS: TranscriptAdapter[] = [claudeCodeJsonl];
 /** A transcript read once more: the adapter that took it and where it stopped; null when the file is
  *  missing or no adapter recognises it. `adapter` keeps a file on the adapter that first read it. */
 export type Reading = { adapter: string; cursor: Cursor };
-export type TranscriptReader = (path: string, from: Reading | null) => Reading | null;
+type TranscriptReader = (path: string, from: Reading | null) => Reading | null;
 
 /** The default reader: the file from the cursor's offset, through its adapter, or every adapter on a first read. */
 export const readTranscript: TranscriptReader = (file, from) => {
@@ -111,7 +111,7 @@ export const HEARTBEAT_MS = 5 * 1000;
  *  or its run closed. What it is on (a call, a merge) is its `doing`, never a state. */
 export type CoreMemberState = "working" | "stopped" | "away" | "lost" | "ended";
 
-export type CoreStateFacts = { runOpen: boolean; ended: boolean; linkDown: boolean; owedAtDrop: boolean; moving: boolean };
+type CoreStateFacts = { runOpen: boolean; ended: boolean; linkDown: boolean; owedAtDrop: boolean; moving: boolean };
 
 /** The one derivation of a member's state, read by snapshot, roster, status, seats and reader alike. */
 export function coreStateOf(m: CoreStateFacts): CoreMemberState {

@@ -3,7 +3,7 @@
 
 export type Kind = "plan" | "brainstorm" | "task";
 
-export interface KindProfile {
+interface KindProfile {
   kind: Kind;
   /** what join and the help call a member */
   member: "worker" | "seat";
@@ -12,7 +12,7 @@ export interface KindProfile {
   wholeThread: boolean;
 }
 
-export const PROFILES: Record<Kind, KindProfile> = {
+const PROFILES: Record<Kind, KindProfile> = {
   plan: { kind: "plan", member: "worker", wholeThread: false },
   brainstorm: { kind: "brainstorm", member: "seat", wholeThread: true },
   // a swarm without a plan (the `swarm` skill): workers in worktrees take tasks posted to them, as a plan's do slices

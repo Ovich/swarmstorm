@@ -4,7 +4,7 @@ import { gitAnswer } from "../../git.ts";
 
 /** The commit `worktree`'s branch left `onto` at; null when git fails, or when HEAD is detached (the worktree
  *  switched to another commit, a base to compare against): no branch to read against. */
-export function branchBase(worktree: string, onto: string): string | null {
+function branchBase(worktree: string, onto: string): string | null {
   if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
   const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
   return base.status === 0 ? base.stdout.trim() : null;

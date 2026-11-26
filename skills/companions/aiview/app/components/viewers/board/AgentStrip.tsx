@@ -8,13 +8,12 @@ import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/cl
 import { hhmm, ORCHESTRATOR } from "../../../lib/board/view.ts";
 import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 
-/** A member's activity as the server computes it (swarm-relay#D9, #D20), its two ages' instants included (swarm-relay#D38);
- *  an older board's also says quiet or gone, with its reason. */
+/** A member's activity as the server computes it (swarm-relay#D9, #D20), its two ages' instants included (swarm-relay#D38). */
 type MemberActivity = Omit<Liveness, "state"> & { state: string; reason?: string };
-/** The activity words, today's (board-split#D36: working, busy, waiting) and an older board's (quiet, gone). */
-const ACTIVITY_STATES: ReadonlySet<string> = new Set(["working", "busy", "waiting", "quiet", "gone"]);
+/** The activity words (board-split#D36). */
+const ACTIVITY_STATES: ReadonlySet<string> = new Set(["working", "busy", "waiting"]);
 
-/** The member's activity, or null when the reader sends none it knows (a server before swarm-relay#D20): the card draws as before. */
+/** The member's activity, or null when the board sends none (an ended member). */
 function activityOf(p: SnapshotMember): MemberActivity | null {
   const l = p.liveness;
   return l && ACTIVITY_STATES.has(l.state) ? l : null;
@@ -32,8 +31,7 @@ function ageSince(at: number, now: number): string {
 type BoardBadge = NonNullable<SnapshotMember["badge"]>;
 export type BadgeName = BoardBadge["name"];
 
-/** The member as any board sends it: an older one's state words (watching, done) and no badge (D36), the open calls
- *  (D31, D32). The card reads an older board's words as the new ones. */
+/** The member as the board sends it, with its open calls (D31, D32). */
 type MemberOnBoard = Omit<SnapshotMember, "state" | "badge"> & {
   state: string;
   badge?: BoardBadge | null;
@@ -49,7 +47,7 @@ const isOff = (p: { state: string }): boolean => p.state === "away" || p.state =
 
 /** The state word, the board's alone: working, stopped, away, lost, ended; a pack's
  *  fact (merging) replaces working or stopped. `className` is the word's state. */
-export function stateWordOf(p: MemberOnBoard & { fact?: string }): { text: string; className: string } {
+function stateWordOf(p: MemberOnBoard & { fact?: string }): { text: string; className: string } {
   const state = p.state;
   if (state === "ended") return { text: p.ended ? `ended ${hhmm(p.ended)}` : "ended", className: "ended" };
   if (p.fact) return { text: p.fact, className: p.fact };
@@ -71,7 +69,7 @@ function UnreadCount({ p }: { p: SnapshotMember }) {
 
 /** The member's badge, the board's alone (plan D55): its name, and on hover the board's reason (state word, the fact
  *  and its age, as the board's formatter writes it). Null when the snapshot carries none: aiview derives no badge. */
-export function troubleOf(p: MemberOnBoard): { kind: BadgeName; reason: string } | null {
+function troubleOf(p: MemberOnBoard): { kind: BadgeName; reason: string } | null {
   if (isOff(p) && p.state !== "lost") return null;
   return p.badge ? { kind: p.badge.name, reason: p.badge.reason ? `${p.badge.name}: ${p.badge.reason}` : p.badge.name } : null;
 }
@@ -119,8 +117,8 @@ const minutesShort = (since: number, now: number): string => `${Math.max(0, Math
 /** What the member runs now (D45), one line: `▸ <label>  <N>m` for a call in the foreground, `◌` for a background one;
  *  the board's own wait is no line (the state word says waiting); nothing open, no line. `hover`: the whole command,
  *  foreground or background, since when, and the last call. */
-export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
-  // U-F13 (D49): an away, lost or ended seat has no activity line, whatever an older snapshot still carries
+function activityLine(p: MemberOnBoard, activity: MemberActivity | null, now: number): { text: string; hover: string } | null {
+  // U-F13 (D49): an away, lost or ended seat has no activity line
   if (isOff(p)) return null;
   const open = p.activity?.open && !p.activity.open.boardWait ? p.activity.open : null;
   const background = p.activity?.background ?? null;
@@ -134,8 +132,6 @@ export function activityLine(p: MemberOnBoard, activity: MemberActivity | null, 
   };
   if (open) return shown("▸", "foreground", open);
   if (background) return shown("◌", "background", background);
-  // an older board with no open calls: its busy activity is the call it runs
-  if (!p.activity && activity?.state === "busy" && activity.doing && activity.since !== null) return shown("▸", "foreground", { target: activity.doing, since: activity.since });
   return null;
 }
 
@@ -217,7 +213,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
 }
 
 /** Up to this many members, every one a full card; past it, a row each, the followed one a card (a swarm of hundreds). */
-export const CARDS_UP_TO = 12;
+const CARDS_UP_TO = 12;
 
 /** The roster's sections, in reading order: what needs the person first, the ended last and folded. */
 const BUCKETS = [
@@ -237,7 +233,6 @@ function bucketOf(p: SnapshotMember): Bucket {
 
 /** One member on one line: its stripe, name, seat and state; clicked, followed and drawn as its card. */
 function AgentRow({ p, hue, onFollow, now }: { p: SnapshotMember; hue: number; onFollow: () => void; now: number }) {
-  const activity = isEnded(p) ? null : activityOf(p);
   const status = stateWordOf(p);
   const trouble = troubleOf(p);
   return (
@@ -377,7 +372,6 @@ export function AgentRail({ agents, hue, follow, onFollow }: { agents: SnapshotM
   return (
     <div className="agent-rail" data-component="AgentRail" onMouseLeave={() => setHover(null)}>
       {agents.map((p) => {
-        const activity = isEnded(p) ? null : activityOf(p);
         const status = stateWordOf(p);
         const trouble = troubleOf(p);
         return (

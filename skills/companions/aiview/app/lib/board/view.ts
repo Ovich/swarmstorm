@@ -20,19 +20,6 @@ export const memberLabel = (name: string): { code: string; seat: string } => {
   return { code: planCode(plan), seat };
 };
 
-/**
- * A member's hue: the KindChip recipe, copied as memberColor. Hashed on "<code>·<seat>",
- * spread over twelve spokes so two members side by side rarely share one; orchestrators
- * neutral (saturation 0).
- */
-export function memberColor(name: string): { h: number; s: number } {
-  const { code, seat } = memberLabel(name);
-  if (seat === ORCHESTRATOR) return { h: 0, s: 0 };
-  let n = 0;
-  for (const c of `${code}·${seat}`) n = (n * 31 + c.charCodeAt(0)) >>> 0;
-  return { h: ((n % 12) * 30 + 12) % 360, s: 52 + (n % 4) * 8 };
-}
-
 /** 14:03, local time. */
 export function hhmm(iso: string): string {
   const d = new Date(iso);
@@ -46,7 +33,7 @@ export const basename = (p: string): string => p.split(/[\\/]/).pop() ?? p;
 
 /** What resolving a mention needs: every run's group on the repository, and the active members'
  *  funny names as a mention writes them (D43). */
-export type MentionCtx = { groups: string[]; names: ReadonlyMap<string, string> };
+type MentionCtx = { groups: string[]; names: ReadonlyMap<string, string> };
 
 export const mentionCtx = (snap: BoardSnapshot): MentionCtx => ({
   groups: [...new Set(snap.runs.map((r) => r.group))],
@@ -63,7 +50,7 @@ export const targets = (e: SnapshotEvent, ctx: MentionCtx): string[] => parseMen
 
 /** Orchestrators first, then working, waiting, merging, then ended and done. */
 const ORDER: Record<string, number> = { working: 1, waiting: 2, merging: 3, ended: 4, done: 4 };
-export function orderRoster(roster: SnapshotMember[]): SnapshotMember[] {
+function orderRoster(roster: SnapshotMember[]): SnapshotMember[] {
   const rank = (r: SnapshotMember): number => (r.seat === ORCHESTRATOR ? 0 : (ORDER[r.state] ?? 1));
   return roster
     .map((r, i) => ({ r, i }))
@@ -78,7 +65,7 @@ const membersOf = (snap: BoardSnapshot, run: RunSummary): SnapshotMember[] => sn
 // ── following a member ──────────────────────────────────────────────────────────────
 
 /** A message from the member, or naming it (by name, or its plan's `@all`). */
-export function involves(e: SnapshotEvent, member: string | null, ctx: MentionCtx): boolean {
+function involves(e: SnapshotEvent, member: string | null, ctx: MentionCtx): boolean {
   if (!member) return true;
   if (e.from === member) return true;
   const { plan } = splitMember(member);
@@ -97,7 +84,7 @@ export type Filter = { id: string; label: string; file: boolean; test: (e: Snaps
 // ── flags, and the talk they start (D10) ────────────────────────────────────────────
 
 /** A flag's parts: who wrote the path outside a claim, and who holds it. */
-export type FlagLine = { writer: string; path: string; holder: string };
+type FlagLine = { writer: string; path: string; holder: string };
 
 const FLAG_BODY = /flag:\s*(\S+)\s+wrote\s+(\S+)\s+outside its claim;\s*(\S+)\s+holds? it/;
 
@@ -113,11 +100,11 @@ export function flagOf(e: SnapshotEvent): FlagLine | null {
   return m ? { writer: m[1], path: e.about ?? m[2], holder: m[3] } : null;
 }
 
-export const isFlag = (e: SnapshotEvent): boolean => flagOf(e) !== null;
+const isFlag = (e: SnapshotEvent): boolean => flagOf(e) !== null;
 
 /** The posts that answer a flag: after it, `--about` its path, an agreement by anyone or a post
  *  by one of its two members; never another flag or a board event. */
-export function answersOf(flag: SnapshotEvent, events: SnapshotEvent[]): SnapshotEvent[] {
+function answersOf(flag: SnapshotEvent, events: SnapshotEvent[]): SnapshotEvent[] {
   const f = flagOf(flag);
   if (!f) return [];
   return events.filter(
@@ -126,7 +113,7 @@ export function answersOf(flag: SnapshotEvent, events: SnapshotEvent[]): Snapsho
 }
 
 /** Settled by the first agreement that answers it, else answered by the first post, else open. */
-export type FlagAnswer = { state: "settled" | "answered"; seq: number } | { state: "open" };
+type FlagAnswer = { state: "settled" | "answered"; seq: number } | { state: "open" };
 
 export function flagAnswer(flag: SnapshotEvent, events: SnapshotEvent[]): FlagAnswer {
   const answers = answersOf(flag, events);
@@ -196,7 +183,7 @@ const EVENT_WORDS = ["opened", "dispatched", "joined", "claimed", "refused", "wa
 const STRONG = new Set(["refused", "merge lock", "stopped"]);
 
 /** How an event's word is coloured: done and joined go green, work under way blue, a refusal red, an end grey. */
-export type EventTone = "ok" | "work" | "act" | "end";
+type EventTone = "ok" | "work" | "act" | "end";
 const TONES: Record<string, EventTone> = {
   opened: "ok", joined: "ok", merged: "ok", resumed: "ok",
   doing: "work", dispatched: "work", claimed: "work", waiting: "work", woken: "work",
@@ -206,7 +193,7 @@ const TONES: Record<string, EventTone> = {
 
 /** An event as its line reads: the one word that says what happened, its tone, and the rest.
  *  "run 76 opened: …" and "doing: …" have their word too. */
-export function eventWord(body: string): { word: string | null; tone: EventTone; rest: string } {
+function eventWord(body: string): { word: string | null; tone: EventTone; rest: string } {
   const flat = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" · ");
   const run = /^run \d+(?: \([^)]*\))? (opened|closed|resumed|stopped)\b:?\s*/.exec(flat);
   if (run) return { word: run[1], tone: TONES[run[1]], rest: flat.slice(run[0].length) };
@@ -216,7 +203,7 @@ export function eventWord(body: string): { word: string | null; tone: EventTone;
 }
 
 /** "merged abc: rebase onto abc." → the tag word, whether it is strong, and the rest on one line. */
-export function eventLine(body: string): { word: string | null; strong: boolean; rest: string } {
+function eventLine(body: string): { word: string | null; strong: boolean; rest: string } {
   const flat = body.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).join(" · ");
   for (const w of EVENT_WORDS) {
     if (flat === w || flat.startsWith(`${w} `) || flat.startsWith(`${w}:`)) {
@@ -229,7 +216,7 @@ export function eventLine(body: string): { word: string | null; strong: boolean;
 // ── a phase separator ───────────────────────────────────────────────────────────────
 
 /** A `phase` event: the orchestrator opened a phase, the current one ending with it. */
-export const isPhase = (e: SnapshotEvent): boolean => e.kind === "event" && e.event === "phase";
+const isPhase = (e: SnapshotEvent): boolean => e.kind === "event" && e.event === "phase";
 
 /** "phase diverge: every idea" → its name, from the stored meta else the body, and its text. */
 export function phaseOf(e: SnapshotEvent): { name: string; text: string } {
@@ -244,9 +231,9 @@ export function phaseOf(e: SnapshotEvent): { name: string; text: string } {
  *  closed run's archived line read it alike. */
 export const seatCount = (of: number): string => `${of} ${of === 1 ? "seat" : "seats"}`;
 
-/** An open run as a tab: `quiet` while its orchestrator has a `quiet` event no `back` answered. */
+/** An open run as a tab. */
 export type RunTab = {
-  run: RunId; code: string; title: string; kind: Kind; state: "live" | "quiet" | "closed"; done: number; of: number; /** the protocol the run follows, null when none */ protocol: string | null;
+  run: RunId; code: string; title: string; kind: Kind; state: "live" | "closed"; done: number; of: number; /** the protocol the run follows, null when none */ protocol: string | null;
   /** the open phase's one done count (board-split D62), null before the first phase */
   progress: PhaseCount | null;
 };
@@ -261,8 +248,8 @@ export function phaseCountText(p: PhaseCount): string {
 export type ArchivedRun = RunTab & { closed: string; outcome: string | null; orchestrator: string };
 /** What the conversation shows: one run (null = All), or the member followed. */
 export type Pick = { run: RunId | null; follow: string | null };
-export type ItemKind = "message" | "flag" | "urgent" | "question" | "quiet" | "agreement" | "settled" | "stalled" | "gone";
-export type Tier = "act" | "wait" | "decided" | "talk";
+type ItemKind = "message" | "flag" | "urgent" | "question" | "agreement" | "settled" | "stalled" | "gone";
+type Tier = "act" | "wait" | "decided" | "talk";
 export type Item =
   | { kind: ItemKind; tier: Tier; seq: number; at: string; run: RunId; from: string; word: string | null; tip: string | null; text: string; joined: boolean; state: string | null; about: string | null }
   | { kind: "event"; seq: number; at: string; run: RunId; from: string; text: string; tip: string | null; about: string | null; word: string | null; tone: EventTone; rest: string }
@@ -275,7 +262,6 @@ export const TIPS = {
   settled: "Settled flag: the two members agreed on the file a flag was about.",
   urgent: "Urgent: an orchestrator interrupted this member to do this first. It wakes the member at once, whatever it was doing.",
   question: "Question: a seat asks its orchestrator something the debate cannot settle alone. It waits for the answer.",
-  quiet: "Quiet: this member has not called the board for a while. Its session may be waiting on you, or gone; its claims stay held.",
   agreement: "Agreed: two members settled something between them, and it binds both. An endorsement is another member backing it.",
   merged: "Merged: this member's branch went into the plan's branch. Members changing the files it merged get it with their own delivery.",
   lock: "Waiting for the merge lock: one member merges at a time, across every run.",
@@ -324,16 +310,8 @@ function runOf(snap: BoardSnapshot, e: SnapshotEvent): RunSummary | null {
 }
 
 const orchestratorOf = (run: RunSummary): string => `${run.group}/${ORCHESTRATOR}`;
-const eventNamed = (e: SnapshotEvent, name: string): boolean => e.kind === "event" && ((e.event as string | null | undefined) === name || new RegExp(`^${name}\\b`).test(e.body));
-const isQuiet = (e: SnapshotEvent): boolean => eventNamed(e, "quiet");
-/** A quiet member came back: a `back` event, or any post of its own after the quiet. */
-const quietAnswered = (quiet: SnapshotEvent, events: SnapshotEvent[]): boolean =>
-  events.some((e) => e.seq > quiet.seq && e.from === quiet.from && (eventNamed(e, "back") || e.kind !== "event"));
-
 function tabOf(snap: BoardSnapshot, run: RunSummary): RunTab {
-  const orch = orchestratorOf(run);
-  const quiet = snap.events.some((e) => e.from === orch && isQuiet(e) && !quietAnswered(e, snap.events));
-  const state = !run.open ? "closed" : quiet ? "quiet" : "live";
+  const state = !run.open ? "closed" : "live";
   return { run: run.run, code: run.code, title: run.title, kind: run.kind, state, done: run.done, of: run.of, protocol: run.protocol ?? null, progress: run.progress ?? null };
 }
 
@@ -398,14 +376,10 @@ function itemOf(snap: BoardSnapshot, e: SnapshotEvent, run: RunSummary, ctx: Men
   // board-split#D51: an alarm's header names the member it tells of, never its author's card
   const told = memberEventMember(e, run);
   const who = told ? `${splitMember(told).seat} ` : "";
-  // simple-states: `stopped`, no member's tokens moved for the run's window (an older board's `stalled` and `idle` read alike)
-  if (e.kind === "event" && ["stopped", "stalled", "idle"].includes(e.event as string)) return said("stalled", "act", "◷ swarm stopped", TIPS.stalled);
-  // board-split#D36: `lost` is the board's name for what an older board posted as `gone`
-  if (e.kind === "event" && (e.event === "lost" || (e.event as string) === "gone")) return said("gone", "act", `✕ ${who}${e.event}`, TIPS.gone);
-  if (isQuiet(e)) {
-    const minutes = /(\d+)\s*min/.exec(e.body)?.[1];
-    return said("quiet", "wait", minutes ? `◷ quiet ${minutes} min` : "◷ quiet", TIPS.quiet, quietAnswered(e, snap.events) ? "back" : null);
-  }
+  // simple-states: `stopped`, no member's tokens moved for the run's window
+  if (e.kind === "event" && e.event === "stopped") return said("stalled", "act", "◷ swarm stopped", TIPS.stalled);
+  // board-split#D36: a member's link lost while it owed work
+  if (e.kind === "event" && e.event === "lost") return said("gone", "act", `✕ ${who}${e.event}`, TIPS.gone);
   if (e.kind === "event") {
     const word = eventLine(e.body).word;
     const said = eventWord(e.body);
@@ -479,9 +453,9 @@ export function pauseChip(run: RunSummary): PauseChip | null {
   return { label: pause.person ? "On you" : "Paused", reason: pause.text || null };
 }
 
-/** The board's events that tell of one member (lost, an older board's gone): its member at the head of its body
- *  (`lost <group>/<id>: …`), so following that member keeps them (V5). */
-const MEMBER_EVENTS: ReadonlySet<string> = new Set(["lost", "gone"]);
+/** The board's events that tell of one member (lost): its member at the head of its body (`lost <group>/<id>: …`), so
+ *  following that member keeps them (V5). */
+const MEMBER_EVENTS: ReadonlySet<string> = new Set(["lost"]);
 /** The member, `<group>/<id>`, one of those events tells of; null for any other event or a body naming none. */
 function memberEventMember(e: SnapshotEvent, run: RunSummary): string | null {
   if (e.kind !== "event" || !e.event || !MEMBER_EVENTS.has(e.event)) return null;

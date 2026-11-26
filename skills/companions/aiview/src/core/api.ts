@@ -38,11 +38,6 @@ export interface DocumentResponse {
   bindings?: BindingsSummary;
 }
 
-export interface ChangedEventPayload {
-  type: "changed";
-  id: number;
-}
-
 /** A workbench's sidecar data was committed; the page itself did not change. */
 export interface DataChangedEventPayload {
   type: "data-changed";

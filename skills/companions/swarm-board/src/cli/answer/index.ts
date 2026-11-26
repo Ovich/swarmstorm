@@ -7,7 +7,7 @@ import { heardStep, openTaskLine, joinStep, owedLine, owesNothingLine, phaseHead
 import { WORDING as W } from "./wording.ts";
 
 export { readSituation, type Situation } from "./situation.ts";
-export { closedConnectionHint, closedLine, lostMentionLines, eventStep, gateLine, heardStep, listenNow, nextStep, owedLine, owesNothingLine, pausedLine, phaseHeaders, stillPausedLine, waitCommand } from "./rules.ts";
+export { closedConnectionHint, lostMentionLines, eventStep, gateLine, owesNothingLine, pausedLine } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
 export { CODE_WORDING } from "./code-wording.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";
@@ -16,7 +16,7 @@ export { coreUsage, hiddenUsage } from "./usage.ts";
 /** A message already formatted by the verb, with the line its event registry row adds (D36). */
 export type Shown = { text: string; next?: string | null; event?: string | null };
 
-export type VerbResult =
+type VerbResult =
   | { verb: "wait"; outcome: "superseded" }
   | { verb: "wait"; outcome: "ended" }
   /** nothing came: `idle` when the board says the member has nothing to do; `again` the command re-arming this very wait */

@@ -1,19 +1,16 @@
 // D5 Place (repoOf, resolveIn, commonGitDir), G42 (a directory claim covers the files under it), V8 (a base only on
-// origin), D6 (the legacy data-home root swept once).
+// origin).
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { commonGitDir, relativeIn, repoOf, resolveIn } from "../src/place/place.ts";
 import { worktrees } from "../src/packs/code/worktrees.ts";
-import { stopServerOf } from "./fixtures/server.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 
-const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 let dir: string;
 beforeEach(() => {
   dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "swarm-place-")));
@@ -80,21 +77,3 @@ test("V8: a worktree branched from a base only on origin is clean and merged aga
   assert.equal(worktrees(path.resolve(clone, ".git")).unmerged(wt, "feat"), null);
 });
 
-test("D6: the legacy data-home worktrees are swept once: a clean one removed, a dirty one kept and named, then never again", () => {
-  const { main } = repoWithWorktree();
-  const home = path.join(dir, "home");
-  const legacy = path.join(home, "worktrees", "1");
-  fs.mkdirSync(legacy, { recursive: true });
-  git(main, "worktree", "add", "-q", "-b", "clean", path.join(legacy, "clean"));
-  git(main, "worktree", "add", "-q", "-b", "dirty", path.join(legacy, "dirty"));
-  fs.writeFileSync(path.join(legacy, "dirty", "new.txt"), "x");
-  const env = { ...process.env, SWARMSTORM_HOME: home, SWARM_ROOT: home, SWARM_NO_POLLER: "1" };
-  const first = spawnSync(process.execPath, [CLI, "status"], { cwd: main, encoding: "utf8", env });
-  assert.match(first.stderr, /legacy worktree .*dirty: uncommitted changes, kept/);
-  assert.ok(!fs.existsSync(path.join(legacy, "clean")));
-  assert.ok(fs.existsSync(path.join(legacy, "dirty")));
-  const again = spawnSync(process.execPath, [CLI, "status"], { cwd: main, encoding: "utf8", env });
-  assert.doesNotMatch(again.stderr, /legacy worktree/);
-  assert.ok(git(main, "branch", "--list", "clean"), "the branch is kept");
-  stopServerOf(home);
-});

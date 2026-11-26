@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { openBoard, type Board } from "../src/board/board.ts";
 
 const REPO = "/repos/one/.git";
@@ -42,14 +41,3 @@ test("a role outside lower case, digits and dashes is refused", async () => {
   assert.throws(() => board.openRun({ repo: REPO, group: "g", title: "T", seats: SEATS, authority: ["Tech Lead"] }), /authority/);
 });
 
-test("an old store, from before the authority, opens with []", async () => {
-  const file = path.join(dir, "old.sqlite");
-  const db = new DatabaseSync(file);
-  db.exec(`
-    CREATE TABLE runs (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, plan TEXT NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'open', opened_at TEXT NOT NULL, closed_at TEXT, link TEXT);
-    INSERT INTO runs (id, repo, plan, title, opened_at) VALUES (1, '${REPO}', 'old', 'Old', '2026-10-01T00:00:00Z');
-  `);
-  db.close();
-  const old = await boardAt(file);
-  assert.deepEqual(old.runs()[0].authority, []);
-});

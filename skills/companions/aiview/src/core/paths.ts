@@ -17,10 +17,10 @@ export const isHtml = (file: string): boolean => /\.html?$/i.test(file);
 export const isPdf = (file: string): boolean => /\.pdf$/i.test(file);
 
 /** A swarm run's document, `<date>-<plan>-run-<id>.swarm.json`, holding a {@link SwarmDocument}. */
-export const isSwarm = (file: string): boolean => /\.swarm\.json$/i.test(file);
+const isSwarm = (file: string): boolean => /\.swarm\.json$/i.test(file);
 
 /** What a swarm document's file holds: the run, and the URL of its page on swarm's server. */
-export type SwarmDocument = { run: string; url: string };
+type SwarmDocument = { run: string; url: string };
 
 /** A workbench's sidecar, `<stem>/` beside `<stem>.html` (the page's path minus `.html`),
  *  for a `.workbench.html`; null for any other document. Whether it exists is the caller's. */
@@ -32,11 +32,8 @@ export type DocFormat = "markdown" | "html" | "pdf" | "swarm";
 export const formatOf = (file: string): DocFormat =>
   isHtml(file) ? "html" : isPdf(file) ? "pdf" : isSwarm(file) ? "swarm" : "markdown";
 
-/** The kind a renamed kind's old name now means: files keep their old name on disk, the index says the new one. */
-const RENAMED_KINDS: Record<string, string> = { mockup: "prototype" };
-
-/** A kind as the index stores it: a renamed kind's old name read as its new one. */
-export const currentKind = (kind: string): string => RENAMED_KINDS[kind.toLowerCase()] ?? kind.toLowerCase();
+/** A kind as the index stores it. */
+export const currentKind = (kind: string): string => kind.toLowerCase();
 
 /** `<name>.<kind>.md` / `<name>.<kind>.html` -> "kind"; anything else -> "" */
 export function kindFromName(file: string): string {

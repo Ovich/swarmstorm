@@ -771,37 +771,6 @@ test("a brainstorm run refuses files, worktrees and every code verb, writing not
   }
 });
 
-test("a store from before channels opens: a row with run null reads as its author's run, its runs as plan, and an open run keeps going (D13)", async () => {
-  const { DatabaseSync } = await import("node:sqlite");
-  const file = path.join(dir, "before-channels.sqlite");
-  const db = new DatabaseSync(file);
-  db.exec(`
-    CREATE TABLE runs (id INTEGER PRIMARY KEY, repo TEXT NOT NULL, plan TEXT NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'open', opened_at TEXT NOT NULL, closed_at TEXT, link TEXT);
-    CREATE TABLE participants (id INTEGER PRIMARY KEY, run INTEGER NOT NULL, seat TEXT NOT NULL, worktree TEXT, doing TEXT NOT NULL DEFAULT '', files TEXT NOT NULL DEFAULT '[]', since_seq INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL, ended_at TEXT, last_call TEXT, nick TEXT, UNIQUE (run, seat));
-    CREATE TABLE messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, author INTEGER NOT NULL, body TEXT NOT NULL, about TEXT, kind TEXT NOT NULL DEFAULT 'msg', mentions TEXT NOT NULL DEFAULT '[]', at TEXT NOT NULL, by_board INTEGER NOT NULL DEFAULT 0);
-    INSERT INTO runs (id, repo, plan, title, opened_at) VALUES (1, '${REPO}', 'old', 'Old', '2026-10-01T00:00:00Z');
-    INSERT INTO participants (id, run, seat, joined_at) VALUES (1, 1, 'orchestrator', '2026-10-01T00:00:00Z');
-    INSERT INTO participants (id, run, seat, joined_at, nick) VALUES (2, 1, 'S3', '2026-10-01T00:00:00Z', 'Sleepy Otter');
-    INSERT INTO participants (id, run, seat, joined_at, nick) VALUES (3, 1, 'S5', '2026-10-01T00:00:00Z', 'Hasty Crane');
-    INSERT INTO messages (repo, author, body, mentions, at) VALUES ('${REPO}', 2, '@S5 before', '["old/S5"]', '2026-10-01T00:00:01Z');
-  `);
-  db.close();
-  const old = await openBoard(file);
-  opened.push(old);
-  opened.push(await openBoard(file)); // the upkeep is idempotent
-  assert.equal(posted(1, old).run, 1);
-  assert.equal(old.runs()[0].kind, "plan");
-  const s3 = old.participant("old/S3")!;
-  const s5 = old.participant("old/S5")!;
-  assert.equal(s3.kind, "plan");
-  assert.deepEqual(old.deliverMentions(s5).full.map((m) => m.seq), [1]); // an old message mentioning it
-  const m = old.post(s3, "@S5 after");
-  assert.equal(m.run, 1);
-  assert.deepEqual(old.deliverMentions(s5).full.map((x) => x.seq), [m.seq]);
-  codeVerbs(old).changes(s3, ["src/a.ts"]);
-  assert.deepEqual(old.snapshot(REPO).files, [{ path: "src/a.ts", holders: ["old/S3"] }]);
-});
-
 // D59: the wake rule; D60: a seat added mid-run
 const SEATS = [
   { id: "architect", blockers: [] },

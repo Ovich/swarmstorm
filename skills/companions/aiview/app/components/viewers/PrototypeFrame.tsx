@@ -26,8 +26,6 @@ const stored = (key: string, fallback: string): string => {
     return fallback;
   }
 };
-/** The mode's key before the rename: read once as the fallback, so the person's choice survives it. */
-const legacyModeKey = "aiview.mockupMode";
 const store = (key: string, value: string): void => {
   try {
     localStorage.setItem(key, value);
@@ -65,7 +63,7 @@ const NO_FRAME = { current: null };
 export function PrototypeFrame({ html, bindings, target, onOpenSource, pointed = NONE, pointedVariant, onClearPointer, workbench = false, sketch = false, doc, dataTick = 0 }:PrototypeFrameProps) {
   const [storedViewport, setViewport] = useState(() => stored("aiview.viewport", "full"));
   const [storedMode, setMode] = useState<PrototypeMode>(() =>
-    stored("aiview.prototypeMode", stored(legacyModeKey, "rendered")) === "composition" ? "composition" : "rendered",
+    stored("aiview.prototypeMode", "rendered") === "composition" ? "composition" : "rendered",
   );
   // A workbench ignores the stored choices without overwriting them: the next prototype
   // opens at the viewport and in the view the person left it.

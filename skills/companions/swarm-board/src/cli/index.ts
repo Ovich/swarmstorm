@@ -84,11 +84,6 @@ const emit = (json: unknown, human: string | (() => void)): void => {
   } else human();
 };
 
-/** The flag D24 removed: no member, and no orchestrator, ever names a transcript; the link finds it. */
-const refuseTranscriptFlag = (verb: string): void => {
-  if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript\n${verbHelp()}`);
-};
-
 /** The repository (D29): its common git dir, so every worktree of one repository is one (Place, D5). */
 function repoOf(dir: string): string {
   return placeRepoOf(dir) ?? fail(`not in a git repository: ${dir}`);
@@ -157,14 +152,8 @@ const swarmBoardFolderAbove = (from: string): string => {
   }
 };
 
-/** board-split D47: `--project <path>`, the old `--repo` read as it with one line saying so. */
-const projectFlag = (): string | undefined => {
-  const project = args.flag("--project");
-  if (project !== undefined) return project;
-  const old = args.flag("--repo");
-  if (old !== undefined) console.error(WORDING.optionRenamed("--repo", "--project"));
-  return old;
-};
+/** board-split D47: `--project <path>`. */
+const projectFlag = (): string | undefined => args.flag("--project");
 /** The repository `--project` names (D47, verify 3 F15): a path inside one, else an aiview project's name, the first
  *  of its paths that is a repository; the cwd's without the flag. An unknown one fails `no project <name>`. */
 const projectRepo = (): string => {
@@ -557,8 +546,6 @@ const POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a li
 /** The commands a member of a kind without worktree runs next, `--as` filled in (D21, D36). */
 const seatCommands = (as: string): string[] => WORDING.seatCommands(self().join(" "), shellWord(as), FOREGROUND_WAIT_MS);
 
-/** Main is gone (D12): the conversation is one, a mention says who is meant. */
-const NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW·SL3, @swarm)";
 
 /** An open run by id; null when closed or unknown. */
 const runOf = async (id: number) => (await board.runs()).find((r) => r.id === id) ?? null;
@@ -610,14 +597,6 @@ async function madeWorktree(p: Participant, verb: "join" | "merge-lock"): Promis
 }
 
 async function main(): Promise<void> {
-  // D6: the worktrees an older board made under the data home, swept once, by the code pack in the board server
-  if (fs.existsSync(path.join(DATA_ROOT, "worktrees")) && !fs.existsSync(path.join(DATA_ROOT, "worktrees", ".swept")))
-    for (const line of ((await board.packCall(null, "legacy", {})) as string[] | null) ?? []) console.error(`legacy worktree ${line}`);
-  if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
-    console.error(NO_MAIN);
-    process.exitCode = 2;
-    return;
-  }
   switch (args.verb) {
     case "log-level": {
       // the trace's level (logs/<day>/), read by the board server within seconds; no word: the level now
@@ -638,7 +617,6 @@ async function main(): Promise<void> {
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
       // board-split D55 (amended): never under the floor; the answer says so in one line
       const stallClamped = stallMs !== undefined && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
-      refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       // board-split#D28: the roles the orchestrator holds, comma-separated; the core checks their shape only
       const rawAuthority = args.flag("--authority");
@@ -713,7 +691,6 @@ async function main(): Promise<void> {
       }
       break;
     }
-    case "slice": // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
     case "seat": {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
@@ -731,10 +708,7 @@ async function main(): Promise<void> {
         emit({ run, seat: added }, `${id} added`);
         break;
       }
-      const id = args.positional[0] ?? fail(`seat: which seat?\n${verbHelp()}`);
-      refuseTranscriptFlag("seat");
-      // board-split D36: a seat's state is derived from its member; `seat <id> --state` is refused
-      fail(WORDING.seatStateDerived(self().join(" "), shellWord(id), asWord()));
+      fail(`seat: add <id>, the one thing it does\n${verbHelp()}`);
     }
     case "close": {
       const run = runArg();

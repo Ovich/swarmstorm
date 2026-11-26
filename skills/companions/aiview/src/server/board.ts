@@ -13,7 +13,7 @@ import { DATA_ROOT } from "../core/home.ts";
 import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
 import type { SseHub } from "./sse.ts";
 
-export interface BoardRoutes {
+interface BoardRoutes {
   /** True when the request was a board route and has been answered (or is being). */
   handle(req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean;
   close(): void;
@@ -73,8 +73,8 @@ export function mountBoard(
     res.end(JSON.stringify(obj));
   };
 
-  /** The project a request names, `?project=`, or an older `?repo=` (a kept link, D47); null when it names none. */
-  const projectAsked = (q: URLSearchParams): string | null => q.get("project") ?? q.get("repo");
+  /** The project a request names, `?project=` (D47); null when it names none. */
+  const projectAsked = (q: URLSearchParams): string | null => q.get("project");
 
   /** Whether two spellings name one repository: `/` or `\`, on Windows any case, a worktree's `.git` its common one (aiview stores `/`, the board keys `\`). */
   const sameRepo = (a: string, b: string): boolean => {
@@ -98,7 +98,7 @@ export function mountBoard(
     return undefined;
   };
 
-  /** The board a request names: a run's, or a project's (`?project=`, an older `?repo=` still read, D47); `missing` is the
+  /** The board a request names: a run's, or a project's (`?project=`, D47); `missing` is the
    *  404's message, never a fallback to another project (board-split#D41: no global scope). `/api/run?id=` kept as `?run=`. */
   const repoNamed = async (board: BoardReader, url: URL): Promise<{ repo: string } | { missing: string }> => {
     const run = url.searchParams.get(url.pathname === "/api/run" ? "id" : "run");

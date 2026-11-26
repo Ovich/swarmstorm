@@ -28,7 +28,7 @@ const END = /^\s*end\s*$/;
 const sliceOf = (id: string): string | undefined =>
   (/^SL(\d+)$/i.exec(id) ?? /^S(\d+)\.\w+$/i.exec(id))?.[1];
 
-export interface TrackerNode {
+interface TrackerNode {
   readonly id: string;
   readonly glyph: string | undefined;
   readonly label: string;
@@ -55,7 +55,7 @@ const MARKER = /^\s*%%\s*(aiview:)?tracker\b/i;
  *  bold or not. */
 const MANDATE_LINE = /^\s*(\*\*)?mandate(\*\*)?\s*:/i;
 
-export interface Tracker {
+interface Tracker {
   /** 1-based line of the block's opening fence, 0 when the file is a bare diagram. */
   readonly fence: number;
   /** True when the block named itself with `%% tracker`, false when it was found by

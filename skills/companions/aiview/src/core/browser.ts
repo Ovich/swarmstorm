@@ -23,7 +23,7 @@ export function browserCommand(url: string, platform: NodeJS.Platform = process.
 }
 
 /** Spawns the browser on `url`, detached, with no refusal check: `openBrowser` is the guarded entry. */
-export function launchBrowser(url: string): void {
+function launchBrowser(url: string): void {
   const [program, argv] = browserCommand(url);
   try {
     spawn(program, argv, { detached: true, stdio: "ignore", windowsHide: true }).unref(); // AGENTS EXCEPTION (D39): a browser opener: the browser's own window is the point

@@ -64,11 +64,3 @@ export function ensureHome(): void {
   fs.mkdirSync(DOCS_ROOT, { recursive: true });
 }
 
-/** One-time adoption of an index left next to the tool by a pre-appdata install. */
-export function adoptLegacyIndex(toolRoot: string, sqlitePath: string): void {
-  if (fs.existsSync(sqlitePath)) return;
-  const legacy = path.join(toolRoot, "aiview.sqlite");
-  if (!fs.existsSync(legacy)) return;
-  fs.copyFileSync(legacy, sqlitePath);
-  console.error(`aiview: adopted the index from ${legacy} (the original is left in place, unused)`);
-}

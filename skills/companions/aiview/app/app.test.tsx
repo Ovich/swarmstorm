@@ -387,7 +387,6 @@ describe("composition overlay", () => {
     // no legend, no preview panel: the mode is outlines, labels and the veil
     expect(layerCss).not.toMatch(/av-legend|av-pv/);
     expect(shortName("2026-09-03-dock-tools.prototype.html")).toBe("dock-tools");
-    expect(shortName("2026-09-03-dock-tools.mockup.html")).toBe("dock-tools"); // legacy suffix
   });
 
   test("sourceDocFor matches by base name inside the host's folder only", async () => {

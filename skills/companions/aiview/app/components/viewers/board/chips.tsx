@@ -1,5 +1,5 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
-import { BOARD_AUTHOR, planCode } from "../../../../../swarm-board/src/client/reader.ts";
+import { BOARD_AUTHOR } from "../../../../../swarm-board/src/client/reader.ts";
 import { SEQ_REF } from "../../../lib/board/post.ts";
 import { runHue, memberLabel } from "../../../lib/board/view.ts";
 
@@ -60,24 +60,6 @@ export function AgentLabel({ name, role = true }: { name: string; role?: boolean
     <span className="alabel" data-component="AgentLabel" title={`${code}·${seat}`}>
       {nick ? <span className="nick">{nick}</span> : <span className="nick">{seat}</span>}
       {nick && role && <span className="role">{seat}</span>}
-    </span>
-  );
-}
-
-/** A flag's chip: FLAG in the danger colour, glowing (static under reduced motion). */
-export function FlagChip() {
-  return (
-    <span className="flag-chip" data-component="FlagChip" data-kind="flag">
-      flag
-    </span>
-  );
-}
-
-/** A plan's two letters (D30). */
-export function PlanCode({ plan }: { plan: string }) {
-  return (
-    <span className="code" data-component="PlanCode">
-      {planCode(plan)}
     </span>
   );
 }

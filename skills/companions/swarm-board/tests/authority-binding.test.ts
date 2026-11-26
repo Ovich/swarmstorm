@@ -197,7 +197,7 @@ test("addSeat and closeRun on an orchestrators-group run stay open; packCall clo
   await value(anonymous, "closeRun", board);
   await value(anonymous, "packCall", null, "close", { run: board });
   // the open pack verbs need no member
-  await value(anonymous, "packCall", null, "legacy", {});
+  await value(anonymous, "packCall", null, "place", { run: board, seat: "g" });
   await refused(anonymous, "packCall", null, "unmerged", {});
 });
 

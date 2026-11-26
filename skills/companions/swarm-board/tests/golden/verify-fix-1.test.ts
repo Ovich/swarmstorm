@@ -33,16 +33,13 @@ test("F4: a verifier's join names one way to listen", async () => {
 });
 
 // F7 (D12, rule 10): refusals in plain words, no plan ids, every command runnable as printed
-test("F7: a verifier's code verb and seat --state refuse in plain words, commands carrying --as", async () => {
+test("F7: a verifier's code verb refuses in plain words", async () => {
   const s = await scene("verifier", "idle");
   try {
     const refused = s.call("merge-lock", "--lock-only", "--as", s.me);
     assert.notEqual(refused.status, 0);
     assert.match(refused.text, /merge-lock: refused: merge-lock is a worker's verb, and a verifier holds no files; your verbs are in --help/);
     assert.doesNotMatch(refused.text, /code pack|\(D\d+\)/);
-    const state = s.call("seat", "v1", "--state", "done", "--as", O);
-    assert.doesNotMatch(state.text, /\(D\d+\)/);
-    assert.match(state.text, /end --seat v1 --as g\/orchestrator/);
   } finally {
     s.stop();
   }

@@ -26,7 +26,7 @@ export interface Decision {
   readonly line: number;
 }
 
-export interface PlanApproval {
+interface PlanApproval {
   /** The status line's value, empty when the plan has none. */
   readonly status: string;
   /** 1-based line of the status line, 0 when there is none. */
@@ -44,7 +44,7 @@ export interface PlanApproval {
 
 /** One unit of a walkthrough (interview skill's `references/walkthrough.md`), by the
  *  last answer the person gave on it. Understanding only, never an approval. */
-export interface Walked {
+interface Walked {
   /** `W1`, `W2`, … */
   readonly id: string;
   readonly unit: string;

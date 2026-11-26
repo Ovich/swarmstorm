@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
-import { adoptLegacyIndex, DATA_ROOT, DOCS_ROOT, ensureHome } from "./home.ts";
+import { DATA_ROOT, DOCS_ROOT, ensureHome } from "./home.ts";
 import { resolveProject, type Project } from "./projects.ts";
 import {
   formatOf,
@@ -44,7 +44,7 @@ export const TOOL_ROOT = findToolRoot();
 export const SQLITE_PATH = path.join(DATA_ROOT, "aiview.sqlite");
 /** Stored paths are relative to the data home when inside it — so a synced home
  *  carries a working index to another machine — and absolute anywhere else. */
-export const STORE_ROOT = DATA_ROOT;
+const STORE_ROOT = DATA_ROOT;
 
 export interface Document {
   id: number;
@@ -98,25 +98,6 @@ export interface RegisterOptions {
   project?: string;
 }
 
-/** The repositories a board document's text names: `{ repos }`, or a pre-merge `{ url }`'s
- *  `?repo=` values; [] when it names none or cannot be read. */
-export function boardReposInText(text: string): string[] {
-  let parsed: { repos?: unknown; url?: unknown };
-  try {
-    parsed = JSON.parse(text) as { repos?: unknown; url?: unknown };
-  } catch {
-    return [];
-  }
-  if (Array.isArray(parsed.repos)) return [...new Set(parsed.repos.filter((x): x is string => typeof x === "string"))];
-  if (typeof parsed.url === "string") {
-    try {
-      return [...new Set(new URL(parsed.url).searchParams.getAll("repo"))];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
 
 interface Row {
   id: number;
@@ -182,10 +163,7 @@ export interface Index {
 }
 
 export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROOT): Index {
-  if (dbPath === SQLITE_PATH) {
-    ensureHome();
-    adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
-  }
+  if (dbPath === SQLITE_PATH) ensureHome();
   const db = new DatabaseSync(dbPath);
   db.exec(`
     PRAGMA journal_mode = DELETE;
@@ -200,22 +178,16 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
       kind TEXT NOT NULL DEFAULT '',
       tags TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
-      last_seen_at TEXT NOT NULL
+      last_seen_at TEXT NOT NULL,
+      group_slug TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0
     );
   `);
-  // Schema upkeep for indexes created by earlier versions.
-  const cols = (db.prepare("PRAGMA table_info(documents)").all() as { name: string }[]).map((c) => c.name);
-  if (!cols.includes("tags")) db.exec("ALTER TABLE documents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
-  if (!cols.includes("kind")) db.exec("ALTER TABLE documents ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
-  if (!cols.includes("group_slug")) db.exec("ALTER TABLE documents ADD COLUMN group_slug TEXT");
-  if (!cols.includes("pinned")) db.exec("ALTER TABLE documents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
   db.exec("CREATE TABLE IF NOT EXISTS groups (slug TEXT PRIMARY KEY, title TEXT)");
   db.exec(
-    "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]')",
+    "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]', board_repos TEXT NOT NULL DEFAULT '[]')",
   );
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-  const projectCols = (db.prepare("PRAGMA table_info(projects)").all() as { name: string }[]).map((c) => c.name);
-  if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
   // the project is its repository: one board; a repo written as its folder or its .git, or gone from disk, is read once
   // D12: the `.git` of every path of the project that is a repository: the board's repos when none was registered yet
   // G6: a path that is a git worktree has a `.git` file pointing at its own git dir; the board keys the repository by the common one (Place, D5)
@@ -264,29 +236,7 @@ export function openIndex(dbPath: string = SQLITE_PATH, root: string = STORE_ROO
       started_at TEXT NOT NULL
     )
   `);
-  db.exec("DROP TABLE IF EXISTS revisions");
 
-  // The board is aiview's /board page, no longer a document: a project's `swarm` document
-  // (`swarm.swarm.json` { repos }, or a pre-merge { url }) gives its repositories to the
-  // project and leaves the index. Its file stays on disk; nothing reads it again.
-  for (const row of db.prepare("SELECT id, file_path, project FROM documents WHERE kind = 'swarm'").all() as {
-    id: number;
-    file_path: string;
-    project: string;
-  }[]) {
-    let text = "";
-    try {
-      text = fs.readFileSync(toAbs(row.file_path, root), "utf8");
-    } catch {
-      // a missing file gives no repository; the row leaves all the same
-    }
-    for (const repo of boardReposInText(text)) addRepo(row.project, repo);
-    db.prepare("DELETE FROM pending WHERE document_id = ?").run(row.id);
-    db.prepare("DELETE FROM documents WHERE id = ?").run(row.id);
-  }
-
-  // The `mockup` kind is now `prototype`: its rows say so, its files keep their name on disk.
-  db.prepare("UPDATE documents SET kind = 'prototype' WHERE kind = 'mockup'").run();
 
   const parse = (row: Row): Document => ({
     ...row,

@@ -7,10 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
-import { migrateCodeTables } from "../src/packs/code/schema.ts";
 
 const REPO = "/repos/claims/.git";
 const SHA = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
@@ -128,21 +126,3 @@ test("a merged event carries its files; a resolved conflict is told to who merge
   assert.deepEqual(code.merged(w2, sha("d"), ["src/a.ts"]).map((t) => t.member).sort(), ["g/w1", "g/w3"]);
 });
 
-test("an older store opens: its claim log and drift notices go, and the claims kept past their work with the columns that marked them", () => {
-  const db = new DatabaseSync(path.join(dir, "old.sqlite"));
-  db.exec(`CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT);
-    CREATE TABLE participants (id INTEGER PRIMARY KEY, files TEXT);
-    CREATE TABLE claims (repo TEXT NOT NULL, path TEXT NOT NULL, participant INTEGER NOT NULL, kind TEXT NOT NULL DEFAULT 'inside', since_seq INTEGER NOT NULL DEFAULT 0,
-      state TEXT NOT NULL DEFAULT 'active', sha TEXT, in_changes INTEGER NOT NULL DEFAULT 1, PRIMARY KEY (repo, path, participant));
-    CREATE TABLE claim_log (repo TEXT NOT NULL, path TEXT NOT NULL, participant INTEGER NOT NULL, PRIMARY KEY (repo, path, participant));
-    CREATE INDEX claim_log_by_participant ON claim_log (participant);
-    CREATE TABLE drift_notices (repo TEXT NOT NULL, path TEXT NOT NULL, participant INTEGER NOT NULL, PRIMARY KEY (repo, path, participant));
-    INSERT INTO claims (repo, path, participant, state, sha, in_changes) VALUES
-      ('r', 'now.ts', 1, 'active', NULL, 1), ('r', 'merged.ts', 1, 'merged', 'abc', 0), ('r', 'reverted.ts', 1, 'active', NULL, 0), ('r', 'again.ts', 1, 'active', 'abc', 1);`);
-  migrateCodeTables(db);
-  migrateCodeTables(db); // a second open finds nothing to do
-  assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name IN ('claim_log', 'drift_notices')").get(), undefined);
-  assert.deepEqual((db.prepare("SELECT path FROM claims ORDER BY path").all() as { path: string }[]).map((r) => r.path), ["again.ts", "now.ts"]);
-  assert.deepEqual((db.prepare("PRAGMA table_info(claims)").all() as { name: string }[]).map((c) => c.name), ["repo", "path", "participant", "kind", "since_seq"]);
-  db.close();
-});

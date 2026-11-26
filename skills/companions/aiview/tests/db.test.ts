@@ -28,25 +28,6 @@ afterEach(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test("migration: an x.mockup.html registers as a prototype, its file never renamed", () => {
-  const abs = write("docs/x.mockup.html", "<title>X</title>");
-  assert.equal(index.register(abs).kind, "prototype");
-  assert.equal(index.register(write("docs/y.md", "# Y"), { kind: "mockup" }).kind, "prototype");
-  assert.ok(fs.existsSync(abs));
-});
-
-test("migration: a row of kind mockup reads as prototype once the index reopens", () => {
-  const abs = write("docs/old.page.html", "<title>Old</title>");
-  index.register(abs, { kind: "page" });
-  index.close();
-  const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite");
-  const raw = new DatabaseSync(path.join(tmp, "test.sqlite"));
-  raw.prepare("UPDATE documents SET kind = 'mockup'").run();
-  raw.close();
-  index = openIndex(path.join(tmp, "test.sqlite"), root);
-  assert.equal(index.getByPath(abs)!.kind, "prototype");
-});
-
 test("register: kind from filename, stored path repo-relative, title from h1", () => {
   const abs = write("docs/x.brainstorm.md", "# Board X\n");
   const d = index.register(abs, { tags: ["proj"] });
@@ -139,39 +120,6 @@ test("groups: ungrouped docs stay null", () => {
   const d = index.register(write("u.spec.md", "# U\n"));
   assert.equal(d.group_slug, null);
   assert.deepEqual(index.allGroups(), []);
-});
-
-test("migration: v1 schema (no kind/tags, revisions table) upgrades in place", async () => {
-  const { DatabaseSync } = await import("node:sqlite");
-  const dbPath = path.join(tmp, "v1.sqlite");
-  const raw = new DatabaseSync(dbPath);
-  raw.exec(`
-    CREATE TABLE documents (
-      id INTEGER PRIMARY KEY,
-      file_path TEXT NOT NULL UNIQUE,
-      project TEXT NOT NULL,
-      title TEXT,
-      created_at TEXT NOT NULL,
-      last_seen_at TEXT NOT NULL
-    );
-    CREATE TABLE revisions (id INTEGER PRIMARY KEY);
-    INSERT INTO documents VALUES (1, 'old.md', 'repo', 'Old', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
-  `);
-  raw.close();
-  const upgraded = openIndex(dbPath, root);
-  const d = upgraded.get(1);
-  assert.equal(d?.title, "Old");
-  assert.equal(d?.kind, "");
-  assert.deepEqual(d?.tags, []);
-  assert.equal(d?.group_slug, null);
-  assert.deepEqual(upgraded.allGroups(), []);
-  const check = new DatabaseSync(dbPath);
-  const tables = (check.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map(
-    (t) => t.name,
-  );
-  assert.ok(!tables.includes("revisions"));
-  check.close();
-  upgraded.close();
 });
 
 test("projects: upsert creates, title renames, paths merge without duplicates", () => {
@@ -268,37 +216,6 @@ test("pin: a document starts unpinned, pins and unpins, and keeps its pin when r
   assert.equal(index.setPinned(d.id, false), true);
   assert.equal(index.get(d.id)!.pinned, false);
   assert.equal(index.setPinned(9999, true), false);
-});
-
-test("boardReposInText: { repos }, a pre-merge { url }'s ?repo=, nothing for anything else", async () => {
-  const { boardReposInText } = await import("../src/core/db.ts");
-  assert.deepEqual(boardReposInText(JSON.stringify({ repos: ["/a/.git", "/b/.git", "/a/.git"] })), ["/a/.git", "/b/.git"]);
-  assert.deepEqual(boardReposInText(JSON.stringify({ url: "http://h:4322/?repo=%2Fa%2F.git&repo=%2Fb%2F.git&run=7" })), ["/a/.git", "/b/.git"]);
-  assert.deepEqual(boardReposInText(JSON.stringify({ run: "7" })), []);
-  assert.deepEqual(boardReposInText("not json"), []);
-});
-
-test("migration: a project's swarm document gives its repositories to the project's board and leaves the index", () => {
-  const [one, two, three] = ["one", "two", "three"].map((n) => {
-    fs.mkdirSync(path.join(tmp, "r", n, ".git"), { recursive: true });
-    return path.join(tmp, "r", n, ".git");
-  });
-  const board = write("docs/swarm.swarm.json",JSON.stringify({ repos: [one, two] }));
-  const plan = write("docs/a.plan.md", "# A plan\n");
-  const b = index.register(board, { project: "p" });
-  index.register(plan, { project: "p" });
-  assert.equal(b.kind, "swarm");
-  index.close();
-  index = openIndex(path.join(tmp, "test.sqlite"), root);
-  assert.deepEqual(index.boardRepos("p"), [one, two]);
-  assert.deepEqual(index.all().map((d) => d.kind), ["plan"]);
-  assert.ok(fs.existsSync(board), "the file stays on disk");
-  // a second open finds nothing to migrate and keeps the list
-  index.close();
-  index = openIndex(path.join(tmp, "test.sqlite"), root);
-  assert.deepEqual(index.boardRepos("p"), [one, two]);
-  assert.deepEqual(index.addBoardRepo("p", one), [one, two]);
-  assert.deepEqual(index.addBoardRepo("p", three), [one, two, three]);
 });
 
 test("project add registers the .git of its paths as board repos, and a project never registered falls back to them (D12)", () => {

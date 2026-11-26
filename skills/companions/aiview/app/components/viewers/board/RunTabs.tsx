@@ -17,7 +17,7 @@ function tabTip(tab: RunTab, state: string): string {
   return [tab.title, tab.protocol ? `${tab.protocol} · ${tab.kind} run` : `${tab.kind} run`, countText(tab), state].filter(Boolean).join(" · ");
 }
 
-/** The tab's state as a dot alone: live, quiet or closed in its colour, named for a screen reader. */
+/** The tab's state as a dot alone: live or closed in its colour, named for a screen reader. */
 function StateDot({ state }: { state: string }) {
   return <span className={`dot s-${state}`} data-component="RunState" role="img" aria-label={state} />;
 }

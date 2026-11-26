@@ -11,7 +11,6 @@ const VALUE_FLAGS = new Set([
   "--about",
   "--with",
   "--timeout",
-  "--repo", // board-split D47: the old name of --project, read as it
   "--project",
   "--port",
   "--onto",
@@ -37,9 +36,6 @@ const VALUE_FLAGS = new Set([
   "--from",
   "--before",
   "--limit",
-  // retired, read and ignored: their value is never taken for a positional (merged's sha)
-  "--guides",
-  "--check",
 ]);
 /** Flags taking every value up to the next flag: `--files a b c`, or `--files "a,b,c"`. */
 // V-27: --for takes seats like --files takes paths; read as a value, never as part of the phase text

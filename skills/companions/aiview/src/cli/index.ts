@@ -21,7 +21,7 @@ import { pointerHash, isName, unknownNames } from "../core/pointer.ts";
 import type { ShowResponse } from "../core/api.ts";
 import { projectForCwd } from "../core/projects.ts";
 import { boardHash } from "../core/boardhash.ts";
-import { adoptLegacyIndex, DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
+import { DATA_ROOT, defaultPort, firstFreePort, docsDirFor, DOCS_ROOT, ensureHome } from "../core/home.ts";
 import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
@@ -448,7 +448,6 @@ function cmdCheck(): void {
 /** First clone / new machine: make the data home exist and say what lives where. */
 function cmdInit(): void {
   ensureHome();
-  adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
   emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
     console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents — never versioned)`);
     console.log(`documents  ${path.join(DOCS_ROOT, "<project>")}`);

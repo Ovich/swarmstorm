@@ -23,7 +23,7 @@ class FakeEventSource {
 const REPO = "C:/work/letters/.git";
 const G = "letter4";
 const ago = (s: number): string => new Date(Date.now() - s * 1000).toISOString();
-/** One row of `snapshot.events` as /api/run sends it: run and channel, event, mentions, meta. */
+/** One row of `snapshot.events` as /api/run sends it: run, event, mentions, meta. */
 let seq = 1800;
 const ev = (from: string, body: string, kind: string, event: string | null, mentions: string[] = [], meta: object | null = null, run = 32) => ({
   seq: ++seq,
@@ -33,7 +33,6 @@ const ev = (from: string, body: string, kind: string, event: string | null, ment
   body,
   about: null,
   run,
-  channel: run,
   event,
   mentions,
   meta,

@@ -24,10 +24,9 @@ export interface OverlayOptions {
   target?: string;
 }
 
-/** Drop the date prefix of a prototype file name for the label: `2026-09-03-dock-tools.prototype.html` -> `dock-tools`.
- *  The legacy `.mockup.html` suffix, of files written before the rename, is dropped the same way. */
+/** Drop the date prefix of a prototype file name for the label: `2026-09-03-dock-tools.prototype.html` -> `dock-tools`. */
 export const shortName = (file: string): string =>
-  file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.(prototype|mockup)\.html$/, "").replace(/\.html$/, "");
+  file.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.prototype\.html$/, "").replace(/\.html$/, "");
 
 const UI_FONT = "font:12px/1.35 ui-sans-serif,system-ui,sans-serif";
 
@@ -54,7 +53,7 @@ const SCRIPT = `
 (function(){
   var layer=document.getElementById('__aiview'); if(!layer) return;
   var target=layer.getAttribute('data-target')||'';
-  var short=function(f){return f.replace(/^\\d{4}-\\d{2}-\\d{2}-/,'').replace(/\\.(prototype|mockup)\\.html$/,'').replace(/\\.html$/,'')};
+  var short=function(f){return f.replace(/^\\d{4}-\\d{2}-\\d{2}-/,'').replace(/\\.prototype\\.html$/,'').replace(/\\.html$/,'')};
   var svgNS='http://www.w3.org/2000/svg';
   var svg=document.createElementNS(svgNS,'svg');
   svg.innerHTML='<path fill="rgba(255,255,255,.4)" fill-rule="evenodd" d=""/>';

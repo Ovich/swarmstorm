@@ -50,7 +50,7 @@ export function projectFromDocsPath(absFile: string, docsRoot: string): string |
   return rest.length > 0 && first ? first : null;
 }
 
-export interface ResolveInput {
+interface ResolveInput {
   /** An explicit --project, which always wins. */
   explicit?: string;
   absFile: string;

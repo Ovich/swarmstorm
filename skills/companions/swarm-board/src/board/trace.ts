@@ -16,16 +16,16 @@ import { serverLogFile } from "../wire.ts";
 
 export const TRACE_LEVELS = ["off", "info", "debug", "debug-extended"] as const;
 export type TraceLevel = (typeof TRACE_LEVELS)[number];
-export const KEEP_DAYS = 30;
+const KEEP_DAYS = 30;
 /** info: a run's health line this often; a lock wait past LONG_WAIT_MS and an unread count from MANY_UNREAD are warned. */
-export const HEALTH_MS = 5 * 60_000;
+const HEALTH_MS = 5 * 60_000;
 const LONG_WAIT_MS = 60_000;
 const MANY_UNREAD = 5;
 /** The board events told at info: a run's and a member's lifecycle; a pack's event that lands work (its `lands`) too. */
 const INFO_EVENTS = new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume"]);
 
 export const traceRoot = (dataRoot: string): string => path.join(dataRoot, "logs");
-export const traceLevelFile = (dataRoot: string): string => path.join(traceRoot(dataRoot), "level");
+const traceLevelFile = (dataRoot: string): string => path.join(traceRoot(dataRoot), "level");
 
 export function readTraceLevel(dataRoot: string): TraceLevel {
   try {
@@ -41,7 +41,7 @@ export function writeTraceLevel(dataRoot: string, level: TraceLevel): void {
   fs.writeFileSync(traceLevelFile(dataRoot), `${level}\n`);
 }
 
-export type Tracer = {
+type Tracer = {
   /** A fact: at info its lifecycle line or warning, if it has one; at debug and above, its JSON line. */
   event(kind: string, fields: Record<string, unknown>): void;
   /** A post's whole text, at debug-extended only. */

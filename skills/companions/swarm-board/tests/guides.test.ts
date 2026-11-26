@@ -1,5 +1,5 @@
 // Architecture guides: the board names the project's guides to a member once, at its join, as skills to load.
-// It checks nothing against them: a delivery asks for no verdict, and a typed --guides is read and ignored.
+// It checks nothing against them: a delivery asks for no verdict.
 import { test, beforeEach, afterEach } from "node:test";
 import { stopServerOf } from "./fixtures/server.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
@@ -95,7 +95,7 @@ test("join names the project's guides to a member the board gives a worktree, as
   assert.match(joined, /^guides for this work: all \(guide-all\), ui \(guide-ui\); load each before editing$/m);
 });
 
-test("a delivery asks for no verdict on a guide: it merges, and a typed --guides is read and ignored", () => {
+test("a delivery asks for no verdict on a guide: it merges", () => {
   // the branch changes a file both guides speak for
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 1;\n");
   commit(wtA, "page");
@@ -105,17 +105,9 @@ test("a delivery asks for no verdict on a guide: it merges, and a typed --guides
   const seq = /reported as #(\d+)/.exec(out)?.[1];
   assert.ok(seq, out);
   assert.equal(storedBody(seq), `@orchestrator merged ${sha}: done`);
-  // a member on old habits types its verdicts: the merge goes through all the same, and the report carries none
-  fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 2;\n");
-  commit(wtA, "page again");
-  const typed = cli(wtA, "merge-lock", "--onto", "main", "--guides", "all:ok, ui:n/a no screen", "--report", "done again");
-  const sha2 = git(wtA, "rev-parse", "HEAD").trim();
-  const seq2 = /reported as #(\d+)/.exec(typed)?.[1];
-  assert.ok(seq2, typed);
-  assert.equal(storedBody(seq2), `@orchestrator merged ${sha2}: done again`);
 });
 
-test("by hand: the lock's grant names no guide, and merged takes its sha whatever --guides is typed before it", () => {
+test("by hand: the lock's grant names no guide", () => {
   fs.writeFileSync(path.join(wtA, "src", "ui", "page.ts"), "export const p = 3;\n");
   commit(wtA, "page");
   const lock = cli(wtA, "merge-lock", "--lock-only", "--onto", "main");
@@ -123,8 +115,7 @@ test("by hand: the lock's grant names no guide, and merged takes its sha whateve
   assert.match(lock, /^granted: under the lock only rebase, .* merged <sha> --report "<your report>" --as g\/S1$/m);
   git(wtA, "push", "-q", ".", "HEAD:main");
   const sha = git(wtA, "rev-parse", "HEAD").trim();
-  // --guides before the sha: its value is the flag's, never the sha
-  const out = cli(wtA, "merged", "--guides", "all:ok", sha, "--report", "-");
+  const out = cli(wtA, "merged", sha, "--report", "-");
   assert.match(out, new RegExp(`^merged ${sha}: lock released$`, "m"));
 });
 

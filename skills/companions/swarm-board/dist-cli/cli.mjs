@@ -534,7 +534,7 @@ var init_trace = __esm({
 
 // src/packs/code/claims.ts
 function claimsOf(deps) {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, kindHasPack } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes } = deps;
   const holdersOf = (repo, rel) => db.prepare("SELECT participant FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => Number(r.participant)).filter(isLive);
   const agreedOn = (a, b, rel) => db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND author IN (?, ?)").all(a.repo, a.id, b.id).some((r) => {
     const about = r.about == null ? "" : fold2(slashes(String(r.about)));
@@ -830,7 +830,13 @@ function migrateCodeTables(db) {
     CREATE TABLE IF NOT EXISTS merge_locks (
       repo TEXT PRIMARY KEY,
       participant INTEGER NOT NULL,
-      at TEXT NOT NULL
+      at TEXT NOT NULL,
+      -- the branch a merge lands in, named by merge-lock --onto (D9)
+      onto TEXT,
+      -- the holder's HEAD reflog length at the grant: merged replays only a rebase past it (D36)
+      reflog_mark INTEGER,
+      -- the paths the holder's branch changed, as its CLI read them from git at the grant, JSON: the files of its merge
+      files TEXT
     );
     -- a member refused the merge lock since its holder took it: mentioned when it is released (D65)
     CREATE TABLE IF NOT EXISTS lock_waiters (
@@ -850,42 +856,11 @@ function migrateCodeTables(db) {
     CREATE TABLE IF NOT EXISTS lock_requests (repo TEXT NOT NULL, participant INTEGER NOT NULL, asked_at TEXT NOT NULL,
       granted_at TEXT, merged_at TEXT, refused INTEGER NOT NULL DEFAULT 0);
     CREATE INDEX IF NOT EXISTS lock_requests_by_participant ON lock_requests (participant, asked_at);
-    -- read by member (board-fixes#D14); an older store's claim log and drift notices go
+    -- read by member (board-fixes#D14)
     CREATE INDEX IF NOT EXISTS claims_by_participant ON claims (participant);
-    DROP INDEX IF EXISTS claim_log_by_participant;
-    DROP TABLE IF EXISTS claim_log;
-    DROP TABLE IF EXISTS drift_notices;
   `);
-  const upkeep = (table, column, ddl) => {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-    if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-  };
-  upkeep("participants", "merged", "merged INTEGER NOT NULL DEFAULT 0");
-  upkeep("merge_locks", "onto", "onto TEXT");
-  upkeep("merge_locks", "reflog_mark", "reflog_mark INTEGER");
-  upkeep("merge_locks", "files", "files TEXT");
-  const claimKey = db.prepare("PRAGMA table_info(claims)").all().find((c) => c.name === "participant");
-  if (claimKey && claimKey.pk === 0) {
-    db.exec(`
-      BEGIN;
-      ALTER TABLE claims RENAME TO claims_before_d40;
-      CREATE TABLE claims (
-        repo TEXT NOT NULL,
-        path TEXT NOT NULL,
-        participant INTEGER NOT NULL,
-        kind TEXT NOT NULL DEFAULT 'inside',
-        since_seq INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (repo, path, participant)
-      );
-      INSERT INTO claims (repo, path, participant, kind) SELECT repo, path, participant, kind FROM claims_before_d40;
-      DROP TABLE claims_before_d40;
-      COMMIT;
-    `);
-  }
-  const claimCols = db.prepare("PRAGMA table_info(claims)").all().map((c) => c.name);
-  if (claimCols.includes("state")) db.exec("DELETE FROM claims WHERE state != 'active'");
-  if (claimCols.includes("in_changes")) db.exec("DELETE FROM claims WHERE in_changes = 0");
-  for (const column of ["state", "sha", "in_changes"]) if (claimCols.includes(column)) db.exec(`ALTER TABLE claims DROP COLUMN ${column}`);
+  const cols = db.prepare("PRAGMA table_info(participants)").all().map((c) => c.name);
+  if (!cols.includes("merged")) db.exec("ALTER TABLE participants ADD COLUMN merged INTEGER NOT NULL DEFAULT 0");
 }
 function forgetMemberRows(db, participant) {
   for (const table of MEMBER_TABLES) db.prepare(`DELETE FROM ${table} WHERE participant = ?`).run(participant);
@@ -1827,31 +1802,6 @@ function sweep(wt, repo, into) {
   const why = leftover(wt, into) ?? removeWorktree(wt, repo);
   return { removed: why === null, why };
 }
-function sweepLegacyRoot() {
-  if (!fs7.existsSync(LEGACY_ROOT) || fs7.existsSync(LEGACY_SWEPT)) return [];
-  const kept = [];
-  const sub = (d) => fs7.existsSync(d) ? fs7.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path7.join(d, e.name)) : [];
-  for (const wt of sub(LEGACY_ROOT).flatMap(sub)) {
-    const common = git(wt, "rev-parse", "--git-common-dir");
-    if (!common) {
-      if (!fs7.readdirSync(wt).length) fs7.rmdirSync(wt);
-      else kept.push(`${wt}: not a git worktree, left as it is`);
-      continue;
-    }
-    const status = run(wt, "status", "--porcelain", "--untracked-files=all");
-    if (!status.ok || status.out) {
-      kept.push(`${wt}: uncommitted changes, kept`);
-      continue;
-    }
-    const why = removeWorktree(wt, path7.resolve(wt, common));
-    if (why) kept.push(`${wt}: ${why}`);
-  }
-  for (const runDir of sub(LEGACY_ROOT)) if (!fs7.readdirSync(runDir).length) fs7.rmdirSync(runDir);
-  if (!fs7.readdirSync(LEGACY_ROOT).length) fs7.rmdirSync(LEGACY_ROOT);
-  else fs7.writeFileSync(LEGACY_SWEPT, `${(/* @__PURE__ */ new Date()).toISOString()}
-`);
-  return kept;
-}
 function worktrees(repo) {
   return {
     /** Where the seat's worktree is, without making it (G20); null when `cwd` is a worktree the board did not make. */
@@ -1892,12 +1842,11 @@ function sweepAll(repos, recordOf) {
     return { worktree: dir, ...sweep(dir, w.repo, w.base) };
   });
 }
-var worktreesRoot, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor, LEGACY_ROOT, LEGACY_SWEPT, sweepLegacy;
+var worktreesRoot, fold, safe, worktreeDir, branchFor, owned, worktreeDirs, same, branchExists, isAncestor;
 var init_worktrees = __esm({
   "src/packs/code/worktrees.ts"() {
     "use strict";
     init_proc();
-    init_home();
     init_git();
     init_link();
     init_place();
@@ -1914,9 +1863,6 @@ var init_worktrees = __esm({
     same = (a, b) => fold(a) === fold(b);
     branchExists = (cwd, branch) => git(cwd, "rev-parse", "--verify", "-q", `refs/heads/${branch}`) !== null;
     isAncestor = (cwd, ref, of) => run(cwd, "merge-base", "--is-ancestor", "--end-of-options", ref, of).ok;
-    LEGACY_ROOT = path7.join(DATA_ROOT, "worktrees");
-    LEGACY_SWEPT = path7.join(LEGACY_ROOT, ".swept");
-    sweepLegacy = () => sweepLegacyRoot();
   }
 });
 
@@ -2024,8 +1970,6 @@ var init_code = __esm({
             const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
             return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
           }
-          case "legacy":
-            return sweepLegacy();
           // board-split D59, D63: the member's branch and what it holds not merged; null when all is merged
           case "unmerged": {
             if (!member || !ctx) return null;
@@ -2138,8 +2082,7 @@ var init_registry = __esm({
 
 // src/board/events.ts
 function eventOf(m) {
-  const stored = m.event ? currentEventName(m.event) : null;
-  if (stored && isEvent(stored)) return stored;
+  if (m.event && isEvent(m.event)) return m.event;
   return m.kind === "agreement" || m.kind === "endorsement" || m.kind === "urgent" ? m.kind : null;
 }
 function mentions(m, me) {
@@ -2151,7 +2094,7 @@ function wakes(m, me) {
   const e = eventOf(m);
   return !!e && !!eventDef(e).always;
 }
-var FOREGROUND_WAIT_MS, EVENTS, CORE_AWAITED, isAwaitedCause, landingEvents, awaitedLine, all, allEvents, isEvent, alwaysEventNames, RENAMED_EVENTS, currentEventName, eventDef, toAuthorEventNames;
+var FOREGROUND_WAIT_MS, EVENTS, CORE_AWAITED, isAwaitedCause, landingEvents, awaitedLine, all, allEvents, isEvent, alwaysEventNames, eventDef, toAuthorEventNames;
 var init_events2 = __esm({
   "src/board/events.ts"() {
     "use strict";
@@ -2203,12 +2146,7 @@ var init_events2 = __esm({
     all = null;
     allEvents = () => all ??= { ...EVENTS, ...registry.events() };
     isEvent = (s) => Object.hasOwn(allEvents(), s);
-    alwaysEventNames = () => {
-      const events = Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
-      return { events, stored: [...events, ...Object.keys(RENAMED_EVENTS).filter((old) => events.includes(RENAMED_EVENTS[old]))] };
-    };
-    RENAMED_EVENTS = { gone: "lost", stale: "stopped", quiet: "stopped", stalled: "stopped", idle: "stopped" };
-    currentEventName = (s) => RENAMED_EVENTS[s] ?? s;
+    alwaysEventNames = () => Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
     eventDef = (name) => allEvents()[name];
     toAuthorEventNames = () => Object.values(allEvents()).filter((d) => d.toAuthor).map((d) => d.name);
   }
@@ -2356,10 +2294,6 @@ var init_owing = __esm({
 import fs9 from "node:fs";
 import path9 from "node:path";
 function alarmSubjectOf(m) {
-  const meta = m.meta;
-  const group = m.from.split("/")[0];
-  if (meta && typeof meta.rule === "string" && typeof meta.member === "string") return `${group}/${meta.member}`;
-  if (meta && typeof meta.linkDown === "string") return meta.linkDown;
   const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
   return head ?? null;
 }
@@ -2381,12 +2315,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const prepareAnew = db.prepare.bind(db);
   const prepared = /* @__PURE__ */ new Map();
   db.prepare = (sql) => prepared.get(sql) ?? prepared.set(sql, prepareAnew(sql)).get(sql);
-  const hasTable = (name) => db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name) !== void 0;
-  const columnsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => String(c.name));
-  if (hasTable("slices") && !hasTable("seats")) db.exec("ALTER TABLE slices RENAME TO seats");
-  if (hasTable("seats") && columnsOf("seats").includes("title")) db.exec("ALTER TABLE seats DROP COLUMN title");
-  if (hasTable("participants") && columnsOf("participants").includes("slice")) db.exec("ALTER TABLE participants RENAME COLUMN slice TO seat");
-  if (hasTable("participants") && columnsOf("participants").includes("worktree") && !columnsOf("participants").includes("place")) db.exec("ALTER TABLE participants RENAME COLUMN worktree TO place");
   db.exec(`
     -- WAL: a write appends to the log and returns; NORMAL syncs the log at checkpoints, not at
     -- each commit, so a power cut may lose the last writes but never corrupts the store.
@@ -2403,7 +2331,36 @@ async function openBoard(dbPath = SQLITE_PATH) {
       title TEXT NOT NULL,
       state TEXT NOT NULL DEFAULT 'open',
       opened_at TEXT NOT NULL,
-      closed_at TEXT
+      closed_at TEXT,
+      link TEXT,
+      -- what kind of work a run is (D25)
+      kind TEXT NOT NULL DEFAULT 'plan',
+      -- 1 once the run's stale event is in main; any member call resets it (D19)
+      stale_flagged INTEGER NOT NULL DEFAULT 0,
+      -- set when prune removed the run's contents; the row stays so its id is never reused (D61): never listed
+      pruned_at TEXT,
+      -- the run's current phase, set by 'phase': its name and its text; null until one is opened
+      phase TEXT,
+      phase_text TEXT,
+      -- set by pause, the orchestrator's reason; null when the run is not paused
+      paused TEXT,
+      -- when resume last lifted a pause: the stall check counts silence from it, never through the pause
+      resumed_at TEXT,
+      -- the run's stall threshold, and the stalled events posted since a counter last moved
+      stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT},
+      protocol TEXT,
+      -- board-split#D28: the roles the run's orchestrator holds, a JSON array
+      authority TEXT,
+      -- the branch a run's members start from, recorded at open (its pack reads it)
+      base TEXT,
+      stall_posts INTEGER NOT NULL DEFAULT 0,
+      -- idea 2: a pause waiting on the person; the current phase's watched members (JSON ids); the phase a member was last shown
+      paused_person INTEGER NOT NULL DEFAULT 0,
+      phase_watch TEXT,
+      -- the seats the current phase is for ('phase --for', JSON ids); null: every member
+      phase_for TEXT,
+      -- board-split D49: when the current phase opened; a member owes it, and can stall on it, only from then
+      phase_at TEXT
     );
     CREATE TABLE IF NOT EXISTS seats (
       run INTEGER NOT NULL,
@@ -2413,6 +2370,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       blockers TEXT NOT NULL DEFAULT '[]',
       state TEXT NOT NULL DEFAULT 'ready',
       ord INTEGER NOT NULL,
+      link TEXT,
       PRIMARY KEY (run, id)
     );
     CREATE TABLE IF NOT EXISTS participants (
@@ -2426,6 +2384,37 @@ async function openBoard(dbPath = SQLITE_PATH) {
       joined_at TEXT NOT NULL,
       ended_at TEXT,
       last_call TEXT,
+      calls INTEGER NOT NULL DEFAULT 0,
+      waiting INTEGER NOT NULL DEFAULT 0,
+      -- 1 while a 'wait --mentions' is pending: a listener, not a wait (D49)
+      listening INTEGER NOT NULL DEFAULT 0,
+      nick TEXT,
+      -- the member's pack and verify setting, chosen at join (board-split#D11, D22); pack_chosen 0 on an
+      -- orchestrator's row, read as its kind's default
+      pack TEXT,
+      verify INTEGER NOT NULL DEFAULT 0,
+      pack_chosen INTEGER NOT NULL DEFAULT 0,
+      -- moved by every 'wait' start: a pending wait whose number is no longer this one is superseded (D64)
+      wait_gen INTEGER NOT NULL DEFAULT 0,
+      -- 1 once an orchestrator's quiet event is posted; its next call posts back and resets it (D15)
+      -- the member's last post, done or doing (swarm-relay D36)
+      progress_at TEXT,
+      -- board-split D49: the member's last board call that is not a self-report (a post, 'doing', an endorsement): what a
+      -- stall is measured from out of a wait
+      board_call_at TEXT,
+      quiet_flagged INTEGER NOT NULL DEFAULT 0,
+      -- simple-states: whether the member owed the open phase when its link dropped (1/0); null while its link is up
+      dropped_owing INTEGER,
+      -- board-fixes#D5: when the member's doing text was set, and the last seq then; null on an orchestrator's row
+      doing_at TEXT,
+      doing_seq INTEGER,
+      phase_shown TEXT,
+      -- the member's 'wait --mentions' that returned empty on their hold, in a row: two while it owes nothing make it idle
+      empty_waits INTEGER NOT NULL DEFAULT 0,
+      idle_ended INTEGER NOT NULL DEFAULT 0,
+      -- S22 (board-split D25): when the seat's current member joined, a re-join included; joined_at keeps the seat's first
+      -- join. Null on a first join: read as joined_at
+      seated_at TEXT,
       UNIQUE (run, seat)
     );
     CREATE TABLE IF NOT EXISTS messages (
@@ -2436,12 +2425,26 @@ async function openBoard(dbPath = SQLITE_PATH) {
       about TEXT,
       kind TEXT NOT NULL DEFAULT 'msg',
       mentions TEXT NOT NULL DEFAULT '[]',
-      at TEXT NOT NULL
+      at TEXT NOT NULL,
+      -- 1: written by the board itself in a member's name (a pack's notice), never a member's own word
+      by_board INTEGER NOT NULL DEFAULT 0,
+      -- a board event's data beside its text (D11)
+      meta TEXT,
+      -- a message's run (D31, plan D13): its author's run
+      run INTEGER,
+      endorses INTEGER,
+      -- the board event a message is (D59); null on plain posts
+      event TEXT,
+      -- board-fixes#D13: 1 on an orchestrator's task to one seat; the seats it waits on ('--after', JSON), null for none
+      task INTEGER NOT NULL DEFAULT 0,
+      after TEXT
     );
     CREATE INDEX IF NOT EXISTS messages_repo ON messages (repo, seq);
     CREATE TABLE IF NOT EXISTS deliveries (
       participant INTEGER NOT NULL,
       seq INTEGER NOT NULL,
+      -- board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery
+      at TEXT,
       PRIMARY KEY (participant, seq)
     );
     -- a version per project, moved by every write: what onChange compares (D39)
@@ -2454,7 +2457,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     CREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);
     -- the board's own settings: last-upkeep (D16)
     CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
-    -- the identities and hook_seen tables, left in stores from before D58, are no longer read or written
     -- a member done with a phase, once per run, member and phase; a phase opened again clears its rows
     CREATE TABLE IF NOT EXISTS phase_done (run INTEGER NOT NULL, participant INTEGER NOT NULL, phase TEXT NOT NULL, at TEXT NOT NULL,
       PRIMARY KEY (run, participant, phase));
@@ -2469,7 +2471,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     CREATE TABLE IF NOT EXISTS liveness_warned (run INTEGER NOT NULL, member TEXT NOT NULL, cond TEXT NOT NULL, PRIMARY KEY (run, member, cond));
     -- board-split D55: a member's lost or stalled episode: pending at its predicate's first tick, opened at the second
     -- (its alarm), closed when the predicate is false (recovered), or at end
-    CREATE TABLE IF NOT EXISTS badge_episodes (run INTEGER NOT NULL, member TEXT NOT NULL, badge TEXT NOT NULL, pending_at INTEGER NOT NULL, opened_at INTEGER, closed_at INTEGER);
+    CREATE TABLE IF NOT EXISTS badge_episodes (run INTEGER NOT NULL, member TEXT NOT NULL, badge TEXT NOT NULL, pending_at INTEGER NOT NULL, opened_at INTEGER, closed_at INTEGER,
+      -- board-split D55 (amended, U-F27): since when an open episode's predicate reads false, its close pending
+      clearing_at INTEGER);
     CREATE INDEX IF NOT EXISTS badge_episodes_open ON badge_episodes (run, member, badge, closed_at);
     -- a member's latest activity, from its link's frames (swarm-relay D9);
     CREATE TABLE IF NOT EXISTS member_activity (
@@ -2477,71 +2481,33 @@ async function openBoard(dbPath = SQLITE_PATH) {
       grew_at INTEGER, tokens INTEGER NOT NULL DEFAULT 0, context INTEGER,
       open_tool TEXT, open_target TEXT, open_since INTEGER, last_tool TEXT,
       finished INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,
+      open_wait INTEGER NOT NULL DEFAULT 0,
+      -- idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
+      in_turn INTEGER,
+      last_line TEXT,
+      bg_target TEXT,
+      bg_since INTEGER,
+      bg_grew_at INTEGER,
+      transcript TEXT,
+      -- board-split D45: the open call's and the background task's own description and whole command, for the card's line
+      open_label TEXT,
+      open_command TEXT,
+      bg_label TEXT,
+      bg_command TEXT,
+      -- D4 (G16): the link's report of the member's background listener; null before the link reports it
+      listener_running INTEGER,
+      listener_ended_at INTEGER,
       PRIMARY KEY (run, member));
     -- a member's link as the server last saw it: connected, else lost since lost_at (ms epoch); swarm-relay D37
     CREATE TABLE IF NOT EXISTS member_links (
       run INTEGER NOT NULL, member TEXT NOT NULL, connected INTEGER NOT NULL, lost_at INTEGER,
+      -- board-split D55: a link's last heartbeat and its drop cause
+      seen_at INTEGER,
+      cause TEXT,
       PRIMARY KEY (run, member));
     -- board-split D55: the board server's own facts (server_up_at, ms epoch)
     CREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
   `);
-  const upkeep = (table, column, ddl) => {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-    if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
-  };
-  upkeep("participants", "place", "place TEXT");
-  upkeep("member_links", "seen_at", "seen_at INTEGER");
-  upkeep("member_links", "cause", "cause TEXT");
-  upkeep("participants", "last_call", "last_call TEXT");
-  upkeep("participants", "calls", "calls INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "waiting", "waiting INTEGER NOT NULL DEFAULT 0");
-  upkeep("member_activity", "open_wait", "open_wait INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "listening", "listening INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "nick", "nick TEXT");
-  upkeep("participants", "pack", "pack TEXT");
-  upkeep("participants", "verify", "verify INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "pack_chosen", "pack_chosen INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "wait_gen", "wait_gen INTEGER NOT NULL DEFAULT 0");
-  upkeep("messages", "by_board", "by_board INTEGER NOT NULL DEFAULT 0");
-  upkeep("runs", "link", "link TEXT");
-  upkeep("messages", "meta", "meta TEXT");
-  upkeep("seats", "link", "link TEXT");
-  upkeep("seats", "role", "role TEXT");
-  upkeep("seats", "area", "area TEXT");
-  upkeep("runs", "kind", "kind TEXT NOT NULL DEFAULT 'plan'");
-  upkeep("messages", "run", "run INTEGER");
-  upkeep("messages", "endorses", "endorses INTEGER");
-  upkeep("runs", "stale_flagged", "stale_flagged INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "progress_at", "progress_at TEXT");
-  upkeep("participants", "board_call_at", "board_call_at TEXT");
-  upkeep("participants", "quiet_flagged", "quiet_flagged INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "dropped_owing", "dropped_owing INTEGER");
-  upkeep("runs", "pruned_at", "pruned_at TEXT");
-  upkeep("messages", "event", "event TEXT");
-  upkeep("deliveries", "at", "at TEXT");
-  upkeep("messages", "task", "task INTEGER NOT NULL DEFAULT 0");
-  upkeep("messages", "after", "after TEXT");
-  upkeep("participants", "doing_at", "doing_at TEXT");
-  upkeep("participants", "doing_seq", "doing_seq INTEGER");
-  upkeep("badge_episodes", "clearing_at", "clearing_at INTEGER");
-  upkeep("runs", "phase", "phase TEXT");
-  upkeep("runs", "phase_text", "phase_text TEXT");
-  upkeep("runs", "paused", "paused TEXT");
-  upkeep("runs", "resumed_at", "resumed_at TEXT");
-  upkeep("runs", "stall_ms", `stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT}`);
-  upkeep("runs", "protocol", "protocol TEXT");
-  upkeep("runs", "authority", "authority TEXT");
-  upkeep("runs", "base", "base TEXT");
-  upkeep("runs", "stall_posts", "stall_posts INTEGER NOT NULL DEFAULT 0");
-  upkeep("runs", "paused_person", "paused_person INTEGER NOT NULL DEFAULT 0");
-  upkeep("runs", "phase_watch", "phase_watch TEXT");
-  upkeep("participants", "phase_shown", "phase_shown TEXT");
-  upkeep("runs", "phase_for", "phase_for TEXT");
-  upkeep("runs", "phase_at", "phase_at TEXT");
-  upkeep("participants", "empty_waits", "empty_waits INTEGER NOT NULL DEFAULT 0");
-  if (columnsOf("participants").includes("dormant") && !columnsOf("participants").includes("idle_ended")) db.exec("ALTER TABLE participants RENAME COLUMN dormant TO idle_ended");
-  upkeep("participants", "idle_ended", "idle_ended INTEGER NOT NULL DEFAULT 0");
-  upkeep("participants", "seated_at", "seated_at TEXT");
   const endClosedOrchestratorSeats = () => {
     const at = (/* @__PURE__ */ new Date()).toISOString();
     db.prepare(
@@ -2551,22 +2517,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     ).run(at, ORCHESTRATORS_GROUP);
   };
   endClosedOrchestratorSeats();
-  upkeep("member_activity", "in_turn", "in_turn INTEGER");
-  upkeep("member_activity", "last_line", "last_line TEXT");
-  upkeep("member_activity", "bg_target", "bg_target TEXT");
-  upkeep("member_activity", "bg_since", "bg_since INTEGER");
-  upkeep("member_activity", "bg_grew_at", "bg_grew_at INTEGER");
-  upkeep("member_activity", "transcript", "transcript TEXT");
-  upkeep("member_activity", "open_label", "open_label TEXT");
-  upkeep("member_activity", "open_command", "open_command TEXT");
-  upkeep("member_activity", "bg_label", "bg_label TEXT");
-  upkeep("member_activity", "bg_command", "bg_command TEXT");
-  db.exec(`INSERT INTO badge_episodes (run, member, badge, pending_at, opened_at)
-             SELECT w.run, w.member, 'lost', 0, 0 FROM liveness_warned w WHERE w.cond = 'gone'
-               AND NOT EXISTS (SELECT 1 FROM badge_episodes e WHERE e.run = w.run AND e.member = w.member AND e.badge = 'lost' AND e.closed_at IS NULL);
-           DELETE FROM liveness_warned WHERE cond = 'gone';`);
-  upkeep("member_activity", "listener_running", "listener_running INTEGER");
-  upkeep("member_activity", "listener_ended_at", "listener_ended_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
   db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages (run, seq)");
   const localWakers = /* @__PURE__ */ new Set();
@@ -2637,7 +2587,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       state: seatStateOf(r, String(s.id), s.stood_for != null)
     }))
   });
-  const nickOf = (r) => r.nick == null ? String(r.seat) : String(r.nick);
+  const nickOf = (r) => String(r.nick);
   const unusedNick = (repo, run2) => {
     const rows = db.prepare(`${PARTICIPANT_SQL} WHERE r.repo = ? AND ((r.state = 'open' AND p.ended_at IS NULL) OR p.run = ?)`).all(repo, run2 ?? -1);
     return funnyName(rows.map(nickOf));
@@ -2658,7 +2608,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     ended: r.ended_at != null,
     place: r.place == null ? null : String(r.place),
     listening: listensNow(r),
-    // pack_chosen 0: a member from before the registry (or an orchestrator), read as its kind's default (D22)
+    // pack_chosen 0: an orchestrator, read as its kind's default (D22)
     ...Number(r.pack_chosen ?? 0) === 1 ? { pack: r.pack == null ? null : String(r.pack), verify: Number(r.verify) === 1 } : { pack: kindPackOf(String(r.kind ?? "plan")), verify: registry.forMember(String(r.kind ?? "plan"), null).verify },
     kindPack: kindPackOf(String(r.kind ?? "plan"))
   });
@@ -2678,10 +2628,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
       kind: String(r.kind),
       mentions: JSON.parse(String(r.mentions)),
       at: String(r.at),
-      // an old main row (null) is labelled with its author's run (plan D13)
-      run: r.run == null ? author.run : Number(r.run),
+      run: Number(r.run),
       endorses: r.endorses == null ? null : Number(r.endorses),
-      event: r.event == null || !isEvent(currentEventName(String(r.event))) ? null : currentEventName(String(r.event)),
+      event: r.event == null || !isEvent(String(r.event)) ? null : String(r.event),
       meta: r.meta == null ? null : JSON.parse(String(r.meta))
     };
   };
@@ -2756,7 +2705,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     }
     return null;
   };
-  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes, kindHasPack: (kind) => kindPackOf(kind) !== null });
+  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes });
   const runPackCtx = (runId) => {
     const r = runRow(runId);
     return {
@@ -2775,9 +2724,9 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fact ? { fact } : {};
   };
   const unseenRows = (me, wakeCandidates = false, afterSeq = 0) => {
-    const { events: always, stored } = alwaysEventNames();
+    const always = alwaysEventNames();
     const quoted2 = (names) => names.length ? names.map((n) => `'${n}'`).join(", ") : "NULL";
-    const candidate = wakeCandidates ? `AND (instr(m.mentions, ?) > 0 OR instr(m.mentions, ?) > 0 OR m.event IN (${quoted2(stored)}) OR m.kind IN (${quoted2(always)}))` : "";
+    const candidate = wakeCandidates ? `AND (instr(m.mentions, ?) > 0 OR instr(m.mentions, ?) > 0 OR m.event IN (${quoted2(always)}) OR m.kind IN (${quoted2(always)}))` : "";
     const named = wakeCandidates ? [JSON.stringify(me.name), JSON.stringify(`${me.plan}/*`)] : [];
     return db.prepare(
       `SELECT m.* FROM messages m
@@ -3227,11 +3176,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
         const touched = new Set(expired.map((r) => String(r.repo)));
         const runIds = expired.map((r) => Number(r.id));
         const inExpired = runIds.length ? `run IN (${runIds.join(", ")})` : "0";
-        const doomed = db.prepare(
-          `SELECT seq, repo FROM messages WHERE ${inExpired}
-               OR (run IS NULL AND at < ? AND kind != 'agreement'
-                   AND NOT (kind = 'endorsement' AND endorses IN (SELECT seq FROM messages WHERE run IS NULL AND kind = 'agreement')))`
-        ).all(cutoff);
+        const doomed = db.prepare(`SELECT seq, repo FROM messages WHERE ${inExpired}`).all();
         const dropDeliveries = db.prepare("DELETE FROM deliveries WHERE seq = ?");
         const dropMessage = db.prepare("DELETE FROM messages WHERE seq = ?");
         if (doomed.length) wakingSeqs.clear();
@@ -3891,7 +3836,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         if (!statesByRun.has(run2)) statesByRun.set(run2, statesOf(run2, t));
         return statesByRun.get(run2).get(member);
       };
-      const cutoff = t - STALE_MS;
       const authorOf = memoizedParticipants();
       const packPart = registry.snapshot({ db, isLive, nameOf: (id) => authorOf(id).name, relPath }, repo, people, ORCHESTRATOR);
       const runsById = new Map(runRows.map((x) => [Number(x.id), x]));
@@ -3918,7 +3862,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           doing: String(r.doing),
           state,
           ...fact ? { fact } : {},
-          stale: !ended && !orchestrator && Date.parse(String(r.last_call ?? r.joined_at)) < cutoff,
           files: packPart.heldFilesOf(id),
           joined: String(r.joined_at),
           ended: r.ended_at == null ? null : String(r.ended_at),
@@ -3945,7 +3888,6 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
           body: m.body,
           about: m.about,
           run: m.run,
-          channel: m.run,
           event: m.event,
           mentions: m.mentions,
           meta: m.meta ?? null
@@ -4055,7 +3997,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   board2.wait = counted("wait", board2.wait);
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, THREAD_EVENTS, shownInThread, THREAD_LIMIT, THREAD_LIMIT_MAX, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, THREAD_EVENTS, shownInThread, THREAD_LIMIT, THREAD_LIMIT_MAX, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4091,7 +4033,7 @@ var init_board = __esm({
     shownInThread = (event) => event !== null && (THREAD_EVENTS.has(event) || isEvent(event) && !!eventDef(event).lands);
     THREAD_LIMIT = 20;
     THREAD_LIMIT_MAX = 200;
-    BOARD_ALARMS = /* @__PURE__ */ new Set(["stopped", "lost", "gone", "stalled"]);
+    BOARD_ALARMS = /* @__PURE__ */ new Set(["stopped", "lost"]);
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
   FROM (SELECT 1) LEFT JOIN participants p ON p.run = s.run AND p.seat = s.id)`;
@@ -4100,7 +4042,6 @@ var init_board = __esm({
     ORCHESTRATOR = "orchestrator";
     WAIT_POLL_MS = 1e3;
     LINE_WIDTH = 100;
-    STALE_MS = 10 * 60 * 1e3;
     WAIT_LOG_EVERY_MS = 60 * 1e3;
     UPKEEP_EVERY_MS = 5 * 60 * 1e3;
     LAST_UPKEEP = "last-upkeep";
@@ -7765,8 +7706,6 @@ function makeAuthority(board2) {
   const PACK_VERBS_WITHOUT_MEMBER = {
     // before a join: where the joining seat's folder goes
     place: open,
-    // at every CLI start: the folders left by an older layout
-    legacy: open,
     // with no run: every repository's folders judged
     prune: open,
     // a read of the runs' seat folders
@@ -8642,8 +8581,6 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--about",
   "--with",
   "--timeout",
-  "--repo",
-  // board-split D47: the old name of --project, read as it
   "--project",
   "--port",
   "--onto",
@@ -8669,10 +8606,7 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--to",
   "--from",
   "--before",
-  "--limit",
-  // retired, read and ignored: their value is never taken for a positional (merged's sha)
-  "--guides",
-  "--check"
+  "--limit"
 ]);
 var LIST_FLAGS = /* @__PURE__ */ new Set(["--files", "--for"]);
 function parseArgs(argv) {
@@ -9002,8 +8936,7 @@ var WORDING = {
   retryReading: (verb) => `the call did not complete: run the same ${verb} again, as is`,
   retryWriting: (verb, status) => `the ${verb} may or may not have landed: check with ${status} first, and run it again only if it is not there`,
   // ── the run's page ──
-  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
-   *  an older aiview's `/board` takes it as its hash */
+  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it */
   runBoardUrl: (boardUrl, run2) => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run2}`,
   // ── the link and the listener ──
   linkStart: (link) => `start your link now, in the background (your harness's background task): ${link}`,
@@ -9148,7 +9081,6 @@ As planned, open it: ${confirm}`,
   noRunIn: (repo) => `no open run in ${repo}`,
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles) => roles.length ? `  authority ${roles.join(",")}` : "",
-  optionRenamed: (old, now) => `${old} is now ${now}: read as ${now}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge) => ` [${badge.name}: ${badge.reason}]`,
   // ── the seat's commands at its join (D21, D36) ──
@@ -9166,7 +9098,6 @@ As planned, open it: ${confirm}`,
     `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`
   ],
   // ── board-split D36: a seat's state is derived, never set ──
-  seatStateDerived: (cli, seat, as) => `seat: --state is gone: a seat is ready, running or done as its member is. Finished: ${cli} end --seat ${seat} --as ${as}`,
   forgottenRun: (days, cli, run2, orchestrator) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run2} --as ${orchestrator}`,
   // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──
   orchestratorsOpen: (cli, title, seatsFile) => `${cli} open --kind brainstorm --group orchestrators --title ${title} --seats ${seatsFile}`,
@@ -9566,10 +9497,6 @@ var emit = (json, human) => {
     if (human) console.log(human);
   } else human();
 };
-var refuseTranscriptFlag = (verb) => {
-  if (args.has("--transcript")) fail(`${verb}: unknown flag --transcript
-${verbHelp()}`);
-};
 function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
 }
@@ -9620,13 +9547,7 @@ var swarmBoardFolderAbove = (from) => {
     if (path14.dirname(dir) === dir) return from;
   }
 };
-var projectFlag = () => {
-  const project = args.flag("--project");
-  if (project !== void 0) return project;
-  const old = args.flag("--repo");
-  if (old !== void 0) console.error(WORDING.optionRenamed("--repo", "--project"));
-  return old;
-};
+var projectFlag = () => args.flag("--project");
 var projectRepo = () => {
   const asked = projectFlag();
   if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
@@ -9891,7 +9812,6 @@ ${verbHelp()}`);
 }
 var POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>";
 var seatCommands = (as) => WORDING.seatCommands(self().join(" "), shellWord2(as), FOREGROUND_WAIT_MS);
-var NO_MAIN = "there is no Main any more: the conversation is one; mention who you mean (@IW, @IW\xB7SL3, @swarm)";
 var runOf = async (id) => (await board.runs()).find((r) => r.id === id) ?? null;
 var isPackRefusal = (fact) => typeof fact === "object" && fact !== null && "refused" in fact;
 function refusedCodeVerb(p, fact) {
@@ -9924,13 +9844,6 @@ async function madeWorktree(p, verb) {
   if (made?.made) callerWorktree = p.place;
 }
 async function main() {
-  if (fs14.existsSync(path14.join(DATA_ROOT, "worktrees")) && !fs14.existsSync(path14.join(DATA_ROOT, "worktrees", ".swept")))
-    for (const line of await board.packCall(null, "legacy", {}) ?? []) console.error(`legacy worktree ${line}`);
-  if ((args.verb === "post" || args.verb === "agree" || args.verb === "endorse") && args.has("--main")) {
-    console.error(NO_MAIN);
-    process.exitCode = 2;
-    return;
-  }
   switch (args.verb) {
     case "log-level": {
       const word = args.positional[0];
@@ -9950,7 +9863,6 @@ ${verbHelp()}`);
       const stallMs = rawStall === void 0 ? void 0 : Number(rawStall);
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
       const stallClamped = stallMs !== void 0 && stallMs < stallMsFloor() ? WORDING.stallClamped(stallMs, stallMsFloor()) : null;
-      refuseTranscriptFlag("open");
       const protocol = args.flag("--protocol");
       const rawAuthority = args.flag("--authority");
       const authority = rawAuthority === void 0 ? [] : rawAuthority.split(",").map((role) => role.trim()).filter(Boolean);
@@ -10011,30 +9923,26 @@ ${verbHelp()}`);
       }
       break;
     }
-    case "slice":
-    // AGENTS rule 12: the old name of `seat`, accepted silently, never shown in --help
     case "seat": {
       if (args.positional[0] === "add") {
-        const id2 = args.positional[1] ?? fail(`seat add: which id?
+        const id = args.positional[1] ?? fail(`seat add: which id?
 ${verbHelp()}`);
         const run2 = runArg();
-        await orchestratorOf("seat add", run2, (as) => WORDING.seatAdd(self().join(" "), shellWord2(id2), run2, as));
+        await orchestratorOf("seat add", run2, (as) => WORDING.seatAdd(self().join(" "), shellWord2(id), run2, as));
         const role = args.flag("--role");
         const area = args.flag("--area");
         const added = await board.addSeat(run2, {
-          id: id2,
+          id,
           ...role ? { role } : {},
           ...area ? { area } : {},
           blockers: args.list("--blockers"),
           link: args.flag("--link") ?? null
         });
-        emit({ run: run2, seat: added }, `${id2} added`);
+        emit({ run: run2, seat: added }, `${id} added`);
         break;
       }
-      const id = args.positional[0] ?? fail(`seat: which seat?
+      fail(`seat: add <id>, the one thing it does
 ${verbHelp()}`);
-      refuseTranscriptFlag("seat");
-      fail(WORDING.seatStateDerived(self().join(" "), shellWord2(id), asWord()));
     }
     case "close": {
       const run2 = runArg();

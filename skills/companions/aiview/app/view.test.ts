@@ -9,12 +9,12 @@ const run = (id: number, group: string, code: string, open = true): RunSummary =
   run: id, kind: "plan", plan: group, group, code, title: `${group} title`, link: null, open, members: 0, done: 1, of: 3,
 });
 const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({ badge: undefined as unknown as null /* an older board: no badge, its liveness says the trouble */,
-  member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state, stale: false,
+  member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state,
   files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
 });
 let seq = 0;
 const item = (runId: number, from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({
-  seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: runId, channel: runId, ...over,
+  seq: ++seq, at: AT, kind: "msg", from, body, about: null, run: runId, ...over,
 });
 const board = (runs: RunSummary[], roster: SnapshotMember[] = [], events: SnapshotEvent[] = [], files: BoardSnapshot["files"] = []): BoardSnapshot => ({
   repo: "/r/.git", name: "r", runs, lock: null, lockHistory: [], roster, events, queues: {}, files,
@@ -30,11 +30,6 @@ const ROSTER = [
   member("gamma", "orchestrator", "Wise Crow", "ended"),
 ];
 const bodies = (items: Item[]): string[] => items.map((i) => i.text);
-const one = (items: Item[], text: string): Item => {
-  const found = items.find((i) => i.text === text);
-  if (!found) throw new Error(`no item ${text}`);
-  return found;
-};
 
 /** plan D55: a stall or lost row holds while the board's badge says so; the roster with those badges set. */
 const badged = (badges: Record<string, string>) =>
@@ -49,12 +44,6 @@ describe("runTabs", () => {
     ]);
   });
 
-  test("a run whose orchestrator is quiet reads quiet until it is back (D15)", () => {
-    const quiet = item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>);
-    expect(runTabs(board(RUNS, ROSTER, [quiet])).find((t) => t.run === 1)!.state).toBe("quiet");
-    const back = item(1, "alpha/orchestrator", "back", { kind: "event", event: "back" } as unknown as Partial<SnapshotEvent>);
-    expect(runTabs(board(RUNS, ROSTER, [quiet, back])).find((t) => t.run === 1)!.state).toBe("live");
-  });
 });
 
 describe("conversation: the pick (D1, D14)", () => {
@@ -110,11 +99,6 @@ describe("conversation: what an item is (D8, D16)", () => {
   /** An item's word; a phase row has none. */
   const wordOf = (i: Item): string | null => ("word" in i ? i.word : null);
 
-  test("idea 1: an older board's gone renders as its own row while the badge says lost (I2)", () => {
-    const gone = item(1, "alpha/orchestrator", "gone alpha/S1: its link was lost", { kind: "event", event: "gone" } as unknown as Partial<SnapshotEvent>);
-    const alone = conversation(board(RUNS, badged({ "alpha/S1": "lost" }), [gone]), { run: 1, follow: null });
-    expect(alone.map((i) => [i.kind, wordOf(i)])).toEqual([["gone", "✕ S1 gone"]]);
-  });
 
   test("D51 (U-F11): a board alarm is the board's, about its subject: its header names the member, following the orchestrator leaves it out", () => {
     const alarm = item(1, "swarm", "lost alpha/S9: its link was lost", { kind: "event", event: "lost", subject: "alpha/S9" } as Partial<SnapshotEvent>);
@@ -144,7 +128,6 @@ describe("conversation: what an item is (D8, D16)", () => {
     const events = [
       item(1, "alpha/orchestrator", "do this first", { kind: "urgent" }),
       item(1, "alpha/S1", "flag", { kind: "event", event: "flag", about: "a.ts", mentions: ["beta/S2", "alpha/S1"] }),
-      item(1, "alpha/orchestrator", "quiet 12 min", { kind: "event", event: "quiet" } as unknown as Partial<SnapshotEvent>),
       item(2, "beta/S2", "@AL·S1 S1 the top, S2 the bottom", { kind: "agreement" }),
       item(1, "alpha/S1", "just talk"),
       item(1, "alpha/S1", "merged abc: rebase your branch onto it.", { kind: "event", event: "merged" }),
@@ -153,7 +136,6 @@ describe("conversation: what an item is (D8, D16)", () => {
     expect(items.map((i) => (i.kind === "event" || i.kind === "phase" ? [i.kind, null, null] : [i.kind, i.tier, i.word]))).toEqual([
       ["urgent", "act", "! urgent"],
       ["flag", "act", "⚑ flag · open"],
-      ["quiet", "wait", "◷ quiet 12 min"],
       ["agreement", "decided", "✔ agreed with AL·S1 Sleepy Otter"],
       ["message", "talk", null],
       ["event", null, null],
@@ -264,7 +246,7 @@ describe("claimRows (D7)", () => {
 describe("flags (D10)", () => {
   const P = "a.ts";
   const at = (s: number, kind: SnapshotEvent["kind"], from: string, body: string, about: string | null = P): SnapshotEvent => ({
-    seq: s, at: AT, kind, from, body, about, run: 1, channel: 1,
+    seq: s, at: AT, kind, from, body, about, run: 1,
   });
   const flagBody = "@p/S2 @p/S1 flag: p/S1 wrote a.ts outside its claim; p/S2 holds it. Settle it here.";
   const oldFlag = at(10, "msg", "p/S1", flagBody);
@@ -355,7 +337,7 @@ describe("mergedFileRows: a closed run's files", () => {
 describe("a merged event's recipients", () => {
   test("rebase from the holders line, tell from the author's resolved-conflict posts before its next merge", () => {
     const merged: SnapshotEvent = {
-      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, channel: 1, about: null,
+      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, about: null,
       body: "merged abc: rebase onto abc.\n@p/S2 @p/S3: you hold or declared a file it changed.\nfiles: a.ts",
     };
     const after = (s: number, from: string, body: string, kind: SnapshotEvent["kind"] = "msg"): SnapshotEvent => ({ ...merged, seq: s, from, body, kind });
@@ -372,7 +354,7 @@ describe("a merged event's recipients", () => {
 
   test("the recipients stored with the event win over the thread (D11)", () => {
     const merged: SnapshotEvent = {
-      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, channel: 1, about: null, event: "merged", mentions: ["p/S2"],
+      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, about: null, event: "merged", mentions: ["p/S2"],
       body: "merged abc into main: rebase your branch onto it.\n@p/S2: you hold or declared a file it changed.\nfiles: a.ts",
       meta: { rebase: ["p/S2"], tell: ["p/S7"] },
     };

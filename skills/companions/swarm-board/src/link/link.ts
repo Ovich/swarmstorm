@@ -37,7 +37,7 @@ export type LinkTiming = {
 };
 
 /** spec §7 (the person's word): the link reads its worktree's changed set this often. */
-export const CHANGES_EVERY_MS = 2_000;
+const CHANGES_EVERY_MS = 2_000;
 const DEFAULT_TIMING: LinkTiming = { reconnectGiveUpMs: 60_000, reconnectEveryMs: 500, idleMs: 2 * 60 * 60_000, stateFileWaitMs: 5_000, watchEveryMs: 1_000, activityGapMs: 3_000, changesEveryMs: CHANGES_EVERY_MS };
 
 /** D7: keyed by the data home. `\\.\pipe\swarm-<hash>-<run>-<member>` on Windows, a socket file in

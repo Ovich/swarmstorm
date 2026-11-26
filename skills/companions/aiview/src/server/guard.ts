@@ -9,7 +9,7 @@ export type Refusal = { status: 403 | 415 | 421; reason: string };
 
 /** The header the CLI sends the token in; the viewer sends it as the cookie instead. */
 export const TOKEN_HEADER = "x-aiview-token";
-export const TOKEN_COOKIE = "aiview_token";
+const TOKEN_COOKIE = "aiview_token";
 
 /** A fresh server token: 32 random bytes, hex. */
 export const newServerToken = (): string => crypto.randomBytes(32).toString("hex");

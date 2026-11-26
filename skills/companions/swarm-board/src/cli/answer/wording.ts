@@ -24,8 +24,7 @@ export const WORDING = {
     `the ${verb} may or may not have landed: check with ${status} first, and run it again only if it is not there`,
 
   // ── the run's page ──
-  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it;
-   *  an older aiview's `/board` takes it as its hash */
+  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it */
   runBoardUrl: (boardUrl: string, run: number): string => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run}`,
 
   // ── the link and the listener ──
@@ -197,7 +196,6 @@ export const WORDING = {
   noRunIn: (repo: string) => `no open run in ${repo}`,
   /** board-split#D28: a run's authority after its title, nothing when it names none */
   authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
-  optionRenamed: (old: string, now: string) => `${old} is now ${now}: read as ${now}, write that next time`,
   /** board-split D36: a member's badge beside its state in the roster, its reason after it */
   badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
 
@@ -217,8 +215,6 @@ export const WORDING = {
     `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
   ],
   // ── board-split D36: a seat's state is derived, never set ──
-  seatStateDerived: (cli: Command, seat: string, as: string) =>
-    `seat: --state is gone: a seat is ready, running or done as its member is. Finished: ${cli} end --seat ${seat} --as ${as}`,
   forgottenRun: (days: number, cli: Command, run: number, orchestrator: string) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run} --as ${orchestrator}`,
 
   // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──

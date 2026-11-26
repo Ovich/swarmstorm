@@ -10,22 +10,22 @@ import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
 import type { CodeMemberFact } from "./code/types.ts";
 
 /** A verb a pack adds to the CLI's dispatch (D12: listed under the pack's section of the static help). */
-export interface VerbSpec {
+interface VerbSpec {
   name: string;
 }
 
 /** What `onJoin` records for the member, for the answer module to word. */
-export type JoinFacts = Record<string, unknown>;
+type JoinFacts = Record<string, unknown>;
 /** Why `end` cannot go on, for the answer module to word: `left` says what the member still holds. */
 export type Refusal = { reason: string } & Record<string, unknown>;
 /** What a member's end frees for others, inside the end's transaction: a line added to its `ended` event (null: none),
  *  whom it mentions (the code pack: the members refused the merge lock it held), and the doing its card keeps (D66). */
-export type EndedFreed = { note: string | null; mentions: string[]; lastDoing: string };
+type EndedFreed = { note: string | null; mentions: string[]; lastDoing: string };
 /** board-split D59: what a member gone lost frees for others, inside the tick's transaction: the lock it held (posted
  *  as its `unlocked` event, V-22), the line said, and whom it mentions besides the orchestrator. */
-export type LostFreed = { unlocked: string; body: string; mentions: string[] };
+type LostFreed = { unlocked: string; body: string; mentions: string[] };
 /** What `afterEnd` released. */
-export type EndFacts = Record<string, unknown>;
+type EndFacts = Record<string, unknown>;
 
 /** A pack verb called by a member whose stored pack lacks it (D12): the answer module words the refusal. `seatKind`
  *  says what the caller is instead: a verifier, or a seat with no pack. A git failure is `reason: "git"` (D19). */

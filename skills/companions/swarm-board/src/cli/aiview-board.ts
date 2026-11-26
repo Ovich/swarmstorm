@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /** aiview's launcher: SWARM_AIVIEW, else `aiview.mjs` in the aiview skill beside this one. */
-export function aiviewLauncher(toolRoot: string): string | null {
+function aiviewLauncher(toolRoot: string): string | null {
   const file = process.env.SWARM_AIVIEW ?? path.join(toolRoot, "..", "aiview", "aiview.mjs");
   return fs.existsSync(file) ? file : null;
 }
@@ -29,7 +29,7 @@ export type BoardPage =
 
 /** Where the run's board will show: aiview's project claiming `cwd`. Asked before the run opens,
  *  so a run is never opened onto a board nobody can see. */
-export type BoardHome =
+type BoardHome =
   | { found: true; launcher: string; project: string }
   | { found: false; reason: string; launcher: string | null }; // launcher set, reason "no aiview project …": aiview is there, the project is not
 

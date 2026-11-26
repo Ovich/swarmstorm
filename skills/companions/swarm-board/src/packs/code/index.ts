@@ -10,7 +10,7 @@ import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, migrateCodeTables } from "./schema.ts";
 import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
-import { sweepAll, sweepLegacy, worktrees, type WorktreeRecord } from "./worktrees.ts";
+import { sweepAll, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
 
@@ -118,8 +118,6 @@ export const codePack: Pack = {
         const recordOf = (dir: string): WorktreeRecord | null => known.filter((k) => fold(k.worktree) === fold(dir)).at(-1) ?? null;
         return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
       }
-      case "legacy":
-        return sweepLegacy();
       // board-split D59, D63: the member's branch and what it holds not merged; null when all is merged
       case "unmerged": {
         if (!member || !ctx) return null;
