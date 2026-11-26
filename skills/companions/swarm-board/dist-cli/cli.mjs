@@ -9155,7 +9155,7 @@ As planned, open it: ${confirm}`,
   /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
   verifierAs: (as) => `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
   verifierCommands: (cli, as) => [
-    `${cli} post --file <findings.md> --as ${as}    # your verdict and findings table, to @orchestrator`,
+    `${cli} post "@orchestrator <your verdict and findings table>" --as ${as}    # your report: a finding at a stop, or the table at the walk's end`,
     `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
     `${cli} done <phase> --as ${as}`
   ],

@@ -30,7 +30,9 @@ exploration. **The person can ask for one mid-run too**: a charter amendment
    asked only for a duplicate's survivor or a candidate whose risk is high.
 3. **Remove**: one task per approved candidate, its brief the `simplify` skill's (a path or a
    duplicate), to the builder that knows that area. Candidates touching no common file run at
-   once, in their own worktrees; the rest in order.
+   once, in their own worktrees; the rest in order. **Each report gives its lines: `code −<n>
+   +<n>`, tests apart**, and any code added is justified line by line (what it replaces, why it
+   could not be cut): a `code +` without its reason is sent back.
 4. **Parity**: the full suite on the merged branch, then a verify phase with the baseline's steps.
    **Recommend it highly whenever the run has no verify**, with why: removal breaks callers no test
    reaches, and the verify re-runs what held before the cuts. The verifier needs no verify skill:
@@ -39,8 +41,8 @@ exploration. **The person can ask for one mid-run too**: a charter amendment
    has one. Declined, the summary says `parity not verified`. A pass that broke parity, did not go
    net negative or changed a pinned test is reverted, not argued.
 5. **Summary**: you write it once the phase closes, posted on the board and in the run's report:
-   one row per pass (what went, why, its commit, lines added and deleted), the total, parity
-   (suite and verify, before and after), and what was left and why.
+   the `simplify` skill's summary (its step 5), every pass's `code −<n> +<n>` and the reason for
+   each `code +` in it.
 
 **Every seat without a task is on call**: answers a question on the code it knows, changes
 nothing, `done simplify` at once.
@@ -50,4 +52,4 @@ nothing, `done simplify` at once.
 | phase | text |
 |---|---|
 | simplify candidates | `simplify <k>: the seat named lists the candidates of the run's range <base>..<head> (the simplify skill, step 1) and posts them; a builder that knows what its work superseded posts it too; done simplify.` |
-| simplify remove | `simplify <k>: each builder named removes its candidate through the simplify skill, its brief in its task; net lines negative, pinned tests unchanged; merge, report, done simplify.` |
+| simplify remove | `simplify <k>: each builder named removes its candidate through the simplify skill, its brief in its task; net lines negative, pinned tests unchanged; merge, report code −n +n (tests apart), each code + with its reason, done simplify.` |
