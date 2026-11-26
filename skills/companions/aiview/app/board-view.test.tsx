@@ -1,7 +1,7 @@
 // The board page (plan D7, D9, D14, D20, D22; prototype #643): useBoard is stood in for with the
 // fixtures; each call's selection is recorded, and the snapshot answered is the repository it asks for.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { BoardSnapshot } from "../../swarm-board/src/client/reader.ts";
 import type { BoardState } from "./hooks/useBoard.ts";
 import { ALL_CLOSED, APP, BRAINSTORM, CLOSED, LIVE, NICKS, OTHER, PHASED, REPOS, SITE } from "./board-fixtures.ts";
@@ -490,6 +490,26 @@ test("clicking the merge lock opens its history, newest first; Escape closes it"
   expect(rows[1].className).toBe("merged");
   fireEvent.keyDown(document, { key: "Escape" });
   expect(screen.queryByRole("dialog", { name: "Merge lock history" })).toBeNull();
+});
+
+test("the merge lock's three states: held, merged under two minutes ago with its age counting, then free with the last merge", () => {
+  vi.useFakeTimers();
+  try {
+    const turn = (ago: number) => [{ member: "refresh-tokens/S2", askedAt: LIVE.events[0].at, grantedAt: LIVE.events[0].at, mergedAt: new Date(Date.now() - ago).toISOString(), refused: 0 }];
+    show([APP], null, [{ ...LIVE, lockHistory: turn(40_000) }]);
+    const chip = () => tabs().getByRole("button", { expanded: false, name: /merge|merged/ }) as HTMLElement;
+    expect(chip().dataset.state).toBe("merged");
+    expect(chip().textContent).toBe("merged RT·S2 · 40s ago");
+    act(() => { vi.advanceTimersByTime(81_000); });
+    expect(chip().dataset.state).toBe("free");
+    expect(chip().textContent).toBe("merge lock free · last RT·S2 · 2m 01s ago");
+    cleanup();
+    show([APP], null, [{ ...LIVE, lockHistory: turn(10_000), lock: { holder: "refresh-tokens/S4", since: LIVE.events[0].at, waiters: [] } }]);
+    expect(chip().dataset.state).toBe("held");
+    expect(chip().textContent).toBe("merge lock RT·S4");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 // ── The tab the board opens on by itself (D17) ──────────────────────────────────────

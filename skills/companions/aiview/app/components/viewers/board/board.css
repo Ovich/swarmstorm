@@ -41,6 +41,13 @@
 .board .lockhistory tr.waiting td { color: var(--muted-foreground); }
 .board .lock svg { width: 11px; height: 11px; }
 .board .lock.held { color: var(--foreground); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+/* just merged, under two minutes: the one bright moment, ok-soft with the check; the age counts up in every state but held */
+.board .lock.merged { color: var(--foreground); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: var(--ok-soft); }
+.board .lock.merged svg, .board .lock.merged .age { color: var(--ok); }
+.board .lock .sep { color: var(--faint-foreground); }
+.board .lock .age { font-family: ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--faint-foreground); font-variant-numeric: tabular-nums; }
+.board .lock { transition: background .4s, border-color .4s, color .4s; }
+@media (prefers-reduced-motion: reduce) { .board .lock { transition: none; } }
 @media (max-width: 720px) { .board .lock span.t { display: none; } }
 
 .board .content { padding: 22px 28px 20px; }

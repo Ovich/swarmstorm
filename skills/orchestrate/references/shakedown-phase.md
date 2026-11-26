@@ -39,8 +39,8 @@ mid-run too**: a charter amendment (`references/charter.md`), run before the nex
    row that is not a fault is answered to the verifier, who goes on. A row that stands is a fix
    task to the builder of that area (`references/tasks.md`), the row in it, never forwarded raw.
 4. **The builder fixes, merges, reports**, as its task says; it owes nothing of the phase.
-5. **You tell the verifier it is delivered**, with the new sha. The verifier restarts the product
-   if code changed, checks again **only the step it stopped on**, and goes on from there. Never
+5. **You tell the verifier it is delivered**, with the new sha. The verifier moves its detached
+   worktree to that sha and restarts its own instance if code changed, checks again **only the step it stopped on**, and goes on from there. Never
    back: what the fix may have broken behind is the verify's.
    **After each row you judge, post the tally** on the thread, so the person sees it converge or
    circle: `shakedown <k>: <n> fixed · <n> not a fault · <n> minors kept · <n> open`, a row

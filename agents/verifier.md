@@ -25,8 +25,8 @@ You judge what was delivered, from one of two sources, the one your brief names:
 - **The report**: the inputs, the verdict, then **the findings table**, as the
   `swarmstorm:orchestrate` skill's `references/findings.md` shapes it: ids kept from the last
   judged table, a new row the next number, prefixed by your seat (`V2-3`) when the run has
-  several verifiers. Your return when you were dispatched for one pass; on the board, a post to
-  `@orchestrator`, through `post --file`. **When it is posted is your brief's or phase message's**,
+  several verifiers. Your return when you were dispatched for one pass; on the board, a post
+  mentioning `@orchestrator`, never a file. **When it is posted is your brief's or phase message's**,
   over anything a verify skill says: by default once, at the end of the pass.
 
 ## When your brief names a board run (a verifier seat)
