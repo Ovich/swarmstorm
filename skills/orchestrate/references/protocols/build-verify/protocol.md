@@ -62,7 +62,8 @@ the goal (with its cap), N iterations, or unbounded.
 | **build `<k>`** | each its task: change, test, merge onto the branch, report to `@orchestrator`, `done build` | `done build` at once | re-run each task's done-when on the merged branch; `all-done` then open verify |
 | **verify `<k>`** | on call: answer a verifier's question on the thread, change nothing; `done verify` | each its own steps on its own instance, one findings table to `@orchestrator`, `done verify` | the judged table (below), then the goal's state, then build `<k+1>` or the close |
 
-- **A shakedown** (charter `shakedown:`) runs between a build and its verify:
+- **A shakedown** (charter `shakedown:`) runs between a build and its verify, proposed by default
+  when the verify walks the running product (this protocol then reads as build-shakedown-verify):
   the `orchestrate` skill's `references/shakedown-phase.md`.
 - **Build 1 is the work asked**; every later build is the judged table's rows that stand.
 - **A verifier stopped by a blocker posts its partial table at once**, with where it stopped;

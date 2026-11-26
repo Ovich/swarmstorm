@@ -17,6 +17,7 @@ one run tuned to it, built on the closest example**.
 | Example | When it fits | Kinds | File |
 |---|---|---|---|
 | build-verify | code changed, then judged in the running product, until it holds | task swarm, plan | `references/protocols/build-verify/protocol.md` |
+| build-shakedown-verify | the same, judged by a walk through the running product: build-verify with `shakedown: before-verify` | task swarm, plan | `references/protocols/build-verify/protocol.md`, `references/shakedown-phase.md` |
 | idea-to-outcome | a list of ideas, each framed, built, proven live and accepted by the person in turn | task swarm | `references/protocols/idea-to-outcome/protocol.md` |
 | brainstorm | options, many and varied, before choosing | brainswarm | `references/protocols/brainstorm/protocol.md` |
 | debate | known questions to decide, with sources | brainswarm | `references/protocols/debate/protocol.md` |
@@ -29,8 +30,8 @@ changes an interface or its shape is unclear: the system defined on the board, t
 one of its inputs, the person's go: `references/architecture-phase.md`. Propose each, with why.
 **Any with a verify can add a shakedown phase** (charter `shakedown:`): a walk that stops at each
 blocker or major, has it fixed through you and checks that step again, before a fresh verify, the
-verifier and the worker never trading roles: `references/shakedown-phase.md`. Offer it when the
-verify's steps are long, with why.
+verifier and the worker never trading roles: `references/shakedown-phase.md`. Propose it by
+default when the verify walks the running product, with why; its *Propose it* says when not.
 **Any that changes code can add a simplify phase** (charter `simplify:`): the code it changed cut
 back after a verdict of ready, feature parity verified: `references/simplify-phase.md`. Offer it
 when a run that changed code nears its close, with why.

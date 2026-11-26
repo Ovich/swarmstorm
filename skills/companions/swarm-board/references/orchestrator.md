@@ -75,7 +75,9 @@ waits: in the foreground; a seat runs on the plugin's
   its case named in the body: the member is in the phase's `--watch`, it is done without a post
   since you last mentioned it in the phase, it leaves one member owing (the straggler), or it is
   done for a phase that is not current (`late done`). Nothing else reaches you: any other
-  `done` is counted, and `all-done` tells you once every member is in.
+  `done` is counted, and `all-done` tells you once every member is in. **What members said to
+  each other you read back when you need it**, never whole: `$S phases`, `$S thread` (the current
+  phase's last posts, filtered by `--with <seat>` or `--about <file|Dn>`, paged), `$S read <seq>`.
   To hear a member's `done` the moment it lands (one others wait on, work you judge early), open
   the phase with `--watch <ids>`. When it ends, read its output, act, and start it again at once, in the
   background. **Block only on the board's verbs**: never a foreground loop, a poll or a sleep of

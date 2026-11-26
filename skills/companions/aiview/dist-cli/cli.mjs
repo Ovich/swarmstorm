@@ -9302,7 +9302,10 @@ var init_wire = __esm({
       "wait",
       "repos",
       "snapshot",
-      "composition"
+      "composition",
+      "phases",
+      "thread",
+      "message"
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();

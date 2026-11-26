@@ -11,9 +11,12 @@ fix made mid-walk can break a step the shakedown had already passed.
 thread stays allowed), and a worker never decides
 whether a finding is real or whether its fix holds. Split, neither grades its own work.
 
-**Propose it** when the verify's steps are long and an early blocker would make the rest
-meaningless, in one line with why. **The person can ask for one mid-run too**: a charter amendment
-(`references/charter.md`), run before the next verify.
+**Propose it by default when the verify walks the running product** (build-shakedown-verify), in
+one line with why: a walk is a chain, and an early blocker hides every step after it; without a
+shakedown each blocker costs a fix round and a new walk, with it one fix and one check. Propose
+`first` when the run verifies after each phase; `none` when the verify is tests or a short check,
+or the change is small (one or two screens). The person decides. **The person can ask for one
+mid-run too**: a charter amendment (`references/charter.md`), run before the next verify.
 
 ## When
 
@@ -39,12 +42,17 @@ meaningless, in one line with why. **The person can ask for one mid-run too**: a
 5. **You tell the verifier it is delivered**, with the new sha. The verifier restarts the product
    if code changed, checks again **only the step it stopped on**, and goes on from there. Never
    back: what the fix may have broken behind is the verify's.
+   **After each row you judge, post the tally** on the thread, so the person sees it converge or
+   circle: `shakedown <k>: <n> fixed · <n> not a fault · <n> minors kept · <n> open`, a row
+   reopened named in it (`SH-3 reopened once`).
 6. **At the walk's end** the verifier posts its table (every row, each with what became of it:
    fixed at `<sha>`, not a fault, standing), then `done shakedown`.
 7. **Then the verify**, as the protocol runs it, by a **fresh verifier**: a verifier that watched
    its own findings get fixed would judge them with that bias. So a run with `shakedown:` on
    declares one verifier seat more than its verify needs, the shakedown's; it has no part in the
-   verify.
+   verify. **Its brief lists the steps fixed during the shakedown, walked first**: a fix
+   checked only on its own step may have broken one behind it. The steps alone, never the rows'
+   verdicts.
 
 **A row you cannot judge** is a question to the person, the walk paused until answered. **A fix
 that does not hold** at the check again is the same row, reopened, back to step 3; its second

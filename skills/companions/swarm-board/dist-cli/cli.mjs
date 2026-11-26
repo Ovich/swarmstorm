@@ -392,7 +392,10 @@ var init_wire = __esm({
       "wait",
       "repos",
       "snapshot",
-      "composition"
+      "composition",
+      "phases",
+      "thread",
+      "message"
     ];
     ORCHESTRATORS_GROUP = "orchestrators";
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
@@ -3056,6 +3059,17 @@ async function openBoard(dbPath = SQLITE_PATH) {
     const open = run2.phase === phase;
     return { open, forSeats: open && run2.phase_for != null ? JSON.parse(String(run2.phase_for)) : null };
   };
+  const threadOf = (repo, run2) => {
+    const row = runRowOrNone(run2);
+    if (!row || String(row.repo) !== repo) throw new Error(`no run ${run2} in this project`);
+    const openings = db.prepare("SELECT seq, at, meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(run2, EVENTS.phase.name).map((r) => ({
+      name: String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""),
+      seq: Number(r.seq),
+      at: String(r.at)
+    }));
+    return { row, openings };
+  };
+  const runMessages = (run2) => db.prepare("SELECT * FROM messages WHERE run = ? ORDER BY seq").all(run2);
   const phaseOpenedSeqOf = (run2) => Number(db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(run2, EVENTS.phase.name).seq ?? 0);
   const taskedSeatsNotJoinedOf = (run2, phase) => {
     const r = runRow(run2);
@@ -3318,7 +3332,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
             insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", [`${member.plan}/${ORCHESTRATOR}`], { event: EVENTS["all-joined"].name, meta: allJoined });
           }
         }
-        return { member, roster: board2.roster(member.repo), composition: compositionOf(run2) };
+        return { member, roster: board2.roster(member.repo), composition: compositionOf(run2), entry: entry2 };
       });
     },
     composition(run2) {
@@ -3816,6 +3830,53 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const latest = (runs) => Math.max(...runs.map((x) => x.run));
       return [...byRepo.entries()].map(([repo, runs]) => ({ repo, name: projectFolderName(repo), runs })).sort((a, b) => Number(b.runs.some((x) => x.open)) - Number(a.runs.some((x) => x.open)) || latest(b.runs) - latest(a.runs));
     },
+    phases(repo, run2) {
+      const { openings } = threadOf(repo, run2);
+      const rows = runMessages(run2);
+      const current2 = openings.at(-1)?.seq ?? null;
+      return openings.map((o, i) => {
+        const end = openings[i + 1]?.seq ?? Infinity;
+        const inside2 = rows.filter((r) => Number(r.seq) > o.seq && Number(r.seq) < end);
+        const latest = !openings.some((x, j) => j > i && x.name === o.name);
+        const done = latest ? Number(db.prepare("SELECT COUNT(*) AS n FROM phase_done WHERE run = ? AND phase = ?").get(run2, o.name).n) : null;
+        return { name: o.name, seq: o.seq, at: o.at, current: o.seq === current2, posts: inside2.filter((r) => r.kind !== "event").length, urgent: inside2.filter((r) => r.kind === "urgent").length, done };
+      });
+    },
+    thread(repo, run2, q) {
+      const { row, openings } = threadOf(repo, run2);
+      const asked = q.phase ?? "current";
+      const opening = asked === "all" ? null : asked === "current" ? openings.at(-1) ?? null : [...openings].reverse().find((o) => o.name === asked) ?? null;
+      if (asked !== "all" && asked !== "current" && !opening)
+        throw new Error(`thread: run ${run2} never opened phase ${asked}${openings.length ? `; its phases: ${[...new Set(openings.map((o) => o.name))].join(", ")}` : ""}`);
+      const start = opening?.seq ?? 0;
+      const end = opening ? openings.find((o) => o.seq > opening.seq)?.seq ?? Infinity : Infinity;
+      const authorOf = memoizedParticipants();
+      const seatOf2 = (w) => w.trim().replace(/^@/, "").slice(w.trim().replace(/^@/, "").lastIndexOf("/") + 1);
+      const said = (m, seat) => seatOf2(m.from) === seat;
+      const named = (m, seat) => m.mentions.some((n) => n !== `${row.plan}/*` && n.endsWith(`/${seat}`));
+      const about = q.about?.trim();
+      const matches = (m) => (q.events || m.kind !== "event" || shownInThread(m.event)) && (!q.by || said(m, seatOf2(q.by))) && (!q.to || named(m, seatOf2(q.to))) && (!q.with || said(m, seatOf2(q.with)) || named(m, seatOf2(q.with))) && (!about || (m.about ?? "").includes(about) || m.body.includes(about));
+      const all2 = runMessages(run2).filter((r) => Number(r.seq) >= start && Number(r.seq) < end).map((r) => toMessage(r, authorOf)).filter(matches);
+      const limit = Math.min(Math.max(1, Math.floor(q.limit ?? THREAD_LIMIT)), THREAD_LIMIT_MAX);
+      const window = q.from !== void 0 ? all2.filter((m) => m.seq >= q.from) : q.before !== void 0 ? all2.filter((m) => m.seq < q.before) : all2;
+      const posts = q.from !== void 0 ? window.slice(0, limit) : window.slice(-limit);
+      const first = posts[0]?.seq;
+      const last = posts.at(-1)?.seq;
+      return {
+        run: run2,
+        group: String(row.plan),
+        title: String(row.title),
+        phase: opening ? { name: opening.name, seq: opening.seq } : null,
+        posts,
+        matched: all2.length,
+        earlier: first !== void 0 && all2.some((m) => m.seq < first) ? first : null,
+        later: last !== void 0 && all2.some((m) => m.seq > last) ? last + 1 : null
+      };
+    },
+    message(repo, seq) {
+      const r = db.prepare("SELECT * FROM messages WHERE seq = ? AND repo = ?").get(seq, repo);
+      return r ? toMessage(r, memoizedParticipants()) : null;
+    },
     snapshot(repo) {
       const runRows = listedRuns().filter((r) => r.repo === repo);
       if (!runRows.length) throw new Error(`no project ${repo}`);
@@ -3994,7 +4055,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   board2.wait = counted("wait", board2.wait);
   return board2;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, THREAD_EVENTS, shownInThread, THREAD_LIMIT, THREAD_LIMIT_MAX, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, STALE_MS, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
@@ -4026,6 +4087,10 @@ var init_board = __esm({
         return [];
       }
     };
+    THREAD_EVENTS = /* @__PURE__ */ new Set(["phase", "done", "pause", "resume", "closed"]);
+    shownInThread = (event) => event !== null && (THREAD_EVENTS.has(event) || isEvent(event) && !!eventDef(event).lands);
+    THREAD_LIMIT = 20;
+    THREAD_LIMIT_MAX = 200;
     BOARD_ALARMS = /* @__PURE__ */ new Set(["stopped", "lost", "gone", "stalled"]);
     PHASE_NAME = /^[\w.-]+$/;
     SEAT_STATE_SQL = `(SELECT CASE WHEN p.id IS NULL OR (p.ended_at IS NOT NULL AND p.idle_ended = 1) THEN 'ready' WHEN p.ended_at IS NULL THEN 'running' ELSE 'done' END
@@ -7753,7 +7818,11 @@ function makeAuthority(board2) {
     owingMembers: open,
     repos: open,
     snapshot: open,
-    composition: open
+    composition: open,
+    // reading the thread back: a read, as snapshot is
+    phases: open,
+    thread: open,
+    message: open
   };
   return {
     bind(hello) {
@@ -8594,6 +8663,13 @@ var VALUE_FLAGS = /* @__PURE__ */ new Set([
   "--report",
   "--report-file",
   "--unlocked",
+  // thread: its filters and its paging
+  "--phase",
+  "--by",
+  "--to",
+  "--from",
+  "--before",
+  "--limit",
   // retired, read and ignored: their value is never taken for a positional (merged's sha)
   "--guides",
   "--check"
@@ -9128,6 +9204,16 @@ As planned, open it: ${confirm}`,
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats, join) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli, run2, group, doing, seat = "<seat>") => `${cli} join --run ${run2} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  // ── reading the thread back (pull only, in pages) ──
+  readWhichRun: (verb) => `${verb}: which run? pass --run <id>, or --as <member>`,
+  threadNone: "no post matches",
+  /** `words`: the page's own query, re-listed, so the next page reads the same posts */
+  threadEarlier: (cli, words, before) => `earlier: ${cli} thread ${words} --before ${before}`,
+  threadLater: (cli, words, from) => `later: ${cli} thread ${words} --from ${from}`,
+  readPost: (cli) => `a post in full: ${cli} read <seq>`,
+  noPost: (seq) => `read: no post #${seq} in this project`,
+  /** a member joining a run already under way: what its seat said and was told before it, read when it needs it */
+  seatHistory: (cli, run2, seat) => `before you: what this seat said and was told: ${cli} thread --run ${run2} --with ${seat} --phase all; the run's phases: ${cli} phases --run ${run2}`,
   /** V-48: a word that is no verb of this CLI, for every caller */
   unknownVerb: (word, cli) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
@@ -9340,6 +9426,7 @@ function orchestratorsLines(runs, cli, writeSeats, only) {
 
 // src/cli/answer/usage.ts
 init_liveness();
+init_board();
 var coreUsage = (cli) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
   "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
@@ -9363,6 +9450,10 @@ var coreUsage = (cli) => [
   "          # once your run is closed, wait, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
   "          # --mentions: you listen while you work rather than wait; a seat's run: the wake brings every unread post of the run",
   "  roster  [--project <path>] [--as <member>]",
+  "  phases  [--run <id>] [--as <member>]                             # the run's phases, one line each: opened when, its posts, urgent posts and members done",
+  "  thread  [--run <id>] [--phase current|all|<name>] [--by <seat>] [--to <seat>] [--with <seat>] [--about <path|decision id>] [--limit <n>] [--before <seq>] [--from <seq>] [--events] [--as <member>]",
+  `          # reads the thread back, one line per post, the last ${THREAD_LIMIT} of the current phase by default; --with: a seat's posts and those to it; prints the next page's command`,
+  "  read    <seq>                                                   # one post in full",
   "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
   "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
   "  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept",
@@ -9554,6 +9645,15 @@ var writeOrchestratorSeats = (repo, seats) => {
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${verbHelp()}`);
+var readRun = async (verb) => args.flag("--run") !== void 0 ? runArg() : (await placedCaller())?.run ?? fail(WORDING.readWhichRun(verb));
+var seqFlag = (flag) => {
+  const raw = args.flag(flag);
+  if (raw === void 0) return void 0;
+  const n = Number(raw.replace(/^#/, ""));
+  return Number.isInteger(n) && n > 0 ? n : fail(`${flag} takes a positive number, got ${raw}`);
+};
+var shortAt = (at) => at.slice(5, 16).replace("T", " ");
+var THREAD_EXCERPT = 100;
 var runArg = () => {
   const raw = need("--run");
   const id = Number(raw);
@@ -10077,7 +10177,8 @@ ${verbHelp()}`);
       const waiting = await board.deliverMentions(member);
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
-      const tail = [...as ? [as] : [], ...guidesAtJoin ? [guidesAtJoin] : [], ...lockNotHeldLine ? [lockNotHeldLine] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
+      const history = joined.entry === "back" || await board.currentPhase(member.run) !== null ? WORDING.seatHistory(self().join(" "), member.run, member.seat) : null;
+      const tail = [...as ? [as] : [], ...guidesAtJoin ? [guidesAtJoin] : [], ...history ? [history] : [], ...lockNotHeldLine ? [lockNotHeldLine] : [], ...commands ?? [], ...drawing ? [drawing] : [], link];
       const statedByJoin = /* @__PURE__ */ new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
       const a = answer({ verb: "join", head, shown, tail }, await situation(member));
@@ -10432,6 +10533,65 @@ ${verbHelp()}`);
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
         for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
+      });
+      break;
+    }
+    case "phases": {
+      const run2 = await readRun("phases");
+      const list = await board.phases(projectRepo(), run2);
+      emit({ run: run2, phases: list }, () => {
+        if (!list.length) console.log(`run ${run2}: no phase opened yet`);
+        for (const o of list)
+          console.log(`#${o.seq}  ${o.name}  opened ${shortAt(o.at)}  ${o.posts} post${o.posts === 1 ? "" : "s"}${o.urgent ? `  ${o.urgent} urgent` : ""}${o.done === null ? "" : `  ${o.done} done`}${o.current ? "  (current)" : ""}`);
+      });
+      break;
+    }
+    case "thread": {
+      const run2 = await readRun("thread");
+      const q = {
+        phase: args.flag("--phase"),
+        from: seqFlag("--from"),
+        before: seqFlag("--before"),
+        limit: seqFlag("--limit"),
+        by: args.flag("--by"),
+        to: args.flag("--to"),
+        with: args.flag("--with"),
+        about: args.flag("--about"),
+        events: args.has("--events")
+      };
+      const page = await board.thread(projectRepo(), run2, q);
+      const cli = self().join(" ");
+      const words = [
+        `--run ${run2}`,
+        `--phase ${page.phase?.name ?? "all"}`,
+        ...["--by", "--to", "--with", "--about", "--limit"].flatMap((f) => args.flag(f) === void 0 ? [] : [`${f} ${shellWord2(args.flag(f))}`]),
+        ...q.events ? ["--events"] : []
+      ].join(" ");
+      emit(page, () => {
+        console.log(`run ${run2}  ${page.title}  \xB7  ${page.phase ? `phase ${page.phase.name} from #${page.phase.seq}` : "the whole run"}  \xB7  ${page.posts.length} of ${page.matched} post${page.matched === 1 ? "" : "s"}`);
+        if (!page.posts.length) console.log(WORDING.threadNone);
+        const group = `${page.group}/`;
+        const short = (n) => n === `${group}*` ? "all" : n.startsWith(group) ? n.slice(group.length) : n;
+        for (const m of page.posts) {
+          const to = m.mentions.length ? ` \u2192 ${m.mentions.map(short).join(",")}` : "";
+          const tag = m.kind === "agreement" ? "agree: " : m.kind === "urgent" ? "URGENT: " : m.kind === "event" ? `(${m.event ?? "event"}) ` : "";
+          const text = m.body.replace(/\s+/g, " ").trim();
+          console.log(`#${m.seq} ${shortAt(m.at)}  ${short(m.from)}${to}${m.about ? ` [${m.about}]` : ""}  ${tag}${text.length > THREAD_EXCERPT ? `${text.slice(0, THREAD_EXCERPT)}\u2026` : text}`);
+        }
+        if (page.earlier !== null) console.log(WORDING.threadEarlier(cli, words, page.earlier));
+        if (page.later !== null) console.log(WORDING.threadLater(cli, words, page.later));
+        if (page.posts.length) console.log(WORDING.readPost(cli));
+      });
+      break;
+    }
+    case "read": {
+      const seq = Number(String(args.positional[0] ?? "").replace(/^#/, ""));
+      if (!Number.isInteger(seq) || seq <= 0) fail(`read: which post? read <seq>, the number thread prints
+${verbHelp()}`);
+      const m = await board.message(projectRepo(), seq) ?? fail(WORDING.noPost(seq));
+      emit(m, () => {
+        console.log(`#${m.seq} ${m.at}  ${m.from}${m.mentions.length ? ` \u2192 ${m.mentions.join(", ")}` : ""}${m.about ? `  [${m.about}]` : ""}${m.kind === "msg" ? "" : `  (${m.event ?? m.kind})`}  run ${m.run}`);
+        console.log(m.body);
       });
       break;
     }
