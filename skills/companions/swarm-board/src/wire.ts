@@ -44,6 +44,9 @@ export const RPC_METHODS = [
   "repos",
   "snapshot",
   "composition",
+  "phases",
+  "thread",
+  "message",
 ] as const satisfies readonly (keyof Board)[];
 export type RpcMethod = (typeof RPC_METHODS)[number];
 

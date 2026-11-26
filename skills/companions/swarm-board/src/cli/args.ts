@@ -30,6 +30,13 @@ const VALUE_FLAGS = new Set([
   "--report",
   "--report-file",
   "--unlocked",
+  // thread: its filters and its paging
+  "--phase",
+  "--by",
+  "--to",
+  "--from",
+  "--before",
+  "--limit",
   // retired, read and ignored: their value is never taken for a positional (merged's sha)
   "--guides",
   "--check",

@@ -4,7 +4,7 @@ import { hiddenSpawnSync } from "../proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
+import { progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type ThreadQuery, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
 import type { HeldMergeLock } from "../wire.ts";
 import { profileOf } from "../board/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
@@ -187,6 +187,20 @@ const writeOrchestratorSeats: WriteOrchestratorSeats = (repo, seats) => {
   return file.split(path.sep).join("/");
 };
 const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
+
+/** The run a read names: --run, else the caller's own (--as, or the member joined from this worktree). */
+const readRun = async (verb: string): Promise<number> => (args.flag("--run") !== undefined ? runArg() : ((await placedCaller())?.run ?? fail(WORDING.readWhichRun(verb))));
+/** A positive whole number flag (a seq, a limit); undefined when absent. */
+const seqFlag = (flag: string): number | undefined => {
+  const raw = args.flag(flag);
+  if (raw === undefined) return undefined;
+  const n = Number(raw.replace(/^#/, ""));
+  return Number.isInteger(n) && n > 0 ? n : fail(`${flag} takes a positive number, got ${raw}`);
+};
+/** A post's time, short: `11-26 10:32` (UTC, as stored). */
+const shortAt = (at: string): string => at.slice(5, 16).replace("T", " ");
+/** How much of a post a thread line shows; `read <seq>` shows it whole. */
+const THREAD_EXCERPT = 100;
 
 const runArg = (): number => {
   const raw = need("--run");
@@ -913,7 +927,9 @@ async function main(): Promise<void> {
       // S20: the roster read after that delivery, so the member's own row counts none of it as unread
       const rosterNow = waiting.full.length ? await board.roster(member.repo) : roster;
       const head = [`you are ${member.name}, ${member.nick}: @${member.seat} or @${member.nick.replace(/\s+/g, "")} mentions you`, ...composition.lines, ...rosterNow.map((r) => rosterLine(r, rosterNow))];
-      const tail = [...(as ? [as] : []), ...(guidesAtJoin ? [guidesAtJoin] : []), ...(lockNotHeldLine ? [lockNotHeldLine] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
+      // a seat taken back, or a run already under way: what came before is read back on demand, never delivered whole
+      const history = joined.entry === "back" || (await board.currentPhase(member.run)) !== null ? WORDING.seatHistory(self().join(" "), member.run, member.seat) : null;
+      const tail = [...(as ? [as] : []), ...(guidesAtJoin ? [guidesAtJoin] : []), ...(history ? [history] : []), ...(lockNotHeldLine ? [lockNotHeldLine] : []), ...(commands ?? []), ...(drawing ? [drawing] : []), link];
       // the phase and pause events are left out: the join's own phase or paused line states them (one fact, once)
       const statedByJoin = new Set(["phase", "pause"]);
       const shown = shownOf({ full: waiting.full.filter((m) => !statedByJoin.has(eventOf(m) ?? "")) });
@@ -1349,6 +1365,65 @@ async function main(): Promise<void> {
       emit({ removed: out.filter((o) => o.removed).map((o) => o.worktree), kept }, () => {
         console.log(`${out.length - kept.length} worktree${out.length - kept.length === 1 ? "" : "s"} removed (branches kept)`);
         for (const k of kept) console.log(`kept ${k.worktree}: ${k.why}`);
+      });
+      break;
+    }
+    case "phases": {
+      const run = await readRun("phases");
+      const list = await board.phases(projectRepo(), run);
+      emit({ run, phases: list }, () => {
+        if (!list.length) console.log(`run ${run}: no phase opened yet`);
+        for (const o of list)
+          console.log(`#${o.seq}  ${o.name}  opened ${shortAt(o.at)}  ${o.posts} post${o.posts === 1 ? "" : "s"}${o.urgent ? `  ${o.urgent} urgent` : ""}${o.done === null ? "" : `  ${o.done} done`}${o.current ? "  (current)" : ""}`);
+      });
+      break;
+    }
+    case "thread": {
+      const run = await readRun("thread");
+      const q: ThreadQuery = {
+        phase: args.flag("--phase"),
+        from: seqFlag("--from"),
+        before: seqFlag("--before"),
+        limit: seqFlag("--limit"),
+        by: args.flag("--by"),
+        to: args.flag("--to"),
+        with: args.flag("--with"),
+        about: args.flag("--about"),
+        events: args.has("--events"),
+      };
+      const page = await board.thread(projectRepo(), run, q);
+      const cli = self().join(" ");
+      // the next page's query: this one's, its phase pinned, so a phase opened meanwhile never moves it
+      const words = [
+        `--run ${run}`,
+        `--phase ${page.phase?.name ?? "all"}`,
+        ...(["--by", "--to", "--with", "--about", "--limit"] as const).flatMap((f) => (args.flag(f) === undefined ? [] : [`${f} ${shellWord(args.flag(f)!)}`])),
+        ...(q.events ? ["--events"] : []),
+      ].join(" ");
+      emit(page, () => {
+        console.log(`run ${run}  ${page.title}  ·  ${page.phase ? `phase ${page.phase.name} from #${page.phase.seq}` : "the whole run"}  ·  ${page.posts.length} of ${page.matched} post${page.matched === 1 ? "" : "s"}`);
+        if (!page.posts.length) console.log(WORDING.threadNone);
+        const group = `${page.group}/`;
+        const short = (n: string): string => (n === `${group}*` ? "all" : n.startsWith(group) ? n.slice(group.length) : n);
+        for (const m of page.posts) {
+          const to = m.mentions.length ? ` → ${m.mentions.map(short).join(",")}` : "";
+          const tag = m.kind === "agreement" ? "agree: " : m.kind === "urgent" ? "URGENT: " : m.kind === "event" ? `(${m.event ?? "event"}) ` : "";
+          const text = m.body.replace(/\s+/g, " ").trim();
+          console.log(`#${m.seq} ${shortAt(m.at)}  ${short(m.from)}${to}${m.about ? ` [${m.about}]` : ""}  ${tag}${text.length > THREAD_EXCERPT ? `${text.slice(0, THREAD_EXCERPT)}…` : text}`);
+        }
+        if (page.earlier !== null) console.log(WORDING.threadEarlier(cli, words, page.earlier));
+        if (page.later !== null) console.log(WORDING.threadLater(cli, words, page.later));
+        if (page.posts.length) console.log(WORDING.readPost(cli));
+      });
+      break;
+    }
+    case "read": {
+      const seq = Number(String(args.positional[0] ?? "").replace(/^#/, ""));
+      if (!Number.isInteger(seq) || seq <= 0) fail(`read: which post? read <seq>, the number thread prints\n${verbHelp()}`);
+      const m = (await board.message(projectRepo(), seq)) ?? fail(WORDING.noPost(seq));
+      emit(m, () => {
+        console.log(`#${m.seq} ${m.at}  ${m.from}${m.mentions.length ? ` → ${m.mentions.join(", ")}` : ""}${m.about ? `  [${m.about}]` : ""}${m.kind === "msg" ? "" : `  (${m.event ?? m.kind})`}  run ${m.run}`);
+        console.log(m.body);
       });
       break;
     }

@@ -21,8 +21,8 @@ beside it (`pace: run through, the person merges (D41)`), and reaches the next b
   says; with it, `architecture scope:`;
 - `shakedown:` `none` (the default), `before-verify` or `first`: a walk that stops at each
   blocker or major, has it fixed through you and goes on, before a fresh verify, as
-  `references/shakedown-phase.md` says, when the person asks for it; on, the run table holds one
-  verifier seat more, the shakedown's;
+  `references/shakedown-phase.md` says, proposed by default when the verify walks the running
+  product; on, the run table holds one verifier seat more, the shakedown's;
 - `simplify:` `none` (the default), `after-verify` or `end`: a simplify phase cuts back the code the
   run changed, as `references/simplify-phase.md` says, when the person asks for it; recommended
   with a verify after it, with why (removal breaks what no test reaches);

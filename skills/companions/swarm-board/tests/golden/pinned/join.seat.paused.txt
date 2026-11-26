@@ -6,6 +6,7 @@ g/orchestrator  run 1  working  <n> unread  doing: -
 <nick:s1> · g/s1  run 1  working  <n> unread  doing: x
 phase build: build the thing  PAUSED: hold on
 pass --as g/s1 on every call: this checkout is shared, the board cannot tell you apart
+before you: what this seat said and was told: node <cli> thread --run 1 --with s1 --phase all; the run's phases: node <cli> phases --run 1
 node <cli> post "…" --about <D id> --as g/s1
 node <cli> agree "…" --about <D id> --as g/s1
 node <cli> endorse <seq> --as g/s1

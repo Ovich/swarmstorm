@@ -129,6 +129,10 @@ export function makeAuthority(board: Board): Authority {
     repos: open,
     snapshot: open,
     composition: open,
+    // reading the thread back: a read, as snapshot is
+    phases: open,
+    thread: open,
+    message: open,
   };
 
   return {

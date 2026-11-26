@@ -87,6 +87,12 @@ other check asks a verifier on the thread. What you start, stop or sign in to fo
   in, a check passing, a merge coming.
 - **A mention that asks you something is answered before you go on.**
 - **`$S roster`** for who holds what now.
+- **`$S thread` reads the thread back**, one line per post, a page at a time (`--with <seat>`,
+  `--about <file|Dn>`, `--phase all`), `$S read <seq>` one post whole: when you have a reason (a
+  question, a file shared, a seat taken over), never the whole run. Its answer prints the next page.
+- **A refused action is reported**, never worked around: a read, a command or a file your harness
+  or the board refused goes to `@orchestrator` with what you needed it for, and waits; never
+  obtained by another route, nor asked of another member.
 - **A merged event that mentions you** asks nothing: your delivery rebases your branch onto it.
   Only when you need its code now: commit what you have, `git rebase <its sha>`, go on.
 - **One wait at a time:** each new `wait` of yours supersedes the one before.

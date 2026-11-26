@@ -196,6 +196,24 @@ export interface Message {
   meta?: MessageMeta | null;
 }
 
+/** One opening of a phase (a phase opened again is a second opening): its event's seq, its posts (not events) and
+ *  urgent posts counted up to the next opening; `done` the members done with it, for the latest opening of its name. */
+export type PhaseOpening = { name: string; seq: number; at: string; current: boolean; posts: number; urgent: number; done: number | null };
+/** `phase`: `current` (the default), `all`, or a phase's name (its latest opening). `by`/`to`/`with`: a seat (`w1`,
+ *  `<group>/w1`, `@w1`): its posts, the posts naming it, or both. `about`: a path or decision id, posted about or named
+ *  in the body. `events`: the board's own events too, beyond phase, done, pause, resume, closed and a pack's landing events. */
+export type ThreadQuery = { phase?: string; from?: number; before?: number; limit?: number; by?: string; to?: string; with?: string; about?: string; events?: boolean };
+/** `earlier`: the oldest seq shown, when posts before it match (page back with `before` it); `later`: the seq after
+ *  the newest shown, when posts after it match (page on with `from` it). `matched`: every post the query matches. */
+export type ThreadPage = { run: RunId; group: string; title: string; phase: { name: string; seq: number } | null; posts: Message[]; matched: number; earlier: number | null; later: number | null };
+/** The board's events a thread page shows without `events`: the ones that mark the work, not the members' comings and
+ *  goings; a pack's landing events (`lands`) beside them. */
+const THREAD_EVENTS: ReadonlySet<string> = new Set(["phase", "done", "pause", "resume", "closed"]);
+const shownInThread = (event: string | null): boolean => event !== null && (THREAD_EVENTS.has(event) || (isEvent(event) && !!eventDef(event).lands));
+/** A page's posts by default, and its most at once. */
+export const THREAD_LIMIT = 20;
+export const THREAD_LIMIT_MAX = 200;
+
 /** What woke the member, in full (a whole-thread run: every unread post of the run with it). `superseded`: a newer
  *  `wait` of the same member started, so this one returned empty (D64). */
 /** `ended`: the wait returned because its member was ended (release-prep: the CLI then answers with no further call,
@@ -398,6 +416,8 @@ export interface Board {
     member: Participant;
     roster: RosterEntry[];
     composition: Composition;
+    /** `back`: the seat had a member before, ended; `again`: the same member, still seated. */
+    entry: "new" | "back" | "again";
   };
   /** The run's composition now (D3): the orchestrator, then every declared seat in order. */
   composition(run: RunId): Composition;
@@ -444,6 +464,15 @@ export interface Board {
   repos(): RepoSummary[];
   /** Everything the page draws for one project; throws `no project <key>` for one it does not list. */
   snapshot(repo: string): BoardSnapshot;
+
+  // reading the thread back, pull only: a long run read in pages, never whole
+  /** A run's phase openings, in order, each with its posts counted; throws on a run not of `repo`. */
+  phases(repo: string, run: RunId): PhaseOpening[];
+  /** A page of a run's thread: the posts of one phase (the current by default) matching the query, the last `limit`
+   *  (or the first from `from`), and the seqs to page on. Throws on a run not of `repo` or a phase it never opened. */
+  thread(repo: string, run: RunId, q: ThreadQuery): ThreadPage;
+  /** One post of `repo`, in full; null when there is none by that seq. */
+  message(repo: string, seq: number): Message | null;
   /** Called with the project of every write, from this process or any other. Returns the unsubscribe. */
   onChange(listener: (repo: string) => void): () => void;
 
@@ -1437,6 +1466,18 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     return { open, forSeats: open && run.phase_for != null ? (JSON.parse(String(run.phase_for)) as string[]) : null };
   };
   /** The seq of the `phase` event that opened `run`'s current phase (0 before any): the one "since the phase opened". */
+  /** Reading the thread back: the run's row, refused when it is not of `repo`, and its phase openings in order. */
+  const threadOf = (repo: string, run: RunId): { row: Row; openings: { name: string; seq: number; at: string }[] } => {
+    const row = runRowOrNone(run);
+    if (!row || String(row.repo) !== repo) throw new Error(`no run ${run} in this project`);
+    const openings = (db.prepare("SELECT seq, at, meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(run, EVENTS.phase.name) as Row[]).map((r) => ({
+      name: String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""),
+      seq: Number(r.seq),
+      at: String(r.at),
+    }));
+    return { row, openings };
+  };
+  const runMessages = (run: RunId): Row[] => db.prepare("SELECT * FROM messages WHERE run = ? ORDER BY seq").all(run) as Row[];
   const phaseOpenedSeqOf = (run: RunId): number => Number((db.prepare("SELECT MAX(seq) AS seq FROM messages WHERE run = ? AND event = ?").get(run, EVENTS.phase.name) as Row).seq ?? 0);
   /** The declared seats of `run` with no member yet that the orchestrator posted to (`@<seat>`) since `phase` opened,
    *  `phase` being the run's open one: each owes its done before it joins, so all-done waits for it. A declared seat
@@ -1774,7 +1815,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
           insertMessage(member, `all joined: ${declared} seat${declared === 1 ? "" : "s"}`, null, "event", [`${member.plan}/${ORCHESTRATOR}`], { event: EVENTS["all-joined"].name, meta: allJoined });
         }
       }
-      return { member, roster: board.roster(member.repo), composition: compositionOf(run) };
+      return { member, roster: board.roster(member.repo), composition: compositionOf(run), entry };
       });
     },
 
@@ -2377,6 +2418,64 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       return [...byRepo.entries()]
         .map(([repo, runs]) => ({ repo, name: projectFolderName(repo), runs }))
         .sort((a, b) => Number(b.runs.some((x) => x.open)) - Number(a.runs.some((x) => x.open)) || latest(b.runs) - latest(a.runs));
+    },
+
+    phases(repo, run) {
+      const { openings } = threadOf(repo, run);
+      const rows = runMessages(run);
+      const current = openings.at(-1)?.seq ?? null;
+      return openings.map((o, i) => {
+        const end = openings[i + 1]?.seq ?? Infinity;
+        const inside = rows.filter((r) => Number(r.seq) > o.seq && Number(r.seq) < end);
+        const latest = !openings.some((x, j) => j > i && x.name === o.name);
+        const done = latest ? Number((db.prepare("SELECT COUNT(*) AS n FROM phase_done WHERE run = ? AND phase = ?").get(run, o.name) as Row).n) : null;
+        return { name: o.name, seq: o.seq, at: o.at, current: o.seq === current, posts: inside.filter((r) => r.kind !== "event").length, urgent: inside.filter((r) => r.kind === "urgent").length, done };
+      });
+    },
+
+    thread(repo, run, q) {
+      const { row, openings } = threadOf(repo, run);
+      const asked = q.phase ?? "current";
+      const opening = asked === "all" ? null : asked === "current" ? (openings.at(-1) ?? null) : ([...openings].reverse().find((o) => o.name === asked) ?? null);
+      if (asked !== "all" && asked !== "current" && !opening)
+        throw new Error(`thread: run ${run} never opened phase ${asked}${openings.length ? `; its phases: ${[...new Set(openings.map((o) => o.name))].join(", ")}` : ""}`);
+      const start = opening?.seq ?? 0;
+      const end = opening ? (openings.find((o) => o.seq > opening.seq)?.seq ?? Infinity) : Infinity;
+      const authorOf = memoizedParticipants();
+      const seatOf = (w: string): string => w.trim().replace(/^@/, "").slice(w.trim().replace(/^@/, "").lastIndexOf("/") + 1);
+      const said = (m: Message, seat: string): boolean => seatOf(m.from) === seat;
+      const named = (m: Message, seat: string): boolean => m.mentions.some((n) => n !== `${row.plan}/*` && n.endsWith(`/${seat}`));
+      const about = q.about?.trim();
+      const matches = (m: Message): boolean =>
+        (q.events || m.kind !== "event" || shownInThread(m.event)) &&
+        (!q.by || said(m, seatOf(q.by))) &&
+        (!q.to || named(m, seatOf(q.to))) &&
+        (!q.with || said(m, seatOf(q.with)) || named(m, seatOf(q.with))) &&
+        (!about || (m.about ?? "").includes(about) || m.body.includes(about));
+      const all = runMessages(run)
+        .filter((r) => Number(r.seq) >= start && Number(r.seq) < end)
+        .map((r) => toMessage(r, authorOf))
+        .filter(matches);
+      const limit = Math.min(Math.max(1, Math.floor(q.limit ?? THREAD_LIMIT)), THREAD_LIMIT_MAX);
+      const window = q.from !== undefined ? all.filter((m) => m.seq >= q.from!) : q.before !== undefined ? all.filter((m) => m.seq < q.before!) : all;
+      const posts = q.from !== undefined ? window.slice(0, limit) : window.slice(-limit);
+      const first = posts[0]?.seq;
+      const last = posts.at(-1)?.seq;
+      return {
+        run,
+        group: String(row.plan),
+        title: String(row.title),
+        phase: opening ? { name: opening.name, seq: opening.seq } : null,
+        posts,
+        matched: all.length,
+        earlier: first !== undefined && all.some((m) => m.seq < first) ? first : null,
+        later: last !== undefined && all.some((m) => m.seq > last) ? last + 1 : null,
+      };
+    },
+
+    message(repo, seq) {
+      const r = db.prepare("SELECT * FROM messages WHERE seq = ? AND repo = ?").get(seq, repo) as Row | undefined;
+      return r ? toMessage(r, memoizedParticipants()) : null;
     },
 
     snapshot(repo) {

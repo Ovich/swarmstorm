@@ -3,6 +3,7 @@
 import { CODE_IN_CORE_HELP } from "./code-wording.ts";
 import type { Command } from "./wording.ts";
 import { STALL_MS_DEFAULT } from "../../board/liveness.ts";
+import { THREAD_LIMIT } from "../../board/board.ts";
 
 /** The core verbs' help. */
 export const coreUsage = (cli: Command): string =>
@@ -29,6 +30,10 @@ export const coreUsage = (cli: Command): string =>
     "          # once your run is closed, wait, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end …",
     "          # --mentions: you listen while you work rather than wait; a seat's run: the wake brings every unread post of the run",
     "  roster  [--project <path>] [--as <member>]",
+    "  phases  [--run <id>] [--as <member>]                             # the run's phases, one line each: opened when, its posts, urgent posts and members done",
+    "  thread  [--run <id>] [--phase current|all|<name>] [--by <seat>] [--to <seat>] [--with <seat>] [--about <path|decision id>] [--limit <n>] [--before <seq>] [--from <seq>] [--events] [--as <member>]",
+    `          # reads the thread back, one line per post, the last ${THREAD_LIMIT} of the current phase by default; --with: a seat's posts and those to it; prints the next page's command`,
+    "  read    <seq>                                                   # one post in full",
     "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
     "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
     "  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept",

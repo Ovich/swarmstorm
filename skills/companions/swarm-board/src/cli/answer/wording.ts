@@ -267,6 +267,17 @@ export const WORDING = {
   /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
   seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
   seatJoin: (cli: Command, run: number, group: string, doing: string, seat = "<seat>"): Command => `${cli} join --run ${run} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
+  // ── reading the thread back (pull only, in pages) ──
+  readWhichRun: (verb: string) => `${verb}: which run? pass --run <id>, or --as <member>`,
+  threadNone: "no post matches",
+  /** `words`: the page's own query, re-listed, so the next page reads the same posts */
+  threadEarlier: (cli: Command, words: string, before: number): Command => `earlier: ${cli} thread ${words} --before ${before}`,
+  threadLater: (cli: Command, words: string, from: number): Command => `later: ${cli} thread ${words} --from ${from}`,
+  readPost: (cli: Command): Command => `a post in full: ${cli} read <seq>`,
+  noPost: (seq: number) => `read: no post #${seq} in this project`,
+  /** a member joining a run already under way: what its seat said and was told before it, read when it needs it */
+  seatHistory: (cli: Command, run: number, seat: string): string =>
+    `before you: what this seat said and was told: ${cli} thread --run ${run} --with ${seat} --phase all; the run's phases: ${cli} phases --run ${run}`,
   /** V-48: a word that is no verb of this CLI, for every caller */
   unknownVerb: (word: string, cli: Command) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
