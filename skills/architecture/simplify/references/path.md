@@ -19,7 +19,7 @@ A dispatched pass gets the brief and nothing else: no "look around", the file li
 1. Run the tests in the brief, green, before touching anything.
 2. Move each caller to the replacement. A caller that needs behaviour the replacement lacks stops the pass.
 3. Delete the old path and the tests listed for deletion. One commit per removed unit, its message naming what superseded it.
-4. Run the project's type check, tests and unused-code finder. Then this skill's `scripts/net-lines.mjs`, run with node from the repository as `net-lines.mjs <base> --scope <files…>`: it prints the net lines and any file touched outside the scope, and exits non-zero on either failure.
+4. Run the project's type check, tests and unused-code finder. Then this skill's `scripts/net-lines.mjs`, run with node from the repository as `net-lines.mjs <base> --scope <files…>`: it prints `code -<n> +<n>` with the tests apart (built bundles not counted) and any file touched outside the scope, and exits non-zero when the code did not go negative or the scope was left.
 
 ## Stop and report instead of guessing
 
