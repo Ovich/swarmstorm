@@ -1,0 +1,8 @@
+{
+  "name": "workbench-codebase",
+  "private": true,
+  "description": "The codebase bench's one dependency: TypeScript's JavaScript parser API, which TypeScript 7 no longer ships",
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

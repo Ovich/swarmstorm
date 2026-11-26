@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codebase</title>
+<link rel="icon" href="data:,">
+<style>
+:root{--bg:#0d1117;--panel:#11161d;--panel2:#161b22;--fg:#c9d1d9;--dim:#7d8590;--line:#21262d;--acc:#a78bfa;--red:#f85149;--amb:#d29922;--grn:#3fb950;--blue:#58a6ff;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:light){:root{--bg:#fff;--panel:#f6f8fa;--panel2:#eef1f4;--fg:#1f2328;--dim:#59636e;--line:#d0d7de;--acc:#6d28d9;--red:#cf222e;--amb:#9a6700;--grn:#1a7f37;--blue:#0969da}}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:12.5px/1.4 var(--mono)}
+button,select{font:inherit;color:inherit}a{color:inherit}
+.app{display:grid;grid-template-rows:auto 1fr 170px;grid-template-columns:220px 1fr 340px;height:100vh}
+.top{grid-column:1/-1;grid-row:1;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:2px 10px;background:var(--panel2);border-bottom:1px solid var(--line);white-space:nowrap;overflow:visible}
+.top b{color:var(--acc)}.dim{color:var(--dim)}.ref{border:1px solid var(--line);border-radius:4px;padding:0 6px;background:var(--bg);max-width:260px}
+.pill{border-radius:999px;padding:0 8px;font-weight:700;cursor:pointer}.pill.fail{background:color-mix(in srgb,var(--red) 22%,transparent);color:var(--red)}.pill.pass{background:color-mix(in srgb,var(--grn) 22%,transparent);color:var(--grn)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}.seg button{background:var(--bg);border:0;padding:0 8px;cursor:pointer}.seg button.on{background:var(--acc);color:var(--bg)}
+.pos{color:var(--red)}.neg{color:var(--grn)}.r{color:var(--red)}.a{color:var(--amb)}.g{color:var(--grn)}
+.tree{grid-column:1;grid-row:2;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:4px 0}
+.tree div{padding:1px 8px;white-space:nowrap;cursor:pointer;display:flex;justify-content:space-between;gap:6px}.tree div:hover{background:var(--panel2)}.tree .g0{color:var(--dim);text-transform:uppercase;font-size:10.5px;letter-spacing:.06em;margin-top:6px;cursor:default}
+.map{grid-column:2;grid-row:2;position:relative;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.crumb{padding:4px 10px;border-bottom:1px solid var(--line);color:var(--dim);display:flex;gap:6px;align-items:center;flex-wrap:wrap}.crumb a{color:var(--blue);cursor:pointer}
+svg{flex:1;width:100%;min-height:0;display:block}
+.n{cursor:pointer}.n rect.b{stroke:var(--line)}.n:hover rect.b{stroke:var(--fg)}.n text{fill:var(--fg);font:11px var(--mono);pointer-events:none}.n .sub{fill:var(--dim);font-size:9.5px}
+.n.chg rect.b{stroke:var(--amb);stroke-width:1.6;stroke-dasharray:4 2}.n.lit rect.b{stroke:var(--acc);stroke-width:2.6;stroke-dasharray:none}.n.bad rect.b{stroke:var(--red);stroke-width:2}
+.n.visit rect.b{stroke:var(--blue);stroke-width:2}.n.cur rect.b{stroke:var(--blue);stroke-width:3;animation:pu 1s infinite}
+@keyframes pu{50%{stroke-opacity:.25}}@media (prefers-reduced-motion:reduce){.n.cur rect.b{animation:none}}
+.e{fill:none;opacity:.3}.e.faint{opacity:.08}.e.on{opacity:.95}.band{stroke:var(--line);stroke-dasharray:3 4}.bandt{fill:var(--dim);font:10px var(--mono);text-transform:uppercase;letter-spacing:.08em}
+.wip{fill:none;stroke:var(--amb);stroke-width:1.5}.wipt{fill:var(--amb);font:9.5px var(--mono)}
+.legend{position:absolute;left:8px;bottom:6px;color:var(--dim);font-size:10px;background:var(--bg);padding:2px 6px;border:1px solid var(--line);border-radius:4px;max-width:calc(100% - 16px)}
+.dsm{flex:1;overflow:auto;padding:8px}.dsm table{border-collapse:collapse;font-size:10px}.dsm td,.dsm th{border:1px solid var(--line);min-width:20px;height:18px;text-align:center}.dsm th{color:var(--dim);font-weight:400;white-space:nowrap;text-align:right;padding-right:4px}
+.dsm td.l{background:var(--panel2)}.dsm td.up{background:color-mix(in srgb,var(--red) 40%,transparent)}.dsm td.dn{background:color-mix(in srgb,var(--blue) 18%,transparent)}
+.ins{grid-column:3;grid-row:2;overflow:auto;background:var(--panel);border-left:1px solid var(--line)}
+.ins h4{margin:0;padding:7px 10px;font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.due{padding:6px 10px;border-bottom:1px solid var(--line)}.due div{word-break:break-all;padding:1px 0}
+.i{padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer}.i:hover{background:var(--panel2)}.i.on{background:var(--panel2);box-shadow:inset 3px 0 var(--acc)}
+.i .h{display:flex;justify-content:space-between;gap:6px;align-items:baseline}.i .c{font-weight:700;white-space:nowrap}
+.new{background:var(--red);color:#fff;border-radius:3px;padding:0 4px;font-size:9.5px;margin-left:4px}.i .d{color:var(--dim);font-size:11px}
+.rows{margin-top:5px;font-size:11px;max-height:320px;overflow:auto}.rows a{display:block;text-decoration:none;padding:1px 0;word-break:break-all}.rows a:hover{color:var(--blue)}.rows .nw{border-left:2px solid var(--red);padding-left:4px}
+.term{grid-column:1/-1;grid-row:3;background:var(--bg);border-top:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.term .tb{display:flex;gap:10px;padding:3px 10px;background:var(--panel2);border-bottom:1px solid var(--line);color:var(--dim);align-items:center}.term select{background:var(--bg);border:1px solid var(--line);border-radius:4px}
+.term .live{color:var(--grn)}.term button{background:none;border:1px solid var(--line);border-radius:4px;cursor:pointer;padding:0 6px}
+.log{overflow:auto;padding:3px 10px;flex:1}.log .l{cursor:pointer;white-space:nowrap}.log .l:hover{background:var(--panel)}.log .l.sel{background:var(--panel2)}.log .p{color:var(--grn)}.log .o{color:var(--dim);padding-left:16px;white-space:pre-wrap}
+.msg{padding:30px;color:var(--dim)}
+.tabs{display:none}
+@media (max-width:820px){.app{grid-template-rows:34px 30px 1fr 140px;grid-template-columns:1fr}.ins{grid-column:1;grid-row:3}.term{grid-row:4}.tree,.map{display:none}
+.tabs{grid-column:1;grid-row:2;display:flex;gap:4px;padding:3px 8px;background:var(--panel2);border-bottom:1px solid var(--line)}.tabs button{background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 8px}.tabs button.on{border-color:var(--acc);color:var(--acc)}
+.app.showmap .map{display:flex;grid-column:1;grid-row:3}.app.showmap .ins{display:none}.app.showtree .tree{display:block;grid-column:1;grid-row:3}.app.showtree .ins{display:none}.top .hide{display:none}}
+</style></head><body>
+<div class="app" id="app">
+  <div class="top"><b>▣ codebase</b><span class="dim hide" id="repo"></span>
+    <span class="dim">base</span><select class="ref" id="baseSel" aria-label="base"><option value="">…</option></select><span class="dim">→</span><select class="ref" id="headSel" aria-label="head"><option value="">…</option></select>
+    <span class="seg" id="modes"><button type="button" class="on" data-m="head">head</button><button type="button" data-m="base">base</button><button type="button" data-m="diff">diff</button></span>
+    <span class="hide" id="net"></span><span class="pill" id="gate">check …</span>
+    <span class="seg hide" id="lenses" style="margin-left:auto"></span>
+    <span class="seg hide"><button type="button" class="on" data-v="map">map</button><button type="button" data-v="dsm">matrix</button></span></div>
+  <div class="tabs"><button type="button" class="on" data-t="">insights</button><button type="button" data-t="showmap">map</button><button type="button" data-t="showtree">tree</button></div>
+  <div class="tree" id="tree"></div>
+  <div class="map"><div class="crumb" id="crumb"></div><svg id="svg" role="img" aria-label="the system map"></svg><div class="dsm" id="dsm" hidden></div><div class="legend" id="legend"></div></div>
+  <div class="ins" id="ins"><div class="msg">reading the repository…</div></div>
+  <div class="term"><div class="tb"><span>trace</span><select id="runSel"></select><span class="live" id="lv"></span><span style="margin-left:auto"></span><button type="button" id="back" hidden>⤓ back to live</button></div><div class="log" id="log"></div></div>
+</div>
+<script>
+// Every picture here is drawn from a verb's answer (the page asks the same verbs the CLI runs) by the
+// deterministic layout below: the same answer always draws the same picture.
+const $ = (id) => document.getElementById(id), svg = $("svg");
+const api = async (verb, args = [], extra = "") => { const r = await fetch(`/api/${verb}?${args.map((a) => `arg=${encodeURIComponent(a)}`).join("&")}${extra}`); const j = await r.json(); if (j.error) throw new Error(j.error); return j; };
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const short = (n) => (n >= 10000 ? `${(n / 1000).toFixed(0)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`);
+let mode = "head", drillCache = new Map();
+let O = null, ROOT = "", lens = "weight", view = "map", lit = null, stack = [], branches = null, _run = null, steps = [], sel = -1, follow = true;
+const LENSES = {
+  weight: { label: "weight", q: "where is the code?", legend: "box = lines (area) · shade = lines · ▸ opens the module's parts" },
+  deps: { label: "deps", q: "who uses whom?", legend: "arrows = imports, width = count · red = cycle or upward import · ring = hub (fan-in)" },
+  change: { label: "change", q: "what moves?", legend: "grey → amber = commits in 60 days · bar = net lines since base · amber dashed = changed since base" },
+  health: { label: "health", q: "what is weak?", legend: "shade = findings in the unit (dead code, needless exports, outlier files, cycles, shallow modules)" },
+  work: { label: "work", q: "what is in flight?", legend: "amber = touched by an open branch · ⚠ = that branch and HEAD changed the same file" },
+};
+const LEGENDS = {
+  head: {},
+  base: { weight: "the system at the base: box = lines at base, same places as head", deps: "imports at the base" },
+  diff: { weight: "box = lines at head · dashed inner outline = size at base · fill: red grew, green shrank · red dashed = new unit · crossed = gone", deps: "red dashed = import new since base · green dashed = import gone · red = cycle or upward", change: "fill: net lines since base (red grew, green shrank)", health: "fill: findings new (red) against fixed (green) since base" },
+};
+const vscode = (at) => { const [p, l] = String(at).split(/:(\d+)$/); return `vscode://file/${ROOT}/${p}${l ? `:${l}` : ""}`; };
+/** A unit's shortest label that no other unit shares: its last folder, prefixed by its package's name when another unit ends the same way. */
+let LABELS = new Map();
+/** Each unit by the path that tells it apart: its package's short name, then the folders below the package's source root. */
+function labelsOf(units) {
+  const out = new Map();
+  for (const u of units) {
+    if (u.id === ".") { out.set(u.id, "repository root"); continue; }
+    const pkg = u.package || u.id, short = pkg.split("/").pop();
+    if (u.id === pkg) { out.set(u.id, units.some((o) => o.package === pkg && o.id !== pkg) ? `${short} (other files)` : short); continue; }
+    const below = u.id.slice(pkg.length + 1).split("/").filter((seg) => !["src", "app", "lib", "source"].includes(seg) || u.id.endsWith(`/${seg}`));
+    const tail = below.length ? below.join("/") : "";
+    out.set(u.id, tail ? `${short}/${tail}` : `${short} (root files)`);
+  }
+  for (const u of units) if (u.root) out.set(u.id, `${(u.package || u.id).split("/").pop()} (root files)`);
+  return out;
+}
+const unitOfPath = (p) => O.units.filter((u) => u.id === "." || p === u.id || p.startsWith(`${u.id}/`)).sort((a, b) => b.id.length - a.id.length)[0]?.id;
+
+function findings() {
+  const f = new Map(), add = (p, n = 1) => { const u = unitOfPath(p); if (u) f.set(u, (f.get(u) ?? 0) + n); };
+  for (const d of O.dead) add(d.path);
+  for (const o of O.outliers) add(o.path, 3);
+  for (const s of O.shallow) add(s.path, 2);
+  for (const c of O.cycles) for (const m of c.members) add(m, 3);
+  return f;
+}
+const CARDS = () => [
+  { k: "cycles", t: "Cycles", m: O.measures.cycles, cls: "r", d: "runtime imports, between modules and between files", rows: O.cycles.map((c) => ({ t: c.members.join(" ↔ "), at: c.at, nw: O.due.regressions.some((r) => r.kind === "cycle" && r.at === c.at) })), gone: O.gone.cycles.map((c) => c.members.join(" ↔ ")), units: [...new Set(O.cycles.flatMap((c) => c.members.map(unitOfPath)))] },
+  { k: "upward", t: "Upward imports", m: O.measures.upward, cls: "r", d: "against the order the imports imply", rows: O.upward.map((e) => ({ t: `${e.from} → ${e.to} ·${e.count}`, at: e.sites[0] })), gone: O.gone.upward.map((e) => `${e.from} → ${e.to}`), units: O.upward.flatMap((e) => [e.from, e.to]) },
+  { k: "outliers", t: "Outlier files", m: O.measures.outliers, cls: "a", d: `over ${O.fileLine} lines, this repository's own norm`, rows: O.outliers.map((o) => ({ t: `${o.lines}  ${o.path}`, at: `${o.path}:1`, nw: O.due.regressions.some((r) => r.kind === "outlier" && r.at === `${o.path}:1`) })), gone: O.gone.outliers.map((o) => o.path), units: O.outliers.map((o) => unitOfPath(o.path)) },
+  { k: "hotspots", t: "Hotspots", m: O.measures.hotspots, cls: "r", d: "lines × commits (60 days), over the norm", rows: O.hotspots.map((h) => ({ t: `${h.path}  ${h.lines}×${h.changes}`, at: `${h.path}:1` })), units: O.hotspots.map((h) => unitOfPath(h.path)) },
+  { k: "fat", t: "Fat units", m: O.measures.fat, cls: "a", d: `over ${short(O.unitLine)} lines`, rows: O.fat.map((u) => ({ t: `${short(u.lines)}  ${u.id}` })), units: O.fat.map((u) => u.id) },
+  { k: "hubs", t: "Hubs", m: O.measures.hubs, cls: "a", d: "imported by many units", rows: O.hubs.map((u) => ({ t: `←${u.fanIn}  ${u.id}` })), units: O.hubs.map((u) => u.id) },
+  { k: "needless", t: "Needless exports", m: O.measures.needless ?? {}, cls: "a", d: "read only in their own file: drop export", rows: O.dead.filter((d) => d.kind === "needless").map((d) => ({ t: `${d.name}  ${d.path}`, at: `${d.path}:${d.line}`, nw: O.due.regressions.some((r) => r.kind === "needless" && r.at === `${d.path}:${d.line}`) })), units: [...new Set(O.dead.filter((d) => d.kind === "needless").map((d) => unitOfPath(d.path)))] },
+  { k: "dead", t: "Dead code", m: O.measures.dead, cls: "a", d: "exported, read nowhere, its own file included: delete it", rows: O.dead.filter((d) => d.kind !== "needless").map((d) => ({ t: `${d.name}  ${d.path}`, at: `${d.path}:${d.line}`, nw: O.due.regressions.some((r) => r.kind === "dead" && r.at === `${d.path}:${d.line}`) })), units: [...new Set(O.dead.filter((d) => d.kind !== "needless").map((d) => unitOfPath(d.path)))] },
+  { k: "shallow", t: "Shallow modules", m: O.measures.shallow, cls: "a", d: "an index offering ≤ 1 name over several files", rows: O.shallow.map((s) => ({ t: `${s.path} (${s.files} files)`, at: s.path })), units: O.shallow.map((s) => unitOfPath(s.path)) },
+];
+/** The verbs a lens's sections read beyond the overview, fetched once when the lens opens. */
+const SECTION_VERBS = { deps: ["barrels"], health: ["unproduced", "one-impl", "single-use"] };
+const extra = {};
+async function loadSections() {
+  for (const v of SECTION_VERBS[lens] ?? []) if (!extra[v]) extra[v] = (await api(v)).data;
+  if (lens === "work" && !branches) branches = (await api("branches")).data;
+}
+/** Each lens's own sections, from the verbs behind it: `{ title, rows: [{ t, at?, units, warn? }] }`. Exact data only. */
+function sectionsOf() {
+  const unitsOf = (...paths) => [...new Set(paths.map(unitOfPath).filter(Boolean))];
+  const label = (id) => LABELS.get(id) ?? id;
+  const net = (u) => u.added - u.removed;
+  const age = (at) => { const d = Math.floor((Date.now() / 1000 - at) / 86400); return d < 1 ? "today" : `${d} d ago`; };
+  if (lens === "weight") return [
+    { title: "largest units", rows: [...O.units].sort((a, b) => b.lines - a.lines).map((u) => ({ t: `${short(u.lines).padStart(6)}  ${label(u.id)}`, units: [u.id] })) },
+    { title: `outlier files (over ${O.fileLine} lines)`, rows: O.outliers.map((o) => ({ t: `${o.lines}  ${o.path}`, at: `${o.path}:1`, units: unitsOf(o.path) })) },
+  ];
+  if (lens === "deps") return [
+    { title: "hubs (imported by most units)", rows: O.hubs.map((u) => ({ t: `←${u.fanIn}  ${label(u.id)}`, units: [u.id] })) },
+    { title: "cycles", rows: O.cycles.map((c) => ({ t: c.members.join(" ↔ "), at: c.at, units: unitsOf(...c.members), warn: true })) },
+    { title: "upward imports", rows: O.upward.map((e) => ({ t: `${label(e.from)} → ${label(e.to)} ·${e.count}`, at: e.sites[0], units: [e.from, e.to], warn: true })) },
+    { title: "barrels (files that only re-export)", rows: (extra.barrels ?? []).map((b) => ({ t: `${b.path}  passes ${b.passes} · read by ${b.readers}`, at: `${b.path}:1`, units: unitsOf(b.path) })) },
+  ];
+  if (lens === "change") return [
+    { title: `hotspots (lines × ${O.churnLabel ?? "commits"})`, rows: O.hotspots.map((h) => ({ t: `${h.lines}×${h.changes}  ${h.path}`, at: `${h.path}:1`, units: unitsOf(h.path) })) },
+    { title: "net lines by unit (code)", rows: O.units.filter((u) => net(u)).sort((a, b) => Math.abs(net(b)) - Math.abs(net(a))).map((u) => ({ t: `${net(u) > 0 ? "+" : "−"}${short(Math.abs(net(u)))}  ${label(u.id)}`, units: [u.id], warn: net(u) > 0 })) },
+  ];
+  if (lens === "health") return [
+    { title: "dead code (read nowhere: delete it)", rows: O.dead.filter((d) => d.kind !== "needless").map((d) => ({ t: `${d.name}  ${d.path}`, at: `${d.path}:${d.line}`, units: unitsOf(d.path), warn: true })) },
+    { title: "needless exports (drop export)", rows: O.dead.filter((d) => d.kind === "needless").map((d) => ({ t: `${d.name}  ${d.path}`, at: `${d.path}:${d.line}`, units: unitsOf(d.path) })) },
+    { title: "kind variants nothing writes", rows: (extra.unproduced ?? []).map((x) => ({ t: `"${x.value}"  ${x.at}`, at: x.at, units: unitsOf(x.at.replace(/:\d+$/, "")), warn: true })) },
+    { title: "shallow modules", rows: O.shallow.map((x) => ({ t: `${x.path}  offers ${x.offered} · ${x.files} files`, units: unitsOf(x.path) })) },
+    { title: "one implementation", rows: (extra["one-impl"] ?? []).map((x) => ({ t: `${x.name}  ← ${x.by}`, at: `${x.path}:${x.line}`, units: unitsOf(x.path, x.by.replace(/:\d+$/, "")) })) },
+    { title: "read by exactly one file", rows: (extra["single-use"] ?? []).map((x) => ({ t: `${x.name}  ← ${x.by}`, at: `${x.path}:${x.line}`, units: unitsOf(x.path, x.by) })) },
+  ];
+  if (lens === "work") return [
+    { title: "open branches", rows: (branches ?? []).map((b) => ({ t: `⎇ ${b.name} · ${b.ahead} commits · ${age(b.at)} · ${b.units.map(label).join(", ") || "no source"}${b.clashes.length ? `\n⚠ head changed too: ${b.clashes.join(", ")}` : ""}`, units: b.units, warn: b.clashes.length > 0 })) },
+  ];
+  return [];
+}
+const SECTION_SHOWN = 60;
+let rowUnits = new Map();
+function sectionRows() {
+  rowUnits = new Map();
+  return sectionsOf().map((sec, si) => `<h4><span>${esc(sec.title)}</span><span>${sec.rows.length}</span></h4>${sec.rows.slice(0, SECTION_SHOWN).map((r, ri) => { const key = `row:${si}:${ri}`; rowUnits.set(key, r.units); return `<div class="i ${lit === key ? "on" : ""}" data-r="${key}"><div class="d ${r.warn ? "r" : ""}" style="white-space:pre-wrap">${esc(r.t)}${r.at ? ` <a href="${vscode(r.at)}" class="dim">↗</a>` : ""}</div></div>`; }).join("")}${sec.rows.length > SECTION_SHOWN ? `<div class="i d">… ${sec.rows.length - SECTION_SHOWN} more: code ${lens === "health" ? "dead --full" : "overview --full"}</div>` : ""}`).join("");
+}
+function ins() {
+  const kinds = { cycle: "new cycles", upward: "new upward imports", outlier: "new outlier files", dead: "new dead code", needless: "new needless exports" };
+  const row = (r) => `<div class="r">✗ ${esc(r.text)}${r.at ? ` <a href="${vscode(r.at)}" class="dim">${esc(r.at.split("/").pop())}</a>` : ""}${r.since ? `<div class="dim">  since ${esc(r.since)}</div>` : ""}</div>`;
+  const due = [...Object.entries(kinds).flatMap(([k, label]) => { const rs = O.due.regressions.filter((r) => r.kind === k); return rs.length ? [`<div class="dim">${label} · ${rs.length}</div>`, ...rs.slice(0, 4).map(row), ...(rs.length > 4 ? [`<div class="dim">  … ${rs.length - 4} more in the card below</div>`] : [])] : []; }), ...O.due.warnings.map((w) => `<div class="a">! ${esc(w.text)}</div>`)];
+  $("ins").innerHTML = `<h4><span>drift since ${O.base}</span><span>${O.due.regressions.length} ✗ · ${O.due.warnings.length} !</span></h4><div class="due">${due.join("") || '<div class="g">nothing degraded</div>'}</div><h4><span>measures</span><span>base → head</span></h4>` +
+    CARDS().map((c) => {
+      const d = c.m.base === undefined ? 0 : c.m.head - c.m.base, nw = c.rows.some((r) => r.nw);
+      return `<div class="i ${lit === c.k ? "on" : ""}" data-k="${c.k}"><div class="h"><span>${c.t}${nw ? '<span class="new">NEW</span>' : ""}</span><span class="c">${c.m.base === undefined ? "" : `<span class="dim">${c.m.base} →</span> `}<span class="${c.m.head ? c.cls : "g"}">${c.m.head}</span> ${d ? `<span class="${d < 0 ? "g" : "r"}">${d < 0 ? "▼" : "▲"}${Math.abs(d)}</span>` : ""}</span></div><div class="d">${esc(c.d)}</div>` +
+        (lit === c.k ? `<div class="rows">${c.rows.map((r) => `<a class="${r.nw ? "nw" : ""}" ${r.at ? `href="${vscode(r.at)}"` : ""}>${r.nw ? '<span class="new">NEW</span> ' : ""}${esc(r.t)}</a>`).join("")}${(c.gone ?? []).map((g) => `<a class="dim">✓ gone: ${esc(g)}</a>`).join("")}</div>` : "") + "</div>";
+    }).join("");
+  $("ins").insertAdjacentHTML("beforeend", sectionRows());
+  for (const e of $("ins").querySelectorAll(".i[data-r]")) e.onclick = (ev) => { if (ev.target.closest("a")) return; lit = lit === e.dataset.r ? null : e.dataset.r; stack = []; ins(); draw(); };
+  for (const e of $("ins").querySelectorAll(".i[data-k]")) e.onclick = (ev) => { if (ev.target.closest("a")) return; lit = lit === e.dataset.k ? null : e.dataset.k; stack = []; ins(); draw(); };
+}
+
+/** Every unit of head and base in one stable layout: a box keeps its place in the three modes, only its size and colour change. */
+function allUnits() {
+  const byId = new Map();
+  for (const u of O.baseUnits ?? []) byId.set(u.id, { ...u, baseLines: u.lines, headLines: 0, gone: true });
+  for (const u of O.units) byId.set(u.id, { ...u, baseLines: byId.get(u.id)?.baseLines ?? (O.baseUnits ? 0 : u.lines), headLines: u.lines, gone: false, isNew: !!O.baseUnits && !byId.has(u.id) });
+  return [...byId.values()];
+}
+const linesIn = (u) => (mode === "base" ? u.baseLines : u.headLines);
+function layout(W, H, units) {
+  const maxL = Math.max(0, ...units.map((u) => u.level ?? 0)), bands = Math.min(5, maxL + 1);
+  const bandOf = (u) => (maxL ? Math.round(((u.level ?? 0) / maxL) * (bands - 1)) : 0);
+  const rows = Array.from({ length: bands }, () => []);
+  for (const u of units) rows[bands - 1 - bandOf(u)].push(u);
+  const bh = (H - 20) / bands, P = {}, slotOf = (u) => Math.max(u.baseLines, u.headLines), maxLines = Math.max(1, ...units.map(slotOf));
+  rows.forEach((row, r) => {
+    row.sort((a, b) => (a.package ?? "").localeCompare(b.package ?? "") || slotOf(b) - slotOf(a) || a.id.localeCompare(b.id));
+    const weights = row.map((u) => Math.sqrt(slotOf(u)) + 18), total = weights.reduce((s, w) => s + w, 0);
+    let x = 6;
+    row.forEach((u, i) => {
+      const w = Math.max(14, ((W - 12) * weights[i]) / total - 6), hMax = Math.max(22, Math.min(bh * 0.72, 22 + (bh * 0.5 * Math.sqrt(slotOf(u))) / Math.sqrt(maxLines)));
+      P[u.id] = { x, y: 16 + r * bh + (bh - hMax) / 2, w, h: hMax, cx: x + w / 2, cy: 16 + r * bh + bh / 2 };
+      x += w + 6;
+    });
+  });
+  return { P, bands, bh, maxL };
+}
+/** The box for a number of lines inside its slot: area proportional to lines, centred, so base and head boxes nest. */
+const boxIn = (p, lines, slotLines) => { const f = slotLines ? Math.sqrt(Math.max(0, lines) / slotLines) : 0; const w = Math.max(f ? 8 : 0, p.w * f), h = Math.max(f ? 8 : 0, p.h * f); return { x: p.cx - w / 2, y: p.cy - h / 2, w, h }; };
+const shade = (t, c = "248,81,73") => `rgba(${c},${0.05 + Math.min(1, t) * 0.6})`;
+/** Churn is activity, not a fault: a neutral heat from grey to amber. Red stays for cycles, regressions and violations. */
+const heat = (t) => { const k = Math.min(1, Math.max(0, t)); return `rgba(${Math.round(125 + k * 85)},${Math.round(133 + k * 20)},${Math.round(144 - k * 110)},${0.1 + k * 0.5})`; };
+const diverge = (d, max) => (d > 0 ? `rgba(248,81,73,${0.12 + Math.min(1, d / max) * 0.6})` : d < 0 ? `rgba(63,185,80,${0.12 + Math.min(1, -d / max) * 0.6})` : "rgba(125,133,144,.08)");
+const signed = (n) => (n > 0 ? `+${short(n)}` : n < 0 ? `−${short(-n)}` : "±0");
+const visited = () => { const s = new Set(), cur = new Set(); steps.forEach((st, i) => { if (i > sel) return; for (const a of st.argv.slice(1)) if (!a.startsWith("--")) for (const u of O.units) if (a.startsWith(u.id) || u.id.startsWith(a)) (i === sel ? cur : s).add(u.id); }); return { s, cur }; };
+/** A name in at most two lines, broken only after a / or a -; a word never cut in the middle (an ellipsis instead, the full name on hover). */
+function labelLines(name, w, charWidth = 6.2) {
+  const chars = Math.max(1, Math.floor((w - 8) / charWidth));
+  if (name.length <= chars) return [name];
+  const slash = name.lastIndexOf("/", chars - 1), dash = name.lastIndexOf("-", chars - 1);
+  const cut = slash > 0 && slash < name.length - 1 ? slash + 1 : dash > 0 ? dash + 1 : 0;
+  if (!cut) return [`${name.slice(0, chars - 1)}…`];
+  const rest = name.slice(cut);
+  return [name.slice(0, cut), rest.length <= chars ? rest : `${rest.slice(0, chars - 1)}…`];
+}
+function draw() {
+  if (!O) return;
+  const W = svg.clientWidth || 900, H = svg.clientHeight || 480;
+  svg.style.display = view === "map" ? "" : "none"; $("dsm").hidden = view !== "dsm";
+  $("crumb").innerHTML = [`<a data-i="-1">system</a>`, ...stack.map((s, i) => `<span>›</span><a data-i="${i}">${esc(s || "(root)")}</a>`)].join(" ") + `<span class="dim" style="margin-left:auto">${LENSES[lens].q} · ${mode}</span>`;
+  for (const a of $("crumb").querySelectorAll("a")) a.onclick = () => { stack = stack.slice(0, +a.dataset.i + 1); draw(); };
+  $("legend").textContent = stack.length ? `parts by lines (area)${mode === "diff" ? " · fill = net lines since base (red grew, green shrank) · dashed outline = size at base" : ` · grey → amber = ${O.churnLabel ?? "commits in 60 days"}`} · click a folder to go deeper` : (LEGENDS[mode][lens] ?? LENSES[lens].legend).replace("commits in 60 days", O.churnLabel ?? "commits in 60 days");
+  if (view === "dsm") return dsm();
+  if (stack.length) return drillDraw(W, H);
+  const units = allUnits(), { P, bands, bh, maxL } = layout(W, H, units), card = lit && !lit.startsWith("row:") ? CARDS().find((c) => c.k === lit) : null, litU = lit?.startsWith("row:") ? new Set(rowUnits.get(lit) ?? []) : new Set(card?.units ?? []);
+  const health = O.unitHealth ?? {}, side = mode === "base" ? "base" : "head";
+  const maxH = Math.max(1, ...units.map((u) => health[u.id]?.[side] ?? 0)), maxC = Math.max(1, ...units.map((u) => u.churn ?? 0)), maxF = Math.max(1, ...units.map((x) => x.fanIn ?? 0));
+  const maxNet = Math.max(1, ...units.map((u) => Math.abs(u.headLines - u.baseLines))), maxLn = Math.max(1, ...units.map(linesIn));
+  const maxHD = Math.max(1, ...Object.values(health).map((x) => Math.abs(x.new - x.fixed)));
+  const up = new Set(O.upward.map((e) => `${e.from}>${e.to}`)), cyc = new Set(O.cycles.flatMap((c) => c.members.map(unitOfPath))), hub = new Set(O.hubs.map((u) => u.id));
+  const v = visited(), work = new Map((branches ?? []).flatMap((b) => b.units.map((u) => [u, b])));
+  let s = `<defs>${["dim", "red", "acc", "grn"].map((c) => `<marker id="m${c}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--${c})"/></marker>`).join("")}</defs>`;
+  for (let b = 0; b < bands; b++) {
+    const lo = Math.max(0, Math.ceil(((bands - 1 - b - 0.5) / Math.max(1, bands - 1)) * maxL)), hi = Math.floor(((bands - 1 - b + 0.5) / Math.max(1, bands - 1)) * maxL);
+    s += `<line class="band" x1="0" x2="${W}" y1="${16 + b * bh}" y2="${16 + b * bh}"/><text class="bandt" x="${W - 6}" y="${28 + b * bh}" text-anchor="end">layer ${lo}${hi > lo ? `–${hi}` : ""}${b === 0 ? " · imports most" : b === bands - 1 ? " · imported by most" : ""}</text>`;
+  }
+  if (lens === "deps" || card) {
+    const key = (e) => `${e.from}>${e.to}`, head = new Map(O.edges.map((e) => [key(e), e])), base = new Map((O.baseEdges ?? []).map((e) => [key(e), e]));
+    const list = mode === "base" ? [...base.values()].map((e) => ({ ...e, kind: "same" })) : mode === "head" ? [...head.values()].map((e) => ({ ...e, kind: "same" })) : [...[...head.values()].map((e) => ({ ...e, kind: base.has(key(e)) ? "same" : "new" })), ...[...base.values()].filter((e) => !head.has(key(e))).map((e) => ({ ...e, kind: "gone" }))];
+    for (const e of list) {
+      const A = P[e.from], B = P[e.to];
+      if (!A || !B) continue;
+      const bad = mode !== "base" && (up.has(key(e)) || (cyc.has(e.from) && cyc.has(e.to))), on = card ? litU.has(e.from) && litU.has(e.to) : true;
+      if (!on && !bad && e.kind === "same") continue;
+      if (lens === "deps" && !card && e.count < 2 && !bad && e.kind === "same") continue;
+      const goUp = B.y < A.y, y1 = goUp ? A.y : A.y + A.h, y2 = goUp ? B.y + B.h : B.y, my = (y1 + y2) / 2;
+      const c = e.kind === "new" || bad ? "red" : e.kind === "gone" ? "grn" : card ? "acc" : "dim";
+      s += `<path class="e ${bad || card || e.kind !== "same" || e.count >= 8 ? "on" : ""}" d="M${A.cx} ${y1} C${A.cx} ${my} ${B.cx} ${my} ${B.cx} ${y2}" stroke="var(--${c})" stroke-width="${Math.max(0.8, Math.sqrt(e.count) / 1.8)}" ${e.kind !== "same" ? 'stroke-dasharray="5 3"' : ""} marker-end="url(#m${c})"><title>${esc(e.from)} → ${esc(e.to)} · ${e.count}${e.kind === "new" ? " · new since base" : e.kind === "gone" ? " · gone since base" : ""}</title></path>`;
+    }
+  }
+  for (const u of units) {
+    const p = P[u.id], slot = Math.max(u.baseLines, u.headLines), present = mode === "base" ? u.baseLines > 0 : !u.gone;
+    const r = boxIn(p, present ? linesIn(u) : slot, slot), d = u.headLines - u.baseLines, hh = health[u.id] ?? { base: 0, head: 0, new: 0, fixed: 0 };
+    let fill = "transparent";
+    if (lens === "weight") fill = mode === "diff" ? diverge(d, maxNet) : shade(linesIn(u) / maxLn, "88,166,255");
+    else if (lens === "deps") fill = shade(((u.fanIn ?? 0) / maxF) * 0.5, "167,139,250");
+    else if (lens === "change") fill = mode === "diff" ? diverge(d, maxNet) : heat((u.churn ?? 0) / maxC);
+    else if (lens === "health") fill = mode === "diff" ? diverge(hh.new - hh.fixed, maxHD) : shade(hh[side] / maxH, "210,153,34");
+    else if (work.has(u.id)) fill = "rgba(210,153,34,.35)";
+    const cl = [litU.has(u.id) ? "lit" : "", lens === "deps" && mode !== "base" && cyc.has(u.id) ? "bad" : "", v.cur.has(u.id) ? "cur" : v.s.has(u.id) ? "visit" : ""].join(" ");
+    s += `<g class="n ${cl}" data-id="${esc(u.id)}">`;
+    if (!present) s += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="3" fill="none" stroke="var(--dim)" stroke-dasharray="3 3"/><line x1="${r.x}" y1="${r.y}" x2="${r.x + r.w}" y2="${r.y + r.h}" stroke="var(--dim)"/><line x1="${r.x + r.w}" y1="${r.y}" x2="${r.x}" y2="${r.y + r.h}" stroke="var(--dim)"/>`;
+    else s += `<rect class="b" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="3" fill="${fill}" ${mode === "diff" && u.isNew ? 'stroke="var(--red)" stroke-dasharray="4 2"' : ""}/>`;
+    if (mode === "diff" && present && u.baseLines > 0 && lens === "weight") { const g = boxIn(p, u.baseLines, slot); s += `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="3" fill="none" stroke="var(--fg)" stroke-opacity=".45" stroke-dasharray="2 2"/>`; }
+    const name = LABELS.get(u.id) ?? u.id, lines = labelLines(name, Math.max(r.w, 40));
+    const sub = !present ? (mode === "base" ? "new since base" : "gone since base") : lens === "weight" ? (mode === "diff" ? `${short(u.headLines)} (${signed(d)})${u.isNew ? " new" : ""}` : short(linesIn(u))) : lens === "change" ? (mode === "diff" ? signed(d) : `${u.churn ?? 0}Δ`) : lens === "health" ? (mode === "diff" ? `${hh.new} new · ${hh.fixed} fixed` : `${hh[side]} findings`) : lens === "deps" ? `←${u.fanIn ?? 0}` : "";
+    const inside = r.w >= 40 && r.h >= 20, tx = inside ? r.x + 4 : p.x + 2, ty = inside ? r.y + 12 : p.y + p.h + 10;
+    lines.forEach((l, i) => { s += `<text x="${tx}" y="${ty + i * 11}" style="font-size:${inside ? 11 : 9}px">${esc(l)}</text>`; });
+    if (inside && r.h > 18 + lines.length * 11) s += `<text class="sub" x="${tx}" y="${ty + lines.length * 11 + 1}">${esc(sub)}</text>`;
+    s += `<title>${esc(u.id)}\nlines: ${u.baseLines} at base → ${u.headLines} at head (${signed(d)})\nfan-in ${u.fanIn ?? 0} · ${u.churn ?? 0} ${O.churnLabel ?? "commits in 60 days"}\nfindings: ${hh.base} → ${hh.head} (${hh.new} new, ${hh.fixed} fixed)</title></g>`;
+    if (lens === "deps" && hub.has(u.id) && mode !== "base") s += `<rect x="${r.x - 3}" y="${r.y - 3}" width="${r.w + 6}" height="${r.h + 6}" rx="5" fill="none" stroke="var(--acc)" stroke-dasharray="2 2"/>`;
+    if (lens === "work" && work.has(u.id)) { const b = work.get(u.id); s += `<rect class="wip" x="${r.x - 3}" y="${r.y - 3}" width="${r.w + 6}" height="${r.h + 6}" rx="4"/><text class="wipt" x="${p.x}" y="${p.y + p.h + 11}">⎇ ${esc(b.name.slice(0, 24))}${b.clashes.length ? " ⚠" : ""}</text>`; }
+  }
+  svg.innerHTML = s;
+  for (const g of svg.querySelectorAll(".n")) g.onclick = () => { stack = [g.dataset.id === "." ? "" : g.dataset.id]; draw(); };
+}
+function treemap(items, x, y, w, h) {
+  const out = [];
+  const lay = (list, x, y, w, h) => {
+    if (!list.length) return;
+    if (list.length === 1) return out.push([list[0], x, y, w, h]);
+    const total = list.reduce((s, i) => s + i.lines, 0); let acc = 0, cut = 0;
+    while (cut < list.length - 1 && acc + list[cut].lines < total / 2) acc += list[cut++].lines;
+    if (cut === 0) { acc = list[0].lines; cut = 1; }
+    const f = acc / total;
+    if (w >= h) { lay(list.slice(0, cut), x, y, w * f, h); lay(list.slice(cut), x + w * f, y, w * (1 - f), h); }
+    else { lay(list.slice(0, cut), x, y, w, h * f); lay(list.slice(cut), x, y + h * f, w, h * (1 - f)); }
+  };
+  lay([...items].sort((a, b) => b.lines - a.lines || a.name.localeCompare(b.name)), x, y, w, h);
+  return out;
+}
+async function drillDraw(W, H) {
+  const path = stack.at(-1), key = `${path}|${refsArg()}`;
+  if (!drillCache.has(key)) {
+    svg.innerHTML = `<text x="20" y="30" fill="var(--dim)">reading ${esc(path || "the root")}…</text>`;
+    drillCache.set(key, (await api("outline", [path || "."], refsArg())).data);
+  }
+  if (stack.at(-1) !== path) return;
+  const data = drillCache.get(key);
+  const parts = data.parts.map((p) => ({ ...p, slot: Math.max(p.lines, p.baseLines ?? 0) })).map((p) => ({ ...p, lines: p.slot }));
+  const maxC = Math.max(1, ...data.parts.map((p) => p.churn)), maxD = Math.max(1, ...data.parts.map((p) => Math.abs(p.lines - (p.baseLines ?? p.lines))));
+  let s = "";
+  for (const [p, x, y, w, h] of treemap(parts, 4, 4, W - 8, H - 8)) {
+    const orig = data.parts.find((q) => q.path === p.path), head = orig.lines, base = orig.baseLines ?? head, d = head - base;
+    const cell = { x: x + 1, y: y + 1, w: Math.max(0, w - 2), h: Math.max(0, h - 2) }, c = { ...cell, cx: cell.x + cell.w / 2, cy: cell.y + cell.h / 2 };
+    const shown = mode === "base" ? base : head, r = boxIn(c, shown, p.slot);
+    const fill = mode === "diff" ? diverge(d, maxD) : heat(orig.churn / maxC);
+    s += `<g class="n" data-p="${esc(p.path)}" data-f="${p.file ? 1 : 0}">`;
+    s += shown > 0 ? `<rect class="b" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="3" fill="${fill}"/>` : `<rect x="${cell.x}" y="${cell.y}" width="${cell.w}" height="${cell.h}" rx="3" fill="none" stroke="var(--dim)" stroke-dasharray="3 3"/>`;
+    if (mode === "diff" && base > 0 && head > 0) { const g = boxIn(c, base, p.slot); s += `<rect x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="3" fill="none" stroke="var(--fg)" stroke-opacity=".45" stroke-dasharray="2 2"/>`; }
+    const label = labelLines(`${p.name}${p.file ? "" : "/"}`, w - 4, w > 60 ? 6.2 : 5.4);
+    if (w > 30 && h > 14) label.forEach((l, i) => { if (15 + i * 12 < h) s += `<text x="${x + 6}" y="${y + 15 + i * 12}" style="font-size:${w > 60 ? 11 : 9.5}px">${esc(l)}</text>`; });
+    const sub = mode === "diff" ? `${short(head)} (${signed(d)})${base === 0 ? " new" : head === 0 ? " gone" : ""}` : `${short(shown)} · ${orig.churn}Δ${p.file ? "" : ` · ${orig.files} files`}`;
+    if (w > 40 && h > 16 + label.length * 12) s += `<text class="sub" x="${x + 6}" y="${y + 15 + label.length * 12}">${esc(w > 90 ? sub : short(shown))}</text>`;
+    s += `<title>${esc(p.path)} · ${base} → ${head} lines · ${orig.churn} commits</title></g>`;
+  }
+  svg.innerHTML = s;
+  for (const g of svg.querySelectorAll(".n")) g.onclick = () => { if (g.dataset.f === "1") location.href = vscode(`${g.dataset.p}:1`); else { stack.push(g.dataset.p); draw(); } };
+}
+function dsm() {
+  const ids = [...O.units].sort((a, b) => b.level - a.level || a.id.localeCompare(b.id)).map((u) => u.id), M = new Map(O.edges.map((e) => [`${e.from}>${e.to}`, e.count])), up = new Set(O.upward.map((e) => `${e.from}>${e.to}`));
+  $("dsm").innerHTML = `<div class="dim" style="margin-bottom:6px">row imports column · rows by layer, highest first · red = upward · blue = downward</div><table><tr><th></th>${ids.map((_, j) => `<th style="text-align:center">${j + 1}</th>`).join("")}</tr>${ids.map((a, i) => `<tr><th>${i + 1} ${esc(a)}</th>${ids.map((b, j) => { const n = M.get(`${a}>${b}`); return i === j ? '<td class="l"></td>' : n ? `<td class="${up.has(`${a}>${b}`) ? "up" : "dn"}" title="${esc(a)} → ${esc(b)} · ${n}">${n}</td>` : "<td></td>"; }).join("")}</tr>`).join("")}</table>`;
+}
+function tree() {
+  const groups = new Map();
+  for (const u of [...O.units].sort((a, b) => a.id.localeCompare(b.id))) { const g = u.id === "." ? "(root)" : u.id.split("/")[0]; (groups.get(g) ?? groups.set(g, []).get(g)).push(u); }
+  $("tree").innerHTML = [...groups].map(([g, us]) => `<div class="g0">${esc(g)}</div>${us.map((u) => { const net = u.added - u.removed; return `<div data-id="${esc(u.id)}"><span>${esc(u.id === "." ? "(root)" : u.id.split("/").slice(1).join("/") || u.id)}</span><span class="${net > 0 ? "pos" : net < 0 ? "neg" : "dim"}">${net ? (net > 0 ? "+" : "") + net : short(u.lines)}</span></div>`; }).join("")}`).join("");
+  for (const d of $("tree").querySelectorAll("div[data-id]")) d.onclick = () => { stack = [d.dataset.id === "." ? "" : d.dataset.id]; $("app").className = "app showmap"; draw(); };
+}
+let runsSeen = "", runSeen = "";
+async function loadRuns() {
+  const { data } = await api("runs");
+  const sig = JSON.stringify(data.map((r) => [r.id, r.steps]));
+  if (sig === runsSeen) return;
+  runsSeen = sig;
+  const cur = $("runSel").value;
+  $("runSel").innerHTML = data.map((r) => `<option value="${esc(r.id)}">${esc((r.repo ?? "").split(/[\\/]/).pop() || r.id)} · ${esc(r.session ? `session ${r.session.slice(0, 8)}` : r.id)} · ${r.steps} calls · ${r.lastAt.slice(5, 16).replace("T", " ")}</option>`).join("") || "<option>no runs yet</option>";
+  if (cur && data.some((r) => r.id === cur)) $("runSel").value = cur;
+  if (data.length) await loadRun($("runSel").value);
+}
+async function loadRun(id, force) {
+  const { data } = await api("runs", [id]);
+  const sig = `${id}:${data.length}:${sel}:${follow}`;
+  if (!force && sig === runSeen) return;
+  runSeen = sig;
+  const grew = data.length !== steps.length;
+  steps = data;
+  if (follow) sel = steps.length - 1;
+  const live = steps.length && Date.now() - new Date(steps.at(-1).at).getTime() < 30 * 60 * 1000;
+  $("lv").textContent = !steps.length ? "" : follow ? (live ? "● live · following" : "ended · last step") : `step ${sel + 1} pinned`;
+  $("back").hidden = follow;
+  $("log").innerHTML = steps.map((st, i) => `<div class="l ${i === sel ? "sel" : ""}" data-i="${i}"><span class="p">$</span> code ${esc(st.argv.join(" "))} <span class="dim">${st.ms} ms</span></div><div class="o">${esc(st.count ?? "")}</div>`).join("");
+  for (const e of $("log").querySelectorAll(".l")) e.onclick = () => { sel = +e.dataset.i; follow = sel === steps.length - 1; loadRun($("runSel").value, true); draw(); };
+  if (follow && grew) $("log").scrollTop = 1e6;
+  if (grew) draw();
+}
+$("runSel").onchange = () => { follow = true; loadRun($("runSel").value, true); };
+$("back").onclick = () => { follow = true; loadRun($("runSel").value, true); };
+$("lenses").innerHTML = Object.entries(LENSES).map(([k, l]) => `<button type="button" data-l="${k}" class="${k === lens ? "on" : ""}" title="${l.q}">${l.label}</button>`).join("");
+for (const b of $("lenses").querySelectorAll("button")) b.onclick = async () => { lens = b.dataset.l; stack = []; for (const x of $("lenses").querySelectorAll("button")) x.classList.toggle("on", x === b); if (lit?.startsWith("row:")) lit = null; ins(); draw(); await loadSections(); ins(); draw(); };
+for (const b of $("modes").querySelectorAll("button")) b.onclick = () => { mode = b.dataset.m; for (const x of $("modes").querySelectorAll("button")) x.classList.toggle("on", x === b); draw(); };
+for (const b of document.querySelectorAll(".seg button[data-v]")) b.onclick = () => { view = b.dataset.v; for (const x of document.querySelectorAll(".seg button[data-v]")) x.classList.toggle("on", x === b); draw(); };
+for (const b of document.querySelectorAll(".tabs button")) b.onclick = () => { $("app").className = `app ${b.dataset.t}`; for (const x of document.querySelectorAll(".tabs button")) x.classList.toggle("on", x === b); draw(); };
+$("gate").onclick = () => { $("ins").scrollTop = 0; };
+let resizeTimer;
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(draw, 120); });
+const refsArg = () => `${$("baseSel").value ? `&since=${encodeURIComponent($("baseSel").value)}` : ""}${$("headSel").value ? `&head=${encodeURIComponent($("headSel").value)}` : ""}`;
+async function compare() {
+  const say = (t) => { $("legend").textContent = t; };
+  say("comparing base and head: cycles, dead exports, outliers, hotspots… (a few seconds)");
+  $("gate").className = "pill"; $("gate").textContent = "check …";
+  const j = await api("overview", [], refsArg());
+  O = j.data; LABELS = labelsOf(allUnits()); drillCache.clear();
+  $("repo").textContent = ROOT;
+  const kinds = ["code", "tests", "markup", "data", "docs"].filter((k) => O.net.byKind?.[k]), n = (k) => O.net.byKind[k].added - O.net.byKind[k].removed;
+  $("net").innerHTML = kinds.map((k, i) => `${i === 0 && k === "code" ? "<b>" : `<span class="dim">`}${k} <span class="${n(k) >= 0 ? "pos" : "neg"}">${n(k) >= 0 ? "+" : "−"}${short(Math.abs(n(k)))}</span>${i === 0 && k === "code" ? "</b>" : "</span>"}`).join(" · ");
+  $("net").insertAdjacentHTML("beforeend", ` <span class="dim">(+ added red, − removed green)</span>`);
+  $("net").title = kinds.map((k) => `${k}: +${O.net.byKind[k].added} −${O.net.byKind[k].removed} in ${O.net.byKind[k].files} files`).join("\n");
+  const g = $("gate");
+  g.className = `pill ${O.due.regressions.length ? "fail" : "pass"}`; g.textContent = O.due.regressions.length ? `check ✗ ${O.due.regressions.length}` : "check ✓"; g.title = "code check: structural regressions between base and head";
+  ins(); tree(); draw();
+}
+(async () => {
+  try {
+    const params = new URLSearchParams(location.search);
+    $("legend").textContent = "reading the files and their imports…";
+    const first = await api("size");
+    O = { units: first.data.units, edges: [], upward: [], cycles: [], hubs: [], dead: [], outliers: first.data.outliers, shallow: [], fat: [], hotspots: [], measures: {}, due: { regressions: [], warnings: [] }, gone: {} };
+    ROOT = first.root; LABELS = labelsOf(allUnits()); tree(); draw();
+    const refs = (await api("refs")).data;
+    const opts = (sel) => `<optgroup label="branches">${refs.branches.map((b) => `<option value="${esc(b.ref)}">${esc(b.label)}</option>`).join("")}</optgroup><optgroup label="commits">${refs.commits.map((c) => `<option value="${esc(c.ref)}">${esc(c.label)}</option>`).join("")}</optgroup>${sel}`;
+    $("baseSel").innerHTML = `<option value="">merge-base with main (${esc(refs.base.slice(0, 9))})</option>${opts("")}`;
+    $("headSel").innerHTML = `<option value="">working tree</option>${opts("")}`;
+    if (params.get("since")) { const o = document.createElement("option"); o.value = o.textContent = params.get("since"); $("baseSel").append(o); $("baseSel").value = params.get("since"); }
+    if (params.get("head")) { const o = document.createElement("option"); o.value = o.textContent = params.get("head"); $("headSel").append(o); $("headSel").value = params.get("head"); }
+    $("baseSel").onchange = $("headSel").onchange = () => compare().catch((e) => { $("ins").innerHTML = `<div class="msg r">${esc(e.message)}</div>`; });
+    await compare();
+    await loadRuns();
+    setInterval(loadRuns, 4000);
+  } catch (e) { $("ins").innerHTML = `<div class="msg r">${esc(e.message)}</div>`; }
+})();
+</script>
+</body></html>
