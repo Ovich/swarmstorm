@@ -54,13 +54,6 @@ function firstFreePort(from) {
 function ensureHome() {
   fs.mkdirSync(DOCS_ROOT, { recursive: true });
 }
-function adoptLegacyIndex(toolRoot, sqlitePath) {
-  if (fs.existsSync(sqlitePath)) return;
-  const legacy = path.join(toolRoot, "aiview.sqlite");
-  if (!fs.existsSync(legacy)) return;
-  fs.copyFileSync(legacy, sqlitePath);
-  console.error(`aiview: adopted the index from ${legacy} (the original is left in place, unused)`);
-}
 var homeFromEnv, NEW_HOME, OLD_HOME, isPersonHome, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
 var init_home = __esm({
   "src/core/home.ts"() {
@@ -215,7 +208,7 @@ function toStored(abs, root) {
   const rel = path4.relative(root, abs);
   return rel && !rel.startsWith("..") && !path4.isAbsolute(rel) ? rel.split(path4.sep).join("/") : abs;
 }
-var isHtml, isPdf, isSwarm, formatOf, RENAMED_KINDS, currentKind, projectRoot, readDoc, toAbs;
+var isHtml, isPdf, isSwarm, formatOf, currentKind, projectRoot, readDoc, toAbs;
 var init_paths = __esm({
   "src/core/paths.ts"() {
     "use strict";
@@ -223,8 +216,7 @@ var init_paths = __esm({
     isPdf = (file) => /\.pdf$/i.test(file);
     isSwarm = (file) => /\.swarm\.json$/i.test(file);
     formatOf = (file) => isHtml(file) ? "html" : isPdf(file) ? "pdf" : isSwarm(file) ? "swarm" : "markdown";
-    RENAMED_KINDS = { mockup: "prototype" };
-    currentKind = (kind) => RENAMED_KINDS[kind.toLowerCase()] ?? kind.toLowerCase();
+    currentKind = (kind) => kind.toLowerCase();
     projectRoot = (file) => path4.basename(repoRootOf(path4.dirname(file)));
     readDoc = (p) => fs3.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
     toAbs = (stored, root) => path4.isAbsolute(stored) ? stored : path4.resolve(root, ...stored.split("/"));
@@ -245,28 +237,8 @@ function findToolRoot() {
     dir = parent;
   }
 }
-function boardReposInText(text) {
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return [];
-  }
-  if (Array.isArray(parsed.repos)) return [...new Set(parsed.repos.filter((x) => typeof x === "string"))];
-  if (typeof parsed.url === "string") {
-    try {
-      return [...new Set(new URL(parsed.url).searchParams.getAll("repo"))];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
 function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
-  if (dbPath === SQLITE_PATH) {
-    ensureHome();
-    adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
-  }
+  if (dbPath === SQLITE_PATH) ensureHome();
   const db = new DatabaseSync(dbPath);
   db.exec(`
     PRAGMA journal_mode = DELETE;
@@ -281,21 +253,16 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       kind TEXT NOT NULL DEFAULT '',
       tags TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
-      last_seen_at TEXT NOT NULL
+      last_seen_at TEXT NOT NULL,
+      group_slug TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0
     );
   `);
-  const cols = db.prepare("PRAGMA table_info(documents)").all().map((c) => c.name);
-  if (!cols.includes("tags")) db.exec("ALTER TABLE documents ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'");
-  if (!cols.includes("kind")) db.exec("ALTER TABLE documents ADD COLUMN kind TEXT NOT NULL DEFAULT ''");
-  if (!cols.includes("group_slug")) db.exec("ALTER TABLE documents ADD COLUMN group_slug TEXT");
-  if (!cols.includes("pinned")) db.exec("ALTER TABLE documents ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
   db.exec("CREATE TABLE IF NOT EXISTS groups (slug TEXT PRIMARY KEY, title TEXT)");
   db.exec(
-    "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]')"
+    "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]', board_repos TEXT NOT NULL DEFAULT '[]')"
   );
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-  const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
-  if (!projectCols.includes("board_repos")) db.exec("ALTER TABLE projects ADD COLUMN board_repos TEXT NOT NULL DEFAULT '[]'");
   const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path5.join(path5.resolve(p), ".git")).filter((g) => fs4.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
   const boardReposOf = (slug) => {
     const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
@@ -331,18 +298,6 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       started_at TEXT NOT NULL
     )
   `);
-  db.exec("DROP TABLE IF EXISTS revisions");
-  for (const row of db.prepare("SELECT id, file_path, project FROM documents WHERE kind = 'swarm'").all()) {
-    let text = "";
-    try {
-      text = fs4.readFileSync(toAbs(row.file_path, root), "utf8");
-    } catch {
-    }
-    for (const repo of boardReposInText(text)) addRepo(row.project, repo);
-    db.prepare("DELETE FROM pending WHERE document_id = ?").run(row.id);
-    db.prepare("DELETE FROM documents WHERE id = ?").run(row.id);
-  }
-  db.prepare("UPDATE documents SET kind = 'prototype' WHERE kind = 'mockup'").run();
   const parse2 = (row) => ({
     ...row,
     tags: JSON.parse(row.tags),
@@ -9844,7 +9799,7 @@ function mountBoard(sse, opts = {}) {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify(obj));
   };
-  const projectAsked = (q) => q.get("project") ?? q.get("repo");
+  const projectAsked = (q) => q.get("project");
   const sameRepo = (a, b) => {
     const norm2 = (r) => {
       const g = fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r;
@@ -10084,7 +10039,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
       return;
     }
     if (p === "/api/project-board") {
-      const key = url.searchParams.get("project") || url.searchParams.get("repo") || null;
+      const key = url.searchParams.get("project") || null;
       const slug = key ? projectOfBoardKey(key) : null;
       if (slug === null) return json(res, { error: key ? `no project ${key}` : "name a project: ?project=<name>" }, key ? 404 : 400);
       return json(res, { project: slug, repos: index.boardRepos(slug) });
@@ -11058,7 +11013,6 @@ function cmdCheck() {
 }
 function cmdInit() {
   ensureHome();
-  adoptLegacyIndex(TOOL_ROOT, SQLITE_PATH);
   emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
     console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
     console.log(`documents  ${path15.join(DOCS_ROOT, "<project>")}`);
