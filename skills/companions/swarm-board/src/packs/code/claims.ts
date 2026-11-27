@@ -2,11 +2,10 @@
 // registry, the second module that sees SQL. The Board's verbs of the same names delegate here after the
 // member's pack gate; behaviour and wording are the board's, moved, not rewritten.
 import type { DatabaseSync } from "node:sqlite";
-import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
-import type { Flag, MemberWorktree, MergedMeta } from "./types.ts";
+import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../contract/board.ts";
+import type { MemberWorktree } from "./types.ts";
+import { CODE_EVENTS, type Flag, type HeldMergeLock, type MergedMeta, type PackMessageMeta } from "../../contract/code.ts";
 import type { EventName } from "../../contract/events.ts";
-import type { PackMessageMeta } from "../registry.ts";
-import { CODE_EVENTS } from "../../contract/code.ts";
 import { trace } from "../../host/trace.ts";
 
 export interface ClaimsDeps {
@@ -58,11 +57,6 @@ export interface Claims {
   /** Every worktree a member joined from, of `run` or of every run, closed ones included. */
   seatWorktrees(run?: RunId): MemberWorktree[];
 }
-
-/** `grantedAt` ISO; `onto` null for a lock taken without a branch; `reflogMark` the holder's HEAD reflog
- *  length at the grant, null when none was given (D36); `files` the paths its branch changed, null when its CLI
- *  read none from git (no worktree). */
-export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; files: string[] | null };
 
 type Row = Record<string, unknown>;
 

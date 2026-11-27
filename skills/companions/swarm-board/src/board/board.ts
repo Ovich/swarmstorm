@@ -9,23 +9,22 @@ import { SQLITE_PATH } from "./home.ts";
 import { canonicalPath } from "../host/place.ts";
 import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts";
 import { type Kind, profileOf } from "../contract/kinds.ts";
-import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
+import { registry, type PackCtx, type PackRefusal, type PackVerbInput } from "../packs/registry.ts";
+import type { CodeSnapshotFields, PackMessageMeta } from "../contract/code.ts";
+import type { AllJoinedMeta, AwaitedMeta, Conflicts, Declared, Message, MessageKind, MessageMeta, Participant, RunId, Sharer } from "../contract/board.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
 import { alwaysEventNames, awaitedLine, type EventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, toAuthorEventNames, wakes } from "../contract/events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
-import { type MemberActivity, ORCHESTRATORS_GROUP } from "../contract/wire.ts";
+import { type MemberActivity, ORCHESTRATORS_GROUP, RPC_METHODS, type RpcMethod } from "../contract/wire.ts";
 import { callLabel } from "./call-label.ts";
 import { trace } from "../host/trace.ts";
 
-export type RunId = number;
 export type { Kind } from "../contract/kinds.ts";
+export type { AllJoinedMeta, AwaitedMeta, BreachMeta, Conflicts, Declared, Message, MessageKind, MessageMeta, Participant, PauseMeta, PhaseMeta, RunId, Sharer, UnlockedMeta } from "../contract/board.ts";
 export type { EventName } from "../contract/events.ts";
 export type { PackRefusal } from "../packs/registry.ts";
-/** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
- *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */
-export type Conflicts = { files: string[] } | { unknown: "old-git" | "no-reflog" };
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; transcript?: string | null };
 export type Seat = SeatSpec & { state: SeatState };
@@ -33,8 +32,6 @@ export type Seat = SeatSpec & { state: SeatState };
 export type CompositionEntry = { seat: string; member: string | null; nick: string | null; role?: string; area?: string; state: SeatState };
 /** Who is in a run and in which role (D3, D6). `showRole`: the declared seats do not all share one role; `lines`: one per entry, as the CLI prints them. */
 export type Composition = { run: number; entries: CompositionEntry[]; showRole: boolean; lines: string[] };
-export type Declared = { path: string }; // repository-relative
-export type MessageKind = "msg" | "agreement" | "endorsement" | "urgent" | "event";
 
 /** The phase a run's orchestrator opened last (`phase <name> <text>`). */
 export type Phase = { name: string; text: string };
@@ -115,35 +112,6 @@ export interface Run {
   kindPack: string | null;
 }
 
-export interface Participant {
-  id: number;
-  run: RunId;
-  repo: string;
-  kind: Kind;
-  plan: string;
-  seat: string; // "orchestrator" for a run's orchestrator
-  name: string; // "<plan>/<seat>"
-  nick: string; // the funny name given at join (D43), and to an orchestrator at open (plan D17)
-  ended: boolean;
-  /** The folder it works in, registered at join (a code member's worktree); null for the orchestrator or a member with no pack. */
-  place: string | null;
-  /** A `wait --mentions` of this participant is pending (D49, D61). */
-  listening: boolean;
-  /** Its pack, chosen once at join from the registry (board-split#D11, D22); null: core only; an orchestrator's reads
-   *  as its kind's default. */
-  pack: string | null;
-  /** It carries the verify setting (a `verifier` seat, D11). */
-  verify: boolean;
-  /** The pack its run's kind gives by default, see Run.kindPack. */
-  kindPack: string | null;
-}
-
-/** A merged path and another member that holds it, or held it during the merger's run (D63). */
-export interface Sharer {
-  path: string;
-  member: string; // "<plan>/<seat>"
-}
-
 export interface RosterEntry {
   name: string;
   nick: string;
@@ -172,28 +140,6 @@ export interface RosterEntry {
   /** board-fixes#D5: when its doing text was set, ms epoch; `doingStale` once it merged, or an event to it came, since. */
   doingAt: number;
   doingStale: boolean;
-}
-
-export interface Message {
-  seq: number;
-  repo: string;
-  from: string; // the author's name
-  body: string;
-  about: string | null;
-  kind: MessageKind;
-  mentions: string[]; // "<plan>/<seat>" or "<plan>/*"
-  at: string;
-  /** The author's run: a run is a label on the item, not a place (plan D1, D13). */
-  run: RunId;
-  /** The agreement an endorsement backs; null otherwise. */
-  endorses: number | null;
-  /** The board event it is, as posted (D59); null on a plain post. */
-  event: EventName | null;
-  /** On delivery only, to a holder of `about` when a member that did not hold it posted about it:
-   *  the agreement that answers it (D62). */
-  answer?: string;
-  /** A merged event's recipients, or a phase event's name, as data (D11); null elsewhere. */
-  meta?: MessageMeta | null;
 }
 
 /** One opening of a phase (a phase opened again is a second opening): its event's seq, its posts (not events) and
@@ -276,19 +222,6 @@ export type SnapshotMember = {
   /** Messages for it not yet delivered (swarm-relay D43); absent from a reader before it. */
   unread?: number;
 };
-/** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
-export type PhaseMeta = { phase: string };
-/** An unlocked event's data (idea 4): the lock's name. */
-export type UnlockedMeta = { unlocked: string };
-/** A breach event's data (idea 4): the member, `<group>/<id>`, that killed by name, pattern or an unlocked port. */
-export type BreachMeta = { breach: string };
-/** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
-export type PauseMeta = { person: boolean; text: string };
-/** An all-joined event's data: whether a post had already been made to one of the run's seats. */
-export type AllJoinedMeta = { tasked: boolean };
-/** board-fixes#D4: an awaited event's task (its seq) and the awaited seat it tells of. */
-export type AwaitedMeta = { task: number; seat: string };
-export type MessageMeta = PackMessageMeta | PhaseMeta | PauseMeta | UnlockedMeta | BreachMeta | AllJoinedMeta | AwaitedMeta;
 export type SnapshotEvent = {
   seq: number;
   at: string;
@@ -319,9 +252,9 @@ export type QueueSeat = { seat: string; role?: string; area?: string; link: stri
 export type EditAllowed = { allowed: true; sharedWith: { member: string; doing: string }[]; notice: string | null };
 /** The edit is held (D41): another member holds `path`; the answer module words the post to make (board-split V-13). */
 export type EditHeld = { allowed: false; path: string; holders: { member: string; nick: string; doing: string }[] };
-export type { LockTurn, SnapshotFile } from "../packs/registry.ts";
+export type { LockTurn, SnapshotFile } from "../contract/code.ts";
 /** One project as the page reads it: the core's fields and the pack's (board-split#D18). */
-export type BoardSnapshot = PackSnapshotFields & {
+export type BoardSnapshot = CodeSnapshotFields & {
   repo: string;
   name: string;
   runs: RunSummary[];
@@ -473,6 +406,15 @@ export interface Board {
   /** board-split D55: the board server started at `at` (ms epoch): no member is lost within LOST_MS of it. */
   recordServerUp(at: number): void;
 }
+
+// RPC_METHODS (contract/wire.ts) are Board methods; with ServerOnly, every one of them: a Board method added later must be
+// put on one side or the other, and this fails to compile until it is.
+RPC_METHODS satisfies readonly (keyof Board)[];
+/** The Board methods kept off the wire, which only the server's own process runs. */
+type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "recordLink" | "savedLinks" | "recordServerUp";
+type Unlisted = Exclude<keyof Board, RpcMethod | ServerOnly>;
+const everyMethodPlaced: [Unlisted] extends [never] ? true : Unlisted = true;
+void everyMethodPlaced;
 
 /** A phase's name: one word. */
 const PHASE_NAME = /^[\w.-]+$/;

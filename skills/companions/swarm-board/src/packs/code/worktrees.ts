@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { baseRef, git } from "../../host/git.ts";
-import { stopLinks } from "../../link/link.ts";
+import { stopLinks } from "../../host/links.ts";
 import { canonicalPath, worktreeOf } from "../../host/place.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */

@@ -3,13 +3,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { Board } from "../board/board.ts";
-/** The code pack's answers as they cross the wire to the CLI, which never imports src/packs/ (D9). */
-export type { HeldMergeLock } from "../packs/code/claims.ts";
-export type { Flag } from "../packs/code/types.ts";
+import { serverLogFile, serverStartLock, serverStateFile } from "../host/home.ts";
+import { isAlive } from "../host/proc.ts";
 
 /** The Board methods a verb calls over the wire: all but onChange, close, livenessTick, recordActivity,
- *  memberStates, upkeepIfDue and prune, which only the server's own process runs. */
+ *  memberStates, upkeepIfDue and prune, which only the server's own process runs; board.ts checks them against Board. */
 export const RPC_METHODS = [
   "openRun",
   "addSeat",
@@ -47,15 +45,8 @@ export const RPC_METHODS = [
   "phases",
   "thread",
   "message",
-] as const satisfies readonly (keyof Board)[];
+] as const;
 export type RpcMethod = (typeof RPC_METHODS)[number];
-
-/** The Board methods kept off the wire; with RPC_METHODS, every method of Board (checked below). */
-type ServerOnly = "onChange" | "close" | "livenessTick" | "recordActivity" | "memberStates" | "upkeepIfDue" | "prune" | "recordLink" | "savedLinks" | "recordServerUp";
-// a Board method added later must be put on one side or the other: this fails to compile until it is
-type Unlisted = Exclude<keyof Board, RpcMethod | ServerOnly>;
-const everyMethodPlaced: [Unlisted] extends [never] ? true : Unlisted = true;
-void everyMethodPlaced;
 
 /** The orchestrators board's group: one permanent run per project where every orchestrator registers. Known to the
  *  server (its runs' `addSeat` and `closeRun` stay open, plan D5) and to the CLI's answers alike. */
@@ -64,7 +55,7 @@ export const ORCHESTRATORS_GROUP = "orchestrators";
 export type MemberActivity = {
   /** last time the transcript grew */
   grewAt: number | null;
-  /** the counter, as liveness.ts sums it: movement, never cost */
+  /** the counter, as link/adapters.ts sums it: movement, never cost */
   tokens: number;
   /** the last call's input + cache tokens: how full the member is */
   context: number | null;
@@ -164,24 +155,21 @@ export function bundleVersion(entry?: string): string {
 /** What the running server writes for its clients: `<dataRoot>/swarm-server.json` (D7, D17). */
 export type ServerState = { pid: number; port: number; ticket: string; version: string };
 
-export function serverStateFile(dataRoot: string): string {
-  return path.join(dataRoot, "swarm-server.json");
+/** The state the running server wrote; null when there is none, it cannot be read, or its pid or port is not a whole number. */
+export function readServerState(dataRoot: string): ServerState | null {
+  try {
+    const s = JSON.parse(fs.readFileSync(serverStateFile(dataRoot), "utf8")) as ServerState;
+    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
+  } catch {
+    return null;
+  }
 }
 
-/** The server's own log, `<dataRoot>/swarm-server.log`: a started server's output, its start line and
- *  every link's exit reason while it answers (D42). */
-export function serverLogFile(dataRoot: string): string {
-  return path.join(dataRoot, "swarm-server.log");
-}
+/** board-split D55: a link's heartbeat, a sign of life each time: the card's freshness, a fact on it within seconds (D55 (6)). */
+export const HEARTBEAT_MS = 5 * 1000;
 
 /** Set by a CLI spawning a server to its own command line, which the server's start line names (D42). */
 export const SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
-
-/** The lock a starting server takes beside its state file and holds while it runs, its pid inside
- *  (swarm-relay D40): one server per data home. */
-export function serverStartLock(dataRoot: string): string {
-  return path.join(dataRoot, "swarm-server.lock");
-}
 
 /** The pid holding `dataRoot`'s start lock; null when none holds it or the file cannot be read. */
 export function serverLockHolder(dataRoot: string): number | null {
@@ -209,16 +197,5 @@ export function liveStartLockHolder(dataRoot: string): number | null {
     return Date.now() - fs.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
-  }
-}
-
-/** Whether `pid` names a live process. */
-export function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    // EPERM: it lives, owned by someone else
-    return (e as NodeJS.ErrnoException).code === "EPERM";
   }
 }

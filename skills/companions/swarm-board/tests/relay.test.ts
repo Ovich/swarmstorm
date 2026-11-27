@@ -12,7 +12,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectBoard } from "../src/client/remote.ts";
 import { linkPipe } from "../src/link/link.ts";
-import { bundleVersion, serverStateFile, type ServerState } from "../src/contract/wire.ts";
+import { bundleVersion, type ServerState } from "../src/contract/wire.ts";
+import { serverStateFile } from "../src/host/home.ts";
 import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 

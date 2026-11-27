@@ -8,7 +8,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureServer } from "../src/client/remote.ts";
 import { stopBoardServer } from "../src/server/server.ts";
-import { bundleVersion, serverLogFile } from "../src/contract/wire.ts";
+import { bundleVersion } from "../src/contract/wire.ts";
+import { serverLogFile } from "../src/host/home.ts";
 
 const tool = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-builds-"));

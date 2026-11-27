@@ -8,7 +8,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { makeTracer, setTracer, trace } from "../host/trace.ts";
 import { openBoard, type Board, type LinkDropCause, type LinkFact, type Presence } from "../board/board.ts";
 import { makeAuthority, type Bound } from "./authority.ts";
-import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLockHolder, serverLogFile, serverStartLock, serverStateFile, SERVER_STARTER_ENV, type Call, type Frame, type Hello, type RpcMethod, type ServerState } from "../contract/wire.ts";
+import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLockHolder, SERVER_STARTER_ENV, type Call, type Frame, type Hello, type RpcMethod, type ServerState } from "../contract/wire.ts";
+import { serverLogFile, serverStartLock, serverStateFile } from "../host/home.ts";
 
 /** A resent call is answered from this cache for this long (D4). */
 const RESULT_CACHE_MS = 10 * 60 * 1000;

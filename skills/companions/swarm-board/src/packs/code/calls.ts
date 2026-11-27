@@ -1,10 +1,10 @@
 // The code pack's member verbs as typed calls over the one way in, `board.packCall` (board-split T11, D9): the CLI's
 // and a test's way to claims and the merge lock, on the board itself or on its remote client alike. A refusal fact
 // (D12) is thrown, its fact on the error, so a caller that did not gate the verb up front still stops.
-import type { Conflicts, Participant, RunId, Sharer } from "../../board/board.ts";
-import type { Flag, MemberWorktree } from "./types.ts";
+import type { Conflicts, Participant, RunId, Sharer } from "../../contract/board.ts";
+import type { MemberWorktree } from "./types.ts";
+import type { Flag, HeldMergeLock } from "../../contract/code.ts";
 import type { PackRefusal, PackVerbInput } from "../types.ts";
-import type { HeldMergeLock } from "./claims.ts";
 
 type PackCaller = { packCall(p: Participant | null, verb: string, input: PackVerbInput): unknown };
 /** A verb's answer as the board answers: at once on the board, a promise on its remote client. */

@@ -1,21 +1,5 @@
 // The code pack's own shapes (board-split D18): what its tables, events and verbs carry, kept out of the core's types.
-import type { RunId } from "../../board/board.ts";
-
-/** What the code pack says of a member beside its core state (board-split D36, D18): `merging` while it holds the
- *  repository's merge lock. */
-export type CodeMemberFact = "merging";
-
-/** A file written outside its writer's claim while another member holds it. */
-export type Flag = { path: string; holder: string; seq: number };
-
-/** What a merged event told, as data (D11): `rebase` holds or declared a changed file, `tell` is whom to tell of a resolved conflict,
- *  of a conflicted path only once the conflicts are known (D5). */
-/** `free` (V-49): the members refused the merge lock, told it is free by this merge, as its body says. */
-/** `files`: the paths the merge changed, as its body's `files:` line says; absent from an event of an older store. */
-export type MergedMeta = { rebase: string[]; tell: string[]; free?: string[]; files?: string[] };
-/** An overlap's two members: `holder` held the path, `writer`'s change came second. The event mentions the writer
- *  alone, who settles it; the holder hears through the agreement. */
-export type FlagMeta = { holder: string; writer: string };
+import type { RunId } from "../../contract/board.ts";
 
 /** A worktree a member joined from, with what its cleanup needs: the run's state and base. */
 export interface MemberWorktree {

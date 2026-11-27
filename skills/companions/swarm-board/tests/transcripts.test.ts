@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { commandActsAsOther, locate, observe } from "../src/link/transcripts.ts";
-import { claudeCodeJsonl } from "../src/board/liveness.ts";
+import { claudeCodeJsonl } from "../src/link/adapters.ts";
 import { bashCall, jsonl, prompt, textLine, toolCall, toolResult, writeMain, writeSubagent } from "./fixtures/transcripts.ts";
 
 const SESSION = "11111111-aaaa-bbbb-cccc-000000000001";

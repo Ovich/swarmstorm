@@ -1,14 +1,9 @@
 // Place (board-rework D5): where a repository and a path are, the one answer both CLIs use. A repository is its
 // common git dir, so every worktree of it is one; a member's path is its worktree's first. aiview imports this module
 // as it imports the board reader, bundled.
-import { hiddenSpawnSync } from "./proc.ts";
+import { git } from "./git.ts";
 import fs from "node:fs";
 import path from "node:path";
-
-const gitOut = (cwd: string, ...argv: string[]): string | null => {
-  const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-  return r.status === 0 ? r.stdout.trim() : null;
-};
 
 const real = (p: string): string => {
   try {
@@ -28,13 +23,13 @@ export function canonicalPath(p: string): string {
 
 /** The repository `dir` is in: its common git dir, real path; null outside a repository. */
 export function repoOf(dir: string): string | null {
-  const common = gitOut(dir, "rev-parse", "--git-common-dir");
+  const common = git(dir, "rev-parse", "--git-common-dir");
   return common ? real(path.resolve(dir, common)) : null;
 }
 
 /** The top of the worktree `dir` is in; null outside a repository. */
 export function worktreeOf(dir: string): string | null {
-  const top = gitOut(dir, "rev-parse", "--show-toplevel");
+  const top = git(dir, "rev-parse", "--show-toplevel");
   return top ? path.resolve(top) : null;
 }
 

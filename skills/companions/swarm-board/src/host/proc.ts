@@ -11,3 +11,13 @@ export function hiddenSpawnSync(command: string, args: readonly string[], option
 export function hiddenSpawnSync(command: string, args: readonly string[], options: SpawnSyncOptions = {}): SpawnSyncReturns<string | Buffer> {
   return spawnSync(command, args, { ...options, windowsHide: true });
 }
+
+/** Whether `pid` names a live process; EPERM counts alive, a process owned by someone else (codebase-rework#D19). */
+export function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}

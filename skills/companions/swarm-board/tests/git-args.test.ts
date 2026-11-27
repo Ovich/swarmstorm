@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { refArg } from "../src/host/git.ts";
-import { commandLine, isProcessId } from "../src/link/link.ts";
+import { commandLine, isProcessId } from "../src/host/links.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");

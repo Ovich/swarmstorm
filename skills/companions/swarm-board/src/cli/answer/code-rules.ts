@@ -21,7 +21,7 @@ const mentionFrom = (me: Participant, member: string): string => {
 export const pausedMergingStep = (s: Situation): string | null =>
   s.pause ? CW.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), W.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
 
-/** The merge lock's name in an `unlocked` event, as the code pack posts it (packs/code/events.ts MERGE_LOCK). */
+/** The merge lock's name in an `unlocked` event, as the code pack posts it (contract/code.ts MERGE_LOCK). */
 const MERGE_LOCK = "merge-lock";
 
 /** The line under a code event for `me`; null for one that asks nothing of it; undefined for an event not the code

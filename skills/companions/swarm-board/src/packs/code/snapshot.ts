@@ -2,23 +2,11 @@
 // the flags of one repository, read from the pack's own tables. The core snapshot places these fields as they read before
 // the split, so the page reads the same.
 import type { DatabaseSync } from "node:sqlite";
-import type { Declared } from "../../board/board.ts";
-import type { CodeMemberFact } from "./types.ts";
+import type { Declared } from "../../contract/board.ts";
+import type { CodeMemberFact, CodeSnapshotFields, SnapshotFile } from "../../contract/code.ts";
 
 type Row = Record<string, unknown>;
 
-export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
-/** A file a live member's worktree changes now: who holds it, in claim order (D40); two holders or more make it shared.
- *  The FileMap's rows. */
-export type SnapshotFile = { path: string; holders: string[] };
-/** The code fields of `BoardSnapshot`, as the page reads them. */
-export type CodeSnapshotFields = {
-  /** V-46: `waiters`, the live members refused it and waiting for it, in the order they asked */
-  lock: { holder: string; since: string; waiters: string[] } | null;
-  /** The repository's merge-lock turns, newest first (at most 50): asked, granted, merged, refusals counted. */
-  lockHistory: LockTurn[];
-  files: SnapshotFile[];
-};
 /** What the core needs from the store to read one repository's code fields. */
 export interface CodeSnapshotDeps {
   db: DatabaseSync;

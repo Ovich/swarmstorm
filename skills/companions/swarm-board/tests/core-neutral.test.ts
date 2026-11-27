@@ -1,4 +1,5 @@
-// board-split D24 (D18): the core knows no code domain. In src/board/, src/server/, src/link/ and the core files of
+// board-split D24 (D18): the core knows no code domain. In src/board/, src/server/, src/link/, src/contract/ (but
+// contract/code.ts, the code pack's published shapes, codebase-rework#D6) and the core files of
 // src/cli/answer/, no identifier or string holds the whole word worktree, claim, claims, merge, merged, merge-lock or
 // flag; `lock`, `locks`, `unlock` are the machine's locks and allowed; comments and `AGENTS EXCEPTION` lines are not
 // read. src/packs/** and the code pack's answer files are the domain's own. The sites left from before the split are
@@ -9,7 +10,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const SRC = join(import.meta.dirname, "..", "src");
-const CORE_DIRS = ["board", "server", "link"].map((d) => join(SRC, d));
+const CORE_DIRS = ["board", "server", "link", "contract"].map((d) => join(SRC, d));
+const CONTRACT_CODE = join(SRC, "contract", "code.ts");
 const ANSWER = join(SRC, "cli", "answer");
 const CODE_ANSWER = new Set(["code-rules.ts", "code-wording.ts"]);
 const DOMAIN_WORDS = new Set(["worktree", "worktrees", "claim", "claims", "merge", "merged", "flag"]);
@@ -64,7 +66,7 @@ const wordsOf = (line: string): string[] =>
     .filter(Boolean);
 
 const coreFiles = (): string[] => [
-  ...CORE_DIRS.flatMap(files),
+  ...CORE_DIRS.flatMap(files).filter((f) => f !== CONTRACT_CODE),
   ...files(ANSWER).filter((f) => !CODE_ANSWER.has(f.slice(ANSWER.length + 1))),
 ];
 

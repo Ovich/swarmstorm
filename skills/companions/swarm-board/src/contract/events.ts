@@ -1,11 +1,11 @@
 // The board's core events (D59): the one place an event name is listed. An event wakes the members it is
-// addressed to (its mentions); adding an event is a row in EVENTS and the call that posts it by its constant. A pack's events are its own (board-split D18), contributed by the registry.
-import type { PackEventName } from "../packs/registry.ts";
-import { registry } from "../packs/registry.ts";
-import type { Message, Participant } from "../board/board.ts";
+// addressed to (its mentions); adding an event is a row in EVENTS and the call that posts it by its constant. A pack's
+// events are its own (board-split D18), published beside the core's in contract/code.ts (codebase-rework#D4).
+import { CODE_EVENTS, type CodeEventName } from "./code.ts";
+import type { Message, Participant } from "./board.ts";
 
 export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined" | "awaited";
-export type EventName = CoreEventName | PackEventName;
+export type EventName = CoreEventName | CodeEventName;
 
 export interface EventDef<N extends string = EventName> {
   name: N;
@@ -69,9 +69,9 @@ export const landingEvents = (): string[] => Object.values(allEvents()).filter((
 /** The awaited event's body: `w1 done (1 of 2 you wait on)`; `what`: the cause as the member's pack words it. */
 export const awaitedLine = (seat: string, what: string, nth: number, of: number): string => `${seat} ${what} (${nth} of ${of} you wait on)`;
 
-/** Core and pack events by name, read at first use: the registry loads after this module in some import orders. */
+/** Core and pack events by name, read at first use. */
 let all: Record<string, EventDef> | null = null;
-const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...registry.events() });
+const allEvents = (): Record<string, EventDef> => (all ??= { ...EVENTS, ...CODE_EVENTS });
 export const isEvent = (s: string): s is EventName => Object.hasOwn(allEvents(), s);
 /** board-fixes#D14: the events that wake every member (`always`), core and pack: what a store's query narrows the
  *  unread to before `wakes` decides. */

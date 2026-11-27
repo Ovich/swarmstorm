@@ -5,8 +5,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { RunId } from "../board/board.ts";
-import { claudeCodeJsonl } from "../board/liveness.ts";
+import type { RunId } from "../contract/board.ts";
+import { claudeCodeJsonl } from "./adapters.ts";
 import type { MemberActivity } from "../contract/wire.ts";
 
 /** The verb a member's CLI ran that the link stands for: a member's `join`, an orchestrator's `open`. */
