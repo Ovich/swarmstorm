@@ -710,8 +710,8 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const live = db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
   for (const c of live) {
-    const path17 = String(c.path);
-    (files.get(path17) ?? files.set(path17, { path: path17, holders: [] }).get(path17)).holders.push(`${c.plan}/${c.seat}`);
+    const path18 = String(c.path);
+    (files.get(path18) ?? files.set(path18, { path: path18, holders: [] }).get(path18)).holders.push(`${c.plan}/${c.seat}`);
   }
   for (const r of people) {
     if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
@@ -721,7 +721,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
       if (f && !f.holders.includes(name)) f.holders.push(name);
     }
   }
-  const sharedBy = (path17, id) => live.some((c) => String(c.path) === path17 && Number(c.participant) !== id);
+  const sharedBy = (path18, id) => live.some((c) => String(c.path) === path18 && Number(c.participant) !== id);
   const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t) => ({
     member: `${t.plan}/${t.seat}`,
     askedAt: String(t.asked_at),
@@ -2573,9 +2573,9 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       if (!said) throw new Error(`phase ${name}: what does it ask?`);
       if (runRow(fresh.run).state !== "open") throw new Error(`run ${fresh.run} is closed`);
       return transaction(() => {
-        const seatOf2 = (w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "");
-        const watch = (opts.watch ?? []).map(seatOf2).filter(Boolean);
-        const only = [...new Set((opts.for ?? []).map(seatOf2).filter(Boolean))];
+        const seatOf3 = (w) => w.slice(w.lastIndexOf("/") + 1).replace(/^@/, "");
+        const watch = (opts.watch ?? []).map(seatOf3).filter(Boolean);
+        const only = [...new Set((opts.for ?? []).map(seatOf3).filter(Boolean))];
         const unknown = only.filter((s) => s === ORCHESTRATOR || !db.prepare("SELECT 1 FROM seats WHERE run = ? AND id = ?").get(fresh.run, s) && !db.prepare("SELECT 1 FROM participants WHERE run = ? AND seat = ?").get(fresh.run, s));
         if (unknown.length) throw new Error(`phase ${name}: --for names no seat of run ${fresh.run}: ${unknown.join(", ")}`);
         const before = runRow(fresh.run);
@@ -3037,11 +3037,11 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       const start = opening?.seq ?? 0;
       const end = opening ? openings.find((o) => o.seq > opening.seq)?.seq ?? Infinity : Infinity;
       const authorOf = memoizedParticipants();
-      const seatOf2 = (w) => w.trim().replace(/^@/, "").slice(w.trim().replace(/^@/, "").lastIndexOf("/") + 1);
-      const said = (m, seat) => seatOf2(m.from) === seat;
+      const seatOf3 = (w) => w.trim().replace(/^@/, "").slice(w.trim().replace(/^@/, "").lastIndexOf("/") + 1);
+      const said = (m, seat) => seatOf3(m.from) === seat;
       const named = (m, seat) => m.mentions.some((n) => n !== `${row.plan}/*` && n.endsWith(`/${seat}`));
       const about = q.about?.trim();
-      const matches = (m) => (q.events || m.kind !== "event" || shownInThread(m.event)) && (!q.by || said(m, seatOf2(q.by))) && (!q.to || named(m, seatOf2(q.to))) && (!q.with || said(m, seatOf2(q.with)) || named(m, seatOf2(q.with))) && (!about || (m.about ?? "").includes(about) || m.body.includes(about));
+      const matches = (m) => (q.events || m.kind !== "event" || shownInThread(m.event)) && (!q.by || said(m, seatOf3(q.by))) && (!q.to || named(m, seatOf3(q.to))) && (!q.with || said(m, seatOf3(q.with)) || named(m, seatOf3(q.with))) && (!about || (m.about ?? "").includes(about) || m.body.includes(about));
       const all2 = runMessages(run2).filter((r) => Number(r.seq) >= start && Number(r.seq) < end).map((r) => toMessage(r, authorOf)).filter(matches);
       const limit = Math.min(Math.max(1, Math.floor(q.limit ?? THREAD_LIMIT)), THREAD_LIMIT_MAX);
       const window = q.from !== void 0 ? all2.filter((m) => m.seq >= q.from) : q.before !== void 0 ? all2.filter((m) => m.seq < q.before) : all2;
@@ -7034,43 +7034,98 @@ var init_authority = __esm({
   }
 });
 
-// src/server/server.ts
-var server_exports = {};
-__export(server_exports, {
-  onBoardServerClosed: () => onBoardServerClosed,
-  silentTooLong: () => silentTooLong,
-  startBoardServer: () => startBoardServer,
-  stopBoardServer: () => stopBoardServer
-});
-import crypto4 from "node:crypto";
+// src/server/instance.ts
 import fs15 from "node:fs";
-import http from "node:http";
 import path15 from "node:path";
-function silentTooLong(now, lastRound, heardAt) {
-  const loopBlocked = now - lastRound > PING_EVERY_MS + LOOP_LAG_FORGIVEN_MS;
-  return !loopBlocked && now - heardAt > PONG_WITHIN_MS;
+async function takeInstance(dataRoot) {
+  logStart(dataRoot);
+  await takeStartLock(dataRoot);
+  const since = (/* @__PURE__ */ new Date()).toISOString();
+  const stateFile = serverStateFile(dataRoot);
+  let published = null;
+  return {
+    log(line) {
+      try {
+        fs15.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
+`);
+      } catch {
+      }
+    },
+    logVersionRefused(theirs, from) {
+      try {
+        fs15.appendFileSync(serverLogFile(dataRoot), `swarm server ${process.pid} (version ${bundleVersion()}, since ${since}): refused version ${theirs} from ${from}
+`);
+      } catch {
+      }
+    },
+    publish(state) {
+      fs15.mkdirSync(dataRoot, { recursive: true });
+      fs15.writeFileSync(stateFile, JSON.stringify(state));
+      published = state;
+    },
+    stopListener: (ticket, stop) => (req, res) => {
+      if (req.method === "POST" && req.url === STOP_PATH && req.headers[TICKET_HEADER] === ticket) {
+        res.end("stopping");
+        stop();
+        return;
+      }
+      res.statusCode = 404;
+      res.end();
+    },
+    release() {
+      if (published) {
+        try {
+          const written = JSON.parse(fs15.readFileSync(stateFile, "utf8"));
+          if (written.pid === published.pid && written.port === published.port) fs15.rmSync(stateFile);
+        } catch {
+        }
+      }
+      releaseStartLock(dataRoot);
+    }
+  };
 }
-async function startBoardServer(opts) {
-  logStart(opts.dataRoot);
-  await takeStartLock(opts.dataRoot);
+async function stopInstance(dataRoot) {
+  const file = serverStateFile(dataRoot);
+  let state;
   try {
-    return await runBoardServer(opts);
-  } catch (e) {
-    releaseStartLock(opts.dataRoot);
-    throw e;
+    state = JSON.parse(fs15.readFileSync(file, "utf8"));
+  } catch {
+    return false;
   }
+  try {
+    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
+    if (!res.ok) throw new Error(`refused ${res.status}`);
+  } catch {
+    fs15.rmSync(file, { force: true });
+    const holder = serverLockHolder(dataRoot);
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs15.rmSync(serverStartLock(dataRoot), { force: true });
+    return false;
+  }
+  for (let i = 0; i < 100 && fs15.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  return true;
+}
+function listen(server, host, port) {
+  return bind(server, host, port).then((bound) => FETCH_BLOCKED_PORTS.has(bound) ? new Promise((done) => server.close(() => done())).then(() => listen(server, host, 0)) : bound);
+}
+function bind(server, host, port) {
+  return new Promise((resolve, reject) => {
+    const onError = (e) => {
+      if (e.code === "EADDRINUSE" && port !== 0) {
+        server.off("error", onError);
+        resolve(bind(server, host, 0));
+      } else reject(e);
+    };
+    server.once("error", onError);
+    server.listen(port, host, () => {
+      server.off("error", onError);
+      resolve(server.address().port);
+    });
+  });
 }
 function logStart(dataRoot) {
   fs15.mkdirSync(dataRoot, { recursive: true });
   fs15.appendFileSync(serverLogFile(dataRoot), `serve: home ${path15.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
-}
-function appendLog(dataRoot, line) {
-  try {
-    fs15.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
-`);
-  } catch {
-  }
 }
 function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
@@ -7125,75 +7180,93 @@ async function removeStaleStartLock(dataRoot, seen) {
 function releaseStartLock(dataRoot) {
   if (serverLockHolder(dataRoot) === process.pid) fs15.rmSync(serverStartLock(dataRoot), { force: true });
 }
-async function runBoardServer(opts) {
-  const host = opts.host ?? "127.0.0.1";
-  const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path15.join(opts.dataRoot, "swarm.sqlite"));
-  const tracer = makeTracer(opts.dataRoot);
-  setTracer(tracer);
-  tracer.prune();
-  tracer.event("server", { action: "start", pid: process.pid });
-  const authority = makeAuthority(board2);
-  const ticket = crypto4.randomBytes(24).toString("hex");
-  const version = bundleVersion();
-  const serverSince = (/* @__PURE__ */ new Date()).toISOString();
-  const speakers = /* @__PURE__ */ new Set();
-  const calls = /* @__PURE__ */ new Map();
-  const callKey = (s, id) => `${s.bound ? `member ${s.bound.id}` : s.anonymousScope} ${id}`;
-  let connectionsSeen = 0;
+var STOP_PATH, TICKET_HEADER, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, FETCH_BLOCKED_PORTS;
+var init_instance = __esm({
+  "src/server/instance.ts"() {
+    "use strict";
+    init_wire();
+    init_home();
+    STOP_PATH = "/stop";
+    TICKET_HEADER = "x-swarm-ticket";
+    LOCK_READ_RETRY_MS = 50;
+    LOCK_READ_RETRIES = 20;
+    BREAKER_STALE_MS = 5e3;
+    FETCH_BLOCKED_PORTS = /* @__PURE__ */ new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6e3, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+  }
+});
+
+// src/server/guarded.ts
+function guarded(what, fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error(`swarm server: ${what} failed: ${e.stack ?? e.message}`);
+  }
+}
+var init_guarded = __esm({
+  "src/server/guarded.ts"() {
+    "use strict";
+  }
+});
+
+// src/server/presence.ts
+function openPresence(board2, now) {
   const links = /* @__PURE__ */ new Map();
-  const memberOf = (name) => name.slice(name.lastIndexOf("/") + 1);
-  const keepLink = (run3, member, link) => {
-    const members = links.get(run3) ?? /* @__PURE__ */ new Map();
-    links.set(run3, members);
+  const keepLink = (run2, member, link) => {
+    const members = links.get(run2) ?? /* @__PURE__ */ new Map();
+    links.set(run2, members);
     members.set(member, link);
-    logged("recordLink", () => board2.recordLink(run3, member, link));
-  };
-  const freshPresence = ({ member }) => {
-    if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null, seenAt: null, cause: null });
-  };
-  const linked = (m, connected, cause = null) => {
-    const at = now().getTime();
-    trace().event("link", { run: m.run, member: m.name, up: connected, cause });
-    keepLink(m.run, memberOf(m.name), connected ? { connected: true, lostAt: null, seenAt: at, cause: null } : { connected: false, lostAt: at, seenAt: at, cause });
-  };
-  const beat = (m) => {
-    const member = memberOf(m.name);
-    const link = links.get(m.run)?.get(member);
-    if (link?.connected) keepLink(m.run, member, { ...link, seenAt: now().getTime() });
-  };
-  const presenceIn = (run3) => (member) => links.get(run3)?.get(member) ?? { connected: false, lostAt: null };
-  const logged = (what, fn) => {
-    try {
-      fn();
-    } catch (e) {
-      console.error(`swarm server: ${what} failed: ${e.stack ?? e.message}`);
-    }
+    guarded("recordLink", () => board2.recordLink(run2, member, link));
   };
   const startedAt = now().getTime();
-  logged("recordServerUp", () => board2.recordServerUp(startedAt));
+  guarded("recordServerUp", () => board2.recordServerUp(startedAt));
   for (const { run: savedRun, member, ...saved } of board2.savedLinks())
     keepLink(savedRun, member, saved.connected ? { connected: false, lostAt: startedAt, seenAt: saved.seenAt ?? startedAt, cause: "server-restart" } : saved);
-  const send = (s, f) => {
-    if (s.socket.readyState === s.socket.OPEN) s.socket.send(encode(f));
+  return {
+    linked(m, connected, cause = null) {
+      const at = now().getTime();
+      trace().event("link", { run: m.run, member: m.name, up: connected, cause });
+      keepLink(m.run, seatOf2(m.name), connected ? { connected: true, lostAt: null, seenAt: at, cause: null } : { connected: false, lostAt: at, seenAt: at, cause });
+    },
+    beat(m) {
+      const member = seatOf2(m.name);
+      const link = links.get(m.run)?.get(member);
+      if (link?.connected) keepLink(m.run, member, { ...link, seenAt: now().getTime() });
+    },
+    activity(m, reading) {
+      guarded("activity", () => board2.recordActivity(m.run, seatOf2(m.name), reading, now()));
+    },
+    joined({ member }) {
+      if (!links.get(member.run)?.get(member.seat)?.connected) keepLink(member.run, member.seat, { connected: false, lostAt: null, seenAt: null, cause: null });
+    },
+    presenceIn: (run2) => (member) => links.get(run2)?.get(member) ?? { connected: false, lostAt: null }
   };
-  const refuse = (s, reason) => {
-    send(s, { type: "refused", reason });
-    s.socket.close();
+}
+var seatOf2;
+var init_presence = __esm({
+  "src/server/presence.ts"() {
+    "use strict";
+    init_trace();
+    init_guarded();
+    seatOf2 = (name) => name.slice(name.lastIndexOf("/") + 1);
+  }
+});
+
+// src/server/calls.ts
+function makeCallTable(d) {
+  const calls = /* @__PURE__ */ new Map();
+  const callKey = (c, id) => `${c.bound ? `member ${c.bound.id}` : c.anonymousScope} ${id}`;
+  const send = (c, f) => {
+    if (c.socket.readyState === c.socket.OPEN) c.socket.send(encode(f));
   };
-  const answer2 = (id, rec, text) => {
+  const answer2 = (rec, text) => {
     rec.answer = text;
     rec.answeredAt = Date.now();
     const took = rec.answeredAt - rec.startedAt;
-    trace().event("call", { member: speakerName(rec.speaker), method: rec.method, startedAt: new Date(rec.startedAt).toISOString(), ms: took, ok: text.includes('"ok":true') });
-    if (took >= SLOW_CALL_MS && rec.method !== "wait") appendLog(opts.dataRoot, `slow: ${speakerName(rec.speaker)}, ${rec.method} answered in ${took} ms`);
+    trace().event("call", { member: callerName(rec.caller), method: rec.method, startedAt: new Date(rec.startedAt).toISOString(), ms: took, ok: text.includes('"ok":true') });
+    if (took >= SLOW_CALL_MS && rec.method !== "wait") d.log(`slow: ${callerName(rec.caller)}, ${rec.method} answered in ${took} ms`);
     rec.cancelWait = null;
-    if (rec.speaker.socket.readyState === rec.speaker.socket.OPEN) rec.speaker.socket.send(text);
-    void id;
-  };
-  const speakerName = (sp) => sp.member?.name ?? sp.anonymousScope;
-  const dropAs = (s, cause) => {
-    if (s.dropCause !== "superseded") s.dropCause = cause;
+    if (rec.caller.socket.readyState === rec.caller.socket.OPEN) rec.caller.socket.send(text);
   };
   const dropWait = (key) => {
     const rec = calls.get(key);
@@ -7201,20 +7274,20 @@ async function runBoardServer(opts) {
     calls.delete(key);
     rec.cancelWait?.abort();
   };
-  const run2 = (s, call) => {
+  const run2 = (c, call) => {
     const args2 = Array.isArray(call.args) ? [...call.args] : [];
-    const refusal = CALLABLE.has(call.method) ? authority.check(s.bound, call.method, args2) : null;
-    if (refusal) return send(s, { type: "result", id: call.id, ok: false, error: refusal });
-    const key = callKey(s, call.id);
+    const refusal = CALLABLE.has(call.method) ? d.authority.check(c.bound, call.method, args2) : null;
+    if (refusal) return send(c, { type: "result", id: call.id, ok: false, error: refusal });
+    const key = callKey(c, call.id);
     const known = calls.get(key);
     if (known) {
-      known.speaker = s;
-      if (known.answer !== null) s.socket.send(known.answer);
+      known.caller = c;
+      if (known.answer !== null) c.socket.send(known.answer);
       return;
     }
-    const rec = { speaker: s, method: String(call.method), startedAt: s.readAt, answer: null, answeredAt: 0, cancelWait: null };
+    const rec = { caller: c, method: String(call.method), startedAt: c.readAt, answer: null, answeredAt: 0, cancelWait: null };
     calls.set(key, rec);
-    const fail2 = (error) => answer2(call.id, rec, encode({ type: "result", id: call.id, ok: false, error }));
+    const fail2 = (error) => answer2(rec, encode({ type: "result", id: call.id, ok: false, error }));
     if (!CALLABLE.has(call.method)) return fail2(`unknown method ${String(call.method)}`);
     if (call.method === "wait") {
       rec.cancelWait = new AbortController();
@@ -7222,38 +7295,135 @@ async function runBoardServer(opts) {
     }
     let out;
     try {
-      out = board2[call.method](...args2);
+      out = d.board[call.method](...args2);
     } catch (e) {
       return fail2(e.message);
     }
     const settle = (value) => {
       if (calls.get(key) !== rec) return;
-      s.bound = authority.boundAfter(s.bound, call.method, value);
-      answer2(call.id, rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
-      if (call.method === "closeRun") closed(Number(args2[0]));
-      if (call.method === "end") ended(args2[0]?.name);
-      if (call.method === "join") freshPresence(value);
+      c.bound = d.authority.boundAfter(c.bound, call.method, value);
+      answer2(rec, encode({ type: "result", id: call.id, ok: true, value: value === void 0 ? null : value }));
+      d.after[call.method]?.(args2, value);
     };
     if (out instanceof Promise) out.then(settle, (e) => calls.get(key) === rec && fail2(e.message));
     else settle(out);
   };
-  const closed = (run3) => {
-    for (const s of speakers)
-      if (s.member?.run === run3) {
-        s.logCause = "run closed";
-        refuse(s, "closed");
-      }
+  const unanswered = (c) => [...calls.values()].filter((r) => r.caller === c && r.answer === null);
+  return {
+    run: run2,
+    cancel: (c, id) => dropWait(callKey(c, id)),
+    openCount: (c) => unanswered(c).length,
+    busy: (c, quietMs) => [...calls.values()].some((r) => r.caller === c && (r.answer === null || Date.now() - r.answeredAt < quietMs)),
+    dropWaits(c) {
+      for (const [key, rec] of calls) if (rec.caller === c && rec.answer === null && rec.cancelWait) dropWait(key);
+    },
+    dropAll() {
+      for (const key of [...calls.keys()]) dropWait(key);
+    },
+    forgetOld() {
+      const t = Date.now();
+      for (const [key, rec] of calls) if (rec.answer !== null && t - rec.answeredAt > RESULT_CACHE_MS) calls.delete(key);
+    }
   };
-  const ended = (member) => {
-    for (const s of speakers)
-      if (member && s.member?.name === member) {
-        s.endedPending = true;
-        refuseEndedOnceAnswered(s);
-      }
+}
+var RESULT_CACHE_MS, SLOW_CALL_MS, CALLABLE, callerName;
+var init_calls = __esm({
+  "src/server/calls.ts"() {
+    "use strict";
+    init_trace();
+    init_wire();
+    RESULT_CACHE_MS = 10 * 60 * 1e3;
+    SLOW_CALL_MS = 10 * 1e3;
+    CALLABLE = new Set(RPC_METHODS);
+    callerName = (c) => c.member?.name ?? c.anonymousScope;
+  }
+});
+
+// src/server/connections.ts
+function silentTooLong(now, lastRound, heardAt) {
+  const loopBlocked = now - lastRound > PING_EVERY_MS + LOOP_LAG_FORGIVEN_MS;
+  return !loopBlocked && now - heardAt > PONG_WITHIN_MS;
+}
+function makeConnections(d) {
+  const { board: board2, calls, presence } = d;
+  const speakers = /* @__PURE__ */ new Set();
+  let connectionsSeen = 0;
+  let lastPingRound = Date.now();
+  const send = (s, f) => {
+    if (s.socket.readyState === s.socket.OPEN) s.socket.send(encode(f));
   };
+  const refuse = (s, reason) => {
+    send(s, { type: "refused", reason });
+    s.socket.close();
+  };
+  const dropAs = (s, cause) => {
+    if (s.dropCause !== "superseded") s.dropCause = cause;
+  };
+  const otherLinkOf = (m) => [...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name);
+  function greet(s, f) {
+    if (f.type !== "hello") {
+      s.socket.close();
+      return false;
+    }
+    if (f.ticket !== d.ticket) return refused(s, "ticket");
+    if (f.version !== d.version) {
+      d.logVersionRefused(f.version, f.member?.name ?? "a reader");
+      if (f.member && !otherLinkOf(f.member)) presence.linked(f.member, false, "version");
+      return refused(s, "version");
+    }
+    const isLink = f.presence !== false;
+    const known = isLink && f.member ? board2.participant(f.member.name) : null;
+    if (known && (known.ended || !board2.runs().some((r) => r.id === known.run))) return refused(s, "closed");
+    const bound = d.authority.bind(f);
+    if (bound === "unknown member") return refused(s, "member");
+    s.bound = bound;
+    if (isLink && f.member) {
+      const member = f.member;
+      for (const other of speakers)
+        if (f.supersede && other.member && other.member.name === member.name && other.member.run === member.run) {
+          dropAs(other, "superseded");
+          refuse(other, "superseded");
+        }
+      s.member = member;
+      presence.linked(member, true);
+    }
+    speakers.add(s);
+    const seat = s.member ? board2.participant(s.member.name) : null;
+    const against = seat ? board2.runs().find((r) => r.id === seat.run)?.base : null;
+    send(s, { type: "welcome", version: d.version, ...seat?.place && against ? { watched: { dir: seat.place, against } } : {} });
+    return true;
+  }
+  const refused = (s, reason) => {
+    refuse(s, reason);
+    return false;
+  };
+  const FRAMES = {
+    call: (s, f) => calls.run(s, f),
+    cancel: (s, f) => calls.cancel(s, f.id),
+    bye: (s) => {
+      dropAs(s, "member-closed");
+      s.socket.close();
+    },
+    beat: (s) => s.member && presence.beat(s.member),
+    activity: (s, f) => s.member && presence.activity(s.member, f.activity),
+    changes: (s, f) => {
+      const seat = s.member ? board2.participant(s.member.name) : null;
+      if (seat) guarded("changes", () => board2.packCall(seat, "changes", { files: f.files }));
+    },
+    subscribe: (s) => {
+      s.subscribed = true;
+    }
+  };
+  function closedSocket(s) {
+    speakers.delete(s);
+    const dropCause = s.dropCause ?? "socket";
+    if (s.member || s.logCause) d.log(`close: ${callerName(s)}, cause ${s.logCause ?? dropCause}, ${calls.openCount(s)} call(s) open`);
+    const m = s.member;
+    if (m && !otherLinkOf(m)) presence.linked(m, false, dropCause);
+    calls.dropWaits(s);
+  }
   function refuseEndedOnceAnswered(s) {
-    const busy = () => [...calls.values()].some((c) => c.speaker === s && (c.answer === null || Date.now() - c.answeredAt < ENDED_LINK_QUIET_MS));
-    if (busy()) {
+    if (calls.busy(s, ENDED_LINK_QUIET_MS)) {
       setTimeout(() => s.endedPending && refuseEndedOnceAnswered(s), ENDED_LINK_QUIET_MS);
       return;
     }
@@ -7261,108 +7431,138 @@ async function runBoardServer(opts) {
     s.logCause = "link ended";
     refuse(s, "closed");
   }
-  const httpServer = http.createServer((req, res) => {
-    if (req.method === "POST" && req.url === STOP_PATH && req.headers[TICKET_HEADER] === ticket) {
-      res.end("stopping");
-      void close();
-      return;
+  return {
+    accept(socket, upgrade) {
+      const s = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false, readAt: Date.now() };
+      upgrade.socket.prependListener("data", () => s.readAt = Date.now());
+      let welcomed = false;
+      socket.on("error", (e) => s.logCause = `error: ${e.message}`);
+      socket.on("pong", () => s.lastPong = Date.now());
+      socket.on("message", (data) => {
+        s.lastPong = Date.now();
+        let f;
+        try {
+          f = decode(String(data));
+        } catch {
+          return socket.close();
+        }
+        if (!welcomed) {
+          welcomed = greet(s, f);
+          return;
+        }
+        FRAMES[f.type]?.(s, f);
+      });
+      socket.on("close", () => closedSocket(s));
+    },
+    closeRun(run2) {
+      for (const s of speakers)
+        if (s.member?.run === run2) {
+          s.logCause = "run closed";
+          refuse(s, "closed");
+        }
+    },
+    ended(member) {
+      for (const s of speakers)
+        if (member && s.member?.name === member) {
+          s.endedPending = true;
+          refuseEndedOnceAnswered(s);
+        }
+    },
+    tellChanged(repo) {
+      for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
+    },
+    pingRound() {
+      const t = Date.now();
+      const lastRound = lastPingRound;
+      lastPingRound = t;
+      for (const s of speakers) {
+        if (silentTooLong(t, lastRound, s.lastPong)) {
+          s.logCause = "ping timeout";
+          s.socket.terminate();
+        } else s.socket.ping();
+      }
+    },
+    shutdown() {
+      for (const s of speakers) {
+        dropAs(s, "server-restart");
+        refuse(s, "shutdown");
+      }
     }
-    res.statusCode = 404;
-    res.end();
-  });
+  };
+}
+var PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, ENDED_LINK_QUIET_MS;
+var init_connections = __esm({
+  "src/server/connections.ts"() {
+    "use strict";
+    init_calls();
+    init_guarded();
+    init_wire();
+    PING_EVERY_MS = 10 * 1e3;
+    PONG_WITHIN_MS = 25 * 1e3;
+    LOOP_LAG_FORGIVEN_MS = 2 * 1e3;
+    ENDED_LINK_QUIET_MS = 1e3;
+  }
+});
+
+// src/server/server.ts
+var server_exports = {};
+__export(server_exports, {
+  onBoardServerClosed: () => onBoardServerClosed,
+  silentTooLong: () => silentTooLong,
+  startBoardServer: () => startBoardServer,
+  stopBoardServer: () => stopBoardServer
+});
+import crypto4 from "node:crypto";
+import http from "node:http";
+import path16 from "node:path";
+async function startBoardServer(opts) {
+  const instance = await takeInstance(opts.dataRoot);
+  try {
+    return await runBoardServer(opts, instance);
+  } catch (e) {
+    instance.release();
+    throw e;
+  }
+}
+async function runBoardServer(opts, instance) {
+  const host = opts.host ?? "127.0.0.1";
+  const now = opts.now ?? (() => /* @__PURE__ */ new Date());
+  const board2 = await openBoard(path16.join(opts.dataRoot, "swarm.sqlite"));
+  const tracer = makeTracer(opts.dataRoot);
+  setTracer(tracer);
+  tracer.prune();
+  tracer.event("server", { action: "start", pid: process.pid });
+  const authority = makeAuthority(board2);
+  const ticket = crypto4.randomBytes(24).toString("hex");
+  const version = bundleVersion();
+  const presence = openPresence(board2, now);
+  let connections;
+  const after = {
+    closeRun: (args2) => connections.closeRun(Number(args2[0])),
+    // V-17 (D56): an ended member's link is told so, and exits 0 on its own before its worktree goes
+    end: (args2) => connections.ended(args2[0]?.name),
+    join: (_args, value) => presence.joined(value)
+  };
+  const calls = makeCallTable({ board: board2, authority, log: instance.log, after });
+  connections = makeConnections({ board: board2, authority, calls, presence, ticket, version, log: instance.log, logVersionRefused: instance.logVersionRefused });
+  const httpServer = http.createServer(instance.stopListener(ticket, () => void close()));
   const wss = new import_websocket_server.default({ server: httpServer });
-  wss.on("connection", (socket, upgrade) => {
-    const s = { socket, member: null, bound: null, anonymousScope: `connection ${++connectionsSeen}`, lastPong: Date.now(), subscribed: false, readAt: Date.now() };
-    upgrade.socket.prependListener("data", () => s.readAt = Date.now());
-    let welcomed = false;
-    socket.on("error", (e) => s.logCause = `error: ${e.message}`);
-    socket.on("pong", () => s.lastPong = Date.now());
-    socket.on("message", (data) => {
-      s.lastPong = Date.now();
-      let f;
-      try {
-        f = decode(String(data));
-      } catch {
-        return socket.close();
-      }
-      if (!welcomed) {
-        if (f.type !== "hello") return socket.close();
-        if (f.ticket !== ticket) return refuse(s, "ticket");
-        if (f.version !== version) {
-          try {
-            fs15.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
-`);
-          } catch {
-          }
-          const refusedMember = f.member;
-          if (refusedMember && ![...speakers].some((o) => o.member?.run === refusedMember.run && o.member.name === refusedMember.name)) linked(refusedMember, false, "version");
-          return refuse(s, "version");
-        }
-        const isLink = f.presence !== false;
-        const known = isLink && f.member ? board2.participant(f.member.name) : null;
-        if (known && (known.ended || !board2.runs().some((r) => r.id === known.run))) return refuse(s, "closed");
-        const bound = authority.bind(f);
-        if (bound === "unknown member") return refuse(s, "member");
-        s.bound = bound;
-        if (isLink && f.member) {
-          for (const other of speakers)
-            if (f.supersede && other.member && other.member.name === f.member.name && other.member.run === f.member.run) {
-              dropAs(other, "superseded");
-              refuse(other, "superseded");
-            }
-          s.member = f.member;
-          linked(f.member, true);
-        }
-        welcomed = true;
-        speakers.add(s);
-        const seat = s.member ? board2.participant(s.member.name) : null;
-        const against = seat ? board2.runs().find((r) => r.id === seat.run)?.base : null;
-        return send(s, { type: "welcome", version, ...seat?.place && against ? { watched: { dir: seat.place, against } } : {} });
-      }
-      if (f.type === "call") run2(s, f);
-      else if (f.type === "cancel") dropWait(callKey(s, f.id));
-      else if (f.type === "bye") {
-        dropAs(s, "member-closed");
-        socket.close();
-      } else if (f.type === "beat" && s.member) beat(s.member);
-      else if (f.type === "activity" && s.member) {
-        const m = s.member;
-        logged("activity", () => board2.recordActivity(m.run, memberOf(m.name), f.activity, now()));
-      } else if (f.type === "changes" && s.member) {
-        const seat = board2.participant(s.member.name);
-        if (seat) logged("changes", () => board2.packCall(seat, "changes", { files: f.files }));
-      } else if (f.type === "subscribe") s.subscribed = true;
-    });
-    socket.on("close", () => {
-      speakers.delete(s);
-      const openCalls = [...calls.values()].filter((c) => c.speaker === s && c.answer === null).length;
-      const dropCause = s.dropCause ?? "socket";
-      if (s.member || s.logCause) appendLog(opts.dataRoot, `close: ${speakerName(s)}, cause ${s.logCause ?? dropCause}, ${openCalls} call(s) open`);
-      const m = s.member;
-      if (m && ![...speakers].some((o) => o.member?.run === m.run && o.member.name === m.name)) linked(m, false, dropCause);
-      for (const [key, rec] of calls) if (rec.speaker === s && rec.answer === null && rec.cancelWait) dropWait(key);
-    });
-  });
+  wss.on("connection", (socket, upgrade) => connections.accept(socket, upgrade));
   const port = await listen(httpServer, host, opts.port ?? 0);
-  const state = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs15.mkdirSync(opts.dataRoot, { recursive: true });
-  fs15.writeFileSync(stateFile, JSON.stringify(state));
-  const stopTellingReaders = board2.onChange((repo) => {
-    for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
-  });
+  instance.publish({ pid: process.pid, port, ticket, version });
+  const stopTellingReaders = board2.onChange((repo) => connections.tellChanged(repo));
   const upkeep = setInterval(() => {
     const at = now();
-    logged("upkeep", () => board2.upkeepIfDue(at));
-    logged("liveness", () => {
-      for (const r of board2.runs()) logged(`liveness of run ${r.id}`, () => board2.livenessTick(r.id, at, presenceIn(r.id)));
+    guarded("upkeep", () => board2.upkeepIfDue(at));
+    guarded("liveness", () => {
+      for (const r of board2.runs()) guarded(`liveness of run ${r.id}`, () => board2.livenessTick(r.id, at, presence.presenceIn(r.id)));
     });
-    const t = Date.now();
-    for (const [id, rec] of calls) if (rec.answer !== null && t - rec.answeredAt > RESULT_CACHE_MS) calls.delete(id);
+    calls.forgetOld();
   }, UPKEEP_LOOK_MS);
   let prunedDay = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
   const snapshot = setInterval(() => {
-    logged("trace snapshot", () => {
+    guarded("trace snapshot", () => {
       const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
       if (day !== prunedDay) {
         prunedDay = day;
@@ -7370,27 +7570,16 @@ async function runBoardServer(opts) {
       }
       for (const repo of new Set(board2.runs().map((r) => r.repo))) {
         const roster = board2.roster(repo);
-        for (const run3 of new Set(roster.map((m) => m.run))) {
-          const members = roster.filter((m) => m.run === run3);
+        for (const run2 of new Set(roster.map((m) => m.run))) {
+          const members = roster.filter((m) => m.run === run2);
           const states = {};
           for (const m of members) states[String(m.state)] = (states[String(m.state)] ?? 0) + 1;
-          trace().event("snapshot", { run: run3, states, members: members.map((m) => ({ seat: m.seat, state: m.state, unread: m.unread, doing: m.doing })) });
+          trace().event("snapshot", { run: run2, states, members: members.map((m) => ({ seat: m.seat, state: m.state, unread: m.unread, doing: m.doing })) });
         }
       }
     });
   }, SNAPSHOT_MS);
-  let lastPingRound = Date.now();
-  const ping = setInterval(() => {
-    const t = Date.now();
-    const lastRound = lastPingRound;
-    lastPingRound = t;
-    for (const s of speakers) {
-      if (silentTooLong(t, lastRound, s.lastPong)) {
-        s.logCause = "ping timeout";
-        s.socket.terminate();
-      } else s.socket.ping();
-    }
-  }, PING_EVERY_MS);
+  const ping = setInterval(() => connections.pingRound(), PING_EVERY_MS);
   let closing = null;
   const close = () => closing ??= (async () => {
     clearInterval(upkeep);
@@ -7398,23 +7587,15 @@ async function runBoardServer(opts) {
     setTracer(null);
     clearInterval(ping);
     stopTellingReaders();
-    for (const s of speakers) {
-      dropAs(s, "server-restart");
-      refuse(s, "shutdown");
-    }
-    for (const id of [...calls.keys()]) dropWait(id);
+    connections.shutdown();
+    calls.dropAll();
     const wssClosed = new Promise((r) => wss.close(() => r()));
     const cut = setTimeout(() => wss.clients.forEach((c) => c.terminate()), CLOSE_GRACE_MS);
     await wssClosed;
     clearTimeout(cut);
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
-    try {
-      const written = JSON.parse(fs15.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs15.rmSync(stateFile);
-    } catch {
-    }
-    releaseStartLock(opts.dataRoot);
+    instance.release();
     closedListeners.forEach((l) => l());
   })();
   const closedListeners = [];
@@ -7424,45 +7605,7 @@ async function runBoardServer(opts) {
 function onBoardServerClosed(dataRoot, then) {
   serversClosed.get(serverStateFile(dataRoot))?.push(then);
 }
-async function stopBoardServer(dataRoot) {
-  const file = serverStateFile(dataRoot);
-  let state;
-  try {
-    state = JSON.parse(fs15.readFileSync(file, "utf8"));
-  } catch {
-    return false;
-  }
-  try {
-    const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
-    if (!res.ok) throw new Error(`refused ${res.status}`);
-  } catch {
-    fs15.rmSync(file, { force: true });
-    const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs15.rmSync(serverStartLock(dataRoot), { force: true });
-    return false;
-  }
-  for (let i = 0; i < 100 && fs15.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
-  return true;
-}
-function listen(server, host, port) {
-  return bind(server, host, port).then((bound) => FETCH_BLOCKED_PORTS.has(bound) ? new Promise((done) => server.close(() => done())).then(() => listen(server, host, 0)) : bound);
-}
-function bind(server, host, port) {
-  return new Promise((resolve, reject) => {
-    const onError = (e) => {
-      if (e.code === "EADDRINUSE" && port !== 0) {
-        server.off("error", onError);
-        resolve(bind(server, host, 0));
-      } else reject(e);
-    };
-    server.once("error", onError);
-    server.listen(port, host, () => {
-      server.off("error", onError);
-      resolve(server.address().port);
-    });
-  });
-}
-var RESULT_CACHE_MS, UPKEEP_LOOK_MS, PING_EVERY_MS, PONG_WITHIN_MS, LOOP_LAG_FORGIVEN_MS, STOP_PATH, TICKET_HEADER, CLOSE_GRACE_MS, CALLABLE, SLOW_CALL_MS, ENDED_LINK_QUIET_MS, SNAPSHOT_MS, LOCK_READ_RETRY_MS, LOCK_READ_RETRIES, BREAKER_STALE_MS, serversClosed, FETCH_BLOCKED_PORTS;
+var UPKEEP_LOOK_MS, SNAPSHOT_MS, CLOSE_GRACE_MS, serversClosed, stopBoardServer;
 var init_server = __esm({
   "src/server/server.ts"() {
     "use strict";
@@ -7472,23 +7615,17 @@ var init_server = __esm({
     init_authority();
     init_wire();
     init_home();
-    RESULT_CACHE_MS = 10 * 60 * 1e3;
+    init_instance();
+    init_presence();
+    init_calls();
+    init_connections();
+    init_guarded();
+    init_connections();
     UPKEEP_LOOK_MS = 1e3;
-    PING_EVERY_MS = 10 * 1e3;
-    PONG_WITHIN_MS = 25 * 1e3;
-    LOOP_LAG_FORGIVEN_MS = 2 * 1e3;
-    STOP_PATH = "/stop";
-    TICKET_HEADER = "x-swarm-ticket";
-    CLOSE_GRACE_MS = 500;
-    CALLABLE = new Set(RPC_METHODS);
-    SLOW_CALL_MS = 10 * 1e3;
-    ENDED_LINK_QUIET_MS = 1e3;
     SNAPSHOT_MS = 3e4;
-    LOCK_READ_RETRY_MS = 50;
-    LOCK_READ_RETRIES = 20;
-    BREAKER_STALE_MS = 5e3;
+    CLOSE_GRACE_MS = 500;
     serversClosed = /* @__PURE__ */ new Map();
-    FETCH_BLOCKED_PORTS = /* @__PURE__ */ new Set([1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6e3, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
+    stopBoardServer = stopInstance;
   }
 });
 
@@ -7503,7 +7640,7 @@ init_home();
 init_trace();
 import { createHash } from "node:crypto";
 import fs16 from "node:fs";
-import path16 from "node:path";
+import path17 from "node:path";
 
 // src/client/remote.ts
 init_proc();
@@ -8915,7 +9052,7 @@ var CODE_WORDING = {
   reportStdinEmpty: "merged: --report-stdin read no report: pipe it in, a heredoc for a long one",
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
-  tellResolved: (path17, member) => `if you resolved a conflict in ${path17}, tell them: swarm post "@${member} I resolved ${path17}: <how>" --about ${path17}`,
+  tellResolved: (path18, member) => `if you resolved a conflict in ${path18}, tell them: swarm post "@${member} I resolved ${path18}: <how>" --about ${path18}`,
   // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
   /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
   pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
@@ -8944,7 +9081,7 @@ var CODE_WORDING = {
   /** a close kept a worktree not clean or not merged: why, and the prune once it is */
   keptWorktree: (worktree, member, why, cli) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
   /** join, on a code run: the member's own worktree and how to work there */
-  ownWorktreeAs: (own, path17, pathWord, member) => `your worktree: ${path17} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  ownWorktreeAs: (own, path18, pathWord, member) => `your worktree: ${path18} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
   /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
   mergeLockAgain: (cli, onto, report, as) => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
   /** merged on a code run without the merge lock */
@@ -9622,7 +9759,7 @@ function commitChanged(worktree, sha) {
   const r = gitAnswer(worktree, "diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${sha}^1`, sha);
   return r.status === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
-var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path16.dirname(path16.resolve(process.argv[1])));
+var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path17.dirname(path17.resolve(process.argv[1])));
 var undoOpen = async (repo, group, why) => {
   try {
     board.close();
@@ -9638,27 +9775,27 @@ var undoOpen = async (repo, group, why) => {
   }
 };
 var swarmBoardFolderAbove = (from) => {
-  for (let dir = from; ; dir = path16.dirname(dir)) {
-    if (fs16.existsSync(path16.join(dir, "swarm.mjs"))) return dir;
-    if (path16.dirname(dir) === dir) return from;
+  for (let dir = from; ; dir = path17.dirname(dir)) {
+    if (fs16.existsSync(path17.join(dir, "swarm.mjs"))) return dir;
+    if (path17.dirname(dir) === dir) return from;
   }
 };
 var projectFlag = () => args.flag("--project");
 var projectRepo = () => {
   const asked = projectFlag();
   if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
-  if (fs16.existsSync(asked)) return repoOf2(path16.resolve(asked)) ?? fail(WORDING.noProject(asked));
+  if (fs16.existsSync(asked)) return repoOf2(path17.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
   const repo = covered.filter((p) => fs16.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
 };
 var writeOrchestratorSeats = (repo, seats) => {
-  const project = path16.basename(path16.dirname(repo)).replace(/[^\w.-]/g, "_");
-  const file = path16.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
-  fs16.mkdirSync(path16.dirname(file), { recursive: true });
+  const project = path17.basename(path17.dirname(repo)).replace(/[^\w.-]/g, "_");
+  const file = path17.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  fs16.mkdirSync(path17.dirname(file), { recursive: true });
   fs16.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
 `);
-  return file.split(path16.sep).join("/");
+  return file.split(path17.sep).join("/");
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${thisVerbHelp()}`);
@@ -9826,13 +9963,13 @@ function reportGiven() {
   let fromFile;
   if (reportFile !== void 0) {
     try {
-      fromFile = fs16.readFileSync(path16.resolve(reportFile), "utf8").trim();
+      fromFile = fs16.readFileSync(path17.resolve(reportFile), "utf8").trim();
     } catch {
       fail(CODE_WORDING.reportFileUnreadable(reportFile));
     }
   }
   const given = args.flag("--report")?.trim();
-  if (given && given !== "-" && fs16.existsSync(path16.resolve(given)) && fs16.statSync(path16.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  if (given && given !== "-" && fs16.existsSync(path17.resolve(given)) && fs16.statSync(path17.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
   return fromFile || given || void 0;
 }
 var callerWorktree = null;
@@ -9853,14 +9990,14 @@ function parseFile(spec) {
 }
 var declaredPath = (file, root = worktreeOf(process.cwd())) => {
   const { abs, missing } = resolveIn(root, file);
-  return missing.length && root ? path16.resolve(root, file) : abs;
+  return missing.length && root ? path17.resolve(root, file) : abs;
 };
 var seatsFail = (what) => fail(`${what}
 e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]`);
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs16.readFileSync(path16.resolve(file), "utf8"));
+    raw = JSON.parse(fs16.readFileSync(path17.resolve(file), "utf8"));
   } catch (e) {
     return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9927,7 +10064,7 @@ async function memberWorktree(runId, seat) {
 }
 async function madeWorktree(p, verb) {
   if (p.place && fs16.existsSync(p.place)) return;
-  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path16.dirname(p.repo);
+  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path17.dirname(p.repo);
   const made = await packVerb(p, verb, { cwd });
   if (made?.made) callerWorktree = p.place;
 }
@@ -10078,8 +10215,8 @@ ${thisVerbHelp()}`);
       const pausedNow = (await board.runs()).find((r) => r.id === m.run)?.paused != null;
       const opened = await board.phaseProgress(m.run);
       const idleEnded = (opened?.idleEnded ?? []).map((s) => WORDING.seatIdleEnded(s.slice(s.lastIndexOf("/") + 1)));
-      const seatOf2 = (member) => member.slice(member.lastIndexOf("/") + 1);
-      const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord2(seatOf2(member)), shellWord2(p.name))));
+      const seatOf3 = (member) => member.slice(member.lastIndexOf("/") + 1);
+      const lostLines = (opened?.gone ?? []).map((member) => WORDING.phaseLostMember(member, WORDING.lostMove(cli, shellWord2(seatOf3(member)), shellWord2(p.name))));
       const pausedLine3 = pausedNow ? WORDING.phaseOpenedPaused(name, m.run) : null;
       const circling = circlingLine(m.earlier, name);
       emit({ seq: m.seq, run: m.run, phase: name, brief, idleEnded, stillOwed: m.stillOwed, lost: lostLines, next, ...circling ? { circling } : {}, ...pausedLine3 ? { paused: pausedLine3 } : {} }, () => {
@@ -10309,7 +10446,7 @@ ${thisVerbHelp()}`);
       const holding = p.place ? worktreeHolding(p.place, onto) : null;
       if (holding) {
         process.exitCode = 5;
-        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path16.resolve(r2.worktree).toLowerCase() === path16.resolve(holding).toLowerCase());
+        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path17.resolve(r2.worktree).toLowerCase() === path17.resolve(holding).toLowerCase());
         const line = CODE_WORDING.ontoCheckedOutAtMerge(onto, holding, holder?.name ?? null, CODE_WORDING.detach(shellWord2(holding)));
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
@@ -10318,16 +10455,16 @@ ${thisVerbHelp()}`);
       const deliver = !!p.place && !args.has("--lock-only");
       if (deliver) reportGiven();
       const piped = deliver && args.has("--report-stdin") ? reportGiven() : void 0;
-      const reportArgs = piped !== void 0 ? ["--report", piped] : args.flag("--report-file") !== void 0 ? ["--report-file", path16.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
+      const reportArgs = piped !== void 0 ? ["--report", piped] : args.flag("--report-file") !== void 0 ? ["--report-file", path17.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
       const again = () => CODE_WORDING.mergeLockAgain(self().join(" "), shellWord2(onto), piped !== void 0 ? ["--report-stdin"] : reportArgs.map(shellWord2), shellWord2(p.name));
       const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
-        return !!at && fs16.existsSync(path16.resolve(wt, at));
+        return !!at && fs16.existsSync(path17.resolve(wt, at));
       });
       const handedBackFile = (wt) => {
         const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
-        return at ? path16.resolve(wt, at) : null;
+        return at ? path17.resolve(wt, at) : null;
       };
       const handedBack = (wt) => {
         try {
@@ -10351,7 +10488,7 @@ ${thisVerbHelp()}`);
         const open = unmergedIn(wt);
         const marked = open.filter((f) => {
           try {
-            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs16.readFileSync(path16.join(wt, f), "utf8"));
+            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs16.readFileSync(path17.join(wt, f), "utf8"));
           } catch {
             return false;
           }
