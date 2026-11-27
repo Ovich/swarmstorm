@@ -19,7 +19,7 @@ export type Changes = {
 };
 
 /** The store's side of Changes: its transaction tells it each outermost commit, its close stops the watcher. */
-export type StoreChanges = Changes & { committed(ok: boolean): void; close(): void };
+type StoreChanges = Changes & { committed(ok: boolean): void; close(): void };
 
 /** `inTransaction`: whether a transaction is open, so a bump inside it wakes only after the outermost commit. */
 export function makeChanges(db: DatabaseSync, inTransaction: () => boolean): StoreChanges {
