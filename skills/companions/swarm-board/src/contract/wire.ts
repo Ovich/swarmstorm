@@ -55,7 +55,7 @@ export const ORCHESTRATORS_GROUP = "orchestrators";
 export type MemberActivity = {
   /** last time the transcript grew */
   grewAt: number | null;
-  /** the counter, as link/adapters.ts sums it: movement, never cost */
+  /** the counter, as link/harness/claude-code.ts sums it: movement, never cost */
   tokens: number;
   /** the last call's input + cache tokens: how full the member is */
   context: number | null;

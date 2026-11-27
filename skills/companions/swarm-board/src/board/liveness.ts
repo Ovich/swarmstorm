@@ -1,4 +1,4 @@
-// Liveness from token counters: a member's link reads its transcript (link/adapters.ts) and reports one number that
+// Liveness from token counters: a member's link reads its transcript (link/harness/claude-code.ts) and reports one number that
 // moves while the member works. The board stores the readings; the stall rule reads only them, never board calls.
 /** A member whose link has sent no activity this long after its join has no transcript: a card note, never an alarm (board-split D55). */
 // SWARM_NO_TRANSCRIPT_MS: a test scene with no link sets it past its own length, so the notice cannot land mid-scene (board-split T21, S31)
