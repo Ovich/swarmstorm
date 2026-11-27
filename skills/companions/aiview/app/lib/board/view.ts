@@ -35,7 +35,7 @@ export const basename = (p: string): string => p.split(/[\\/]/).pop() ?? p;
  *  funny names as a mention writes them (D43). */
 type MentionCtx = { groups: string[]; names: ReadonlyMap<string, string> };
 
-export const mentionCtx = (snap: BoardSnapshot): MentionCtx => ({
+const mentionCtx = (snap: BoardSnapshot): MentionCtx => ({
   groups: [...new Set(snap.runs.map((r) => r.group))],
   names: new Map(
     snap.roster.filter((r) => r.seat !== ORCHESTRATOR && r.state !== "ended" && (r.state as string) !== "done").map((r) => [nameHandle(r.nick), r.member]),
@@ -71,15 +71,6 @@ function involves(e: SnapshotEvent, member: string | null, ctx: MentionCtx): boo
   const { plan } = splitMember(member);
   return targets(e, ctx).some((t) => t === member || t === `${plan}/*`);
 }
-
-/** Lit with the accent stripe: another's message that names the followed member. */
-export const lit = (e: SnapshotEvent, member: string | null, ctx: MentionCtx): boolean =>
-  !!member && e.kind !== "event" && e.from !== member && involves(e, member, ctx);
-
-// ── the filters ─────────────────────────────────────────────────────────────────────
-
-/** `counts`: what the chip counts, when not what it shows (Flags counts its flags alone). */
-export type Filter = { id: string; label: string; file: boolean; test: (e: SnapshotEvent) => boolean; counts?: (e: SnapshotEvent) => boolean };
 
 // ── flags, and the talk they start (D10) ────────────────────────────────────────────
 
@@ -121,61 +112,6 @@ export function flagAnswer(flag: SnapshotEvent, events: SnapshotEvent[]): FlagAn
   if (agreed) return { state: "settled", seq: agreed.seq };
   return answers.length ? { state: "answered", seq: answers[0].seq } : { state: "open" };
 }
-
-// ── a merged event's recipients ─────────────────────────────────────────────────────
-
-/** Whom a merged event told: `rebase`, the holders its body names; `tell`, those its author then
- *  told of a resolved conflict (`@<them> I resolved <file>`), before its next merge. */
-export function mergedRecipients(e: SnapshotEvent, events: SnapshotEvent[], ctx: MentionCtx): { rebase: string[]; tell: string[] } {
-  // stored with the event (D11); parsed from the thread only on a row from before
-  if (e.meta && "rebase" in e.meta) return { rebase: [...e.meta.rebase], tell: [...e.meta.tell] };
-  const plan = splitMember(e.from).plan;
-  const holdersLine = e.body.split(/\r?\n/).find((l) => l.includes("you hold or declared a file it changed")) ?? "";
-  const rebase = [...new Set(parseMentions(holdersLine, plan, ctx.groups, ctx.names))];
-  const tell: string[] = [];
-  for (const x of events) {
-    if (x.seq <= e.seq || x.from !== e.from) continue;
-    if (x.kind === "event" && eventLine(x.body).word === "merged") break;
-    if (!/\bI resolved\b/.test(x.body)) continue;
-    for (const t of parseMentions(x.body, plan, ctx.groups, ctx.names)) if (!tell.includes(t)) tell.push(t);
-  }
-  return { rebase, tell };
-}
-
-function flagsFilter(events: SnapshotEvent[]): Filter[] {
-  const flags = events.filter(isFlag);
-  if (!flags.length) return [];
-  const shown = new Set<number>(flags.map((e) => e.seq));
-  for (const f of flags) for (const a of answersOf(f, events)) shown.add(a.seq);
-  return [{ id: "flags", label: "Flags", file: false, test: (e) => shown.has(e.seq), counts: isFlag }];
-}
-
-/** Everything, Messages only, Agreements, Flags while the channel has any (each flag and the posts
- *  answering it), then the three files most talked about. */
-export function filters(events: SnapshotEvent[]): Filter[] {
-  const counts = new Map<string, number>();
-  for (const e of events) if (e.about) counts.set(e.about, (counts.get(e.about) ?? 0) + 1);
-  const top = [...counts.entries()]
-    .map(([f, n], i) => ({ f, n, i }))
-    .sort((a, b) => b.n - a.n || a.i - b.i)
-    .slice(0, 3)
-    .map((x) => x.f);
-  return [
-    { id: "all", label: "Everything", file: false, test: () => true },
-    { id: "talk", label: "Messages only", file: false, test: (e) => e.kind !== "event" },
-    { id: "agreements", label: "Agreements", file: false, test: (e) => e.kind === "agreement" },
-    ...flagsFilter(events),
-    ...top.map((f) => ({ id: `file:${f}`, label: basename(f), file: true, test: (e: SnapshotEvent) => e.about === f || e.body.includes(basename(f)) })),
-  ];
-}
-
-/** The feed: scoped events through the filter, then through the member followed. */
-export function feed(events: SnapshotEvent[], filter: string, member: string | null, ctx: MentionCtx): SnapshotEvent[] {
-  const f = filters(events).find((x) => x.id === filter) ?? filters(events)[0];
-  // a phase separator stays whatever the filter: it says where the talk is
-  return events.filter((e) => isPhase(e) || f.test(e)).filter((e) => involves(e, member, ctx) || (isPhase(e) && !!member && splitMember(member).plan === splitMember(e.from).plan));
-}
-
 
 // ── a board event's line ────────────────────────────────────────────────────────────
 

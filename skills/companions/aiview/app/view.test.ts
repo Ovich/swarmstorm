@@ -1,7 +1,7 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { agents, archive, claimRows, conversation, feed, filters, flagAnswer, flagOf, mentionCtx, mergedFileRows, mergedRecipients, narrow, pauseChip, runTabs, type Item } from "./lib/board/view.ts";
+import { agents, archive, claimRows, conversation, flagAnswer, flagOf, mergedFileRows, narrow, pauseChip, runTabs, type Item } from "./lib/board/view.ts";
 import { PHASE, PHASED } from "./board-fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
@@ -278,34 +278,10 @@ describe("flags (D10)", () => {
     expect(flagOf(toWriter)).toEqual({ writer: "p/S1", path: P, holder: "p/S2" });
   });
 
-  test("Flags shows the flags and the posts answering them, and counts the flags", () => {
-    const f = filters(events).find((x) => x.id === "flags")!;
-    expect(f.label).toBe("Flags");
-    expect(events.filter(f.test).map((e) => e.seq)).toEqual([10, 12, 13, 20]);
-    expect(events.filter(f.counts!).length).toBe(2);
-    expect(filters(events.slice(0, 1)).some((x) => x.id === "flags")).toBe(false);
-  });
-
   test("settled by an agreement, answered by a post, open otherwise", () => {
     expect(flagAnswer(oldFlag, events)).toEqual({ state: "settled", seq: 13 });
     expect(flagAnswer(oldFlag, events.filter((e) => e.kind !== "agreement"))).toEqual({ state: "answered", seq: 12 });
     expect(flagAnswer(newFlag, events)).toEqual({ state: "open" });
-  });
-});
-
-describe("the filters and the feed (kept for the filter row's return)", () => {
-  test("Everything shows all, Messages only drops board events, Agreements keeps agreements; following narrows", () => {
-    const events = [
-      item(1, "alpha/S1", "talk"),
-      item(1, "alpha/S1", "joined: x", { kind: "event" }),
-      item(2, "beta/S2", "@AL·S1 agreed", { kind: "agreement" }),
-      item(2, "beta/S2", "beta alone"),
-    ];
-    const ctx = mentionCtx(board(RUNS, ROSTER, events));
-    expect(feed(events, "all", null, ctx).length).toBe(4);
-    expect(feed(events, "talk", null, ctx).map((e) => e.body)).toEqual(["talk", "@AL·S1 agreed", "beta alone"]);
-    expect(feed(events, "agreements", null, ctx).map((e) => e.body)).toEqual(["@AL·S1 agreed"]);
-    expect(feed(events, "all", "alpha/S1", ctx).map((e) => e.body)).toEqual(["talk", "joined: x", "@AL·S1 agreed"]);
   });
 });
 
@@ -331,35 +307,6 @@ describe("mergedFileRows: a closed run's files", () => {
 
   test("a run with no merge has none", () => {
     expect(mergedFileRows(board(RUNS, ROSTER, []), 3)).toEqual([]);
-  });
-});
-
-describe("a merged event's recipients", () => {
-  test("rebase from the holders line, tell from the author's resolved-conflict posts before its next merge", () => {
-    const merged: SnapshotEvent = {
-      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, about: null,
-      body: "merged abc: rebase onto abc.\n@p/S2 @p/S3: you hold or declared a file it changed.\nfiles: a.ts",
-    };
-    const after = (s: number, from: string, body: string, kind: SnapshotEvent["kind"] = "msg"): SnapshotEvent => ({ ...merged, seq: s, from, body, kind });
-    const events = [
-      merged,
-      after(2, "p/S1", "@p/S2 I resolved a.ts: kept both"),
-      after(3, "p/S9", "@p/S4 I resolved b.ts: x"),
-      after(4, "p/S1", "merged def: rebase onto def.", "event"),
-      after(5, "p/S1", "@p/S3 I resolved c.ts: y"),
-    ];
-    const ctx = mentionCtx(board([run(1, "p", "PP")]));
-    expect(mergedRecipients(merged, events, ctx)).toEqual({ rebase: ["p/S2", "p/S3"], tell: ["p/S2"] });
-  });
-
-  test("the recipients stored with the event win over the thread (D11)", () => {
-    const merged: SnapshotEvent = {
-      seq: 1, at: AT, kind: "event", from: "p/S1", run: 1, about: null, event: "merged", mentions: ["p/S2"],
-      body: "merged abc into main: rebase your branch onto it.\n@p/S2: you hold or declared a file it changed.\nfiles: a.ts",
-      meta: { rebase: ["p/S2"], tell: ["p/S7"] },
-    };
-    const ctx = mentionCtx(board([run(1, "p", "PP")]));
-    expect(mergedRecipients(merged, [merged], ctx)).toEqual({ rebase: ["p/S2"], tell: ["p/S7"] });
   });
 });
 
