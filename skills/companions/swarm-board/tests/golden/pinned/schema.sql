@@ -28,4 +28,4 @@ table settings: CREATE TABLE settings(name TEXT PRIMARY KEY,value TEXT NOT NULL)
 table sqlite_sequence: CREATE TABLE sqlite_sequence(name,seq)
 table token_readings: CREATE TABLE token_readings(run INTEGER NOT NULL,member TEXT NOT NULL,t TEXT NOT NULL,tokens INTEGER NOT NULL)
 table transcripts: CREATE TABLE transcripts(run INTEGER NOT NULL,member TEXT NOT NULL,path TEXT NOT NULL,adapter TEXT,offset INTEGER NOT NULL DEFAULT 0,tokens INTEGER NOT NULL DEFAULT 0,readable INTEGER NOT NULL DEFAULT 0,read_at TEXT,moved_at TEXT,PRIMARY KEY(run,member))
-user_version 0
+user_version 1

@@ -682,7 +682,9 @@ async function openStore(dbPath) {
 function migrate(db) {
   db.exec("BEGIN IMMEDIATE");
   try {
-    for (const text of MIGRATIONS) db.exec(text);
+    const { user_version: at } = db.prepare("PRAGMA user_version").get();
+    for (const text of MIGRATIONS.slice(at)) db.exec(text);
+    if (at < MIGRATIONS.length) db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
     db.exec("COMMIT");
   } catch (e) {
     db.exec("ROLLBACK");

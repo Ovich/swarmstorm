@@ -73,11 +73,14 @@ export async function openStore(dbPath: string): Promise<Store> {
   };
 }
 
-/** The schema brought to the last migration, in one transaction: a failed one rolls back and the open throws. */
+/** The schema brought to the last migration (D10): those above the store's `user_version`, run in order and the version
+ *  stamped, in one transaction; a failed one rolls back, the store keeps its version, and the open throws. */
 function migrate(db: DatabaseSync): void {
   db.exec("BEGIN IMMEDIATE");
   try {
-    for (const text of MIGRATIONS) db.exec(text);
+    const { user_version: at } = db.prepare("PRAGMA user_version").get() as { user_version: number };
+    for (const text of MIGRATIONS.slice(at)) db.exec(text);
+    if (at < MIGRATIONS.length) db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
     db.exec("COMMIT");
   } catch (e) {
     db.exec("ROLLBACK");
