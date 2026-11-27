@@ -410,3 +410,34 @@ describe("idea 2, B13 (F9): a member's lost row leaves once its badge does", () 
     expect(kinds(withBadge(null), [lost()])).toEqual([]);
   });
 });
+
+// plan 2026-11-27-codebase-rework#D23: the view table, every reading kind the conversation tells apart, its word and tone (a tier, for a post)
+describe("the view table: an event's word and tone", () => {
+  const flag = (s: number): SnapshotEvent => ({ seq: s, at: AT, kind: "event", from: "alpha/S1", body: "flag", about: "a.ts", run: 1, event: "flag", mentions: ["beta/S2", "alpha/S1"] });
+  const post = (s: number, kind: SnapshotEvent["kind"], from: string, body: string, over: Partial<SnapshotEvent> = {}): SnapshotEvent => ({ seq: s, at: AT, kind, from, body, about: null, run: 1, ...over });
+  const lostRoster = badged({ "alpha/S9": "lost" });
+  /** [what it is, the events, the seq of the one read, its kind, its word, its tone or tier] */
+  const TABLE: [string, SnapshotEvent[], number, Item["kind"], string | null, string | null][] = [
+    ["a phase", [{ ...PHASE, run: 1, from: "alpha/orchestrator" }], PHASE.seq, "phase", null, null],
+    ["an open flag", [flag(1)], 1, "flag", "⚑ flag · open", "act"],
+    ["a flag settled", [flag(1), post(2, "agreement", "beta/S2", "@AL·S1 S1 the top", { about: "a.ts" })], 1, "settled", "⚑ flag settled by #2", "decided"],
+    ["an old flag message", [post(1, "msg", "alpha/S1", "flag: alpha/S1 wrote a.ts outside its claim; beta/S2 holds it")], 1, "flag", "⚑ flag · open", "act"],
+    ["a swarm stopped", [post(1, "event", "alpha/orchestrator", "stopped alpha: no member's tokens moved", { event: "stopped" })], 1, "stalled", "◷ swarm stopped", "act"],
+    ["a member lost", [post(1, "event", "swarm", "lost alpha/S9: its link was lost", { event: "lost", subject: "alpha/S9" })], 1, "gone", "✕ S9 lost", "act"],
+    ["a merged event", [post(1, "event", "alpha/S1", "merged abc: rebase your branch onto it.", { event: "merged" })], 1, "event", "merged", "ok"],
+    ["a run opened", [post(1, "event", "alpha/orchestrator", "run 1 opened: alpha")], 1, "event", "opened", "ok"],
+    ["a doing line", [post(1, "event", "alpha/S1", "doing: the schema")], 1, "event", "doing", "work"],
+    ["a refusal", [post(1, "event", "alpha/S1", "refused: not yours")], 1, "event", "refused", "act"],
+    ["a run closed", [post(1, "event", "alpha/orchestrator", "run 1 closed")], 1, "event", "closed", "end"],
+    ["a line of no word", [post(1, "event", "alpha/S1", "something else")], 1, "event", null, "end"],
+    ["an urgent post", [post(1, "urgent", "alpha/orchestrator", "do this first")], 1, "urgent", "! urgent", "act"],
+    ["an agreement", [post(1, "agreement", "beta/S2", "@AL·S1 S1 the top")], 1, "agreement", "✔ agreed with AL·S1 Sleepy Otter", "decided"],
+    ["a question", [post(1, "msg", "alpha/S1", "@orchestrator new question: keep it?")], 1, "question", "? question for AL·orchestrator Calm Owl", "wait"],
+    ["an endorsement", [post(1, "endorsement", "alpha/orchestrator", "endorses #9")], 1, "message", null, "decided"],
+    ["a message", [post(1, "msg", "alpha/S1", "just talk")], 1, "message", null, "talk"],
+  ];
+  test.each(TABLE)("%s", (_what, events, seq, kind, word, tone) => {
+    const read = conversation(board(RUNS, lostRoster, events), { run: 1, follow: null }).find((i) => i.seq === seq)!;
+    expect([read.kind, "word" in read ? read.word : null, "tone" in read ? read.tone : "tier" in read ? read.tier : null]).toEqual([kind, word, tone]);
+  });
+});
