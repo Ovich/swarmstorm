@@ -47,77 +47,171 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// src/proc.ts
+// src/host/proc.ts
 var proc_exports = {};
 __export(proc_exports, {
   hiddenSpawn: () => hiddenSpawn,
-  hiddenSpawnSync: () => hiddenSpawnSync
+  hiddenSpawnSync: () => hiddenSpawnSync,
+  isAlive: () => isAlive
 });
 import { spawn, spawnSync } from "node:child_process";
 function hiddenSpawnSync(command, args2, options = {}) {
   return spawnSync(command, args2, { ...options, windowsHide: true });
 }
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
 var hiddenSpawn;
 var init_proc = __esm({
-  "src/proc.ts"() {
+  "src/host/proc.ts"() {
     "use strict";
     hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
   }
 });
 
-// src/board/home.ts
+// src/host/home.ts
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-var homeFromEnv, NEW_HOME, OLD_HOME, DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH;
+function serverStateFile(dataRoot) {
+  return path.join(dataRoot, "swarm-server.json");
+}
+function serverLogFile(dataRoot) {
+  return path.join(dataRoot, "swarm-server.log");
+}
+function serverStartLock(dataRoot) {
+  return path.join(dataRoot, "swarm-server.lock");
+}
+var HOME_FROM_ENV, NEW_HOME, OLD_HOME, DATA_ROOT;
 var init_home = __esm({
-  "src/board/home.ts"() {
+  "src/host/home.ts"() {
     "use strict";
-    homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
+    HOME_FROM_ENV = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
     NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
     OLD_HOME = path.join(os.homedir(), "charrette_appdata");
-    DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
-    HOME_OVERRIDE = homeFromEnv && path.resolve(homeFromEnv) !== NEW_HOME && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT : null;
-    SQLITE_PATH = path.join(DATA_ROOT, "swarm.sqlite");
+    DATA_ROOT = HOME_FROM_ENV ? path.resolve(HOME_FROM_ENV) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
   }
 });
 
-// src/place/place.ts
-import fs2 from "node:fs";
+// src/board/home.ts
 import path2 from "node:path";
+var HOME_OVERRIDE, SQLITE_PATH;
+var init_home2 = __esm({
+  "src/board/home.ts"() {
+    "use strict";
+    init_home();
+    HOME_OVERRIDE = HOME_FROM_ENV && path2.resolve(HOME_FROM_ENV) !== NEW_HOME && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT : null;
+    SQLITE_PATH = path2.join(DATA_ROOT, "swarm.sqlite");
+  }
+});
+
+// src/host/git.ts
+function refArg(value, what) {
+  if (value.startsWith("-")) throw new Error(`${what} cannot start with "-": ${value}`);
+  return value;
+}
+function branchBase(worktree, onto) {
+  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
+  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
+  return base.status === 0 ? base.stdout.trim() : null;
+}
+function changedSet(worktree, onto, base = branchBase(worktree, onto)) {
+  if (!base) return null;
+  const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
+  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base, "HEAD");
+  if (status.status !== 0 || diff.status !== 0) return null;
+  const set = /* @__PURE__ */ new Set();
+  const records = status.stdout.split("\0");
+  for (let i = 0; i < records.length; i++) {
+    const r = records[i];
+    if (r.startsWith("1 ")) set.add(r.split(" ").slice(8).join(" "));
+    else if (r.startsWith("2 ")) {
+      set.add(r.split(" ").slice(9).join(" "));
+      set.add(records[++i]);
+    } else if (r.startsWith("u ")) set.add(r.split(" ").slice(10).join(" "));
+    else if (r.startsWith("? ")) set.add(r.slice(2));
+  }
+  const fields = diff.stdout.split("\0").filter(Boolean);
+  for (let i = 0; i < fields.length; i++) {
+    const two = fields[i].startsWith("R") || fields[i].startsWith("C");
+    set.add(fields[i + 1]);
+    if (two) set.add(fields[i + 2]);
+    i += two ? 2 : 1;
+  }
+  return [...set].filter(Boolean).map((p) => p.split("\\").join("/")).sort();
+}
+var gitAnswer, git, worktreeHolding, baseAt, baseRef;
+var init_git = __esm({
+  "src/host/git.ts"() {
+    "use strict";
+    init_proc();
+    gitAnswer = (cwd, ...argv) => {
+      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+      return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
+    };
+    git = (cwd, ...argv) => {
+      const r = gitAnswer(cwd, ...argv);
+      return r.status === 0 ? r.stdout.trim() : null;
+    };
+    worktreeHolding = (cwd, branch) => {
+      const list = git(cwd, "worktree", "list", "--porcelain");
+      if (!list) return null;
+      const ref = branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
+      let at = null;
+      for (const line of list.split(/\r?\n/)) {
+        if (line.startsWith("worktree ")) at = line.slice("worktree ".length);
+        else if (line === `branch ${ref}`) return at;
+      }
+      return null;
+    };
+    baseAt = (cwd) => {
+      const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
+      return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
+    };
+    baseRef = (cwd, base) => {
+      for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", ref) !== null) return ref;
+      return base;
+    };
+  }
+});
+
+// src/host/place.ts
+import fs2 from "node:fs";
+import path3 from "node:path";
 function canonicalPath(p) {
-  const resolved = real(path2.resolve(p));
+  const resolved = real(path3.resolve(p));
   return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
 }
 function repoOf(dir) {
-  const common = gitOut(dir, "rev-parse", "--git-common-dir");
-  return common ? real(path2.resolve(dir, common)) : null;
+  const common = git(dir, "rev-parse", "--git-common-dir");
+  return common ? real(path3.resolve(dir, common)) : null;
 }
 function worktreeOf(dir) {
-  const top = gitOut(dir, "rev-parse", "--show-toplevel");
-  return top ? path2.resolve(top) : null;
+  const top = git(dir, "rev-parse", "--show-toplevel");
+  return top ? path3.resolve(top) : null;
 }
 function resolveIn(root, spec, opts = {}) {
-  if (path2.isAbsolute(spec)) return { abs: spec, missing: [] };
+  if (path3.isAbsolute(spec)) return { abs: spec, missing: [] };
   const cwd = opts.cwd ?? process.cwd();
-  const here = root && !inside(root, cwd) ? path2.resolve(root, spec) : path2.resolve(cwd, spec);
+  const here = root && !inside(root, cwd) ? path3.resolve(root, spec) : path3.resolve(cwd, spec);
   if (fs2.existsSync(here)) return { abs: here, missing: [] };
-  const fromRoot = root ? path2.resolve(root, spec) : null;
+  const fromRoot = root ? path3.resolve(root, spec) : null;
   if (fromRoot && fs2.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
   return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
 }
 function relativeIn(root, abs) {
-  return (root ? path2.relative(root, abs) : abs).split(path2.sep).join("/");
+  return (root ? path3.relative(root, abs) : abs).split(path3.sep).join("/");
 }
-var gitOut, real, inside;
+var real, inside;
 var init_place = __esm({
-  "src/place/place.ts"() {
+  "src/host/place.ts"() {
     "use strict";
-    init_proc();
-    gitOut = (cwd, ...argv) => {
-      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
-      return r.status === 0 ? r.stdout.trim() : null;
-    };
+    init_git();
     real = (p) => {
       try {
         return fs2.realpathSync.native(p);
@@ -126,8 +220,8 @@ var init_place = __esm({
       }
     };
     inside = (root, dir) => {
-      const rel = path2.relative(path2.resolve(root), path2.resolve(dir));
-      return !rel.startsWith("..") && !path2.isAbsolute(rel);
+      const rel = path3.relative(path3.resolve(root), path3.resolve(dir));
+      return !rel.startsWith("..") && !path3.isAbsolute(rel);
     };
   }
 });
@@ -213,7 +307,7 @@ var init_mentions = __esm({
   }
 });
 
-// src/board/kinds.ts
+// src/contract/kinds.ts
 function profileOf(kind) {
   const profile = PROFILES[kind];
   if (!profile || !Object.hasOwn(PROFILES, kind)) throw new Error(`unknown kind ${kind}: the kinds are ${Object.keys(PROFILES).join(", ")}`);
@@ -221,7 +315,7 @@ function profileOf(kind) {
 }
 var PROFILES;
 var init_kinds = __esm({
-  "src/board/kinds.ts"() {
+  "src/contract/kinds.ts"() {
     "use strict";
     PROFILES = {
       plan: { kind: "plan", member: "worker", wholeThread: false },
@@ -232,50 +326,10 @@ var init_kinds = __esm({
   }
 });
 
-// src/git.ts
-function refArg(value, what) {
-  if (value.startsWith("-")) throw new Error(`${what} cannot start with "-": ${value}`);
-  return value;
-}
-var gitAnswer, git, worktreeHolding, baseAt, baseRef;
-var init_git = __esm({
-  "src/git.ts"() {
-    "use strict";
-    init_proc();
-    gitAnswer = (cwd, ...argv) => {
-      const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-      return { status: r.error ? null : r.status, stdout: r.stdout ?? "" };
-    };
-    git = (cwd, ...argv) => {
-      const r = gitAnswer(cwd, ...argv);
-      return r.status === 0 ? r.stdout.trim() : null;
-    };
-    worktreeHolding = (cwd, branch) => {
-      const list = git(cwd, "worktree", "list", "--porcelain");
-      if (!list) return null;
-      const ref = branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
-      let at = null;
-      for (const line of list.split(/\r?\n/)) {
-        if (line.startsWith("worktree ")) at = line.slice("worktree ".length);
-        else if (line === `branch ${ref}`) return at;
-      }
-      return null;
-    };
-    baseAt = (cwd) => {
-      const head = git(cwd, "rev-parse", "--verify", "-q", "HEAD");
-      return head && (git(cwd, "symbolic-ref", "--short", "-q", "HEAD") ?? head);
-    };
-    baseRef = (cwd, base) => {
-      for (const ref of [`refs/heads/${base}`, `refs/remotes/origin/${base}`]) if (git(cwd, "rev-parse", "--verify", "-q", "--end-of-options", ref) !== null) return ref;
-      return base;
-    };
-  }
-});
-
-// src/packs/code/events.ts
+// src/contract/code.ts
 var CODE_EVENTS, MERGE_LOCK;
-var init_events = __esm({
-  "src/packs/code/events.ts"() {
+var init_code = __esm({
+  "src/contract/code.ts"() {
     "use strict";
     CODE_EVENTS = {
       merged: { name: "merged", lands: true },
@@ -287,138 +341,20 @@ var init_events = __esm({
   }
 });
 
-// src/wire.ts
-import crypto from "node:crypto";
+// src/host/trace.ts
 import fs3 from "node:fs";
-import path3 from "node:path";
-function encode(f) {
-  return JSON.stringify(f);
-}
-function decode(text) {
-  const f = JSON.parse(text);
-  const type = f && typeof f === "object" ? f.type : void 0;
-  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
-  return f;
-}
-function builtCliOf(entry2) {
-  const file = path3.resolve(entry2);
-  const bundle = path3.join(path3.dirname(file), "dist-cli", "cli.mjs");
-  return fs3.existsSync(bundle) ? bundle : file;
-}
-function bundleVersion(entry2) {
-  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
-  const file = builtCliOf(entry2);
-  const st = fs3.statSync(file);
-  const key = `${file}|${st.mtimeMs}|${st.size}`;
-  let v = versionsByBuild.get(key);
-  if (v === void 0) {
-    v = crypto.createHash("sha256").update(fs3.readFileSync(file)).digest("hex").slice(0, 16);
-    versionsByBuild.set(key, v);
-  }
-  return v;
-}
-function serverStateFile(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.json");
-}
-function serverLogFile(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.log");
-}
-function serverStartLock(dataRoot) {
-  return path3.join(dataRoot, "swarm-server.lock");
-}
-function serverLockHolder(dataRoot) {
-  try {
-    const pid = Number(fs3.readFileSync(serverStartLock(dataRoot), "utf8").trim());
-    return Number.isInteger(pid) && pid > 0 ? pid : null;
-  } catch {
-    return null;
-  }
-}
-function liveStartLockHolder(dataRoot) {
-  const holder = serverLockHolder(dataRoot);
-  if (holder === null || !isAlive(holder)) return null;
-  try {
-    if (JSON.parse(fs3.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
-  } catch {
-  }
-  try {
-    return Date.now() - fs3.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
-  } catch {
-    return null;
-  }
-}
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-var RPC_METHODS, ORCHESTRATORS_GROUP, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
-var init_wire = __esm({
-  "src/wire.ts"() {
-    "use strict";
-    RPC_METHODS = [
-      "openRun",
-      "addSeat",
-      "closeRun",
-      "phase",
-      "currentPhase",
-      "showPhase",
-      "pause",
-      "resume",
-      "pausedOf",
-      "done",
-      "phaseProgress",
-      "lastActivity",
-      "owedPhase",
-      "idle",
-      "unreadMentions",
-      "runs",
-      "packCall",
-      "join",
-      "participant",
-      "identify",
-      "setDoing",
-      "end",
-      "roster",
-      "endedMembers",
-      "owingMembers",
-      "heldBy",
-      "post",
-      "endorse",
-      "deliverMentions",
-      "wait",
-      "repos",
-      "snapshot",
-      "composition",
-      "phases",
-      "thread",
-      "message"
-    ];
-    ORCHESTRATORS_GROUP = "orchestrators";
-    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
-    versionsByBuild = /* @__PURE__ */ new Map();
-    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
-    START_LOCK_GRACE_MS = 15e3;
-  }
-});
-
-// src/board/trace.ts
-import fs4 from "node:fs";
 import path4 from "node:path";
 function readTraceLevel(dataRoot) {
   try {
-    const w = fs4.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
+    const w = fs3.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
     return TRACE_LEVELS.includes(w) ? w : "info";
   } catch {
     return "info";
   }
 }
 function writeTraceLevel(dataRoot, level) {
-  fs4.mkdirSync(traceRoot(dataRoot), { recursive: true });
-  fs4.writeFileSync(traceLevelFile(dataRoot), `${level}
+  fs3.mkdirSync(traceRoot(dataRoot), { recursive: true });
+  fs3.writeFileSync(traceLevelFile(dataRoot), `${level}
 `);
 }
 function makeTracer(dataRoot) {
@@ -428,7 +364,7 @@ function makeTracer(dataRoot) {
   const levelNow = () => {
     let m = 0;
     try {
-      m = fs4.statSync(traceLevelFile(dataRoot)).mtimeMs;
+      m = fs3.statSync(traceLevelFile(dataRoot)).mtimeMs;
     } catch {
     }
     if (m !== stamp) {
@@ -442,10 +378,10 @@ function makeTracer(dataRoot) {
     try {
       const dir = path4.dirname(file);
       if (!made.has(dir)) {
-        fs4.mkdirSync(dir, { recursive: true });
+        fs3.mkdirSync(dir, { recursive: true });
         made.add(dir);
       }
-      fs4.appendFileSync(file, `${JSON.stringify(line)}
+      fs3.appendFileSync(file, `${JSON.stringify(line)}
 `);
     } catch {
     }
@@ -454,7 +390,7 @@ function makeTracer(dataRoot) {
   const kv = (o) => Object.entries(o).filter(([, v]) => v !== null && v !== void 0).map(([k, v]) => `${k}=${typeof v === "string" && /[s"=]/.test(v) ? JSON.stringify(v) : typeof v === "object" ? JSON.stringify(v) : v}`).join(" ");
   const say = (sev, what, o) => {
     try {
-      fs4.appendFileSync(serverLogFile(dataRoot), `${kv({ at: (/* @__PURE__ */ new Date()).toISOString(), level: sev, event: what, ...o })}
+      fs3.appendFileSync(serverLogFile(dataRoot), `${kv({ at: (/* @__PURE__ */ new Date()).toISOString(), level: sev, event: what, ...o })}
 `);
     } catch {
     }
@@ -501,7 +437,7 @@ function makeTracer(dataRoot) {
     prune(at = /* @__PURE__ */ new Date()) {
       const oldest = dayOf(new Date(at.getTime() - KEEP_DAYS * 864e5));
       try {
-        for (const d of fs4.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs4.rmSync(path4.join(root, d), { recursive: true, force: true });
+        for (const d of fs3.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs3.rmSync(path4.join(root, d), { recursive: true, force: true });
       } catch {
       }
     }
@@ -509,9 +445,9 @@ function makeTracer(dataRoot) {
 }
 var TRACE_LEVELS, KEEP_DAYS, HEALTH_MS, LONG_WAIT_MS, MANY_UNREAD, INFO_EVENTS, traceRoot, traceLevelFile, SILENT, current, trace, setTracer;
 var init_trace = __esm({
-  "src/board/trace.ts"() {
+  "src/host/trace.ts"() {
     "use strict";
-    init_wire();
+    init_home();
     TRACE_LEVELS = ["off", "info", "debug", "debug-extended"];
     KEEP_DAYS = 30;
     HEALTH_MS = 5 * 6e4;
@@ -759,7 +695,7 @@ function claimsOf(deps) {
 var init_claims = __esm({
   "src/packs/code/claims.ts"() {
     "use strict";
-    init_events();
+    init_code();
     init_trace();
   }
 });
@@ -774,8 +710,8 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const live = db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
   for (const c of live) {
-    const path15 = String(c.path);
-    (files.get(path15) ?? files.set(path15, { path: path15, holders: [] }).get(path15)).holders.push(`${c.plan}/${c.seat}`);
+    const path17 = String(c.path);
+    (files.get(path17) ?? files.set(path17, { path: path17, holders: [] }).get(path17)).holders.push(`${c.plan}/${c.seat}`);
   }
   for (const r of people) {
     if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
@@ -785,7 +721,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
       if (f && !f.holders.includes(name)) f.holders.push(name);
     }
   }
-  const sharedBy = (path15, id) => live.some((c) => String(c.path) === path15 && Number(c.participant) !== id);
+  const sharedBy = (path17, id) => live.some((c) => String(c.path) === path17 && Number(c.participant) !== id);
   const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t) => ({
     member: `${t.plan}/${t.seat}`,
     askedAt: String(t.asked_at),
@@ -873,814 +809,11 @@ var init_schema = __esm({
   }
 });
 
-// src/board/liveness.ts
-function coreStateOf(m) {
-  if (!m.runOpen || m.ended) return "ended";
-  if (m.linkDown) return m.owedAtDrop ? "lost" : "away";
-  return m.moving ? "working" : "stopped";
-}
-var claudeCodeJsonl, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS;
-var init_liveness = __esm({
-  "src/board/liveness.ts"() {
-    "use strict";
-    claudeCodeJsonl = {
-      name: "claude-code-jsonl",
-      read(chunk, from) {
-        const end = chunk.lastIndexOf(10);
-        if (end < 0) return from;
-        let tokens = from.tokens;
-        let parsed = 0;
-        for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
-          const text = line.trim();
-          if (!text) continue;
-          let obj;
-          try {
-            obj = JSON.parse(text);
-          } catch {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-            if (parsed === 0 && from.offset === 0) return null;
-            continue;
-          }
-          parsed++;
-          const usage = obj.message?.usage;
-          if (!usage) continue;
-          for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-            const n = usage[k];
-            if (typeof n === "number" && Number.isFinite(n)) tokens += n;
-          }
-        }
-        return { offset: from.offset + end + 1, tokens };
-      }
-    };
-    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 10 * 60 * 1e3;
-    BADGE_CONFIRM_MS = 10 * 1e3;
-    badgeConfirmMs = () => Number(process.env.SWARM_BADGE_CONFIRM_MS) || BADGE_CONFIRM_MS;
-    stallMsFloor = () => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    LOST_MS = 60 * 1e3;
-    HEARTBEAT_MS = 5 * 1e3;
-  }
-});
-
-// src/packs/code/changes.ts
-function branchBase(worktree, onto) {
-  if (gitAnswer(worktree, "symbolic-ref", "-q", "HEAD").status !== 0) return null;
-  const base = gitAnswer(worktree, "merge-base", "--end-of-options", "HEAD", onto);
-  return base.status === 0 ? base.stdout.trim() : null;
-}
-function changedSet(worktree, onto, base = branchBase(worktree, onto)) {
-  if (!base) return null;
-  const status = gitAnswer(worktree, "--no-optional-locks", "status", "--porcelain=v2", "-z", "--untracked-files=all");
-  const diff = gitAnswer(worktree, "diff", "--name-status", "-z", "--find-renames", "--end-of-options", base, "HEAD");
-  if (status.status !== 0 || diff.status !== 0) return null;
-  const set = /* @__PURE__ */ new Set();
-  const records = status.stdout.split("\0");
-  for (let i = 0; i < records.length; i++) {
-    const r = records[i];
-    if (r.startsWith("1 ")) set.add(r.split(" ").slice(8).join(" "));
-    else if (r.startsWith("2 ")) {
-      set.add(r.split(" ").slice(9).join(" "));
-      set.add(records[++i]);
-    } else if (r.startsWith("u ")) set.add(r.split(" ").slice(10).join(" "));
-    else if (r.startsWith("? ")) set.add(r.slice(2));
-  }
-  const fields = diff.stdout.split("\0").filter(Boolean);
-  for (let i = 0; i < fields.length; i++) {
-    const two = fields[i].startsWith("R") || fields[i].startsWith("C");
-    set.add(fields[i + 1]);
-    if (two) set.add(fields[i + 2]);
-    i += two ? 2 : 1;
-  }
-  return [...set].filter(Boolean).map((p) => p.split("\\").join("/")).sort();
-}
-var init_changes = __esm({
-  "src/packs/code/changes.ts"() {
-    "use strict";
-    init_git();
-  }
-});
-
-// src/link/transcripts.ts
-import fs5 from "node:fs";
-import os2 from "node:os";
+// src/host/links.ts
+import fs4 from "node:fs";
 import path5 from "node:path";
-function callWordsOf(input) {
-  const fields = input && typeof input === "object" ? input : {};
-  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
-  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
-  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
-}
-function shellWords(command, backslashEscapes = true) {
-  const words = [];
-  let word = "";
-  let inWord = false;
-  const flush = () => {
-    if (inWord) words.push(word);
-    word = "";
-    inWord = false;
-  };
-  for (let i = 0; i < command.length; i++) {
-    const c = command[i];
-    if (c === "'" || c === '"') {
-      const close = command.indexOf(c, i + 1);
-      const end = close < 0 ? command.length : close;
-      word += command.slice(i + 1, end);
-      inWord = true;
-      i = end;
-    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
-      word += command[++i];
-      inWord = true;
-    } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
-      flush();
-      const two = command.slice(i, i + 2);
-      if (two === "&&" || two === "||") {
-        words.push(two);
-        i++;
-      } else words.push(c);
-    } else if (/\s/.test(c)) flush();
-    else {
-      word += c;
-      inWord = true;
-    }
-  }
-  flush();
-  return words;
-}
-function optionValue(words, names) {
-  for (let i = 0; i < words.length; i++) {
-    for (const n of names) {
-      if (words[i] === n && i + 1 < words.length) return words[i + 1];
-      if (words[i].startsWith(n + "=")) return words[i].slice(n.length + 1);
-    }
-  }
-  return void 0;
-}
-function commandRunsWait(command, backslashEscapes = true) {
-  return commandRunsVerb(command, "wait", backslashEscapes);
-}
-function commandRunsVerb(command, verb, backslashEscapes) {
-  const words = shellWords(command, backslashEscapes);
-  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
-}
-function commandRunsBinding(command, binding, backslashEscapes = true) {
-  const words = shellWords(command, backslashEscapes);
-  let start = 0;
-  for (let i = 0; i <= words.length; i++) {
-    if (i < words.length && !SEPARATORS.has(words[i])) continue;
-    const segment = words.slice(start, i);
-    start = i + 1;
-    const at = segment.indexOf(binding.verb);
-    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
-    const args2 = segment.slice(at + 1);
-    if (binding.verb === "join") {
-      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
-    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
-  }
-  return false;
-}
-function transcriptRunsBinding(file, binding) {
-  let text;
-  try {
-    text = fs5.readFileSync(file, "utf8");
-  } catch {
-    return false;
-  }
-  const value = binding.verb === "join" ? binding.seat : binding.group;
-  if (!text.includes(binding.verb) || !text.includes(value) || !text.includes('"tool_use"')) return false;
-  for (const line of text.split("\n")) {
-    if (!line.includes('"tool_use"') || !line.includes(binding.verb)) continue;
-    let obj;
-    try {
-      obj = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
-    for (const part of obj.message.content) {
-      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
-    }
-  }
-  return false;
-}
-function locate(binding, env) {
-  for (const l of LOCATORS) {
-    const found = l.locate(binding, env);
-    if (found) return found;
-  }
-  return null;
-}
-function toolTarget(input) {
-  let text = "";
-  if (input && typeof input === "object") {
-    const fields = input;
-    for (const k of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
-      if (typeof fields[k] === "string") {
-        text = fields[k];
-        break;
-      }
-    }
-    if (!text) text = JSON.stringify(input);
-  } else if (input !== void 0) text = String(input);
-  return text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-}
-function commandSegments(text) {
-  const out = [];
-  let cur = "";
-  const flush = () => {
-    if (cur.trim()) out.push(cur.trim());
-    cur = "";
-  };
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      const close = text.indexOf(c, i + 1);
-      const end = close < 0 ? text.length : close;
-      const inner = text.slice(i + 1, end);
-      if (RUNS_QUOTED.test(cur)) {
-        flush();
-        out.push(...commandSegments(inner));
-      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
-      i = end;
-    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
-    else cur += c;
-  }
-  flush();
-  return out;
-}
-function headOf(segment) {
-  const words = segment.split(/\s+/).filter(Boolean);
-  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
-  if (!words.length) return null;
-  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
-  return { head, rest: words.slice(1).join(" ") };
-}
-function portsOf(command) {
-  const found = /* @__PURE__ */ new Set();
-  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
-  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
-  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
-}
-function classifyKill(command) {
-  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
-  let kill = null;
-  for (const segment of commandSegments(command)) {
-    const h = headOf(segment);
-    if (!h || !KILL_HEADS.has(h.head)) continue;
-    const { head, rest } = h;
-    if (head === "pkill" || head === "killall") kill = "name";
-    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? kill ?? null : "fed";
-    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? kill ?? null : "fed";
-    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? kill ?? null : "fed";
-    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
-    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
-    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
-    if (kill === "name") break;
-  }
-  if (kill === "name") return { kind: "pattern" };
-  if (kill !== "fed") return null;
-  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
-  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
-  return null;
-}
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
-}
-function closeNotified(cursor, text, at) {
-  if (!text.includes("<task-notification>")) return;
-  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
-    cursor.background.delete(m[1]);
-    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
-  }
-}
-function awaitedBackground(cursor) {
-  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
-  let oldest = null;
-  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
-  if (!oldest) return null;
-  let outputGrewAt = null;
-  if (oldest.output) {
-    try {
-      outputGrewAt = fs5.statSync(oldest.output).mtimeMs;
-    } catch {
-    }
-  }
-  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
-}
-function commandActsAsOther(command, binding, backslashEscapes = true) {
-  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
-  if (as === void 0) return false;
-  const slash = as.lastIndexOf("/");
-  const group = slash < 0 ? null : as.slice(0, slash);
-  const seat = as.slice(slash + 1);
-  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
-}
-function observe(transcript, from, binding) {
-  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
-  let chunk = Buffer.alloc(0);
-  let mtime = Date.now();
-  try {
-    const fd = fs5.openSync(transcript, "r");
-    try {
-      const stat = fs5.fstatSync(fd);
-      mtime = stat.mtimeMs;
-      if (stat.size < cursor.offset) cursor = freshCursor();
-      chunk = Buffer.alloc(stat.size - cursor.offset);
-      fs5.readSync(fd, chunk, 0, chunk.length, cursor.offset);
-    } finally {
-      fs5.closeSync(fd);
-    }
-  } catch {
-    cursor = freshCursor();
-  }
-  const counted = claudeCodeJsonl.read(chunk, { offset: cursor.offset, tokens: cursor.tokens });
-  const consumed = (counted?.offset ?? cursor.offset) - cursor.offset;
-  if (consumed > 0) {
-    for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
-      if (!raw.trim()) continue;
-      let line;
-      try {
-        line = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
-      if (line.type !== "assistant" && line.type !== "user") continue;
-      const at = timeOf(line, mtime);
-      const content = Array.isArray(line.message?.content) ? line.message.content : [];
-      if (line.type === "assistant") {
-        const usage = line.message?.usage;
-        if (usage) {
-          const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
-          cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
-        }
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-          if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
-          const name = part.name ?? "?";
-          const target = toolTarget(part.input);
-          const input = part.input;
-          const command = input?.command;
-          const escapes = toolEscapesBackslash(name);
-          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
-          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
-          const words = callWordsOf(part.input);
-          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...words });
-          cursor.lastTool = target ? `${name} ${target}` : name;
-          cursor.lastLine = cursor.lastTool;
-          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
-          if (boardsOwn) cursor.boardsOwn.add(part.id);
-          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
-          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
-          if (STOPS_TASK.has(name)) {
-            const stopped = part.input ?? {};
-            const id = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
-            if (id) {
-              for (const [useId, task] of cursor.background) if (task.taskId === id) cursor.background.delete(useId);
-            }
-          }
-          const kill = typeof command === "string" ? classifyKill(command) : null;
-          if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
-        }
-        const inTurn = line.message?.stop_reason === "tool_use";
-        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
-        cursor.inTurn = inTurn;
-      } else {
-        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
-          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
-          const result = textOf(part.content);
-          const call = cursor.open.get(part.tool_use_id);
-          if (MOVED_TO_BACKGROUND.test(result)) {
-            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
-            const taskId = BACKGROUND_ID.exec(result)?.[1] ?? null;
-            const task = cursor.background.get(part.tool_use_id);
-            if (task) cursor.background.set(part.tool_use_id, { ...task, output, taskId });
-            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
-          }
-          cursor.open.delete(part.tool_use_id);
-          cursor.boardsOwn.delete(part.tool_use_id);
-        }
-        cursor.inTurn = true;
-      }
-    }
-    cursor.offset += consumed;
-    cursor.tokens = counted.tokens;
-    cursor.grewAt = mtime;
-  }
-  let openTool = null;
-  for (const t of cursor.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
-  let finished = false;
-  for (const l of LOCATORS) {
-    const said = l.finished(transcript);
-    if (said !== null) {
-      finished = said;
-      break;
-    }
-  }
-  return {
-    activity: {
-      grewAt: cursor.grewAt,
-      tokens: cursor.tokens,
-      context: cursor.context,
-      openTool: openTool && { ...openTool },
-      lastTool: cursor.lastTool,
-      finished,
-      inTurn: cursor.inTurn,
-      lastLine: cursor.lastLine,
-      background: awaitedBackground(cursor),
-      breach: cursor.breach,
-      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
-    },
-    cursor
-  };
-}
-var LABEL_CHARS, COMMAND_CHARS, TARGET_CHARS, SEPARATORS, isSwarmTool, toolEscapesBackslash, commandIsBoardsOwn, metaFileOf, mtimeOf, claudeCode, LOCATORS, timeOf, freshCursor, KILL_HEADS, WRAPPER, PATTERN_FEED, PORT_FEED, RUNS_QUOTED, MOVED_TO_BACKGROUND, BACKGROUND_ID, STOPS_TASK, OUTPUT_FILE, NOTIFIED_TOOL_USE, commandRunsListener;
-var init_transcripts = __esm({
-  "src/link/transcripts.ts"() {
-    "use strict";
-    init_liveness();
-    LABEL_CHARS = 80;
-    COMMAND_CHARS = 500;
-    TARGET_CHARS = 50;
-    SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
-    isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
-    toolEscapesBackslash = (toolName) => toolName === void 0 || toolName === "Bash";
-    commandIsBoardsOwn = (command, backslashEscapes) => commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
-    metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
-    mtimeOf = (file) => {
-      try {
-        return fs5.statSync(file).mtimeMs;
-      } catch {
-        return 0;
-      }
-    };
-    claudeCode = {
-      name: "claude-code",
-      locate(binding, env) {
-        const session = env.CLAUDE_CODE_SESSION_ID;
-        if (!session) return null;
-        const root = env.SWARM_TRANSCRIPTS_ROOT || path5.join(env.USERPROFILE || env.HOME || os2.homedir(), ".claude", "projects");
-        let projects;
-        try {
-          projects = fs5.readdirSync(root);
-        } catch {
-          return null;
-        }
-        const candidates = [];
-        for (const project of projects) {
-          const main2 = path5.join(root, project, `${session}.jsonl`);
-          if (fs5.existsSync(main2)) candidates.push(main2);
-          const subagents = path5.join(root, project, session, "subagents");
-          let names = [];
-          try {
-            names = fs5.readdirSync(subagents);
-          } catch {
-          }
-          for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path5.join(subagents, n));
-        }
-        const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
-        for (const { file } of newestFirst) {
-          if (this.finished(file) === true) continue;
-          if (transcriptRunsBinding(file, binding)) return file;
-        }
-        return null;
-      },
-      finished(transcript) {
-        let text;
-        try {
-          text = fs5.readFileSync(metaFileOf(transcript), "utf8");
-        } catch {
-          return null;
-        }
-        try {
-          return JSON.parse(text).finished === true;
-        } catch {
-          return false;
-        }
-      }
-    };
-    LOCATORS = [claudeCode];
-    timeOf = (line, fallback) => {
-      const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
-      return Number.isFinite(t) ? t : fallback;
-    };
-    freshCursor = () => ({
-      offset: 0,
-      tokens: 0,
-      open: /* @__PURE__ */ new Map(),
-      lastTool: null,
-      context: null,
-      grewAt: null,
-      lastLine: null,
-      inTurn: false,
-      endedTurns: 0,
-      background: /* @__PURE__ */ new Map(),
-      boardsOwn: /* @__PURE__ */ new Set(),
-      breach: null,
-      listeners: /* @__PURE__ */ new Set(),
-      listenerEndedAt: null
-    });
-    KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
-    WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
-    PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
-    PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
-    RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
-    MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
-    BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
-    STOPS_TASK = /* @__PURE__ */ new Set(["TaskStop", "KillShell", "KillBash"]);
-    OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
-    NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
-    commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
-  }
-});
-
-// src/link/link.ts
-import crypto2 from "node:crypto";
-import fs6 from "node:fs";
-import net from "node:net";
-import os3 from "node:os";
-import path6 from "node:path";
-function linkPipe(dataRoot, run2, member) {
-  const home = crypto2.createHash("sha256").update(path6.resolve(dataRoot)).digest("hex").slice(0, 12);
-  const name = `swarm-${home}-${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path6.join(os3.tmpdir(), `${name}.sock`);
-}
 function linkPidFile(dataRoot, run2, member) {
-  return path6.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
-}
-function readServerState(dataRoot) {
-  try {
-    return JSON.parse(fs6.readFileSync(serverStateFile(dataRoot), "utf8"));
-  } catch {
-    return null;
-  }
-}
-function describeStop(stop) {
-  if (stop.why === "refused") return `refused ${stop.reason}`;
-  if (stop.why === "no server") return `no server for ${Math.round(stop.forMs / 1e3)} s`;
-  if (stop.why === "closed") return "run closed";
-  return stop.why;
-}
-function sayStop(dataRoot, member, stop, toServerLog) {
-  const line = `link ${member}: ${describeStop(stop)}`;
-  process.stderr.write(line + "\n");
-  const state = toServerLog ? readServerState(dataRoot) : null;
-  if (!state || !isAlive(state.pid)) return;
-  try {
-    fs6.appendFileSync(serverLogFile(dataRoot), line + "\n");
-  } catch {
-  }
-}
-async function listenOnPipe(pipe, onPipe) {
-  if (await pipeAnswers(pipe)) return null;
-  const tryListen = () => new Promise((resolve) => {
-    const server = net.createServer(onPipe);
-    server.once("error", () => resolve("taken"));
-    server.listen(pipe, () => resolve(server));
-  });
-  const first = await tryListen();
-  if (first !== "taken") return first;
-  if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
-  fs6.rmSync(pipe, { force: true });
-  const second = await tryListen();
-  return second === "taken" ? null : second;
-}
-async function runLink(opts) {
-  const timing = { ...DEFAULT_TIMING, ...opts.timing };
-  const pipeTaken = () => {
-    const stop = { why: "pipe taken" };
-    sayStop(opts.dataRoot, opts.member, stop, false);
-    return stop;
-  };
-  if (await pipeAnswers(linkPipe(opts.dataRoot, opts.run, opts.member))) return pipeTaken();
-  let state = readServerState(opts.dataRoot);
-  for (const startedAt = Date.now(); !state && Date.now() - startedAt < timing.stateFileWaitMs; ) {
-    await pause(100);
-    state = readServerState(opts.dataRoot);
-  }
-  if (!state) throw new Error(`no board server state file in ${opts.dataRoot}`);
-  const unanswered = /* @__PURE__ */ new Map();
-  const pipes = /* @__PURE__ */ new Set();
-  let socket = null;
-  let welcomed = false;
-  let exiting = false;
-  let lastStirAt = Date.now();
-  let finish;
-  const finished = new Promise((r) => finish = r);
-  const sendUp = (f) => {
-    if (socket && welcomed && socket.readyState === WebSocket.OPEN) socket.send(encode(f));
-  };
-  let queuedActivity = null;
-  let lastActivitySentAt = -Infinity;
-  const flushActivity = (now = false) => {
-    if (!queuedActivity || !socket || !welcomed || socket.readyState !== WebSocket.OPEN) return;
-    if (!now && (socket.bufferedAmount > 0 || Date.now() - lastActivitySentAt < timing.activityGapMs)) return;
-    socket.send(encode(queuedActivity));
-    lastActivitySentAt = Date.now();
-    queuedActivity = null;
-  };
-  let watched = null;
-  let sentChanges = null;
-  const watchChanges = () => {
-    if (exiting || !watched || !welcomed) return;
-    const files = changedSet(watched.dir, watched.against);
-    if (!files) return;
-    const key = JSON.stringify(files);
-    if (key === sentChanges) return;
-    sentChanges = key;
-    sendUp({ type: "changes", files });
-  };
-  const resendChanges = () => (sentChanges = null, watchChanges());
-  let transcript = null;
-  let cursor = null;
-  let lastSeen = null;
-  const env = opts.env ?? process.env;
-  const watchTranscript = () => {
-    if (exiting) return;
-    transcript ??= locate(opts.binding, env);
-    if (!transcript) return;
-    const read = observe(transcript, cursor, opts.binding);
-    const grew = read.cursor.offset !== cursor?.offset;
-    cursor = read.cursor;
-    if (grew) lastStirAt = Date.now();
-    const activity = { ...read.activity, transcript };
-    const seen = JSON.stringify(activity);
-    if (seen !== lastSeen) {
-      lastSeen = seen;
-      queuedActivity = { type: "activity", at: Date.now(), activity };
-    }
-    if (read.activity.finished && !read.activity.background) {
-      flushActivity(true);
-      return exit({ why: "finished" }, "finished");
-    }
-    flushActivity();
-  };
-  const exit = (stop, bye) => {
-    if (exiting) return;
-    exiting = true;
-    if (bye) sendUp({ type: "bye", reason: bye });
-    sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
-    clearInterval(idleCheck);
-    clearInterval(watch);
-    clearInterval(changes);
-    clearInterval(heartbeat);
-    pipeServer?.close();
-    for (const p of pipes) p.end();
-    socket?.close();
-    finish(stop);
-  };
-  const onDown = (f) => {
-    if (f.type === "welcome") {
-      welcomed = true;
-      watched = f.watched ?? null;
-      resendChanges();
-      for (const { call } of unanswered.values()) sendUp(call);
-      flushActivity();
-    } else if (f.type === "refused") {
-      if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
-        socket?.close();
-        return;
-      }
-      if (f.reason === "version" && !versionRetried) {
-        versionRetried = true;
-        console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
-        socket?.close();
-        return;
-      }
-      if (f.reason === "shutdown" || f.reason === "ticket") {
-        socket?.close();
-        return;
-      }
-      exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
-    } else if (f.type === "result") {
-      const asked = unanswered.get(f.id);
-      if (!asked) return;
-      unanswered.delete(f.id);
-      if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
-      const endedName = asked.call.args[0]?.name;
-      if (asked.call.method === "end" && f.ok && (endedName === void 0 || endedName === opts.member)) exit({ why: "ended" }, "ended");
-    }
-  };
-  const connectOnce = (s) => new Promise((resolve) => {
-    welcomed = false;
-    let wasWelcomed = false;
-    let ws;
-    try {
-      ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
-    } catch {
-      return resolve(false);
-    }
-    socket = ws;
-    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), ticket: s.ticket, member: { name: opts.member, run: opts.run }, supersede: true }));
-    ws.onmessage = (ev) => {
-      try {
-        onDown(decode(String(ev.data)));
-      } catch {
-      }
-      wasWelcomed ||= welcomed;
-    };
-    let ended = false;
-    const endConnection = () => {
-      if (ended) return;
-      ended = true;
-      welcomed = false;
-      resolve(wasWelcomed);
-    };
-    ws.onclose = endConnection;
-    ws.onerror = endConnection;
-  });
-  let versionRetried = false;
-  const connectionLoop = async () => {
-    let lastAnsweredAt = Date.now();
-    let s = state;
-    while (!exiting) {
-      if (s) {
-        const welcomedThisTime = await connectOnce(s);
-        if (exiting) return;
-        if (welcomedThisTime) lastAnsweredAt = Date.now();
-      }
-      if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
-      await pause(timing.reconnectEveryMs);
-      s = readServerState(opts.dataRoot);
-      if (s && s.version !== bundleVersion()) {
-        await connectOnce(s);
-        return exit({ why: "new version" });
-      }
-    }
-  };
-  const onPipe = (pipe) => {
-    pipes.add(pipe);
-    let buffered = "";
-    pipe.setEncoding("utf8");
-    pipe.on("data", (chunk) => {
-      buffered += chunk;
-      for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
-        const line = buffered.slice(0, nl).trim();
-        buffered = buffered.slice(nl + 1);
-        if (!line) continue;
-        let f;
-        try {
-          f = decode(line);
-        } catch {
-          continue;
-        }
-        if (f.type === "call") {
-          lastStirAt = Date.now();
-          unanswered.set(f.id, { call: f, pipe });
-          sendUp(f);
-        } else if (f.type === "cancel") {
-          unanswered.delete(f.id);
-          sendUp(f);
-        }
-      }
-    });
-    pipe.on("error", () => {
-    });
-    pipe.on("close", () => {
-      pipes.delete(pipe);
-      for (const [id, asked] of unanswered) {
-        if (asked.pipe !== pipe) continue;
-        unanswered.delete(id);
-        if (asked.call.method === "wait") sendUp({ type: "cancel", id });
-      }
-    });
-  };
-  const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
-  if (!pipeServer) return pipeTaken();
-  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
-  try {
-    fs6.mkdirSync(path6.dirname(pidFile), { recursive: true });
-    fs6.writeFileSync(pidFile, String(process.pid));
-  } catch {
-  }
-  const dropPid = () => {
-    try {
-      if (fs6.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs6.rmSync(pidFile);
-    } catch {
-    }
-  };
-  process.once("exit", dropPid);
-  void finished.then(dropPid, dropPid);
-  const idleCheck = setInterval(() => {
-    if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
-  }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
-  const watch = setInterval(watchTranscript, timing.watchEveryMs);
-  const changes = setInterval(watchChanges, timing.changesEveryMs);
-  const heartbeat = setInterval(() => sendUp({ type: "beat" }), HEARTBEAT_MS);
-  if (state.version !== bundleVersion()) exit({ why: "server of another version" });
-  if (!exiting) {
-    void connectionLoop();
-    watchTranscript();
-  }
-  return finished;
+  return path5.join(dataRoot, "links", `${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
 }
 function commandLine(pid) {
   if (!isProcessId(pid)) return null;
@@ -1693,61 +826,42 @@ function stopLinks(runId, members) {
     const file = linkPidFile(DATA_ROOT, runId, member);
     let pid;
     try {
-      pid = Number(fs6.readFileSync(file, "utf8").trim());
+      pid = Number(fs4.readFileSync(file, "utf8").trim());
     } catch {
       continue;
     }
-    if (isProcessId(pid) && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
+    if (isProcessId(pid) && pid !== process.pid && isAlive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
     try {
-      fs6.rmSync(file);
+      fs4.rmSync(file);
     } catch {
     }
   }
   const pauseSync = (ms) => hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
-  for (const end = Date.now() + OWN_EXIT_GRACE_MS; Date.now() < end && pids.some(alive); ) pauseSync(100);
-  const left = pids.filter(alive);
+  for (const end = Date.now() + OWN_EXIT_GRACE_MS; Date.now() < end && pids.some(isAlive); ) pauseSync(100);
+  const left = pids.filter(isAlive);
   for (const pid of left) {
     try {
       process.kill(pid);
     } catch {
     }
   }
-  for (let i = 0; i < 40 && left.some(alive); i++) pauseSync(50);
+  for (let i = 0; i < 40 && left.some(isAlive); i++) pauseSync(50);
 }
-var CHANGES_EVERY_MS, DEFAULT_TIMING, pause, pipeAnswers, alive, isProcessId, OWN_EXIT_GRACE_MS;
-var init_link = __esm({
-  "src/link/link.ts"() {
+var isProcessId, OWN_EXIT_GRACE_MS;
+var init_links = __esm({
+  "src/host/links.ts"() {
     "use strict";
-    init_proc();
     init_home();
-    init_liveness();
-    init_changes();
-    init_wire();
-    init_transcripts();
-    CHANGES_EVERY_MS = 2e3;
-    DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3, changesEveryMs: CHANGES_EVERY_MS };
-    pause = (ms) => new Promise((r) => setTimeout(r, ms));
-    pipeAnswers = (pipe) => new Promise((resolve) => {
-      const probe = net.connect(pipe, () => (probe.destroy(), resolve(true)));
-      probe.once("error", () => resolve(false));
-    });
-    alive = (pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    init_proc();
     isProcessId = (pid) => typeof pid === "number" && Number.isInteger(pid) && pid > 0;
     OWN_EXIT_GRACE_MS = 3e3;
   }
 });
 
 // src/packs/code/worktrees.ts
-import fs7 from "node:fs";
-import os4 from "node:os";
-import path7 from "node:path";
+import fs5 from "node:fs";
+import os2 from "node:os";
+import path6 from "node:path";
 function run(cwd, ...argv) {
   const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
@@ -1755,16 +869,16 @@ function run(cwd, ...argv) {
 function inLinkedWorktree(cwd) {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
   const common = git(cwd, "rev-parse", "--git-common-dir");
-  return !!dir && !!common && !same(dir, path7.resolve(cwd, common));
+  return !!dir && !!common && !same(dir, path6.resolve(cwd, common));
 }
 function ensureWorktree(cwd, repo, runId, group, seat, base) {
   const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
-  const top = fs7.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
+  const top = fs5.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
-  if (fs7.existsSync(at) && fs7.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
+  if (fs5.existsSync(at) && fs5.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   run(cwd, "worktree", "prune");
-  fs7.mkdirSync(path7.dirname(at), { recursive: true });
+  fs5.mkdirSync(path6.dirname(at), { recursive: true });
   const from = baseRef(cwd, base);
   const argv = !branchExists(cwd, branch) ? ["-b", branch, "--end-of-options", at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, "--end-of-options", at, from] : ["--end-of-options", at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
@@ -1776,7 +890,7 @@ function targetName(cwd, into) {
   return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
 }
 function leftover(wt, into) {
-  if (!fs7.existsSync(wt)) return null;
+  if (!fs5.existsSync(wt)) return null;
   const status = run(wt, "status", "--porcelain", "--untracked-files=all");
   if (!status.ok) return `git status failed: ${status.err}`;
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
@@ -1790,12 +904,12 @@ function leftover(wt, into) {
   return null;
 }
 function removeWorktree(wt, repo) {
-  if (!fs7.existsSync(wt)) {
-    run(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+  if (!fs5.existsSync(wt)) {
+    run(os2.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
     return null;
   }
-  const r = run(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
-  run(os4.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
+  const r = run(os2.tmpdir(), `--git-dir=${repo}`, "worktree", "remove", wt);
+  run(os2.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
   return r.ok ? null : r.err || "git worktree remove failed";
 }
 function sweep(wt, repo, into) {
@@ -1808,7 +922,7 @@ function worktrees(repo) {
     place(run2, group, seat, cwd) {
       if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
       const at = worktreeDir(repo, run2, seat);
-      return { path: at, branch: branchFor(run2, group, seat), reused: fs7.existsSync(at) };
+      return { path: at, branch: branchFor(run2, group, seat), reused: fs5.existsSync(at) };
     },
     /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
     forSeat(run2, group, seat, base) {
@@ -1848,16 +962,16 @@ var init_worktrees = __esm({
     "use strict";
     init_proc();
     init_git();
-    init_link();
+    init_links();
     init_place();
-    worktreesRoot = (repo) => path7.join(repo, "swarm", "worktrees");
+    worktreesRoot = (repo) => path6.join(repo, "swarm", "worktrees");
     fold = canonicalPath;
     safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-    worktreeDir = (repo, run2, seat) => path7.join(worktreesRoot(repo), String(run2), safe(seat));
+    worktreeDir = (repo, run2, seat) => path6.join(worktreesRoot(repo), String(run2), safe(seat));
     branchFor = (run2, group, seat) => `swarm/${run2}-${group}/${seat}`;
-    owned = (wt, repo) => !!wt && fold(path7.dirname(path7.dirname(wt))) === fold(worktreesRoot(repo));
+    owned = (wt, repo) => !!wt && fold(path6.dirname(path6.dirname(wt))) === fold(worktreesRoot(repo));
     worktreeDirs = (repos) => {
-      const sub = (d) => fs7.existsSync(d) ? fs7.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path7.join(d, e.name)) : [];
+      const sub = (d) => fs5.existsSync(d) ? fs5.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path6.join(d, e.name)) : [];
       return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
     };
     same = (a, b) => fold(a) === fold(b);
@@ -1867,10 +981,10 @@ var init_worktrees = __esm({
 });
 
 // src/packs/code/index.ts
-import fs8 from "node:fs";
-import path8 from "node:path";
+import fs6 from "node:fs";
+import path7 from "node:path";
 function makeWorktree(verb, member, input, ctx) {
-  if (!member.place || !worktrees(member.repo).owns(member.place) || fs8.existsSync(member.place)) return { made: false };
+  if (!member.place || !worktrees(member.repo).owns(member.place) || fs6.existsSync(member.place)) return { made: false };
   const base = ctx.base ?? (typeof input.cwd === "string" ? baseAt(input.cwd) : null);
   if (!base) return { refused: { reason: "git", verb, detail: `${member.name}: no base to make the worktree from` } };
   try {
@@ -1881,19 +995,19 @@ function makeWorktree(verb, member, input, ctx) {
   }
 }
 var slashed, ownWorktree, tablesOf, tableWrite, optional, CLAIM_WRITES, codePack;
-var init_code = __esm({
+var init_code2 = __esm({
   "src/packs/code/index.ts"() {
     "use strict";
     init_git();
     init_claims();
     init_snapshot();
     init_schema();
-    init_events();
+    init_code();
     init_worktrees();
     slashed = (p) => p.split("\\").join("/");
     ownWorktree = (member) => {
       const seatTrees = worktrees(member.repo);
-      return seatTrees.owns(member.place) && fs8.existsSync(member.place) ? slashed(member.place) : null;
+      return seatTrees.owns(member.place) && fs6.existsSync(member.place) ? slashed(member.place) : null;
     };
     tablesOf = (ctx) => ctx.tables;
     tableWrite = (countedAs, apply, progress = false) => ({
@@ -1912,7 +1026,6 @@ var init_code = __esm({
     };
     codePack = {
       name: "code",
-      events: CODE_EVENTS,
       verbs: ["join", "merge-lock", "merged", "flag", "conflicts", "guides"].map((name) => ({ name })),
       // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
       alsoFor: (member, message, ctx) => (message.kind === "agreement" || message.kind === "endorsement") && message.about != null && tablesOf(ctx).holderNames(member.repo, message.about).includes(member.name),
@@ -1959,14 +1072,14 @@ var init_code = __esm({
             return tables.seatWorktrees(typeof input.run === "number" ? input.run : void 0);
           // a run's close: its worktrees go once clean and merged, each seat's link stopped first
           case "close": {
-            const trees = tables.seatWorktrees(Number(input.run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs8.existsSync(w.worktree));
+            const trees = tables.seatWorktrees(Number(input.run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs6.existsSync(w.worktree));
             return trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: w.run, member: w.member, worktree: w.worktree }, w.base) }));
           }
           // `worktree prune`: every worktree folder of each repository the board knows, judged by its latest record
           case "prune": {
             const known = tables.seatWorktrees();
             const repos = [.../* @__PURE__ */ new Set([...known.map((k) => k.repo), ...input.repos])];
-            const fold2 = (s) => process.platform === "win32" ? path8.resolve(s).toLowerCase() : path8.resolve(s);
+            const fold2 = (s) => process.platform === "win32" ? path7.resolve(s).toLowerCase() : path7.resolve(s);
             const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
             return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
           }
@@ -2019,7 +1132,7 @@ var init_registry = __esm({
   "src/packs/registry.ts"() {
     "use strict";
     init_kinds();
-    init_code();
+    init_code2();
     PACKS = { [codePack.name]: codePack };
     MEMBER_ROWS = [
       { kind: "plan", role: null, pack: "code", verify: false },
@@ -2039,10 +1152,6 @@ var init_registry = __esm({
       /** Why a join declaring files is refused in a run of `kind`, whose seats have no pack to hold them. */
       declaredRefused(kind) {
         return `join: a ${kind} run has no claims`;
-      },
-      /** Every pack's events (D18), in PACKS' order. */
-      events() {
-        return Object.assign({}, ...Object.values(PACKS).map((p) => p.events ?? {}));
       },
       /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
       packNamed(name) {
@@ -2080,7 +1189,7 @@ var init_registry = __esm({
   }
 });
 
-// src/board/events.ts
+// src/contract/events.ts
 function eventOf(m) {
   if (m.event && isEvent(m.event)) return m.event;
   return m.kind === "agreement" || m.kind === "endorsement" || m.kind === "urgent" ? m.kind : null;
@@ -2095,10 +1204,10 @@ function wakes(m, me) {
   return !!e && !!eventDef(e).always;
 }
 var FOREGROUND_WAIT_MS, EVENTS, CORE_AWAITED, isAwaitedCause, landingEvents, awaitedLine, all, allEvents, isEvent, alwaysEventNames, eventDef, toAuthorEventNames;
-var init_events2 = __esm({
-  "src/board/events.ts"() {
+var init_events = __esm({
+  "src/contract/events.ts"() {
     "use strict";
-    init_registry();
+    init_code();
     FOREGROUND_WAIT_MS = 15e4;
     EVENTS = {
       // a seat backs another member's agreement (D36): the answer module tells a seat to back it
@@ -2144,7 +1253,7 @@ var init_events2 = __esm({
     landingEvents = () => Object.values(allEvents()).filter((d) => d.lands).map((d) => d.name);
     awaitedLine = (seat, what, nth, of) => `${seat} ${what} (${nth} of ${of} you wait on)`;
     all = null;
-    allEvents = () => all ??= { ...EVENTS, ...registry.events() };
+    allEvents = () => all ??= { ...EVENTS, ...CODE_EVENTS };
     isEvent = (s) => Object.hasOwn(allEvents(), s);
     alwaysEventNames = () => Object.entries(allEvents()).filter(([, d]) => d.always).map(([name]) => name);
     eventDef = (name) => allEvents()[name];
@@ -2234,6 +1343,138 @@ var init_names = __esm({
   }
 });
 
+// src/board/liveness.ts
+function coreStateOf(m) {
+  if (!m.runOpen || m.ended) return "ended";
+  if (m.linkDown) return m.owedAtDrop ? "lost" : "away";
+  return m.moving ? "working" : "stopped";
+}
+var NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, badgeConfirmMs, stallMsFloor, READINGS_KEPT_MS, LOST_MS;
+var init_liveness = __esm({
+  "src/board/liveness.ts"() {
+    "use strict";
+    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
+    STALL_MS_DEFAULT = 10 * 60 * 1e3;
+    BADGE_CONFIRM_MS = 10 * 1e3;
+    badgeConfirmMs = () => Number(process.env.SWARM_BADGE_CONFIRM_MS) || BADGE_CONFIRM_MS;
+    stallMsFloor = () => Number(process.env.SWARM_STALL_FLOOR_MS) || STALL_MS_DEFAULT;
+    READINGS_KEPT_MS = 10 * 60 * 1e3;
+    LOST_MS = 60 * 1e3;
+  }
+});
+
+// src/contract/wire.ts
+import crypto from "node:crypto";
+import fs7 from "node:fs";
+import path8 from "node:path";
+function encode(f) {
+  return JSON.stringify(f);
+}
+function decode(text) {
+  const f = JSON.parse(text);
+  const type = f && typeof f === "object" ? f.type : void 0;
+  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
+  return f;
+}
+function builtCliOf(entry2) {
+  const file = path8.resolve(entry2);
+  const bundle = path8.join(path8.dirname(file), "dist-cli", "cli.mjs");
+  return fs7.existsSync(bundle) ? bundle : file;
+}
+function bundleVersion(entry2) {
+  if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
+  const file = builtCliOf(entry2);
+  const st = fs7.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
+  if (v === void 0) {
+    v = crypto.createHash("sha256").update(fs7.readFileSync(file)).digest("hex").slice(0, 16);
+    versionsByBuild.set(key, v);
+  }
+  return v;
+}
+function readServerState(dataRoot) {
+  try {
+    const s = JSON.parse(fs7.readFileSync(serverStateFile(dataRoot), "utf8"));
+    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
+  } catch {
+    return null;
+  }
+}
+function serverLockHolder(dataRoot) {
+  try {
+    const pid = Number(fs7.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+function liveStartLockHolder(dataRoot) {
+  const holder = serverLockHolder(dataRoot);
+  if (holder === null || !isAlive(holder)) return null;
+  try {
+    if (JSON.parse(fs7.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+  } catch {
+  }
+  try {
+    return Date.now() - fs7.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+  } catch {
+    return null;
+  }
+}
+var RPC_METHODS, ORCHESTRATORS_GROUP, FRAME_TYPES, versionsByBuild, ownVersion, HEARTBEAT_MS, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var init_wire = __esm({
+  "src/contract/wire.ts"() {
+    "use strict";
+    init_home();
+    init_proc();
+    RPC_METHODS = [
+      "openRun",
+      "addSeat",
+      "closeRun",
+      "phase",
+      "currentPhase",
+      "showPhase",
+      "pause",
+      "resume",
+      "pausedOf",
+      "done",
+      "phaseProgress",
+      "lastActivity",
+      "owedPhase",
+      "idle",
+      "unreadMentions",
+      "runs",
+      "packCall",
+      "join",
+      "participant",
+      "identify",
+      "setDoing",
+      "end",
+      "roster",
+      "endedMembers",
+      "owingMembers",
+      "heldBy",
+      "post",
+      "endorse",
+      "deliverMentions",
+      "wait",
+      "repos",
+      "snapshot",
+      "composition",
+      "phases",
+      "thread",
+      "message"
+    ];
+    ORCHESTRATORS_GROUP = "orchestrators";
+    FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+    versionsByBuild = /* @__PURE__ */ new Map();
+    HEARTBEAT_MS = 5 * 1e3;
+    SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
+    START_LOCK_GRACE_MS = 15e3;
+  }
+});
+
 // src/board/call-label.ts
 function shortCommand(command) {
   const line = command.trim().replace(/^cd\s+\S+\s*(&&|;)\s*/, "");
@@ -2291,7 +1532,7 @@ var init_owing = __esm({
 });
 
 // src/board/board.ts
-import fs9 from "node:fs";
+import fs8 from "node:fs";
 import path9 from "node:path";
 function alarmSubjectOf(m) {
   const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
@@ -2310,7 +1551,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     if (w.name !== "ExperimentalWarning") console.warn(w);
   });
   const { DatabaseSync } = await import("node:sqlite");
-  fs9.mkdirSync(path9.dirname(dbPath), { recursive: true });
+  fs8.mkdirSync(path9.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath, { timeout: 5e3 });
   const prepareAnew = db.prepare.bind(db);
   const prepared = /* @__PURE__ */ new Map();
@@ -4001,12 +3242,12 @@ var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, T
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
-    init_home();
+    init_home2();
     init_place();
     init_mentions();
     init_kinds();
     init_registry();
-    init_events2();
+    init_events();
     init_names();
     init_liveness();
     init_wire();
@@ -7802,9 +7043,9 @@ __export(server_exports, {
   stopBoardServer: () => stopBoardServer
 });
 import crypto4 from "node:crypto";
-import fs13 from "node:fs";
+import fs14 from "node:fs";
 import http from "node:http";
-import path13 from "node:path";
+import path15 from "node:path";
 function silentTooLong(now, lastRound, heardAt) {
   const loopBlocked = now - lastRound > PING_EVERY_MS + LOOP_LAG_FORGIVEN_MS;
   return !loopBlocked && now - heardAt > PONG_WITHIN_MS;
@@ -7820,13 +7061,13 @@ async function startBoardServer(opts) {
   }
 }
 function logStart(dataRoot) {
-  fs13.mkdirSync(dataRoot, { recursive: true });
-  fs13.appendFileSync(serverLogFile(dataRoot), `serve: home ${path13.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs14.mkdirSync(dataRoot, { recursive: true });
+  fs14.appendFileSync(serverLogFile(dataRoot), `serve: home ${path15.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function appendLog(dataRoot, line) {
   try {
-    fs13.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
+    fs14.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
 `);
   } catch {
   }
@@ -7835,18 +7076,18 @@ function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
   if (passed) return passed;
   try {
-    const read = fs13.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+    const read = fs14.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
     if (read) return read;
   } catch {
   }
   return "unknown";
 }
 async function takeStartLock(dataRoot) {
-  fs13.mkdirSync(dataRoot, { recursive: true });
+  fs14.mkdirSync(dataRoot, { recursive: true });
   const lock = serverStartLock(dataRoot);
   for (let emptyReads = 0; ; ) {
     try {
-      fs13.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs14.writeFileSync(lock, String(process.pid), { flag: "wx" });
       return;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -7865,29 +7106,29 @@ async function takeStartLock(dataRoot) {
 async function removeStaleStartLock(dataRoot, seen) {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs13.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs14.writeFileSync(breaker, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
     try {
-      if (Date.now() - fs13.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs13.rmSync(breaker, { force: true });
+      if (Date.now() - fs14.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs14.rmSync(breaker, { force: true });
     } catch {
     }
     await new Promise((r) => setTimeout(r, LOCK_READ_RETRY_MS));
     return;
   }
   try {
-    if (serverLockHolder(dataRoot) === seen) fs13.rmSync(serverStartLock(dataRoot), { force: true });
+    if (serverLockHolder(dataRoot) === seen) fs14.rmSync(serverStartLock(dataRoot), { force: true });
   } finally {
-    fs13.rmSync(breaker, { force: true });
+    fs14.rmSync(breaker, { force: true });
   }
 }
 function releaseStartLock(dataRoot) {
-  if (serverLockHolder(dataRoot) === process.pid) fs13.rmSync(serverStartLock(dataRoot), { force: true });
+  if (serverLockHolder(dataRoot) === process.pid) fs14.rmSync(serverStartLock(dataRoot), { force: true });
 }
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board2 = await openBoard(path13.join(opts.dataRoot, "swarm.sqlite"));
+  const board2 = await openBoard(path15.join(opts.dataRoot, "swarm.sqlite"));
   const tracer = makeTracer(opts.dataRoot);
   setTracer(tracer);
   tracer.prune();
@@ -8049,7 +7290,7 @@ async function runBoardServer(opts) {
         if (f.ticket !== ticket) return refuse(s, "ticket");
         if (f.version !== version) {
           try {
-            fs13.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
+            fs14.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
 `);
           } catch {
           }
@@ -8105,8 +7346,8 @@ async function runBoardServer(opts) {
   const port = await listen(httpServer, host, opts.port ?? 0);
   const state = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs13.mkdirSync(opts.dataRoot, { recursive: true });
-  fs13.writeFileSync(stateFile, JSON.stringify(state));
+  fs14.mkdirSync(opts.dataRoot, { recursive: true });
+  fs14.writeFileSync(stateFile, JSON.stringify(state));
   const stopTellingReaders = board2.onChange((repo) => {
     for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
   });
@@ -8169,8 +7410,8 @@ async function runBoardServer(opts) {
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
     try {
-      const written = JSON.parse(fs13.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs13.rmSync(stateFile);
+      const written = JSON.parse(fs14.readFileSync(stateFile, "utf8"));
+      if (written.pid === state.pid && written.port === state.port) fs14.rmSync(stateFile);
     } catch {
     }
     releaseStartLock(opts.dataRoot);
@@ -8187,7 +7428,7 @@ async function stopBoardServer(dataRoot) {
   const file = serverStateFile(dataRoot);
   let state;
   try {
-    state = JSON.parse(fs13.readFileSync(file, "utf8"));
+    state = JSON.parse(fs14.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -8195,12 +7436,12 @@ async function stopBoardServer(dataRoot) {
     const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
-    fs13.rmSync(file, { force: true });
+    fs14.rmSync(file, { force: true });
     const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs13.rmSync(serverStartLock(dataRoot), { force: true });
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs14.rmSync(serverStartLock(dataRoot), { force: true });
     return false;
   }
-  for (let i = 0; i < 100 && fs13.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 100 && fs14.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
   return true;
 }
 function listen(server, host, port) {
@@ -8230,6 +7471,7 @@ var init_server = __esm({
     init_board();
     init_authority();
     init_wire();
+    init_home();
     RESULT_CACHE_MS = 10 * 60 * 1e3;
     UPKEEP_LOOK_MS = 1e3;
     PING_EVERY_MS = 10 * 1e3;
@@ -8255,22 +7497,777 @@ init_proc();
 init_board();
 init_kinds();
 init_liveness();
-init_events2();
+init_events();
+init_home2();
 init_home();
 init_trace();
 import { createHash } from "node:crypto";
-import fs14 from "node:fs";
-import path14 from "node:path";
+import fs15 from "node:fs";
+import path16 from "node:path";
 
 // src/client/remote.ts
 init_proc();
 init_wire();
-init_link();
+init_home();
 import crypto3 from "node:crypto";
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import net2 from "node:net";
 import os5 from "node:os";
+import path12 from "node:path";
+
+// src/link/link.ts
+init_home();
+init_git();
+init_links();
+init_proc();
+init_wire();
+import crypto2 from "node:crypto";
+import fs10 from "node:fs";
+import net from "node:net";
+import os4 from "node:os";
+import path11 from "node:path";
+
+// src/link/transcripts.ts
+import fs9 from "node:fs";
+import os3 from "node:os";
 import path10 from "node:path";
+
+// src/link/adapters.ts
+var claudeCodeJsonl = {
+  name: "claude-code-jsonl",
+  read(chunk, from) {
+    const end = chunk.lastIndexOf(10);
+    if (end < 0) return from;
+    let tokens = from.tokens;
+    let parsed = 0;
+    for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
+      const text = line.trim();
+      if (!text) continue;
+      let obj;
+      try {
+        obj = JSON.parse(text);
+      } catch {
+        if (parsed === 0 && from.offset === 0) return null;
+        continue;
+      }
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+        if (parsed === 0 && from.offset === 0) return null;
+        continue;
+      }
+      parsed++;
+      const usage = obj.message?.usage;
+      if (!usage) continue;
+      for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
+        const n = usage[k];
+        if (typeof n === "number" && Number.isFinite(n)) tokens += n;
+      }
+    }
+    return { offset: from.offset + end + 1, tokens };
+  }
+};
+
+// src/link/transcripts.ts
+var LABEL_CHARS = 80;
+var COMMAND_CHARS = 500;
+function callWordsOf(input) {
+  const fields = input && typeof input === "object" ? input : {};
+  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
+  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
+  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
+}
+var TARGET_CHARS = 50;
+var SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
+function shellWords(command, backslashEscapes = true) {
+  const words = [];
+  let word = "";
+  let inWord = false;
+  const flush = () => {
+    if (inWord) words.push(word);
+    word = "";
+    inWord = false;
+  };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (c === "'" || c === '"') {
+      const close = command.indexOf(c, i + 1);
+      const end = close < 0 ? command.length : close;
+      word += command.slice(i + 1, end);
+      inWord = true;
+      i = end;
+    } else if (backslashEscapes && c === "\\" && i + 1 < command.length && command[i + 1] !== "\n") {
+      word += command[++i];
+      inWord = true;
+    } else if (c === ";" || c === "\n" || c === "|" || c === "&") {
+      flush();
+      const two = command.slice(i, i + 2);
+      if (two === "&&" || two === "||") {
+        words.push(two);
+        i++;
+      } else words.push(c);
+    } else if (/\s/.test(c)) flush();
+    else {
+      word += c;
+      inWord = true;
+    }
+  }
+  flush();
+  return words;
+}
+var isSwarmTool = (word) => /(^|[\\/])swarm(\.mjs)?$/i.test(word) || /^\$\{?\w+\}?$/.test(word);
+function optionValue(words, names) {
+  for (let i = 0; i < words.length; i++) {
+    for (const n of names) {
+      if (words[i] === n && i + 1 < words.length) return words[i + 1];
+      if (words[i].startsWith(n + "=")) return words[i].slice(n.length + 1);
+    }
+  }
+  return void 0;
+}
+function commandRunsWait(command, backslashEscapes = true) {
+  return commandRunsVerb(command, "wait", backslashEscapes);
+}
+var toolEscapesBackslash = (toolName) => toolName === void 0 || toolName === "Bash";
+function commandRunsVerb(command, verb, backslashEscapes) {
+  const words = shellWords(command, backslashEscapes);
+  return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
+}
+var commandIsBoardsOwn = (command, backslashEscapes) => commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
+function commandRunsBinding(command, binding, backslashEscapes = true) {
+  const words = shellWords(command, backslashEscapes);
+  let start = 0;
+  for (let i = 0; i <= words.length; i++) {
+    if (i < words.length && !SEPARATORS.has(words[i])) continue;
+    const segment = words.slice(start, i);
+    start = i + 1;
+    const at = segment.indexOf(binding.verb);
+    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
+    const args2 = segment.slice(at + 1);
+    if (binding.verb === "join") {
+      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
+    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
+  }
+  return false;
+}
+function transcriptRunsBinding(file, binding) {
+  let text;
+  try {
+    text = fs9.readFileSync(file, "utf8");
+  } catch {
+    return false;
+  }
+  const value = binding.verb === "join" ? binding.seat : binding.group;
+  if (!text.includes(binding.verb) || !text.includes(value) || !text.includes('"tool_use"')) return false;
+  for (const line of text.split("\n")) {
+    if (!line.includes('"tool_use"') || !line.includes(binding.verb)) continue;
+    let obj;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
+    for (const part of obj.message.content) {
+      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
+    }
+  }
+  return false;
+}
+var metaFileOf = (transcript) => transcript.replace(/\.jsonl$/, ".meta.json");
+var mtimeOf = (file) => {
+  try {
+    return fs9.statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+var claudeCode = {
+  name: "claude-code",
+  locate(binding, env) {
+    const session = env.CLAUDE_CODE_SESSION_ID;
+    if (!session) return null;
+    const root = env.SWARM_TRANSCRIPTS_ROOT || path10.join(env.USERPROFILE || env.HOME || os3.homedir(), ".claude", "projects");
+    let projects;
+    try {
+      projects = fs9.readdirSync(root);
+    } catch {
+      return null;
+    }
+    const candidates = [];
+    for (const project of projects) {
+      const main2 = path10.join(root, project, `${session}.jsonl`);
+      if (fs9.existsSync(main2)) candidates.push(main2);
+      const subagents = path10.join(root, project, session, "subagents");
+      let names = [];
+      try {
+        names = fs9.readdirSync(subagents);
+      } catch {
+      }
+      for (const n of names) if (/^agent-.*\.jsonl$/.test(n)) candidates.push(path10.join(subagents, n));
+    }
+    const newestFirst = candidates.map((file) => ({ file, mtime: mtimeOf(file) })).sort((a, b) => b.mtime - a.mtime);
+    for (const { file } of newestFirst) {
+      if (this.finished(file) === true) continue;
+      if (transcriptRunsBinding(file, binding)) return file;
+    }
+    return null;
+  },
+  finished(transcript) {
+    let text;
+    try {
+      text = fs9.readFileSync(metaFileOf(transcript), "utf8");
+    } catch {
+      return null;
+    }
+    try {
+      return JSON.parse(text).finished === true;
+    } catch {
+      return false;
+    }
+  }
+};
+var LOCATORS = [claudeCode];
+function locate(binding, env) {
+  for (const l of LOCATORS) {
+    const found = l.locate(binding, env);
+    if (found) return found;
+  }
+  return null;
+}
+function toolTarget(input) {
+  let text = "";
+  if (input && typeof input === "object") {
+    const fields = input;
+    for (const k of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
+      if (typeof fields[k] === "string") {
+        text = fields[k];
+        break;
+      }
+    }
+    if (!text) text = JSON.stringify(input);
+  } else if (input !== void 0) text = String(input);
+  return text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
+}
+var timeOf = (line, fallback) => {
+  const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
+  return Number.isFinite(t) ? t : fallback;
+};
+var freshCursor = () => ({
+  offset: 0,
+  tokens: 0,
+  open: /* @__PURE__ */ new Map(),
+  lastTool: null,
+  context: null,
+  grewAt: null,
+  lastLine: null,
+  inTurn: false,
+  endedTurns: 0,
+  background: /* @__PURE__ */ new Map(),
+  boardsOwn: /* @__PURE__ */ new Set(),
+  breach: null,
+  listeners: /* @__PURE__ */ new Set(),
+  listenerEndedAt: null
+});
+var KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
+var WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
+var PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
+var PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
+var RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
+function commandSegments(text) {
+  const out = [];
+  let cur = "";
+  const flush = () => {
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const close = text.indexOf(c, i + 1);
+      const end = close < 0 ? text.length : close;
+      const inner = text.slice(i + 1, end);
+      if (RUNS_QUOTED.test(cur)) {
+        flush();
+        out.push(...commandSegments(inner));
+      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
+      i = end;
+    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
+    else cur += c;
+  }
+  flush();
+  return out;
+}
+function headOf(segment) {
+  const words = segment.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
+  if (!words.length) return null;
+  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
+  return { head, rest: words.slice(1).join(" ") };
+}
+function portsOf(command) {
+  const found = /* @__PURE__ */ new Set();
+  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
+  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
+  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
+}
+function classifyKill(command) {
+  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
+  let kill = null;
+  for (const segment of commandSegments(command)) {
+    const h = headOf(segment);
+    if (!h || !KILL_HEADS.has(h.head)) continue;
+    const { head, rest } = h;
+    if (head === "pkill" || head === "killall") kill = "name";
+    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? kill ?? null : "fed";
+    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? kill ?? null : "fed";
+    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? kill ?? null : "fed";
+    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
+    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
+    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
+    if (kill === "name") break;
+  }
+  if (kill === "name") return { kind: "pattern" };
+  if (kill !== "fed") return null;
+  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
+  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
+  return null;
+}
+var MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
+var BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
+var STOPS_TASK = /* @__PURE__ */ new Set(["TaskStop", "KillShell", "KillBash"]);
+var OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
+var NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+function textOf(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
+}
+function closeNotified(cursor, text, at) {
+  if (!text.includes("<task-notification>")) return;
+  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
+    cursor.background.delete(m[1]);
+    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
+  }
+}
+var commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
+function awaitedBackground(cursor) {
+  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
+  let oldest = null;
+  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
+  if (!oldest) return null;
+  let outputGrewAt = null;
+  if (oldest.output) {
+    try {
+      outputGrewAt = fs9.statSync(oldest.output).mtimeMs;
+    } catch {
+    }
+  }
+  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
+}
+function commandActsAsOther(command, binding, backslashEscapes = true) {
+  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
+  if (as === void 0) return false;
+  const slash = as.lastIndexOf("/");
+  const group = slash < 0 ? null : as.slice(0, slash);
+  const seat = as.slice(slash + 1);
+  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
+}
+function observe(transcript, from, binding) {
+  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
+  let chunk = Buffer.alloc(0);
+  let mtime = Date.now();
+  try {
+    const fd = fs9.openSync(transcript, "r");
+    try {
+      const stat = fs9.fstatSync(fd);
+      mtime = stat.mtimeMs;
+      if (stat.size < cursor.offset) cursor = freshCursor();
+      chunk = Buffer.alloc(stat.size - cursor.offset);
+      fs9.readSync(fd, chunk, 0, chunk.length, cursor.offset);
+    } finally {
+      fs9.closeSync(fd);
+    }
+  } catch {
+    cursor = freshCursor();
+  }
+  const counted = claudeCodeJsonl.read(chunk, { offset: cursor.offset, tokens: cursor.tokens });
+  const consumed = (counted?.offset ?? cursor.offset) - cursor.offset;
+  if (consumed > 0) {
+    for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
+      if (!raw.trim()) continue;
+      let line;
+      try {
+        line = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
+      if (line.type !== "assistant" && line.type !== "user") continue;
+      const at = timeOf(line, mtime);
+      const content = Array.isArray(line.message?.content) ? line.message.content : [];
+      if (line.type === "assistant") {
+        const usage = line.message?.usage;
+        if (usage) {
+          const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
+          cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+        }
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
+          if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
+          const name = part.name ?? "?";
+          const target = toolTarget(part.input);
+          const input = part.input;
+          const command = input?.command;
+          const escapes = toolEscapesBackslash(name);
+          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
+          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
+          const words = callWordsOf(part.input);
+          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...words });
+          cursor.lastTool = target ? `${name} ${target}` : name;
+          cursor.lastLine = cursor.lastTool;
+          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
+          if (boardsOwn) cursor.boardsOwn.add(part.id);
+          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
+          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
+          if (STOPS_TASK.has(name)) {
+            const stopped = part.input ?? {};
+            const id = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
+            if (id) {
+              for (const [useId, task] of cursor.background) if (task.taskId === id) cursor.background.delete(useId);
+            }
+          }
+          const kill = typeof command === "string" ? classifyKill(command) : null;
+          if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
+        }
+        const inTurn = line.message?.stop_reason === "tool_use";
+        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
+        cursor.inTurn = inTurn;
+      } else {
+        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
+        for (const part of content) {
+          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
+          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
+          const result = textOf(part.content);
+          const call = cursor.open.get(part.tool_use_id);
+          if (MOVED_TO_BACKGROUND.test(result)) {
+            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
+            const taskId = BACKGROUND_ID.exec(result)?.[1] ?? null;
+            const task = cursor.background.get(part.tool_use_id);
+            if (task) cursor.background.set(part.tool_use_id, { ...task, output, taskId });
+            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
+              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
+          }
+          cursor.open.delete(part.tool_use_id);
+          cursor.boardsOwn.delete(part.tool_use_id);
+        }
+        cursor.inTurn = true;
+      }
+    }
+    cursor.offset += consumed;
+    cursor.tokens = counted.tokens;
+    cursor.grewAt = mtime;
+  }
+  let openTool = null;
+  for (const t of cursor.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
+  let finished = false;
+  for (const l of LOCATORS) {
+    const said = l.finished(transcript);
+    if (said !== null) {
+      finished = said;
+      break;
+    }
+  }
+  return {
+    activity: {
+      grewAt: cursor.grewAt,
+      tokens: cursor.tokens,
+      context: cursor.context,
+      openTool: openTool && { ...openTool },
+      lastTool: cursor.lastTool,
+      finished,
+      inTurn: cursor.inTurn,
+      lastLine: cursor.lastLine,
+      background: awaitedBackground(cursor),
+      breach: cursor.breach,
+      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
+    },
+    cursor
+  };
+}
+
+// src/link/link.ts
+var CHANGES_EVERY_MS = 2e3;
+var DEFAULT_TIMING = { reconnectGiveUpMs: 6e4, reconnectEveryMs: 500, idleMs: 2 * 60 * 6e4, stateFileWaitMs: 5e3, watchEveryMs: 1e3, activityGapMs: 3e3, changesEveryMs: CHANGES_EVERY_MS };
+function linkPipe(dataRoot, run2, member) {
+  const home = crypto2.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const name = `swarm-${home}-${run2}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os4.tmpdir(), `${name}.sock`);
+}
+function describeStop(stop) {
+  if (stop.why === "refused") return `refused ${stop.reason}`;
+  if (stop.why === "no server") return `no server for ${Math.round(stop.forMs / 1e3)} s`;
+  if (stop.why === "closed") return "run closed";
+  return stop.why;
+}
+function sayStop(dataRoot, member, stop, toServerLog) {
+  const line = `link ${member}: ${describeStop(stop)}`;
+  process.stderr.write(line + "\n");
+  const state = toServerLog ? readServerState(dataRoot) : null;
+  if (!state || !isAlive(state.pid)) return;
+  try {
+    fs10.appendFileSync(serverLogFile(dataRoot), line + "\n");
+  } catch {
+  }
+}
+var pause = (ms) => new Promise((r) => setTimeout(r, ms));
+var pipeAnswers = (pipe) => new Promise((resolve) => {
+  const probe = net.connect(pipe, () => (probe.destroy(), resolve(true)));
+  probe.once("error", () => resolve(false));
+});
+async function listenOnPipe(pipe, onPipe) {
+  if (await pipeAnswers(pipe)) return null;
+  const tryListen = () => new Promise((resolve) => {
+    const server = net.createServer(onPipe);
+    server.once("error", () => resolve("taken"));
+    server.listen(pipe, () => resolve(server));
+  });
+  const first = await tryListen();
+  if (first !== "taken") return first;
+  if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
+  fs10.rmSync(pipe, { force: true });
+  const second = await tryListen();
+  return second === "taken" ? null : second;
+}
+async function runLink(opts) {
+  const timing = { ...DEFAULT_TIMING, ...opts.timing };
+  const pipeTaken = () => {
+    const stop = { why: "pipe taken" };
+    sayStop(opts.dataRoot, opts.member, stop, false);
+    return stop;
+  };
+  if (await pipeAnswers(linkPipe(opts.dataRoot, opts.run, opts.member))) return pipeTaken();
+  let state = readServerState(opts.dataRoot);
+  for (const startedAt = Date.now(); !state && Date.now() - startedAt < timing.stateFileWaitMs; ) {
+    await pause(100);
+    state = readServerState(opts.dataRoot);
+  }
+  if (!state) throw new Error(`no board server state file in ${opts.dataRoot}`);
+  const unanswered = /* @__PURE__ */ new Map();
+  const pipes = /* @__PURE__ */ new Set();
+  let socket = null;
+  let welcomed = false;
+  let exiting = false;
+  let lastStirAt = Date.now();
+  let finish;
+  const finished = new Promise((r) => finish = r);
+  const sendUp = (f) => {
+    if (socket && welcomed && socket.readyState === WebSocket.OPEN) socket.send(encode(f));
+  };
+  let queuedActivity = null;
+  let lastActivitySentAt = -Infinity;
+  const flushActivity = (now = false) => {
+    if (!queuedActivity || !socket || !welcomed || socket.readyState !== WebSocket.OPEN) return;
+    if (!now && (socket.bufferedAmount > 0 || Date.now() - lastActivitySentAt < timing.activityGapMs)) return;
+    socket.send(encode(queuedActivity));
+    lastActivitySentAt = Date.now();
+    queuedActivity = null;
+  };
+  let watched = null;
+  let sentChanges = null;
+  const watchChanges = () => {
+    if (exiting || !watched || !welcomed) return;
+    const files = changedSet(watched.dir, watched.against);
+    if (!files) return;
+    const key = JSON.stringify(files);
+    if (key === sentChanges) return;
+    sentChanges = key;
+    sendUp({ type: "changes", files });
+  };
+  const resendChanges = () => (sentChanges = null, watchChanges());
+  let transcript = null;
+  let cursor = null;
+  let lastSeen = null;
+  const env = opts.env ?? process.env;
+  const watchTranscript = () => {
+    if (exiting) return;
+    transcript ??= locate(opts.binding, env);
+    if (!transcript) return;
+    const read = observe(transcript, cursor, opts.binding);
+    const grew = read.cursor.offset !== cursor?.offset;
+    cursor = read.cursor;
+    if (grew) lastStirAt = Date.now();
+    const activity = { ...read.activity, transcript };
+    const seen = JSON.stringify(activity);
+    if (seen !== lastSeen) {
+      lastSeen = seen;
+      queuedActivity = { type: "activity", at: Date.now(), activity };
+    }
+    if (read.activity.finished && !read.activity.background) {
+      flushActivity(true);
+      return exit({ why: "finished" }, "finished");
+    }
+    flushActivity();
+  };
+  const exit = (stop, bye) => {
+    if (exiting) return;
+    exiting = true;
+    if (bye) sendUp({ type: "bye", reason: bye });
+    sayStop(opts.dataRoot, opts.member, stop, stop.why !== "no server");
+    clearInterval(idleCheck);
+    clearInterval(watch);
+    clearInterval(changes);
+    clearInterval(heartbeat);
+    pipeServer?.close();
+    for (const p of pipes) p.end();
+    socket?.close();
+    finish(stop);
+  };
+  const onDown = (f) => {
+    if (f.type === "welcome") {
+      welcomed = true;
+      watched = f.watched ?? null;
+      resendChanges();
+      for (const { call } of unanswered.values()) sendUp(call);
+      flushActivity();
+    } else if (f.type === "refused") {
+      if (f.reason === "version" && readServerState(opts.dataRoot)?.version !== bundleVersion()) {
+        socket?.close();
+        return;
+      }
+      if (f.reason === "version" && !versionRetried) {
+        versionRetried = true;
+        console.error(`swarm link ${opts.member} (pid ${process.pid}, version ${bundleVersion()}): refused version by the server on port ${socket?.url ?? "?"}; re-reading the state, one retry`);
+        socket?.close();
+        return;
+      }
+      if (f.reason === "shutdown" || f.reason === "ticket") {
+        socket?.close();
+        return;
+      }
+      exit(f.reason === "closed" ? { why: "closed" } : { why: "refused", reason: f.reason });
+    } else if (f.type === "result") {
+      const asked = unanswered.get(f.id);
+      if (!asked) return;
+      unanswered.delete(f.id);
+      if (!asked.pipe.destroyed) asked.pipe.write(encode(f) + "\n");
+      const endedName = asked.call.args[0]?.name;
+      if (asked.call.method === "end" && f.ok && (endedName === void 0 || endedName === opts.member)) exit({ why: "ended" }, "ended");
+    }
+  };
+  const connectOnce = (s) => new Promise((resolve) => {
+    welcomed = false;
+    let wasWelcomed = false;
+    let ws;
+    try {
+      ws = new WebSocket(`ws://127.0.0.1:${s.port}`);
+    } catch {
+      return resolve(false);
+    }
+    socket = ws;
+    ws.onopen = () => ws.send(encode({ type: "hello", version: bundleVersion(), ticket: s.ticket, member: { name: opts.member, run: opts.run }, supersede: true }));
+    ws.onmessage = (ev) => {
+      try {
+        onDown(decode(String(ev.data)));
+      } catch {
+      }
+      wasWelcomed ||= welcomed;
+    };
+    let ended = false;
+    const endConnection = () => {
+      if (ended) return;
+      ended = true;
+      welcomed = false;
+      resolve(wasWelcomed);
+    };
+    ws.onclose = endConnection;
+    ws.onerror = endConnection;
+  });
+  let versionRetried = false;
+  const connectionLoop = async () => {
+    let lastAnsweredAt = Date.now();
+    let s = state;
+    while (!exiting) {
+      if (s) {
+        const welcomedThisTime = await connectOnce(s);
+        if (exiting) return;
+        if (welcomedThisTime) lastAnsweredAt = Date.now();
+      }
+      if (Date.now() - lastAnsweredAt >= timing.reconnectGiveUpMs) return exit({ why: "no server", forMs: Date.now() - lastAnsweredAt });
+      await pause(timing.reconnectEveryMs);
+      s = readServerState(opts.dataRoot);
+      if (s && s.version !== bundleVersion()) {
+        await connectOnce(s);
+        return exit({ why: "new version" });
+      }
+    }
+  };
+  const onPipe = (pipe) => {
+    pipes.add(pipe);
+    let buffered = "";
+    pipe.setEncoding("utf8");
+    pipe.on("data", (chunk) => {
+      buffered += chunk;
+      for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
+        const line = buffered.slice(0, nl).trim();
+        buffered = buffered.slice(nl + 1);
+        if (!line) continue;
+        let f;
+        try {
+          f = decode(line);
+        } catch {
+          continue;
+        }
+        if (f.type === "call") {
+          lastStirAt = Date.now();
+          unanswered.set(f.id, { call: f, pipe });
+          sendUp(f);
+        } else if (f.type === "cancel") {
+          unanswered.delete(f.id);
+          sendUp(f);
+        }
+      }
+    });
+    pipe.on("error", () => {
+    });
+    pipe.on("close", () => {
+      pipes.delete(pipe);
+      for (const [id, asked] of unanswered) {
+        if (asked.pipe !== pipe) continue;
+        unanswered.delete(id);
+        if (asked.call.method === "wait") sendUp({ type: "cancel", id });
+      }
+    });
+  };
+  const pipeServer = await listenOnPipe(linkPipe(opts.dataRoot, opts.run, opts.member), onPipe);
+  if (!pipeServer) return pipeTaken();
+  const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
+  try {
+    fs10.mkdirSync(path11.dirname(pidFile), { recursive: true });
+    fs10.writeFileSync(pidFile, String(process.pid));
+  } catch {
+  }
+  const dropPid = () => {
+    try {
+      if (fs10.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs10.rmSync(pidFile);
+    } catch {
+    }
+  };
+  process.once("exit", dropPid);
+  void finished.then(dropPid, dropPid);
+  const idleCheck = setInterval(() => {
+    if (unanswered.size === 0 && Date.now() - lastStirAt >= timing.idleMs) exit({ why: "idle" }, "idle");
+  }, Math.min(6e4, Math.max(10, Math.floor(timing.idleMs / 4))));
+  const watch = setInterval(watchTranscript, timing.watchEveryMs);
+  const changes = setInterval(watchChanges, timing.changesEveryMs);
+  const heartbeat = setInterval(() => sendUp({ type: "beat" }), HEARTBEAT_MS);
+  if (state.version !== bundleVersion()) exit({ why: "server of another version" });
+  if (!exiting) {
+    void connectionLoop();
+    watchTranscript();
+  }
+  return finished;
+}
+
+// src/client/remote.ts
 var SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
 var START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
 var START_POLL_MS = 50;
@@ -8288,33 +8285,17 @@ function withEnv(vars, start) {
   }
 }
 var pause2 = (ms) => new Promise((r) => setTimeout(r, ms));
-function isAlive2(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-function readServerState2(dataRoot) {
-  try {
-    const s = JSON.parse(fs10.readFileSync(serverStateFile(dataRoot), "utf8"));
-    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
-  } catch {
-    return null;
-  }
-}
 var DETACHED_CWD = os5.tmpdir();
-var isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
+var isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive(s.pid);
 async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
-  const found = readServerState2(dataRoot);
+  const found = readServerState(dataRoot);
   if (found && isCurrent(found, swarmEntry)) return found;
-  if (found && found.pid !== process.pid && isAlive2(found.pid)) {
+  if (found && found.pid !== process.pid && isAlive(found.pid)) {
     try {
       process.kill(found.pid);
     } catch {
     }
-    for (const until = Date.now() + START_TIMEOUT_MS; isAlive2(found.pid) && Date.now() < until; ) await pause2(START_POLL_MS);
+    for (const until = Date.now() + START_TIMEOUT_MS; isAlive(found.pid) && Date.now() < until; ) await pause2(START_POLL_MS);
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
@@ -8322,9 +8303,9 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs10.mkdirSync(dataRoot, { recursive: true });
-      log = fs10.openSync(serverLogFile(dataRoot), "a");
-      fs10.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
+      fs11.mkdirSync(dataRoot, { recursive: true });
+      log = fs11.openSync(serverLogFile(dataRoot), "a");
+      fs11.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
 `);
     } catch {
     }
@@ -8335,17 +8316,17 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs10.closeSync(log);
+    if (typeof log === "number") fs11.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
-    const s = readServerState2(dataRoot);
+    const s = readServerState(dataRoot);
     if (s && isCurrent(s, swarmEntry)) return s;
     if (exited && !startedElsewhere()) break;
     await pause2(START_POLL_MS);
   }
   let said = "";
   try {
-    const all2 = fs10.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all2 = fs11.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const lines = all2.slice(all2.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
@@ -8374,14 +8355,14 @@ function connectPipe(pipe) {
 var linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
 var HARNESS_LINK_WAIT_MS = 1e4;
 var LINK_DOWN_WAIT_MS = 1e3;
-var linkDownMarker = (dataRoot, member) => path10.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+var linkDownMarker = (dataRoot, member) => path12.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
 var inHarnessSession = (sessionId = process.env.CLAUDE_CODE_SESSION_ID) => !!sessionId;
 async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_DOWN_WAIT_MS) {
   const pipe = linkPipe(dataRoot, member.run, member.name);
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs10.rmSync(marker, { force: true });
+      fs11.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -8389,15 +8370,15 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs10.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs11.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause2(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs10.mkdirSync(path10.dirname(marker), { recursive: true });
-      fs10.writeFileSync(marker, String(Date.now()));
+      fs11.mkdirSync(path12.dirname(marker), { recursive: true });
+      fs11.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
@@ -8655,11 +8636,11 @@ init_mentions();
 
 // src/cli/aiview-board.ts
 init_proc();
-import fs11 from "node:fs";
-import path11 from "node:path";
+import fs12 from "node:fs";
+import path13 from "node:path";
 function aiviewLauncher(toolRoot2) {
-  const file = process.env.SWARM_AIVIEW ?? path11.join(toolRoot2, "..", "aiview", "aiview.mjs");
-  return fs11.existsSync(file) ? file : null;
+  const file = process.env.SWARM_AIVIEW ?? path13.join(toolRoot2, "..", "aiview", "aiview.mjs");
+  return fs12.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
   const r = hiddenSpawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
@@ -8701,19 +8682,19 @@ function projectNamer(input) {
   const listed = launcher ? callAiview(launcher, input.cwd, ["project"]) : null;
   const projects = listed?.ok && Array.isArray(listed.out) ? listed.out : [];
   const norm = (p) => {
-    const forward = path11.resolve(p).split("\\").join("/").replace(/\/+$/, "");
+    const forward = path13.resolve(p).split("\\").join("/").replace(/\/+$/, "");
     return process.platform === "win32" ? forward.toLowerCase() : forward;
   };
   const covers = (root, checkout) => checkout === root || checkout.startsWith(`${root}/`);
   return (repo) => {
-    const checkout = norm(path11.basename(repo).toLowerCase() === ".git" ? path11.dirname(repo) : repo);
+    const checkout = norm(path13.basename(repo).toLowerCase() === ".git" ? path13.dirname(repo) : repo);
     return projects.find((p) => p.paths.some((root) => covers(norm(root), checkout)))?.slug ?? input.fallback(repo);
   };
 }
 
 // src/cli/guides.ts
-import fs12 from "node:fs";
-import path12 from "node:path";
+import fs13 from "node:fs";
+import path14 from "node:path";
 function flowItems(list) {
   const items = [];
   let item = "";
@@ -8760,14 +8741,14 @@ function parseGuide(text, folder, fallback = null) {
 function guidesIn(dir, keep, fallback = () => null) {
   let folders;
   try {
-    folders = fs12.readdirSync(dir).filter(keep).sort();
+    folders = fs13.readdirSync(dir).filter(keep).sort();
   } catch {
     return [];
   }
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs12.readFileSync(path12.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
+      const g = parseGuide(fs13.readFileSync(path14.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
       if (g) out.push(g);
     } catch {
     }
@@ -8777,8 +8758,8 @@ function guidesIn(dir, keep, fallback = () => null) {
 var SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
 var SHIPPED_GUIDES = /* @__PURE__ */ new Set(["guide-complexity", "guide-deepen-module"]);
 function discoverGuides(toolRoot2, repoRoot) {
-  const shipped = guidesIn(path12.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
-  const project = repoRoot ? guidesIn(path12.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const shipped = guidesIn(path14.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
+  const project = repoRoot ? guidesIn(path14.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
 }
@@ -8834,11 +8815,8 @@ function conflictsOf(worktree, onto, reflogMark) {
 }
 var MERGE_CONFLICTS_ENV = "SWARM_MERGE_CONFLICTS";
 
-// src/cli/index.ts
-init_link();
-
 // src/cli/answer/code-rules.ts
-init_events2();
+init_events();
 
 // src/cli/answer/code-wording.ts
 var CODE_IN_CORE_HELP = {
@@ -8908,7 +8886,7 @@ var CODE_WORDING = {
   reportStdinEmpty: "merged: --report-stdin read no report: pipe it in, a heredoc for a long one",
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
-  tellResolved: (path15, member) => `if you resolved a conflict in ${path15}, tell them: swarm post "@${member} I resolved ${path15}: <how>" --about ${path15}`,
+  tellResolved: (path17, member) => `if you resolved a conflict in ${path17}, tell them: swarm post "@${member} I resolved ${path17}: <how>" --about ${path17}`,
   // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
   /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
   pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
@@ -8937,7 +8915,7 @@ var CODE_WORDING = {
   /** a close kept a worktree not clean or not merged: why, and the prune once it is */
   keptWorktree: (worktree, member, why, cli) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
   /** join, on a code run: the member's own worktree and how to work there */
-  ownWorktreeAs: (own, path15, pathWord, member) => `your worktree: ${path15} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  ownWorktreeAs: (own, path17, pathWord, member) => `your worktree: ${path17} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
   /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
   mergeLockAgain: (cli, onto, report, as) => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
   /** merged on a code run without the merge lock */
@@ -8950,7 +8928,7 @@ var CODE_WORDING = {
 };
 
 // src/cli/answer/wording.ts
-init_events2();
+init_events();
 var FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1e3} s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty`;
 var FIRST_PHASE_POINTER = "(its protocol.md's phase table names them)";
 var WORDING = {
@@ -9224,7 +9202,7 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
 var endUnmergedLine = (worktree, left, merge) => CODE_WORDING.endUnmerged(worktree, left, /uncommitted/.test(left) ? CODE_WORDING.endCommitThenMerge : CODE_WORDING.endMergeIt, merge);
 
 // src/cli/answer/rules.ts
-init_events2();
+init_events();
 init_kinds();
 var waitCommand = (s, foreground = false) => WORDING.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : void 0);
 var foregroundBound = (s) => s.seat !== "orchestrator" && !s.ended && (s.listens === "foreground" || s.owesNothing);
@@ -9590,7 +9568,7 @@ function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
 }
 function changedIn(worktree) {
-  if (!fs14.existsSync(worktree)) return [];
+  if (!fs15.existsSync(worktree)) return [];
   const r = hiddenSpawnSync("git", ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
@@ -9615,7 +9593,7 @@ function commitChanged(worktree, sha) {
   const r = gitAnswer(worktree, "diff", "--name-only", "-z", "--no-renames", "--end-of-options", `${sha}^1`, sha);
   return r.status === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
-var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path14.dirname(path14.resolve(process.argv[1])));
+var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path16.dirname(path16.resolve(process.argv[1])));
 var undoOpen = async (repo, group, why) => {
   try {
     board.close();
@@ -9631,27 +9609,27 @@ var undoOpen = async (repo, group, why) => {
   }
 };
 var swarmBoardFolderAbove = (from) => {
-  for (let dir = from; ; dir = path14.dirname(dir)) {
-    if (fs14.existsSync(path14.join(dir, "swarm.mjs"))) return dir;
-    if (path14.dirname(dir) === dir) return from;
+  for (let dir = from; ; dir = path16.dirname(dir)) {
+    if (fs15.existsSync(path16.join(dir, "swarm.mjs"))) return dir;
+    if (path16.dirname(dir) === dir) return from;
   }
 };
 var projectFlag = () => args.flag("--project");
 var projectRepo = () => {
   const asked = projectFlag();
   if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
-  if (fs14.existsSync(asked)) return repoOf2(path14.resolve(asked)) ?? fail(WORDING.noProject(asked));
+  if (fs15.existsSync(asked)) return repoOf2(path16.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
-  const repo = covered.filter((p) => fs14.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
+  const repo = covered.filter((p) => fs15.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
 };
 var writeOrchestratorSeats = (repo, seats) => {
-  const project = path14.basename(path14.dirname(repo)).replace(/[^\w.-]/g, "_");
-  const file = path14.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
-  fs14.mkdirSync(path14.dirname(file), { recursive: true });
-  fs14.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
+  const project = path16.basename(path16.dirname(repo)).replace(/[^\w.-]/g, "_");
+  const file = path16.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  fs15.mkdirSync(path16.dirname(file), { recursive: true });
+  fs15.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
 `);
-  return file.split(path14.sep).join("/");
+  return file.split(path16.sep).join("/");
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
 ${thisVerbHelp()}`);
@@ -9680,7 +9658,7 @@ var tellLinkToStart = (print) => {
 async function caller() {
   const p = await placedCaller() ?? fail(CODE_WORDING.whoIsCalling);
   const direct = board;
-  if (p.place && fs14.existsSync(p.place)) callerWorktree = p.place;
+  if (p.place && fs15.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   board = p.ended || !(await direct.runs()).some((r) => r.id === p.run) ? await connectDirectBoard(DATA_ROOT, member) : await connectBoard({ dataRoot: DATA_ROOT, member });
   if (board.linkMissing) linkToStart = member;
@@ -9808,7 +9786,7 @@ function reportGiven() {
   if (args.has("--report-stdin")) {
     if (stdinReport === void 0) {
       try {
-        stdinReport = fs14.readFileSync(0, "utf8").trim();
+        stdinReport = fs15.readFileSync(0, "utf8").trim();
       } catch {
         stdinReport = "";
       }
@@ -9819,13 +9797,13 @@ function reportGiven() {
   let fromFile;
   if (reportFile !== void 0) {
     try {
-      fromFile = fs14.readFileSync(path14.resolve(reportFile), "utf8").trim();
+      fromFile = fs15.readFileSync(path16.resolve(reportFile), "utf8").trim();
     } catch {
       fail(CODE_WORDING.reportFileUnreadable(reportFile));
     }
   }
   const given = args.flag("--report")?.trim();
-  if (given && given !== "-" && fs14.existsSync(path14.resolve(given)) && fs14.statSync(path14.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  if (given && given !== "-" && fs15.existsSync(path16.resolve(given)) && fs15.statSync(path16.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
   return fromFile || given || void 0;
 }
 var callerWorktree = null;
@@ -9846,14 +9824,14 @@ function parseFile(spec) {
 }
 var declaredPath = (file, root = worktreeOf(process.cwd())) => {
   const { abs, missing } = resolveIn(root, file);
-  return missing.length && root ? path14.resolve(root, file) : abs;
+  return missing.length && root ? path16.resolve(root, file) : abs;
 };
 var seatsFail = (what) => fail(`${what}
 e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1", "role": "verifier", "blockers": []}]`);
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs14.readFileSync(path14.resolve(file), "utf8"));
+    raw = JSON.parse(fs15.readFileSync(path16.resolve(file), "utf8"));
   } catch (e) {
     return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9919,8 +9897,8 @@ async function memberWorktree(runId, seat) {
   return { ...place, base };
 }
 async function madeWorktree(p, verb) {
-  if (p.place && fs14.existsSync(p.place)) return;
-  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path14.dirname(p.repo);
+  if (p.place && fs15.existsSync(p.place)) return;
+  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path16.dirname(p.repo);
   const made = await packVerb(p, verb, { cwd });
   if (made?.made) callerWorktree = p.place;
 }
@@ -10188,7 +10166,7 @@ ${thisVerbHelp()}`);
       const p = await caller();
       if (await answeredGate(p)) break;
       const file = args.flag("--file");
-      const body = (file ? fs14.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const body = (file ? fs15.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
@@ -10302,36 +10280,36 @@ ${thisVerbHelp()}`);
       const holding = p.place ? worktreeHolding(p.place, onto) : null;
       if (holding) {
         process.exitCode = 5;
-        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path14.resolve(r2.worktree).toLowerCase() === path14.resolve(holding).toLowerCase());
+        const holder = (await board.roster(p.repo)).find((r2) => r2.worktree && path16.resolve(r2.worktree).toLowerCase() === path16.resolve(holding).toLowerCase());
         const line = CODE_WORDING.ontoCheckedOutAtMerge(onto, holding, holder?.name ?? null, CODE_WORDING.detach(shellWord2(holding)));
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
-      const ontoRef = p.place && fs14.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      const ontoRef = p.place && fs15.existsSync(p.place) ? baseRef(p.place, onto) : onto;
       const deliver = !!p.place && !args.has("--lock-only");
       if (deliver) reportGiven();
       const piped = deliver && args.has("--report-stdin") ? reportGiven() : void 0;
-      const reportArgs = piped !== void 0 ? ["--report", piped] : args.flag("--report-file") !== void 0 ? ["--report-file", path14.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
+      const reportArgs = piped !== void 0 ? ["--report", piped] : args.flag("--report-file") !== void 0 ? ["--report-file", path16.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
       const again = () => CODE_WORDING.mergeLockAgain(self().join(" "), shellWord2(onto), piped !== void 0 ? ["--report-stdin"] : reportArgs.map(shellWord2), shellWord2(p.name));
       const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
-        return !!at && fs14.existsSync(path14.resolve(wt, at));
+        return !!at && fs15.existsSync(path16.resolve(wt, at));
       });
       const handedBackFile = (wt) => {
         const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
-        return at ? path14.resolve(wt, at) : null;
+        return at ? path16.resolve(wt, at) : null;
       };
       const handedBack = (wt) => {
         try {
-          return JSON.parse(fs14.readFileSync(handedBackFile(wt), "utf8"));
+          return JSON.parse(fs15.readFileSync(handedBackFile(wt), "utf8"));
         } catch {
           return [];
         }
       };
       const handBack = (wt, files) => {
         const at = handedBackFile(wt);
-        if (at) fs14.writeFileSync(at, JSON.stringify([.../* @__PURE__ */ new Set([...handedBack(wt), ...files])]));
+        if (at) fs15.writeFileSync(at, JSON.stringify([.../* @__PURE__ */ new Set([...handedBack(wt), ...files])]));
       };
       const conflictHandedBack = (wt, files, granted) => {
         handBack(wt, files);
@@ -10344,7 +10322,7 @@ ${thisVerbHelp()}`);
         const open = unmergedIn(wt);
         const marked = open.filter((f) => {
           try {
-            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs14.readFileSync(path14.join(wt, f), "utf8"));
+            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs15.readFileSync(path16.join(wt, f), "utf8"));
           } catch {
             return false;
           }
@@ -10416,7 +10394,7 @@ ${thisVerbHelp()}`);
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
         const kept = handedBackFile(wt);
-        if (m.status === 0 && kept) fs14.rmSync(kept, { force: true });
+        if (m.status === 0 && kept) fs15.rmSync(kept, { force: true });
         break;
       }
       const unreadAtLock = unreadLine(await situation(p), "merge-lock");

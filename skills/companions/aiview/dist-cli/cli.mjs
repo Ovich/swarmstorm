@@ -13,23 +13,54 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/proc.ts
+// ../swarm-board/src/host/proc.ts
 import { spawn, spawnSync } from "node:child_process";
 function hiddenSpawnSync(command, args2, options = {}) {
   return spawnSync(command, args2, { ...options, windowsHide: true });
 }
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
+}
 var hiddenSpawn;
 var init_proc = __esm({
-  "src/proc.ts"() {
+  "../swarm-board/src/host/proc.ts"() {
     "use strict";
     hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
   }
 });
 
-// src/core/home.ts
+// ../swarm-board/src/host/home.ts
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+function serverStateFile(dataRoot) {
+  return path.join(dataRoot, "swarm-server.json");
+}
+function serverLogFile(dataRoot) {
+  return path.join(dataRoot, "swarm-server.log");
+}
+function serverStartLock(dataRoot) {
+  return path.join(dataRoot, "swarm-server.lock");
+}
+var HOME_FROM_ENV, NEW_HOME, OLD_HOME, DATA_ROOT;
+var init_home = __esm({
+  "../swarm-board/src/host/home.ts"() {
+    "use strict";
+    HOME_FROM_ENV = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
+    NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
+    OLD_HOME = path.join(os.homedir(), "charrette_appdata");
+    DATA_ROOT = HOME_FROM_ENV ? path.resolve(HOME_FROM_ENV) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
+  }
+});
+
+// src/core/home.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
 function defaultPort(root = DATA_ROOT) {
   const home = normalHome(root);
   if (home === normalHome(NEW_HOME) || home === normalHome(OLD_HOME)) return HOME_PORT;
@@ -38,9 +69,9 @@ function defaultPort(root = DATA_ROOT) {
   return 4400 + hash % 500;
 }
 function normalHome(root) {
-  let p = path.resolve(root);
+  let p = path2.resolve(root);
   try {
-    p = fs.realpathSync.native(p);
+    p = fs2.realpathSync.native(p);
   } catch {
   }
   return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -52,24 +83,21 @@ function firstFreePort(from) {
   return Number.isInteger(port) && port > 0 ? port : from;
 }
 function ensureHome() {
-  fs.mkdirSync(DOCS_ROOT, { recursive: true });
+  fs2.mkdirSync(DOCS_ROOT, { recursive: true });
 }
-var homeFromEnv, NEW_HOME, OLD_HOME, isPersonHome, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
-var init_home = __esm({
+var isPersonHome, HOME_PORT, DOCS_ROOT, docsDirFor;
+var init_home2 = __esm({
   "src/core/home.ts"() {
     "use strict";
+    init_home();
     init_proc();
-    homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
-    OLD_HOME = path.join(os.homedir(), "charrette_appdata");
     isPersonHome = (root) => {
-      const fold = (p) => process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p);
+      const fold = (p) => process.platform === "win32" ? path2.resolve(p).toLowerCase() : path2.resolve(p);
       return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
     };
-    DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
     HOME_PORT = 4321;
-    DOCS_ROOT = path.join(DATA_ROOT, "docs");
-    docsDirFor = (projectSlug) => path.join(DOCS_ROOT, projectSlug);
+    DOCS_ROOT = path2.join(DATA_ROOT, "docs");
+    docsDirFor = (projectSlug) => path2.join(DOCS_ROOT, projectSlug);
   }
 });
 
@@ -105,45 +133,55 @@ function openBrowser(url) {
 var init_browser = __esm({
   "src/core/browser.ts"() {
     "use strict";
-    init_home();
+    init_home2();
   }
 });
 
-// ../swarm-board/src/proc.ts
-import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
-var hiddenSpawn2;
-var init_proc2 = __esm({
-  "../swarm-board/src/proc.ts"() {
+// ../swarm-board/src/host/git.ts
+var init_git = __esm({
+  "../swarm-board/src/host/git.ts"() {
     "use strict";
-    hiddenSpawn2 = (command, args2, options = {}) => spawn3(command, args2, { ...options, windowsHide: true });
+    init_proc();
   }
 });
 
-// ../swarm-board/src/place/place.ts
-import fs2 from "node:fs";
-import path2 from "node:path";
-function commonGitDir(dotGit) {
-  if (!fs2.statSync(dotGit).isFile()) return dotGit;
-  const own = /^gitdir:\s*(.+)$/m.exec(fs2.readFileSync(dotGit, "utf8"))?.[1]?.trim();
-  if (!own) return dotGit;
-  const dir = path2.resolve(path2.dirname(dotGit), own);
-  const common = path2.join(dir, "commondir");
-  return fs2.existsSync(common) ? path2.resolve(dir, fs2.readFileSync(common, "utf8").trim()) : dir;
+// ../swarm-board/src/host/place.ts
+import fs3 from "node:fs";
+import path3 from "node:path";
+function canonicalPath(p) {
+  const resolved = real(path3.resolve(p));
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
 }
+function commonGitDir(dotGit) {
+  if (!fs3.statSync(dotGit).isFile()) return dotGit;
+  const own = /^gitdir:\s*(.+)$/m.exec(fs3.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+  if (!own) return dotGit;
+  const dir = path3.resolve(path3.dirname(dotGit), own);
+  const common = path3.join(dir, "commondir");
+  return fs3.existsSync(common) ? path3.resolve(dir, fs3.readFileSync(common, "utf8").trim()) : dir;
+}
+var real;
 var init_place = __esm({
-  "../swarm-board/src/place/place.ts"() {
+  "../swarm-board/src/host/place.ts"() {
     "use strict";
-    init_proc2();
+    init_git();
+    real = (p) => {
+      try {
+        return fs3.realpathSync.native(p);
+      } catch {
+        return p;
+      }
+    };
   }
 });
 
 // src/core/projects.ts
-import path3 from "node:path";
+import path4 from "node:path";
 function isInside(child, parent) {
   if (!parent) return false;
   const c = norm(child);
   const p = norm(parent);
-  return c === p || c.startsWith(p + path3.sep);
+  return c === p || c.startsWith(p + path4.sep);
 }
 function projectForCwd(dir, projects) {
   let best = null;
@@ -161,8 +199,8 @@ function projectForCwd(dir, projects) {
   return best;
 }
 function projectFromDocsPath(absFile, docsRoot) {
-  if (!isInside(path3.dirname(absFile), docsRoot)) return null;
-  const [first, ...rest] = path3.relative(docsRoot, absFile).split(/[\\/]/);
+  if (!isInside(path4.dirname(absFile), docsRoot)) return null;
+  const [first, ...rest] = path4.relative(docsRoot, absFile).split(/[\\/]/);
   return rest.length > 0 && first ? first : null;
 }
 function resolveProject({ explicit, absFile, docsRoot, existing, fallback }) {
@@ -174,20 +212,20 @@ var init_projects = __esm({
   "src/core/projects.ts"() {
     "use strict";
     norm = (p) => {
-      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path3.sep);
+      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path4.sep);
       return process.platform === "win32" ? unified.toLowerCase() : unified;
     };
   }
 });
 
 // src/core/paths.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
+import fs4 from "node:fs";
+import path5 from "node:path";
 function repoRootOf(start) {
   let dir = start;
   for (; ; ) {
-    if (fs3.existsSync(path4.join(dir, ".git"))) return dir;
-    const parent = path4.dirname(dir);
+    if (fs4.existsSync(path5.join(dir, ".git"))) return dir;
+    const parent = path5.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
@@ -196,17 +234,17 @@ function sidecarOf(absPath) {
   return /\.workbench\.html$/i.test(absPath) ? absPath.replace(/\.html$/i, "") : null;
 }
 function kindFromName(file) {
-  const parts = path4.basename(file).split(".");
+  const parts = path5.basename(file).split(".");
   return parts.length >= 3 ? currentKind(parts[parts.length - 2]) : "";
 }
 function titleOf(text, file) {
-  if (isSwarm(file)) return path4.basename(file);
+  if (isSwarm(file)) return path5.basename(file);
   const m = isHtml(file) ? text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? text.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1] : text.match(/^#\s+(.+)$/m)?.[1];
-  return (m ?? path4.basename(file)).trim();
+  return (m ?? path5.basename(file)).trim();
 }
 function toStored(abs, root) {
-  const rel = path4.relative(root, abs);
-  return rel && !rel.startsWith("..") && !path4.isAbsolute(rel) ? rel.split(path4.sep).join("/") : abs;
+  const rel = path5.relative(root, abs);
+  return rel && !rel.startsWith("..") && !path5.isAbsolute(rel) ? rel.split(path5.sep).join("/") : abs;
 }
 var isHtml, isPdf, isSwarm, formatOf, currentKind, projectRoot, readDoc, toAbs;
 var init_paths = __esm({
@@ -217,22 +255,22 @@ var init_paths = __esm({
     isSwarm = (file) => /\.swarm\.json$/i.test(file);
     formatOf = (file) => isHtml(file) ? "html" : isPdf(file) ? "pdf" : isSwarm(file) ? "swarm" : "markdown";
     currentKind = (kind) => kind.toLowerCase();
-    projectRoot = (file) => path4.basename(repoRootOf(path4.dirname(file)));
-    readDoc = (p) => fs3.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
-    toAbs = (stored, root) => path4.isAbsolute(stored) ? stored : path4.resolve(root, ...stored.split("/"));
+    projectRoot = (file) => path5.basename(repoRootOf(path5.dirname(file)));
+    readDoc = (p) => fs4.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+    toAbs = (stored, root) => path5.isAbsolute(stored) ? stored : path5.resolve(root, ...stored.split("/"));
   }
 });
 
 // src/core/db.ts
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import path6 from "node:path";
 import { fileURLToPath } from "node:url";
 function findToolRoot() {
   if (process.env.AIVIEW_ROOT) return process.env.AIVIEW_ROOT;
-  let dir = path5.dirname(fileURLToPath(import.meta.url));
+  let dir = path6.dirname(fileURLToPath(import.meta.url));
   for (; ; ) {
-    if (fs4.existsSync(path5.join(dir, "package.json"))) return dir;
-    const parent = path5.dirname(dir);
+    if (fs5.existsSync(path6.join(dir, "package.json"))) return dir;
+    const parent = path6.dirname(dir);
     if (parent === dir) return dir;
     dir = parent;
   }
@@ -263,20 +301,20 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
     "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]', board_repos TEXT NOT NULL DEFAULT '[]')"
   );
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path5.join(path5.resolve(p), ".git")).filter((g) => fs4.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
+  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path6.join(path6.resolve(p), ".git")).filter((g) => fs5.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
   const boardReposOf = (slug) => {
     const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
     if (!row) return [];
     const seen = /* @__PURE__ */ new Set();
     const repos = [];
     const keyed = (r) => {
-      const g = /[\\/]\.git$/i.test(r) ? r : path5.join(r, ".git");
-      return fs4.existsSync(g) && fs4.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
+      const g = /[\\/]\.git$/i.test(r) ? r : path6.join(r, ".git");
+      return fs5.existsSync(g) && fs5.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
     };
     for (const r of [...JSON.parse(row.board_repos).map(keyed), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
-      const folder = path5.resolve(r).replace(/[\\/]\.git$/i, "");
+      const folder = path6.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
-      if (seen.has(key) || !fs4.existsSync(folder)) continue;
+      if (seen.has(key) || !fs5.existsSync(folder)) continue;
       seen.add(key);
       repos.push(r);
     }
@@ -329,7 +367,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   };
   return {
     register(absFile, { kind = "", tags: extraTags = [], started = "", group = "", groupTitle = "", project = "" } = {}) {
-      if (!fs4.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
+      if (!fs5.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
       const file = toStored(absFile, root);
       const content = isPdf(absFile) ? "" : readDoc(absFile);
       const existing = db.prepare("SELECT * FROM documents WHERE file_path = ?").get(file);
@@ -408,7 +446,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       return db.prepare("SELECT * FROM documents ORDER BY created_at DESC, id DESC").all().map(parse2).map((d) => {
         let stat = null;
         try {
-          stat = fs4.statSync(d.abs_path);
+          stat = fs5.statSync(d.abs_path);
         } catch {
           stat = null;
         }
@@ -497,7 +535,7 @@ var init_db = __esm({
   async "src/core/db.ts"() {
     "use strict";
     init_place();
-    init_home();
+    init_home2();
     init_projects();
     init_paths();
     process.removeAllListeners("warning");
@@ -506,7 +544,7 @@ var init_db = __esm({
     });
     ({ DatabaseSync } = await import("node:sqlite"));
     TOOL_ROOT = findToolRoot();
-    SQLITE_PATH = path5.join(DATA_ROOT, "aiview.sqlite");
+    SQLITE_PATH = path6.join(DATA_ROOT, "aiview.sqlite");
     STORE_ROOT = DATA_ROOT;
     now = () => (/* @__PURE__ */ new Date()).toISOString();
   }
@@ -8884,23 +8922,23 @@ var init_pointer = __esm({
 });
 
 // src/core/serverstate.ts
-import fs5 from "node:fs";
-import path6 from "node:path";
+import fs6 from "node:fs";
+import path7 from "node:path";
 function writeServerFiles(port, version, token) {
   ensureHome();
-  if (version === null) fs5.rmSync(VERSION_FILE, { force: true });
-  else fs5.writeFileSync(VERSION_FILE, version);
-  fs5.writeFileSync(TOKEN_FILE, token, { mode: 384 });
-  fs5.writeFileSync(PID_FILE, String(process.pid));
-  fs5.writeFileSync(PORT_FILE, String(port));
+  if (version === null) fs6.rmSync(VERSION_FILE, { force: true });
+  else fs6.writeFileSync(VERSION_FILE, version);
+  fs6.writeFileSync(TOKEN_FILE, token, { mode: 384 });
+  fs6.writeFileSync(PID_FILE, String(process.pid));
+  fs6.writeFileSync(PORT_FILE, String(port));
 }
 function clearServerFiles() {
   if (readInt(PID_FILE) === process.pid) {
     try {
-      fs5.rmSync(PID_FILE, { force: true });
-      fs5.rmSync(PORT_FILE, { force: true });
-      fs5.rmSync(VERSION_FILE, { force: true });
-      fs5.rmSync(TOKEN_FILE, { force: true });
+      fs6.rmSync(PID_FILE, { force: true });
+      fs6.rmSync(PORT_FILE, { force: true });
+      fs6.rmSync(VERSION_FILE, { force: true });
+      fs6.rmSync(TOKEN_FILE, { force: true });
     } catch {
     }
   }
@@ -8911,37 +8949,30 @@ function readServerStatus() {
   if (pid === null || port === null)
     return { running: false, pid: null, port: null, version: null, stale: pid !== null || port !== null };
   const version = readText(VERSION_FILE);
-  if (!alive(pid)) return { running: false, pid, port, version, stale: true };
+  if (!isAlive(pid)) return { running: false, pid, port, version, stale: true };
   return { running: true, pid, port, version, stale: false };
 }
-var PID_FILE, PORT_FILE, VERSION_FILE, TOKEN_FILE, readInt, alive, readText, readServerToken;
+var PID_FILE, PORT_FILE, VERSION_FILE, TOKEN_FILE, readInt, readText, readServerToken;
 var init_serverstate = __esm({
   "src/core/serverstate.ts"() {
     "use strict";
-    init_home();
-    PID_FILE = path6.join(DATA_ROOT, "aiview.pid");
-    PORT_FILE = path6.join(DATA_ROOT, "aiview.port");
-    VERSION_FILE = path6.join(DATA_ROOT, "aiview.version");
-    TOKEN_FILE = path6.join(DATA_ROOT, "aiview.token");
+    init_proc();
+    init_home2();
+    PID_FILE = path7.join(DATA_ROOT, "aiview.pid");
+    PORT_FILE = path7.join(DATA_ROOT, "aiview.port");
+    VERSION_FILE = path7.join(DATA_ROOT, "aiview.version");
+    TOKEN_FILE = path7.join(DATA_ROOT, "aiview.token");
     readInt = (f) => {
       try {
-        const n = Number(fs5.readFileSync(f, "utf8").trim());
+        const n = Number(fs6.readFileSync(f, "utf8").trim());
         return Number.isInteger(n) && n > 0 ? n : null;
       } catch {
         return null;
       }
     };
-    alive = (pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
     readText = (f) => {
       try {
-        const t = fs5.readFileSync(f, "utf8").trim();
+        const t = fs6.readFileSync(f, "utf8").trim();
         return t === "" ? null : t;
       } catch {
         return null;
@@ -9005,20 +9036,20 @@ var init_guard = __esm({
 });
 
 // src/core/collectionversion.ts
-import fs6 from "node:fs";
-import path7 from "node:path";
+import fs7 from "node:fs";
+import path8 from "node:path";
 function collectionVersion(toolRoot) {
-  for (let dir = path7.dirname(path7.resolve(toolRoot)); ; dir = path7.dirname(dir)) {
-    const manifest = path7.join(dir, ".claude-plugin", "plugin.json");
-    if (fs6.existsSync(manifest)) {
+  for (let dir = path8.dirname(path8.resolve(toolRoot)); ; dir = path8.dirname(dir)) {
+    const manifest = path8.join(dir, ".claude-plugin", "plugin.json");
+    if (fs7.existsSync(manifest)) {
       try {
-        const parsed = JSON.parse(fs6.readFileSync(manifest, "utf8"));
+        const parsed = JSON.parse(fs7.readFileSync(manifest, "utf8"));
         return typeof parsed.version === "string" ? parsed.version : null;
       } catch {
         return null;
       }
     }
-    if (path7.dirname(dir) === dir) return null;
+    if (path8.dirname(dir) === dir) return null;
   }
 }
 var init_collectionversion = __esm({
@@ -9029,8 +9060,8 @@ var init_collectionversion = __esm({
 
 // src/core/watcher.ts
 import { EventEmitter } from "node:events";
-import fs7 from "node:fs";
-import path8 from "node:path";
+import fs8 from "node:fs";
+import path9 from "node:path";
 var SIDECAR_MANIFEST, DocWatcher;
 var init_watcher = __esm({
   "src/core/watcher.ts"() {
@@ -9055,17 +9086,17 @@ var init_watcher = __esm({
         this.debounceMs = debounceMs;
       }
       ensureWatch(doc) {
-        const dir = path8.dirname(doc.abs_path);
+        const dir = path9.dirname(doc.abs_path);
         const sidecar = sidecarOf(doc.abs_path);
         if (sidecar) {
           let inDir = this.benches.get(dir);
           if (!inDir) this.benches.set(dir, inDir = /* @__PURE__ */ new Map());
-          inDir.set(path8.basename(sidecar), doc);
+          inDir.set(path9.basename(sidecar), doc);
           this.ensureSidecarWatch(doc);
         }
         if (this.watched.has(dir)) return;
         try {
-          const w = fs7.watch(dir, (_event, name) => {
+          const w = fs8.watch(dir, (_event, name) => {
             if (!name) return;
             const bench = this.benches.get(dir)?.get(String(name));
             if (bench) {
@@ -9074,7 +9105,7 @@ var init_watcher = __esm({
             }
             const hit = this.resolve(dir, String(name));
             if (hit) this.schedule(hit.id);
-            for (const id of this.hostsOf(path8.resolve(dir, String(name)))) this.schedule(id);
+            for (const id of this.hostsOf(path9.resolve(dir, String(name)))) this.schedule(id);
           });
           this.watched.set(dir, w);
         } catch (e) {
@@ -9086,12 +9117,12 @@ var init_watcher = __esm({
         const dir = sidecarOf(doc.abs_path);
         if (!dir || this.sidecars.has(dir)) return;
         try {
-          if (!fs7.statSync(dir).isDirectory()) return;
+          if (!fs8.statSync(dir).isDirectory()) return;
         } catch {
           return;
         }
         try {
-          const w = fs7.watch(dir, (_event, name) => {
+          const w = fs8.watch(dir, (_event, name) => {
             if (name && String(name) === SIDECAR_MANIFEST) this.scheduleData(doc.id);
           });
           w.on("error", () => {
@@ -9106,11 +9137,11 @@ var init_watcher = __esm({
       /** Replace (never merge) the set of files `hostId` depends on. An empty list clears it. */
       setSources(hostId, absPaths) {
         if (absPaths.length === 0) this.sources.delete(hostId);
-        else this.sources.set(hostId, new Set(absPaths.map((p) => path8.resolve(p))));
+        else this.sources.set(hostId, new Set(absPaths.map((p) => path9.resolve(p))));
       }
       /** The hosts composed from `absPath`. */
       hostsOf(absPath) {
-        const key = path8.resolve(absPath);
+        const key = path9.resolve(absPath);
         const ids = [];
         for (const [id, set] of this.sources) if (set.has(key)) ids.push(id);
         return ids;
@@ -9152,10 +9183,10 @@ var init_mentions = __esm({
   }
 });
 
-// ../swarm-board/src/wire.ts
+// ../swarm-board/src/contract/wire.ts
 import crypto2 from "node:crypto";
-import fs8 from "node:fs";
-import path9 from "node:path";
+import fs9 from "node:fs";
+import path10 from "node:path";
 function encode(f) {
   return JSON.stringify(f);
 }
@@ -9166,34 +9197,33 @@ function decode(text) {
   return f;
 }
 function builtCliOf(entry2) {
-  const file = path9.resolve(entry2);
-  const bundle = path9.join(path9.dirname(file), "dist-cli", "cli.mjs");
-  return fs8.existsSync(bundle) ? bundle : file;
+  const file = path10.resolve(entry2);
+  const bundle = path10.join(path10.dirname(file), "dist-cli", "cli.mjs");
+  return fs9.existsSync(bundle) ? bundle : file;
 }
 function bundleVersion(entry2) {
   if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
   const file = builtCliOf(entry2);
-  const st = fs8.statSync(file);
+  const st = fs9.statSync(file);
   const key = `${file}|${st.mtimeMs}|${st.size}`;
   let v = versionsByBuild.get(key);
   if (v === void 0) {
-    v = crypto2.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto2.createHash("sha256").update(fs9.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByBuild.set(key, v);
   }
   return v;
 }
-function serverStateFile(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.json");
-}
-function serverLogFile(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.log");
-}
-function serverStartLock(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.lock");
+function readServerState(dataRoot) {
+  try {
+    const s = JSON.parse(fs9.readFileSync(serverStateFile(dataRoot), "utf8"));
+    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
+  } catch {
+    return null;
+  }
 }
 function serverLockHolder(dataRoot) {
   try {
-    const pid = Number(fs8.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    const pid = Number(fs9.readFileSync(serverStartLock(dataRoot), "utf8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
@@ -9203,27 +9233,21 @@ function liveStartLockHolder(dataRoot) {
   const holder = serverLockHolder(dataRoot);
   if (holder === null || !isAlive(holder)) return null;
   try {
-    if (JSON.parse(fs8.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+    if (JSON.parse(fs9.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
   } catch {
   }
   try {
-    return Date.now() - fs8.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+    return Date.now() - fs9.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
   }
 }
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, HEARTBEAT_MS, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
 var init_wire = __esm({
-  "../swarm-board/src/wire.ts"() {
+  "../swarm-board/src/contract/wire.ts"() {
     "use strict";
+    init_home();
+    init_proc();
     RPC_METHODS = [
       "openRun",
       "addSeat",
@@ -9264,55 +9288,25 @@ var init_wire = __esm({
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
+    HEARTBEAT_MS = 5 * 1e3;
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
   }
 });
 
-// ../swarm-board/src/board/home.ts
-import fs9 from "node:fs";
-import os2 from "node:os";
-import path10 from "node:path";
-var homeFromEnv2, NEW_HOME2, OLD_HOME2, DATA_ROOT2, HOME_OVERRIDE, SQLITE_PATH2;
-var init_home2 = __esm({
-  "../swarm-board/src/board/home.ts"() {
+// ../swarm-board/src/host/links.ts
+var init_links = __esm({
+  "../swarm-board/src/host/links.ts"() {
     "use strict";
-    homeFromEnv2 = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME2 = path10.join(os2.homedir(), "swarmstorm_appdata");
-    OLD_HOME2 = path10.join(os2.homedir(), "charrette_appdata");
-    DATA_ROOT2 = homeFromEnv2 ? path10.resolve(homeFromEnv2) : !fs9.existsSync(NEW_HOME2) && fs9.existsSync(OLD_HOME2) ? OLD_HOME2 : NEW_HOME2;
-    HOME_OVERRIDE = homeFromEnv2 && path10.resolve(homeFromEnv2) !== NEW_HOME2 && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT2 : null;
-    SQLITE_PATH2 = path10.join(DATA_ROOT2, "swarm.sqlite");
+    init_home();
+    init_proc();
   }
 });
 
-// ../swarm-board/src/board/liveness.ts
-var NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS;
-var init_liveness = __esm({
-  "../swarm-board/src/board/liveness.ts"() {
+// ../swarm-board/src/link/adapters.ts
+var init_adapters = __esm({
+  "../swarm-board/src/link/adapters.ts"() {
     "use strict";
-    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 10 * 60 * 1e3;
-    BADGE_CONFIRM_MS = 10 * 1e3;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    LOST_MS = 60 * 1e3;
-    HEARTBEAT_MS = 5 * 1e3;
-  }
-});
-
-// ../swarm-board/src/git.ts
-var init_git = __esm({
-  "../swarm-board/src/git.ts"() {
-    "use strict";
-    init_proc2();
-  }
-});
-
-// ../swarm-board/src/packs/code/changes.ts
-var init_changes = __esm({
-  "../swarm-board/src/packs/code/changes.ts"() {
-    "use strict";
-    init_git();
   }
 });
 
@@ -9320,27 +9314,27 @@ var init_changes = __esm({
 var init_transcripts = __esm({
   "../swarm-board/src/link/transcripts.ts"() {
     "use strict";
-    init_liveness();
+    init_adapters();
   }
 });
 
 // ../swarm-board/src/link/link.ts
 import crypto3 from "node:crypto";
-import os3 from "node:os";
+import os2 from "node:os";
 import path11 from "node:path";
 function linkPipe(dataRoot, run, member) {
   const home = crypto3.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os3.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os2.tmpdir(), `${name}.sock`);
 }
 var CHANGES_EVERY_MS, DEFAULT_TIMING;
 var init_link = __esm({
   "../swarm-board/src/link/link.ts"() {
     "use strict";
-    init_proc2();
-    init_home2();
-    init_liveness();
-    init_changes();
+    init_home();
+    init_git();
+    init_links();
+    init_proc();
     init_wire();
     init_transcripts();
     CHANGES_EVERY_MS = 2e3;
@@ -9367,7 +9361,7 @@ __export(remote_exports, {
 import crypto4 from "node:crypto";
 import fs10 from "node:fs";
 import net from "node:net";
-import os4 from "node:os";
+import os3 from "node:os";
 import path12 from "node:path";
 function withEnv(vars, start) {
   const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
@@ -9381,31 +9375,15 @@ function withEnv(vars, start) {
     }
   }
 }
-function isAlive2(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-function readServerState(dataRoot) {
-  try {
-    const s = JSON.parse(fs10.readFileSync(serverStateFile(dataRoot), "utf8"));
-    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
-  } catch {
-    return null;
-  }
-}
 async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   const found = readServerState(dataRoot);
   if (found && isCurrent(found, swarmEntry)) return found;
-  if (found && found.pid !== process.pid && isAlive2(found.pid)) {
+  if (found && found.pid !== process.pid && isAlive(found.pid)) {
     try {
       process.kill(found.pid);
     } catch {
     }
-    for (const until = Date.now() + START_TIMEOUT_MS; isAlive2(found.pid) && Date.now() < until; ) await pause(START_POLL_MS);
+    for (const until = Date.now() + START_TIMEOUT_MS; isAlive(found.pid) && Date.now() < until; ) await pause(START_POLL_MS);
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
@@ -9421,7 +9399,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
     }
     const child = withEnv(
       { SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") },
-      () => hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
+      () => hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
     );
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
@@ -9490,7 +9468,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   }
   const child = withEnv(
     { SWARMSTORM_HOME: dataRoot },
-    () => hiddenSpawn2(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
+    () => hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
   );
   child.on("error", () => {
   });
@@ -9657,16 +9635,17 @@ var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, pause, DET
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
-    init_proc2();
+    init_proc();
     init_wire();
+    init_home();
     init_link();
     SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
     START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
     START_POLL_MS = 50;
     entry = () => [process.argv[1]];
     pause = (ms) => new Promise((r) => setTimeout(r, ms));
-    DETACHED_CWD = os4.tmpdir();
-    isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
+    DETACHED_CWD = os3.tmpdir();
+    isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive(s.pid);
     linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
     HARNESS_LINK_WAIT_MS = 1e4;
     LINK_DOWN_WAIT_MS = 1e3;
@@ -9792,7 +9771,7 @@ function mountBoard(sse, opts = {}) {
     );
     return opening;
   };
-  if (fs11.existsSync(path13.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
+  if (fs11.existsSync(serverStateFile(dataRoot))) openReader().catch(() => {
   });
   const json = (res, obj, status = 200) => {
     if (res.headersSent) return;
@@ -9801,10 +9780,7 @@ function mountBoard(sse, opts = {}) {
   };
   const projectAsked = (q) => q.get("project");
   const sameRepo = (a, b) => {
-    const norm2 = (r) => {
-      const g = fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r;
-      return process.platform === "win32" ? path13.resolve(g).toLowerCase() : path13.resolve(g);
-    };
+    const norm2 = (r) => canonicalPath(fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r);
     return norm2(a) === norm2(b);
   };
   const repoOfKey = (repos, key) => {
@@ -9859,16 +9835,16 @@ function mountBoard(sse, opts = {}) {
     }
   };
 }
-var DEFAULT_SWARM_ENTRY, SERVER_STATE_FILE;
+var DEFAULT_SWARM_ENTRY;
 var init_board = __esm({
   async "src/server/board.ts"() {
     "use strict";
     init_reader();
     await init_db();
-    init_home();
+    init_home2();
     init_place();
+    init_home();
     DEFAULT_SWARM_ENTRY = path13.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
-    SERVER_STATE_FILE = "swarm-server.json";
   }
 });
 
@@ -10295,7 +10271,7 @@ init_bind();
 init_paths();
 init_pointer();
 init_projects();
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import fs13 from "node:fs";
 import path15 from "node:path";
 
@@ -10305,7 +10281,7 @@ function boardHash(project, run) {
 }
 
 // src/cli/index.ts
-init_home();
+init_home2();
 init_serverstate();
 init_guard();
 init_collectionversion();
@@ -10773,7 +10749,7 @@ function ensureDist() {
   if (!fs13.existsSync(path15.join(TOOL_ROOT, "app", "index.html"))) return;
   console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync3(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
   if (r.status !== 0) {
     console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
     process.exit(1);
@@ -10805,7 +10781,7 @@ function spawnDetachedServer(port) {
 var pause2 = (ms) => {
   hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
 };
-var isAlive3 = (pid) => {
+var isAlive2 = (pid) => {
   try {
     process.kill(pid, 0);
     return true;
@@ -10819,7 +10795,7 @@ function stopServerProcess(pid) {
   } catch {
   }
   const t0 = Date.now();
-  while (isAlive3(pid)) {
+  while (isAlive2(pid)) {
     if (Date.now() - t0 > 5e3) {
       console.error(`aiview: the running server (pid ${pid}) is an older version and did not stop within 5s; stop it and retry`);
       process.exit(1);
