@@ -470,12 +470,12 @@ var init_trace = __esm({
 
 // src/packs/code/claims.ts
 function claimsOf(deps) {
-  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes } = deps;
+  const { db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold3, slashes } = deps;
   const holdersOf = (repo, rel) => db.prepare("SELECT participant FROM claims WHERE repo = ? AND (path = ? OR substr(?, 1, length(path) + 1) = path || '/') ORDER BY rowid").all(repo, rel, rel).map((r) => Number(r.participant)).filter(isLive);
   const agreedOn = (a, b, rel) => db.prepare("SELECT author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND author IN (?, ?)").all(a.repo, a.id, b.id).some((r) => {
-    const about = r.about == null ? "" : fold2(slashes(String(r.about)));
+    const about = r.about == null ? "" : fold3(slashes(String(r.about)));
     const other = Number(r.author) === a.id ? b : a;
-    return about !== "" && (fold2(rel) === about || fold2(rel).endsWith(`/${about}`)) && JSON.parse(String(r.mentions)).includes(other.name);
+    return about !== "" && (fold3(rel) === about || fold3(rel).endsWith(`/${about}`)) && JSON.parse(String(r.mentions)).includes(other.name);
   });
   const lockQueue = (repo) => Number(db.prepare("SELECT COUNT(*) AS n FROM lock_waiters WHERE repo = ?").get(repo).n);
   const traceRelease = (p, cause) => {
@@ -527,19 +527,19 @@ function claimsOf(deps) {
       return db.prepare("SELECT merged FROM participants WHERE id = ?").get(participant)?.merged === 1;
     },
     askedAbout(me, author, m) {
-      const about = fold2(relPath(me.repo, m.about) ?? slashes(m.about));
+      const about = fold3(relPath(me.repo, m.about) ?? slashes(m.about));
       const mine = db.prepare("SELECT path FROM claims WHERE repo = ? AND participant = ? AND since_seq < ?").all(me.repo, me.id, m.seq);
-      const rel = mine.map((r) => String(r.path)).find((x) => fold2(x) === about || fold2(x).endsWith(`/${about}`));
+      const rel = mine.map((r) => String(r.path)).find((x) => fold3(x) === about || fold3(x).endsWith(`/${about}`));
       if (!rel) return null;
       const theirs = db.prepare("SELECT 1 FROM claims WHERE repo = ? AND path = ? AND participant = ? AND since_seq < ?").get(me.repo, rel, author, m.seq);
       return theirs ? null : rel;
     },
     holderNames(repo, about) {
-      const f = fold2(relPath(repo, about) ?? slashes(about));
+      const f = fold3(relPath(repo, about) ?? slashes(about));
       if (!f) return [];
       const rows = db.prepare("SELECT participant, path FROM claims WHERE repo = ?").all(repo);
       return [...new Set(rows.filter((r) => {
-        const x = fold2(String(r.path));
+        const x = fold3(String(r.path));
         return x === f || x.endsWith(`/${f}`);
       }).map((r) => Number(r.participant)).filter(isLive).map((id) => participantById(id).name))];
     },
@@ -621,7 +621,7 @@ function claimsOf(deps) {
     },
     merged(me, sha, files, conflicts) {
       const rels = [...new Set(files.map((f) => relPath(me.repo, f)).filter((x) => x !== null))];
-      const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold2(slashes(f)))) : null;
+      const conflicted = conflicts && "files" in conflicts ? new Set(conflicts.files.map((f) => fold3(slashes(f)))) : null;
       const wanted = new Set(rels);
       const told = /* @__PURE__ */ new Set();
       const sharers = [];
@@ -653,10 +653,10 @@ function claimsOf(deps) {
           }
         }
         const agreed = /* @__PURE__ */ new Set();
-        const foldedWanted = new Set(rels.map(fold2));
+        const foldedWanted = new Set(rels.map(fold3));
         const joinedAt = new Map(db.prepare("SELECT p.since_seq, p.seat, r.plan FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND r.state = 'open' AND p.ended_at IS NULL").all(me.repo).map((o) => [`${o.plan}/${o.seat}`, Number(o.since_seq)]));
         for (const a of db.prepare("SELECT seq, author, about, mentions FROM messages WHERE repo = ? AND kind = 'agreement' AND about IS NOT NULL").all(me.repo)) {
-          if (!foldedWanted.has(fold2(slashes(String(a.about))))) continue;
+          if (!foldedWanted.has(fold3(slashes(String(a.about))))) continue;
           const parties = [participantById(Number(a.author)).name, ...JSON.parse(String(a.mentions))];
           for (const n of parties) if (n !== me.name && (joinedAt.get(n) ?? Infinity) < Number(a.seq) && !told.has(n)) agreed.add(n);
         }
@@ -673,7 +673,7 @@ function claimsOf(deps) {
           files: new Set(JSON.parse(String(r.meta ?? "{}")).files ?? [])
         }));
         for (const rel of rels) {
-          if (conflicted && !conflicted.has(fold2(rel))) continue;
+          if (conflicted && !conflicted.has(fold3(rel))) continue;
           const ids = new Set(holdersOf(me.repo, rel));
           for (const m of mergedSince) if (m.files.has(rel)) ids.add(m.author);
           ids.delete(me.id);
@@ -1079,8 +1079,8 @@ var init_code2 = __esm({
           case "prune": {
             const known = tables.seatWorktrees();
             const repos = [.../* @__PURE__ */ new Set([...known.map((k) => k.repo), ...input.repos])];
-            const fold2 = (s) => process.platform === "win32" ? path7.resolve(s).toLowerCase() : path7.resolve(s);
-            const recordOf = (dir) => known.filter((k) => fold2(k.worktree) === fold2(dir)).at(-1) ?? null;
+            const fold3 = (s) => process.platform === "win32" ? path7.resolve(s).toLowerCase() : path7.resolve(s);
+            const recordOf = (dir) => known.filter((k) => fold3(k.worktree) === fold3(dir)).at(-1) ?? null;
             return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
           }
           // board-split D59, D63: the member's branch and what it holds not merged; null when all is merged
@@ -1928,7 +1928,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     return fresh;
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
-  const fold2 = (s) => CASELESS ? s.toLowerCase() : s;
+  const fold3 = (s) => CASELESS ? s.toLowerCase() : s;
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
@@ -1939,14 +1939,14 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const relPath = (repo, file) => {
     if (!path9.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
-    const abs = fold2(path9.resolve(file));
+    const abs = fold3(path9.resolve(file));
     for (const root of roots(repo)) {
-      const r = fold2(root);
+      const r = fold3(root);
       if (abs.startsWith(r.endsWith(path9.sep) ? r : r + path9.sep)) return slashes(path9.resolve(file).slice(root.length)) || null;
     }
     return null;
   };
-  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold2, slashes });
+  const packTables = registry.openTables({ db, transaction, bump, now, lastSeq, participantById, isLive, insertMessage, relPath, fold: fold3, slashes });
   const runPackCtx = (runId) => {
     const r = runRow(runId);
     return {
@@ -2113,7 +2113,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const heldWaits = /* @__PURE__ */ new Map();
   const badgesShown = /* @__PURE__ */ new Map();
   const orchestratorIn = (run2) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR).id));
-  const activityOf = (run2, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run2, member);
+  const activityOf2 = (run2, member) => db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run2, member);
   const packLockWaitOf = (p) => {
     if (String(p.seat) === ORCHESTRATOR || p.ended_at != null) return null;
     const m = participantById(Number(p.id));
@@ -2128,7 +2128,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   });
   const owedAtDropOf = (p, run2) => p.dropped_owing == null ? owesOf(p, run2) : Number(p.dropped_owing) === 1;
   const tokensMovedAtOf = (p, run2) => {
-    const a = activityOf(Number(run2.id), String(p.seat));
+    const a = activityOf2(Number(run2.id), String(p.seat));
     return Math.max(a?.grew_at == null ? 0 : Number(a.grew_at), Date.parse(seatedAtOf(p)));
   };
   const stallWindowOf = (run2) => Math.max(Number(run2.stall_ms ?? STALL_MS_DEFAULT), stallMsFloor());
@@ -2146,7 +2146,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
     run2.resumed_at == null ? 0 : Date.parse(String(run2.resumed_at))
   );
   const activityShown = (run2, seat) => {
-    const a = activityOf(run2, seat);
+    const a = activityOf2(run2, seat);
     if (!a) return {};
     const text = (v) => v == null ? null : String(v);
     const open = a.open_tool == null ? null : { name: String(a.open_tool), target: String(a.open_target ?? ""), since: Number(a.open_since), boardWait: Number(a.open_wait) === 1, label: callLabel({ name: String(a.open_tool), target: String(a.open_target ?? ""), label: text(a.open_label), command: text(a.open_command) }), command: text(a.open_command) };
@@ -2155,7 +2155,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const activityShownOf = (p, run2, t) => {
     const member = String(p.seat);
-    const a = activityOf(Number(run2.id), member);
+    const a = activityOf2(Number(run2.id), member);
     const heldSince = heldWaits.get(Number(p.id)) ?? null;
     if (a && Number(a.finished) === 1 && a.bg_target != null) return { member, state: "busy", doing: `background ${String(a.bg_target)}`, since: Number(a.bg_since) };
     if (!a) return { member, state: heldSince != null ? "waiting" : "working", doing: null, since: heldSince ?? Date.parse(seatedAtOf(p)) };
@@ -2303,7 +2303,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
   };
   const livenessOf = (run2, st, t) => {
     if (!st) return void 0;
-    const a = activityOf(run2, st.member);
+    const a = activityOf2(run2, st.member);
     const r = runRowOrNone(run2);
     const p = db.prepare("SELECT * FROM participants WHERE run = ? AND seat = ?").get(run2, st.member);
     const link = (presenceOf.get(run2) ?? noPresence)(st.member);
@@ -7043,7 +7043,7 @@ __export(server_exports, {
   stopBoardServer: () => stopBoardServer
 });
 import crypto4 from "node:crypto";
-import fs14 from "node:fs";
+import fs15 from "node:fs";
 import http from "node:http";
 import path15 from "node:path";
 function silentTooLong(now, lastRound, heardAt) {
@@ -7061,13 +7061,13 @@ async function startBoardServer(opts) {
   }
 }
 function logStart(dataRoot) {
-  fs14.mkdirSync(dataRoot, { recursive: true });
-  fs14.appendFileSync(serverLogFile(dataRoot), `serve: home ${path15.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs15.mkdirSync(dataRoot, { recursive: true });
+  fs15.appendFileSync(serverLogFile(dataRoot), `serve: home ${path15.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function appendLog(dataRoot, line) {
   try {
-    fs14.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
+    fs15.appendFileSync(serverLogFile(dataRoot), `${(/* @__PURE__ */ new Date()).toISOString()} ${line}
 `);
   } catch {
   }
@@ -7076,18 +7076,18 @@ function starterCommandLine() {
   const passed = process.env[SERVER_STARTER_ENV];
   if (passed) return passed;
   try {
-    const read = fs14.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
+    const read = fs15.readFileSync(`/proc/${process.ppid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ");
     if (read) return read;
   } catch {
   }
   return "unknown";
 }
 async function takeStartLock(dataRoot) {
-  fs14.mkdirSync(dataRoot, { recursive: true });
+  fs15.mkdirSync(dataRoot, { recursive: true });
   const lock = serverStartLock(dataRoot);
   for (let emptyReads = 0; ; ) {
     try {
-      fs14.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      fs15.writeFileSync(lock, String(process.pid), { flag: "wx" });
       return;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
@@ -7106,24 +7106,24 @@ async function takeStartLock(dataRoot) {
 async function removeStaleStartLock(dataRoot, seen) {
   const breaker = `${serverStartLock(dataRoot)}.break`;
   try {
-    fs14.writeFileSync(breaker, String(process.pid), { flag: "wx" });
+    fs15.writeFileSync(breaker, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code !== "EEXIST") throw e;
     try {
-      if (Date.now() - fs14.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs14.rmSync(breaker, { force: true });
+      if (Date.now() - fs15.statSync(breaker).mtimeMs > BREAKER_STALE_MS) fs15.rmSync(breaker, { force: true });
     } catch {
     }
     await new Promise((r) => setTimeout(r, LOCK_READ_RETRY_MS));
     return;
   }
   try {
-    if (serverLockHolder(dataRoot) === seen) fs14.rmSync(serverStartLock(dataRoot), { force: true });
+    if (serverLockHolder(dataRoot) === seen) fs15.rmSync(serverStartLock(dataRoot), { force: true });
   } finally {
-    fs14.rmSync(breaker, { force: true });
+    fs15.rmSync(breaker, { force: true });
   }
 }
 function releaseStartLock(dataRoot) {
-  if (serverLockHolder(dataRoot) === process.pid) fs14.rmSync(serverStartLock(dataRoot), { force: true });
+  if (serverLockHolder(dataRoot) === process.pid) fs15.rmSync(serverStartLock(dataRoot), { force: true });
 }
 async function runBoardServer(opts) {
   const host = opts.host ?? "127.0.0.1";
@@ -7290,7 +7290,7 @@ async function runBoardServer(opts) {
         if (f.ticket !== ticket) return refuse(s, "ticket");
         if (f.version !== version) {
           try {
-            fs14.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
+            fs15.appendFileSync(serverLogFile(opts.dataRoot), `swarm server ${process.pid} (version ${version}, since ${serverSince}): refused version ${f.version} from ${f.member?.name ?? "a reader"}
 `);
           } catch {
           }
@@ -7346,8 +7346,8 @@ async function runBoardServer(opts) {
   const port = await listen(httpServer, host, opts.port ?? 0);
   const state = { pid: process.pid, port, ticket, version };
   const stateFile = serverStateFile(opts.dataRoot);
-  fs14.mkdirSync(opts.dataRoot, { recursive: true });
-  fs14.writeFileSync(stateFile, JSON.stringify(state));
+  fs15.mkdirSync(opts.dataRoot, { recursive: true });
+  fs15.writeFileSync(stateFile, JSON.stringify(state));
   const stopTellingReaders = board2.onChange((repo) => {
     for (const s of speakers) if (s.subscribed) send(s, { type: "changed", repo });
   });
@@ -7410,8 +7410,8 @@ async function runBoardServer(opts) {
     await new Promise((r) => httpServer.close(() => r()));
     board2.close();
     try {
-      const written = JSON.parse(fs14.readFileSync(stateFile, "utf8"));
-      if (written.pid === state.pid && written.port === state.port) fs14.rmSync(stateFile);
+      const written = JSON.parse(fs15.readFileSync(stateFile, "utf8"));
+      if (written.pid === state.pid && written.port === state.port) fs15.rmSync(stateFile);
     } catch {
     }
     releaseStartLock(opts.dataRoot);
@@ -7428,7 +7428,7 @@ async function stopBoardServer(dataRoot) {
   const file = serverStateFile(dataRoot);
   let state;
   try {
-    state = JSON.parse(fs14.readFileSync(file, "utf8"));
+    state = JSON.parse(fs15.readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -7436,12 +7436,12 @@ async function stopBoardServer(dataRoot) {
     const res = await fetch(`http://127.0.0.1:${state.port}${STOP_PATH}`, { method: "POST", headers: { [TICKET_HEADER]: state.ticket } });
     if (!res.ok) throw new Error(`refused ${res.status}`);
   } catch {
-    fs14.rmSync(file, { force: true });
+    fs15.rmSync(file, { force: true });
     const holder = serverLockHolder(dataRoot);
-    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs14.rmSync(serverStartLock(dataRoot), { force: true });
+    if (holder !== null && liveStartLockHolder(dataRoot) === null) fs15.rmSync(serverStartLock(dataRoot), { force: true });
     return false;
   }
-  for (let i = 0; i < 100 && fs14.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+  for (let i = 0; i < 100 && fs15.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
   return true;
 }
 function listen(server, host, port) {
@@ -7502,7 +7502,7 @@ init_home2();
 init_home();
 init_trace();
 import { createHash } from "node:crypto";
-import fs15 from "node:fs";
+import fs16 from "node:fs";
 import path16 from "node:path";
 
 // src/client/remote.ts
@@ -7510,7 +7510,7 @@ init_proc();
 init_wire();
 init_home();
 import crypto3 from "node:crypto";
-import fs11 from "node:fs";
+import fs12 from "node:fs";
 import net2 from "node:net";
 import os5 from "node:os";
 import path12 from "node:path";
@@ -7522,62 +7522,44 @@ init_links();
 init_proc();
 init_wire();
 import crypto2 from "node:crypto";
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import net from "node:net";
 import os4 from "node:os";
 import path11 from "node:path";
 
 // src/link/transcripts.ts
-import fs9 from "node:fs";
-import os3 from "node:os";
-import path10 from "node:path";
+import fs10 from "node:fs";
 
-// src/link/adapters.ts
-var claudeCodeJsonl = {
-  name: "claude-code-jsonl",
-  read(chunk, from) {
-    const end = chunk.lastIndexOf(10);
-    if (end < 0) return from;
-    let tokens = from.tokens;
-    let parsed = 0;
-    for (const line of chunk.subarray(0, end).toString("utf8").split("\n")) {
-      const text = line.trim();
-      if (!text) continue;
-      let obj;
-      try {
-        obj = JSON.parse(text);
-      } catch {
-        if (parsed === 0 && from.offset === 0) return null;
-        continue;
-      }
-      if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-        if (parsed === 0 && from.offset === 0) return null;
-        continue;
-      }
-      parsed++;
-      const usage = obj.message?.usage;
-      if (!usage) continue;
-      for (const k of ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"]) {
-        const n = usage[k];
-        if (typeof n === "number" && Number.isFinite(n)) tokens += n;
-      }
-    }
-    return { offset: from.offset + end + 1, tokens };
-  }
-};
-
-// src/link/transcripts.ts
-var LABEL_CHARS = 80;
-var COMMAND_CHARS = 500;
-function callWordsOf(input) {
-  const fields = input && typeof input === "object" ? input : {};
-  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
-  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
-  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
+// src/link/shell.ts
+function commandFacts(command, tool, binding) {
+  const escapes = toolEscapesBackslash(tool);
+  const other = binding !== void 0 && actsAsOther(command, binding, escapes);
+  const waits = !other && runsVerb(command, "wait", escapes);
+  return {
+    boardWait: waits,
+    boardsOwn: !other && (waits || runsVerb(command, "link", escapes)),
+    listener: waits && /\s--mentions(?!\S)/.test(command),
+    kill: classifyKill(command)
+  };
 }
-var TARGET_CHARS = 50;
+function runsBinding(command, binding, tool) {
+  const words = shellWords(command, toolEscapesBackslash(tool));
+  let start = 0;
+  for (let i = 0; i <= words.length; i++) {
+    if (i < words.length && !SEPARATORS.has(words[i])) continue;
+    const segment = words.slice(start, i);
+    start = i + 1;
+    const at = segment.indexOf(binding.verb);
+    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
+    const args2 = segment.slice(at + 1);
+    if (binding.verb === "join") {
+      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
+    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
+  }
+  return false;
+}
 var SEPARATORS = /* @__PURE__ */ new Set([";", "&&", "||", "|", "&", "\n"]);
-function shellWords(command, backslashEscapes = true) {
+function shellWords(command, backslashEscapes) {
   const words = [];
   let word = "";
   let inWord = false;
@@ -7623,31 +7605,182 @@ function optionValue(words, names) {
   }
   return void 0;
 }
-function commandRunsWait(command, backslashEscapes = true) {
-  return commandRunsVerb(command, "wait", backslashEscapes);
-}
 var toolEscapesBackslash = (toolName) => toolName === void 0 || toolName === "Bash";
-function commandRunsVerb(command, verb, backslashEscapes) {
+function runsVerb(command, verb, backslashEscapes) {
   const words = shellWords(command, backslashEscapes);
   return words.some((w, i) => w === verb && i > 0 && isSwarmTool(words[i - 1]));
 }
-var commandIsBoardsOwn = (command, backslashEscapes) => commandRunsVerb(command, "wait", backslashEscapes) || commandRunsVerb(command, "link", backslashEscapes);
-function commandRunsBinding(command, binding, backslashEscapes = true) {
-  const words = shellWords(command, backslashEscapes);
-  let start = 0;
-  for (let i = 0; i <= words.length; i++) {
-    if (i < words.length && !SEPARATORS.has(words[i])) continue;
-    const segment = words.slice(start, i);
-    start = i + 1;
-    const at = segment.indexOf(binding.verb);
-    if (at < 1 || !isSwarmTool(segment[at - 1])) continue;
-    const args2 = segment.slice(at + 1);
-    if (binding.verb === "join") {
-      if (optionValue(args2, ["--run"]) === String(binding.run) && optionValue(args2, ["--seat"]) === binding.seat) return true;
-    } else if (optionValue(args2, ["--group", "--plan"]) === binding.group) return true;
-  }
-  return false;
+function actsAsOther(command, binding, backslashEscapes) {
+  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
+  if (as === void 0) return false;
+  const slash = as.lastIndexOf("/");
+  const group = slash < 0 ? null : as.slice(0, slash);
+  const seat = as.slice(slash + 1);
+  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
 }
+var KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
+var WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
+var PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
+var PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
+var RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
+function commandSegments(text) {
+  const out = [];
+  let cur = "";
+  const flush = () => {
+    if (cur.trim()) out.push(cur.trim());
+    cur = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      const close = text.indexOf(c, i + 1);
+      const end = close < 0 ? text.length : close;
+      const inner = text.slice(i + 1, end);
+      if (RUNS_QUOTED.test(cur)) {
+        flush();
+        out.push(...commandSegments(inner));
+      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
+      i = end;
+    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
+    else cur += c;
+  }
+  flush();
+  return out;
+}
+function headOf(segment) {
+  const words = segment.split(/\s+/).filter(Boolean);
+  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
+  if (!words.length) return null;
+  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
+  return { head, rest: words.slice(1).join(" ") };
+}
+function portsOf(command) {
+  const found = /* @__PURE__ */ new Set();
+  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
+  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
+  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
+}
+var KILL_WAYS = {
+  pkill: () => "name",
+  killall: () => "name",
+  taskkill: (rest, before) => /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? before : "fed",
+  "stop-process": (rest, before) => /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? before : "fed",
+  kill: (rest, before) => rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? before : "fed",
+  wmic: (rest, before) => /\b(delete|terminate)\b/i.test(rest) ? "name" : before,
+  "invoke-cimmethod": (rest, before) => /terminate/i.test(rest) ? "fed" : before,
+  fuser: (rest, before) => /(^|\s)-k\b/.test(rest) ? "fed" : before
+};
+KILL_WAYS.spps = KILL_WAYS["stop-process"];
+function classifyKill(command) {
+  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
+  let kill = null;
+  for (const segment of commandSegments(command)) {
+    const h = headOf(segment);
+    if (!h || !KILL_HEADS.has(h.head)) continue;
+    kill = KILL_WAYS[h.head](h.rest, kill);
+    if (kill === "name") break;
+  }
+  if (kill === "name") return { kind: "pattern" };
+  if (kill !== "fed") return null;
+  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
+  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
+  return null;
+}
+
+// src/link/activity.ts
+function emptyActivity() {
+  return { open: /* @__PURE__ */ new Map(), lastTool: null, context: null, lastLine: null, inTurn: false, endedTurns: 0, background: /* @__PURE__ */ new Map(), boardsOwn: /* @__PURE__ */ new Set(), breach: null, listeners: /* @__PURE__ */ new Set(), listenerEndedAt: null };
+}
+var SHORT_CHARS = 50;
+var short = (text) => text.replace(/\s+/g, " ").trim().slice(0, SHORT_CHARS);
+var NO_FACTS = { boardWait: false, boardsOwn: false, listener: false, kill: null };
+var FOLDS = {
+  tokens: () => {
+  },
+  foreign: () => {
+  },
+  notified: (s, e) => {
+    for (const id of e.toolUseIds) {
+      s.background.delete(id);
+      if (s.listeners.delete(id)) s.listenerEndedAt = e.at;
+    }
+  },
+  context: (s, e) => {
+    s.context = e.tokens;
+  },
+  said: (s, e) => {
+    s.lastLine = short(e.text);
+  },
+  called: (s, e, binding) => {
+    const target = short(e.target);
+    const facts = e.command === null ? NO_FACTS : commandFacts(e.command, e.tool, binding);
+    s.open.set(e.id, { name: e.tool, target, since: e.at, ...facts.boardWait ? { boardWait: true } : {}, ...e.words });
+    s.lastTool = target ? `${e.tool} ${target}` : e.tool;
+    s.lastLine = s.lastTool;
+    if (facts.boardsOwn) s.boardsOwn.add(e.id);
+    else if (e.background) s.background.set(e.id, { target, since: e.at, turn: s.endedTurns, output: null, ...e.words });
+    if (e.background && facts.listener) s.listeners.add(e.id);
+    if (e.stopsTask) {
+      for (const [useId, task] of s.background) if (task.taskId === e.stopsTask) s.background.delete(useId);
+    }
+    if (facts.kill) s.breach = { command: e.command.replace(/\s+/g, " ").trim(), ...facts.kill, at: e.at };
+  },
+  answered: (s, e) => {
+    const call = s.open.get(e.toolUseId);
+    if (e.movedToBackground) {
+      const { output, taskId } = e.movedToBackground;
+      const task = s.background.get(e.toolUseId);
+      if (task) s.background.set(e.toolUseId, { ...task, output, taskId });
+      else if (call && !s.boardsOwn.has(e.toolUseId))
+        s.background.set(e.toolUseId, { target: call.target, since: call.since, turn: s.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
+    }
+    s.open.delete(e.toolUseId);
+    s.boardsOwn.delete(e.toolUseId);
+  },
+  // the turn ends on an assistant line not asking for a tool; a line without stop_reason reads as ended (detection first)
+  assistantEnded: (s, e) => {
+    if (s.inTurn && !e.asksForTool) s.endedTurns++;
+    s.inTurn = e.asksForTool;
+  },
+  userSpoke: (s) => {
+    s.inTurn = true;
+  }
+};
+function fold2(s, e, binding) {
+  const next = { ...s, open: new Map(s.open), background: new Map(s.background), boardsOwn: new Set(s.boardsOwn), listeners: new Set(s.listeners) };
+  FOLDS[e.kind](next, e, binding);
+  return next;
+}
+function awaitedBackground(s, mtimeOf2) {
+  const latestTurn = s.inTurn ? s.endedTurns : s.endedTurns - 1;
+  let oldest = null;
+  for (const t of s.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
+  if (!oldest) return null;
+  const outputGrewAt = oldest.output ? mtimeOf2(oldest.output) : null;
+  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
+}
+function activityOf(s, io) {
+  let openTool = null;
+  for (const t of s.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
+  return {
+    grewAt: io.grewAt,
+    tokens: io.tokens,
+    context: s.context,
+    openTool: openTool && { ...openTool },
+    lastTool: s.lastTool,
+    finished: io.finished,
+    inTurn: s.inTurn,
+    lastLine: s.lastLine,
+    background: awaitedBackground(s, io.mtimeOf),
+    breach: s.breach,
+    listener: { running: s.listeners.size > 0, endedAt: s.listenerEndedAt }
+  };
+}
+
+// src/link/harness/claude-code.ts
+import fs9 from "node:fs";
+import os3 from "node:os";
+import path10 from "node:path";
 function transcriptRunsBinding(file, binding) {
   let text;
   try {
@@ -7667,7 +7800,7 @@ function transcriptRunsBinding(file, binding) {
     }
     if (obj.type !== "assistant" || !Array.isArray(obj.message?.content)) continue;
     for (const part of obj.message.content) {
-      if (part?.type === "tool_use" && typeof part.input?.command === "string" && commandRunsBinding(part.input.command, binding, toolEscapesBackslash(part.name))) return true;
+      if (part?.type === "tool_use" && typeof part.input?.command === "string" && runsBinding(part.input.command, binding, part.name)) return true;
     }
   }
   return false;
@@ -7680,6 +7813,81 @@ var mtimeOf = (file) => {
     return 0;
   }
 };
+var MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
+var BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
+var STOPS_TASK = /* @__PURE__ */ new Set(["TaskStop", "KillShell", "KillBash"]);
+var OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
+var NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
+var USAGE_COUNTS = ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"];
+var LABEL_CHARS = 80;
+var COMMAND_CHARS = 500;
+var timeOf = (line, fallback) => {
+  const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
+  return Number.isFinite(t) ? t : fallback;
+};
+function textOf(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
+}
+function notified(text, at) {
+  if (!text.includes("<task-notification>")) return [];
+  return [{ kind: "notified", toolUseIds: [...text.matchAll(NOTIFIED_TOOL_USE)].map((m) => m[1]), at }];
+}
+function toolTarget(input) {
+  if (input && typeof input === "object") {
+    const fields = input;
+    const named = ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"].find((k) => typeof fields[k] === "string");
+    return named && fields[named] || JSON.stringify(input);
+  }
+  return input !== void 0 ? String(input) : "";
+}
+function callWordsOf(input) {
+  const fields = input && typeof input === "object" ? input : {};
+  const label = typeof fields.description === "string" && fields.description.trim() ? fields.description.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS) : null;
+  const raw = typeof fields.command === "string" ? fields.command : typeof fields.file_path === "string" ? fields.file_path : null;
+  return { label, command: raw === null ? null : raw.trim().slice(0, COMMAND_CHARS) };
+}
+function tokensOf(usage) {
+  let tokens = 0;
+  for (const k of USAGE_COUNTS) {
+    const n = usage[k];
+    if (typeof n === "number" && Number.isFinite(n)) tokens += n;
+  }
+  return tokens;
+}
+function assistantEvents(line, content, at) {
+  const events = [];
+  const usage = line.message?.usage;
+  if (usage) {
+    const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
+    events.push({ kind: "context", tokens: n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") });
+  }
+  for (const part of content) {
+    if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) events.push({ kind: "said", text: part.text });
+    if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
+    const name = part.name ?? "?";
+    const input = part.input;
+    const stopped = STOPS_TASK.has(name) ? input ?? {} : {};
+    const stopsTask = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
+    const command = typeof input?.command === "string" ? input.command : null;
+    events.push({ kind: "called", id: part.id, tool: name, target: toolTarget(part.input), words: callWordsOf(part.input), command, background: input?.run_in_background === true, stopsTask, at });
+  }
+  events.push({ kind: "assistantEnded", asksForTool: line.message?.stop_reason === "tool_use" });
+  return events;
+}
+function userEvents(line, content, at) {
+  const events = typeof line.message?.content === "string" ? notified(line.message.content, at) : [];
+  for (const part of content) {
+    if (part?.type === "text" && typeof part.text === "string") events.push(...notified(part.text, at));
+    if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
+    const result = textOf(part.content);
+    const movedToBackground = MOVED_TO_BACKGROUND.test(result) ? { output: OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null, taskId: BACKGROUND_ID.exec(result)?.[1] ?? null } : null;
+    events.push({ kind: "answered", toolUseId: part.tool_use_id, movedToBackground });
+  }
+  events.push({ kind: "userSpoke" });
+  return events;
+}
 var claudeCode = {
   name: "claude-code",
   locate(binding, env) {
@@ -7723,275 +7931,97 @@ var claudeCode = {
     } catch {
       return false;
     }
+  },
+  /** One JSON object per line; any line's `message.usage` counts, an assistant or user line says more. */
+  decode(text, fallbackAt) {
+    let line;
+    try {
+      line = JSON.parse(text);
+    } catch {
+      return [{ kind: "foreign" }];
+    }
+    if (!line || typeof line !== "object" || Array.isArray(line)) return [{ kind: "foreign" }];
+    const read = line;
+    const events = read.message?.usage ? [{ kind: "tokens", tokens: tokensOf(read.message.usage) }] : [];
+    if (read.attachment?.commandMode === "task-notification" && typeof read.attachment.prompt === "string") events.push(...notified(read.attachment.prompt, timeOf(read, fallbackAt)));
+    if (read.type !== "assistant" && read.type !== "user") return events;
+    const at = timeOf(read, fallbackAt);
+    const content = Array.isArray(read.message?.content) ? read.message.content : [];
+    return [...events, ...read.type === "assistant" ? assistantEvents(read, content, at) : userEvents(read, content, at)];
   }
 };
-var LOCATORS = [claudeCode];
+
+// src/link/transcripts.ts
+var HARNESSES = [claudeCode];
+var freshCursor = () => ({ offset: 0, tokens: 0, grewAt: null, ...emptyActivity() });
 function locate(binding, env) {
-  for (const l of LOCATORS) {
-    const found = l.locate(binding, env);
+  for (const h of HARNESSES) {
+    const found = h.locate(binding, env);
     if (found) return found;
   }
   return null;
 }
-function toolTarget(input) {
-  let text = "";
-  if (input && typeof input === "object") {
-    const fields = input;
-    for (const k of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
-      if (typeof fields[k] === "string") {
-        text = fields[k];
-        break;
-      }
-    }
-    if (!text) text = JSON.stringify(input);
-  } else if (input !== void 0) text = String(input);
-  return text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-}
-var timeOf = (line, fallback) => {
-  const t = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
-  return Number.isFinite(t) ? t : fallback;
-};
-var freshCursor = () => ({
-  offset: 0,
-  tokens: 0,
-  open: /* @__PURE__ */ new Map(),
-  lastTool: null,
-  context: null,
-  grewAt: null,
-  lastLine: null,
-  inTurn: false,
-  endedTurns: 0,
-  background: /* @__PURE__ */ new Map(),
-  boardsOwn: /* @__PURE__ */ new Set(),
-  breach: null,
-  listeners: /* @__PURE__ */ new Set(),
-  listenerEndedAt: null
-});
-var KILL_HEADS = /* @__PURE__ */ new Set(["taskkill", "kill", "pkill", "killall", "stop-process", "spps", "wmic", "invoke-cimmethod", "fuser"]);
-var WRAPPER = /^(sudo|xargs|cmd(\.exe)?|\/c|start|call|exec|nohup|foreach-object|%|do|then|-\S+|\d+)$/i;
-var PATTERN_FEED = /\b(Get-Process|gps|Get-CimInstance|Get-WmiObject|gwmi|tasklist|pgrep|wmic)\b|(^|[\s|;&(])ps(\s|$)/i;
-var PORT_FEED = /\b(Get-NetTCPConnection|netstat|lsof|fuser)\b|(^|[\s|;&(])ss\s/i;
-var RUNS_QUOTED = /(?:-command|-c|(?:^|\s)(?:powershell|pwsh|bash|sh|cmd)(?:\.exe)?(?:\s+-\S+)*)\s*$/i;
-function commandSegments(text) {
-  const out = [];
-  let cur = "";
-  const flush = () => {
-    if (cur.trim()) out.push(cur.trim());
-    cur = "";
-  };
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (c === '"' || c === "'") {
-      const close = text.indexOf(c, i + 1);
-      const end = close < 0 ? text.length : close;
-      const inner = text.slice(i + 1, end);
-      if (RUNS_QUOTED.test(cur)) {
-        flush();
-        out.push(...commandSegments(inner));
-      } else cur += ` "${inner.replace(/\s+/g, " ")}" `;
-      i = end;
-    } else if (";|&\n(){}`".includes(c) || c === "$" && text[i + 1] === "(") flush();
-    else cur += c;
-  }
-  flush();
-  return out;
-}
-function headOf(segment) {
-  const words = segment.split(/\s+/).filter(Boolean);
-  while (words.length > 1 && WRAPPER.test(words[0])) words.shift();
-  if (!words.length) return null;
-  const head = words[0].replace(/^.*[\\/]/, "").replace(/\.exe$/i, "").toLowerCase();
-  return { head, rest: words.slice(1).join(" ") };
-}
-function portsOf(command) {
-  const found = /* @__PURE__ */ new Set();
-  for (const m of command.matchAll(/-LocalPort\s+([\d,\s]+)/gi)) for (const n of m[1].split(/[,\s]+/)) if (n) found.add(Number(n));
-  for (const m of command.matchAll(/(?::|-iTCP:)(\d{2,5})\b|\b(\d{2,5})\/tcp\b/gi)) found.add(Number(m[1] ?? m[2]));
-  return [...found].filter((n) => n > 0 && n < 65536).sort((a, b) => a - b);
-}
-function classifyKill(command) {
-  if (/(^|[\s\\/"'])swarm(\.mjs)?(["'\s]|$)/i.test(command)) return null;
-  let kill = null;
-  for (const segment of commandSegments(command)) {
-    const h = headOf(segment);
-    if (!h || !KILL_HEADS.has(h.head)) continue;
-    const { head, rest } = h;
-    if (head === "pkill" || head === "killall") kill = "name";
-    else if (head === "taskkill") kill = /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? kill ?? null : "fed";
-    else if (head === "stop-process" || head === "spps") kill = /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? kill ?? null : "fed";
-    else if (head === "kill") kill = rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? kill ?? null : "fed";
-    else if (head === "wmic") kill = /\b(delete|terminate)\b/i.test(rest) ? "name" : kill;
-    else if (head === "invoke-cimmethod") kill = /terminate/i.test(rest) ? "fed" : kill;
-    else if (head === "fuser") kill = /(^|\s)-k\b/.test(rest) ? "fed" : kill;
-    if (kill === "name") break;
-  }
-  if (kill === "name") return { kind: "pattern" };
-  if (kill !== "fed") return null;
-  if (PATTERN_FEED.test(command)) return { kind: "pattern" };
-  if (PORT_FEED.test(command)) return { kind: "port", ports: portsOf(command) };
-  return null;
-}
-var MOVED_TO_BACKGROUND = /^\s*(Command running in background with ID:|Command did not complete within its .{0,40}?moved to the background \(ID:|Command was moved to the background \(ID:)/;
-var BACKGROUND_ID = /(?:with ID:|\(ID:)\s*([\w-]+)/;
-var STOPS_TASK = /* @__PURE__ */ new Set(["TaskStop", "KillShell", "KillBash"]);
-var OUTPUT_FILE = /Output is being written to: (.+?)(?=\.\s|\.?\s*$)/m;
-var NOTIFIED_TOOL_USE = /<task-notification>[\s\S]*?<tool-use-id>([^<\s]+)<\/tool-use-id>/g;
-function textOf(content) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((p) => typeof p === "string" ? p : p && typeof p === "object" && typeof p.text === "string" ? p.text : "").join("\n");
-}
-function closeNotified(cursor, text, at) {
-  if (!text.includes("<task-notification>")) return;
-  for (const m of text.matchAll(NOTIFIED_TOOL_USE)) {
-    cursor.background.delete(m[1]);
-    if (cursor.listeners.delete(m[1])) cursor.listenerEndedAt = at;
-  }
-}
-var commandRunsListener = (command, backslashEscapes) => commandRunsWait(command, backslashEscapes) && /\s--mentions(?!\S)/.test(command);
-function awaitedBackground(cursor) {
-  const latestTurn = cursor.inTurn ? cursor.endedTurns : cursor.endedTurns - 1;
-  let oldest = null;
-  for (const t of cursor.background.values()) if (t.turn === latestTurn && (!oldest || t.since < oldest.since)) oldest = t;
-  if (!oldest) return null;
-  let outputGrewAt = null;
-  if (oldest.output) {
-    try {
-      outputGrewAt = fs9.statSync(oldest.output).mtimeMs;
-    } catch {
-    }
-  }
-  return { target: oldest.target, since: oldest.since, outputGrewAt, label: oldest.label ?? null, command: oldest.command ?? null };
-}
-function commandActsAsOther(command, binding, backslashEscapes = true) {
-  const as = optionValue(shellWords(command, backslashEscapes), ["--as"]);
-  if (as === void 0) return false;
-  const slash = as.lastIndexOf("/");
-  const group = slash < 0 ? null : as.slice(0, slash);
-  const seat = as.slice(slash + 1);
-  return binding.verb === "join" ? seat !== binding.seat : seat !== "orchestrator" || group !== null && group !== binding.group;
-}
-function observe(transcript, from, binding) {
-  let cursor = from ? { ...from, open: new Map(from.open), background: new Map(from.background), boardsOwn: new Set(from.boardsOwn), breach: from.breach ?? null, listeners: new Set(from.listeners ?? []), listenerEndedAt: from.listenerEndedAt ?? null } : freshCursor();
-  let chunk = Buffer.alloc(0);
-  let mtime = Date.now();
+function readFrom(transcript, cursor) {
   try {
-    const fd = fs9.openSync(transcript, "r");
+    const fd = fs10.openSync(transcript, "r");
     try {
-      const stat = fs9.fstatSync(fd);
-      mtime = stat.mtimeMs;
-      if (stat.size < cursor.offset) cursor = freshCursor();
-      chunk = Buffer.alloc(stat.size - cursor.offset);
-      fs9.readSync(fd, chunk, 0, chunk.length, cursor.offset);
+      const stat = fs10.fstatSync(fd);
+      const from = stat.size < cursor.offset ? freshCursor() : cursor;
+      const chunk = Buffer.alloc(stat.size - from.offset);
+      fs10.readSync(fd, chunk, 0, chunk.length, from.offset);
+      return { cursor: from, chunk, mtime: stat.mtimeMs };
     } finally {
-      fs9.closeSync(fd);
+      fs10.closeSync(fd);
     }
   } catch {
-    cursor = freshCursor();
+    return { cursor: freshCursor(), chunk: Buffer.alloc(0), mtime: Date.now() };
   }
-  const counted = claudeCodeJsonl.read(chunk, { offset: cursor.offset, tokens: cursor.tokens });
-  const consumed = (counted?.offset ?? cursor.offset) - cursor.offset;
+}
+function decodeLines(chunk, atFileStart, fallbackAt) {
+  const end = chunk.lastIndexOf(10);
+  if (end < 0) return { events: [], consumed: 0 };
+  const events = [];
+  let decoded = 0;
+  for (const raw of chunk.subarray(0, end).toString("utf8").split("\n")) {
+    const text = raw.trim();
+    if (!text) continue;
+    const lineEvents = claudeCode.decode(text, fallbackAt);
+    const foreign = lineEvents.some((e) => e.kind === "foreign");
+    if (foreign && decoded === 0 && atFileStart) return { events: [], consumed: 0 };
+    if (foreign) continue;
+    decoded++;
+    events.push(...lineEvents);
+  }
+  return { events, consumed: end + 1 };
+}
+function observe(transcript, from, binding) {
+  const previous = from;
+  const read = readFrom(transcript, previous ?? freshCursor());
+  let cursor = { ...read.cursor };
+  const { events, consumed } = decodeLines(read.chunk, cursor.offset === 0, read.mtime);
   if (consumed > 0) {
-    for (const raw of chunk.subarray(0, consumed).toString("utf8").split("\n")) {
-      if (!raw.trim()) continue;
-      let line;
+    let state = cursor;
+    let tokens = cursor.tokens;
+    for (const e of events) {
+      if (e.kind === "tokens") tokens += e.tokens;
+      else state = fold2(state, e, binding);
+    }
+    cursor = { ...cursor, ...state, offset: cursor.offset + consumed, tokens, grewAt: read.mtime };
+  }
+  const said = HARNESSES.map((h) => h.finished(transcript)).find((f) => f !== null);
+  const activity = activityOf(cursor, {
+    grewAt: cursor.grewAt,
+    tokens: cursor.tokens,
+    finished: said ?? false,
+    mtimeOf: (file) => {
       try {
-        line = JSON.parse(raw);
+        return fs10.statSync(file).mtimeMs;
       } catch {
-        continue;
-      }
-      if (line.attachment?.commandMode === "task-notification" && typeof line.attachment.prompt === "string") closeNotified(cursor, line.attachment.prompt, timeOf(line, mtime));
-      if (line.type !== "assistant" && line.type !== "user") continue;
-      const at = timeOf(line, mtime);
-      const content = Array.isArray(line.message?.content) ? line.message.content : [];
-      if (line.type === "assistant") {
-        const usage = line.message?.usage;
-        if (usage) {
-          const n = (k) => typeof usage[k] === "number" ? usage[k] : 0;
-          cursor.context = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
-        }
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) cursor.lastLine = part.text.replace(/\s+/g, " ").trim().slice(0, TARGET_CHARS);
-          if (part?.type !== "tool_use" || typeof part.id !== "string") continue;
-          const name = part.name ?? "?";
-          const target = toolTarget(part.input);
-          const input = part.input;
-          const command = input?.command;
-          const escapes = toolEscapesBackslash(name);
-          const other = typeof command === "string" && binding !== void 0 && commandActsAsOther(command, binding, escapes);
-          const boardWait = typeof command === "string" && !other && commandRunsWait(command, escapes);
-          const words = callWordsOf(part.input);
-          cursor.open.set(part.id, { name, target, since: at, ...boardWait ? { boardWait } : {}, ...words });
-          cursor.lastTool = target ? `${name} ${target}` : name;
-          cursor.lastLine = cursor.lastTool;
-          const boardsOwn = typeof command === "string" && !other && commandIsBoardsOwn(command, escapes);
-          if (boardsOwn) cursor.boardsOwn.add(part.id);
-          else if (input?.run_in_background === true) cursor.background.set(part.id, { target, since: at, turn: cursor.endedTurns, output: null, ...words });
-          if (input?.run_in_background === true && typeof command === "string" && !other && commandRunsListener(command, escapes)) cursor.listeners.add(part.id);
-          if (STOPS_TASK.has(name)) {
-            const stopped = part.input ?? {};
-            const id = typeof stopped.task_id === "string" ? stopped.task_id : typeof stopped.shell_id === "string" ? stopped.shell_id : null;
-            if (id) {
-              for (const [useId, task] of cursor.background) if (task.taskId === id) cursor.background.delete(useId);
-            }
-          }
-          const kill = typeof command === "string" ? classifyKill(command) : null;
-          if (kill) cursor.breach = { command: command.replace(/\s+/g, " ").trim(), ...kill, at };
-        }
-        const inTurn = line.message?.stop_reason === "tool_use";
-        if (cursor.inTurn && !inTurn) cursor.endedTurns++;
-        cursor.inTurn = inTurn;
-      } else {
-        if (typeof line.message?.content === "string") closeNotified(cursor, line.message.content, at);
-        for (const part of content) {
-          if (part?.type === "text" && typeof part.text === "string") closeNotified(cursor, part.text, at);
-          if (part?.type !== "tool_result" || typeof part.tool_use_id !== "string") continue;
-          const result = textOf(part.content);
-          const call = cursor.open.get(part.tool_use_id);
-          if (MOVED_TO_BACKGROUND.test(result)) {
-            const output = OUTPUT_FILE.exec(result)?.[1]?.trim() ?? null;
-            const taskId = BACKGROUND_ID.exec(result)?.[1] ?? null;
-            const task = cursor.background.get(part.tool_use_id);
-            if (task) cursor.background.set(part.tool_use_id, { ...task, output, taskId });
-            else if (call && !cursor.boardsOwn.has(part.tool_use_id))
-              cursor.background.set(part.tool_use_id, { target: call.target, since: call.since, turn: cursor.endedTurns, output, taskId, label: call.label ?? null, command: call.command ?? null });
-          }
-          cursor.open.delete(part.tool_use_id);
-          cursor.boardsOwn.delete(part.tool_use_id);
-        }
-        cursor.inTurn = true;
+        return null;
       }
     }
-    cursor.offset += consumed;
-    cursor.tokens = counted.tokens;
-    cursor.grewAt = mtime;
-  }
-  let openTool = null;
-  for (const t of cursor.open.values()) if (!openTool || t.since < openTool.since) openTool = t;
-  let finished = false;
-  for (const l of LOCATORS) {
-    const said = l.finished(transcript);
-    if (said !== null) {
-      finished = said;
-      break;
-    }
-  }
-  return {
-    activity: {
-      grewAt: cursor.grewAt,
-      tokens: cursor.tokens,
-      context: cursor.context,
-      openTool: openTool && { ...openTool },
-      lastTool: cursor.lastTool,
-      finished,
-      inTurn: cursor.inTurn,
-      lastLine: cursor.lastLine,
-      background: awaitedBackground(cursor),
-      breach: cursor.breach,
-      listener: { running: cursor.listeners.size > 0, endedAt: cursor.listenerEndedAt }
-    },
-    cursor
-  };
+  });
+  return { activity, cursor, grew: cursor.offset !== previous?.offset };
 }
 
 // src/link/link.ts
@@ -8014,7 +8044,7 @@ function sayStop(dataRoot, member, stop, toServerLog) {
   const state = toServerLog ? readServerState(dataRoot) : null;
   if (!state || !isAlive(state.pid)) return;
   try {
-    fs10.appendFileSync(serverLogFile(dataRoot), line + "\n");
+    fs11.appendFileSync(serverLogFile(dataRoot), line + "\n");
   } catch {
   }
 }
@@ -8033,7 +8063,7 @@ async function listenOnPipe(pipe, onPipe) {
   const first = await tryListen();
   if (first !== "taken") return first;
   if (process.platform === "win32" || await pipeAnswers(pipe)) return null;
-  fs10.rmSync(pipe, { force: true });
+  fs11.rmSync(pipe, { force: true });
   const second = await tryListen();
   return second === "taken" ? null : second;
 }
@@ -8092,9 +8122,8 @@ async function runLink(opts) {
     transcript ??= locate(opts.binding, env);
     if (!transcript) return;
     const read = observe(transcript, cursor, opts.binding);
-    const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
-    if (grew) lastStirAt = Date.now();
+    if (read.grew) lastStirAt = Date.now();
     const activity = { ...read.activity, transcript };
     const seen = JSON.stringify(activity);
     if (seen !== lastSeen) {
@@ -8241,13 +8270,13 @@ async function runLink(opts) {
   if (!pipeServer) return pipeTaken();
   const pidFile = linkPidFile(opts.dataRoot, opts.run, opts.member);
   try {
-    fs10.mkdirSync(path11.dirname(pidFile), { recursive: true });
-    fs10.writeFileSync(pidFile, String(process.pid));
+    fs11.mkdirSync(path11.dirname(pidFile), { recursive: true });
+    fs11.writeFileSync(pidFile, String(process.pid));
   } catch {
   }
   const dropPid = () => {
     try {
-      if (fs10.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs10.rmSync(pidFile);
+      if (fs11.readFileSync(pidFile, "utf8").trim() === String(process.pid)) fs11.rmSync(pidFile);
     } catch {
     }
   };
@@ -8303,9 +8332,9 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs11.mkdirSync(dataRoot, { recursive: true });
-      log = fs11.openSync(serverLogFile(dataRoot), "a");
-      fs11.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
+      fs12.mkdirSync(dataRoot, { recursive: true });
+      log = fs12.openSync(serverLogFile(dataRoot), "a");
+      fs12.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
 `);
     } catch {
     }
@@ -8316,7 +8345,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs11.closeSync(log);
+    if (typeof log === "number") fs12.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = readServerState(dataRoot);
@@ -8326,7 +8355,7 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   }
   let said = "";
   try {
-    const all2 = fs11.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all2 = fs12.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const lines = all2.slice(all2.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
@@ -8362,7 +8391,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs11.rmSync(marker, { force: true });
+      fs12.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -8370,15 +8399,15 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs11.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs12.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
       await pause2(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs11.mkdirSync(path12.dirname(marker), { recursive: true });
-      fs11.writeFileSync(marker, String(Date.now()));
+      fs12.mkdirSync(path12.dirname(marker), { recursive: true });
+      fs12.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
@@ -8636,11 +8665,11 @@ init_mentions();
 
 // src/cli/aiview-board.ts
 init_proc();
-import fs12 from "node:fs";
+import fs13 from "node:fs";
 import path13 from "node:path";
 function aiviewLauncher(toolRoot2) {
   const file = process.env.SWARM_AIVIEW ?? path13.join(toolRoot2, "..", "aiview", "aiview.mjs");
-  return fs12.existsSync(file) ? file : null;
+  return fs13.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
   const r = hiddenSpawnSync(process.execPath, [launcher, ...argv, "--json"], { cwd, encoding: "utf8" });
@@ -8693,7 +8722,7 @@ function projectNamer(input) {
 }
 
 // src/cli/guides.ts
-import fs13 from "node:fs";
+import fs14 from "node:fs";
 import path14 from "node:path";
 function flowItems(list) {
   const items = [];
@@ -8741,14 +8770,14 @@ function parseGuide(text, folder, fallback = null) {
 function guidesIn(dir, keep, fallback = () => null) {
   let folders;
   try {
-    folders = fs13.readdirSync(dir).filter(keep).sort();
+    folders = fs14.readdirSync(dir).filter(keep).sort();
   } catch {
     return [];
   }
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs13.readFileSync(path14.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
+      const g = parseGuide(fs14.readFileSync(path14.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
       if (g) out.push(g);
     } catch {
     }
@@ -9248,11 +9277,11 @@ var taskHintLines = (p) => {
 };
 var phaseHeaders = (s, showPause = true) => {
   const whole = s.phase ? WORDING.phaseWhole(s.phase.name, s.phase.text) : null;
-  const short = s.phase && s.phaseFirst === false ? WORDING.phaseShort(s.phase.name, WORDING.status(s.cli)) : whole;
+  const short2 = s.phase && s.phaseFirst === false ? WORDING.phaseShort(s.phase.name, WORDING.status(s.cli)) : whole;
   const first = s.phaseFirst !== false;
-  if (!s.pause || !showPause) return { printed: short, full: whole, first };
+  if (!s.pause || !showPause) return { printed: short2, full: whole, first };
   const why = WORDING.pauseWhy(s.pause.person, s.pause.text);
-  return { printed: WORDING.phasePaused(short, why), full: WORDING.phasePaused(whole, why), first };
+  return { printed: WORDING.phasePaused(short2, why), full: WORDING.phasePaused(whole, why), first };
 };
 var lostMentionLines = (lost, cli, as) => lost.map((member) => WORDING.mentionLost(member, WORDING.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
 var phaseStep = (name, confirm) => WORDING.phaseConfirmStep(name, WORDING.phaseOptIns, confirm);
@@ -9568,7 +9597,7 @@ function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
 }
 function changedIn(worktree) {
-  if (!fs15.existsSync(worktree)) return [];
+  if (!fs16.existsSync(worktree)) return [];
   const r = hiddenSpawnSync("git", ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all"], { cwd: worktree, encoding: "utf8" });
   if (r.status !== 0) return fail(`git status failed in ${worktree}: ${r.stderr.trim()}`);
   const parts = r.stdout.split("\0");
@@ -9610,7 +9639,7 @@ var undoOpen = async (repo, group, why) => {
 };
 var swarmBoardFolderAbove = (from) => {
   for (let dir = from; ; dir = path16.dirname(dir)) {
-    if (fs15.existsSync(path16.join(dir, "swarm.mjs"))) return dir;
+    if (fs16.existsSync(path16.join(dir, "swarm.mjs"))) return dir;
     if (path16.dirname(dir) === dir) return from;
   }
 };
@@ -9618,16 +9647,16 @@ var projectFlag = () => args.flag("--project");
 var projectRepo = () => {
   const asked = projectFlag();
   if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
-  if (fs15.existsSync(asked)) return repoOf2(path16.resolve(asked)) ?? fail(WORDING.noProject(asked));
+  if (fs16.existsSync(asked)) return repoOf2(path16.resolve(asked)) ?? fail(WORDING.noProject(asked));
   const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
-  const repo = covered.filter((p) => fs15.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
+  const repo = covered.filter((p) => fs16.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
   return repo ?? fail(WORDING.noProject(asked));
 };
 var writeOrchestratorSeats = (repo, seats) => {
   const project = path16.basename(path16.dirname(repo)).replace(/[^\w.-]/g, "_");
   const file = path16.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
-  fs15.mkdirSync(path16.dirname(file), { recursive: true });
-  fs15.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
+  fs16.mkdirSync(path16.dirname(file), { recursive: true });
+  fs16.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
 `);
   return file.split(path16.sep).join("/");
 };
@@ -9658,7 +9687,7 @@ var tellLinkToStart = (print) => {
 async function caller() {
   const p = await placedCaller() ?? fail(CODE_WORDING.whoIsCalling);
   const direct = board;
-  if (p.place && fs15.existsSync(p.place)) callerWorktree = p.place;
+  if (p.place && fs16.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
   board = p.ended || !(await direct.runs()).some((r) => r.id === p.run) ? await connectDirectBoard(DATA_ROOT, member) : await connectBoard({ dataRoot: DATA_ROOT, member });
   if (board.linkMissing) linkToStart = member;
@@ -9786,7 +9815,7 @@ function reportGiven() {
   if (args.has("--report-stdin")) {
     if (stdinReport === void 0) {
       try {
-        stdinReport = fs15.readFileSync(0, "utf8").trim();
+        stdinReport = fs16.readFileSync(0, "utf8").trim();
       } catch {
         stdinReport = "";
       }
@@ -9797,13 +9826,13 @@ function reportGiven() {
   let fromFile;
   if (reportFile !== void 0) {
     try {
-      fromFile = fs15.readFileSync(path16.resolve(reportFile), "utf8").trim();
+      fromFile = fs16.readFileSync(path16.resolve(reportFile), "utf8").trim();
     } catch {
       fail(CODE_WORDING.reportFileUnreadable(reportFile));
     }
   }
   const given = args.flag("--report")?.trim();
-  if (given && given !== "-" && fs15.existsSync(path16.resolve(given)) && fs15.statSync(path16.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  if (given && given !== "-" && fs16.existsSync(path16.resolve(given)) && fs16.statSync(path16.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
   return fromFile || given || void 0;
 }
 var callerWorktree = null;
@@ -9831,7 +9860,7 @@ e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1"
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs15.readFileSync(path16.resolve(file), "utf8"));
+    raw = JSON.parse(fs16.readFileSync(path16.resolve(file), "utf8"));
   } catch (e) {
     return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
@@ -9897,7 +9926,7 @@ async function memberWorktree(runId, seat) {
   return { ...place, base };
 }
 async function madeWorktree(p, verb) {
-  if (p.place && fs15.existsSync(p.place)) return;
+  if (p.place && fs16.existsSync(p.place)) return;
   const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path16.dirname(p.repo);
   const made = await packVerb(p, verb, { cwd });
   if (made?.made) callerWorktree = p.place;
@@ -10166,7 +10195,7 @@ ${thisVerbHelp()}`);
       const p = await caller();
       if (await answeredGate(p)) break;
       const file = args.flag("--file");
-      const body = (file ? fs15.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
+      const body = (file ? fs16.readFileSync(file, "utf8").trim() : args.positional.join(" ")) || fail(`${args.verb}: nothing to say`);
       const urgent = args.has("--urgent");
       if (urgent && args.verb !== "post") fail("--urgent is for post");
       if (args.verb !== "agree" && args.has("--with")) fail("--with is for agree");
@@ -10285,7 +10314,7 @@ ${thisVerbHelp()}`);
         emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
         break;
       }
-      const ontoRef = p.place && fs15.existsSync(p.place) ? baseRef(p.place, onto) : onto;
+      const ontoRef = p.place && fs16.existsSync(p.place) ? baseRef(p.place, onto) : onto;
       const deliver = !!p.place && !args.has("--lock-only");
       if (deliver) reportGiven();
       const piped = deliver && args.has("--report-stdin") ? reportGiven() : void 0;
@@ -10294,7 +10323,7 @@ ${thisVerbHelp()}`);
       const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
-        return !!at && fs15.existsSync(path16.resolve(wt, at));
+        return !!at && fs16.existsSync(path16.resolve(wt, at));
       });
       const handedBackFile = (wt) => {
         const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
@@ -10302,14 +10331,14 @@ ${thisVerbHelp()}`);
       };
       const handedBack = (wt) => {
         try {
-          return JSON.parse(fs15.readFileSync(handedBackFile(wt), "utf8"));
+          return JSON.parse(fs16.readFileSync(handedBackFile(wt), "utf8"));
         } catch {
           return [];
         }
       };
       const handBack = (wt, files) => {
         const at = handedBackFile(wt);
-        if (at) fs15.writeFileSync(at, JSON.stringify([.../* @__PURE__ */ new Set([...handedBack(wt), ...files])]));
+        if (at) fs16.writeFileSync(at, JSON.stringify([.../* @__PURE__ */ new Set([...handedBack(wt), ...files])]));
       };
       const conflictHandedBack = (wt, files, granted) => {
         handBack(wt, files);
@@ -10322,7 +10351,7 @@ ${thisVerbHelp()}`);
         const open = unmergedIn(wt);
         const marked = open.filter((f) => {
           try {
-            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs15.readFileSync(path16.join(wt, f), "utf8"));
+            return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs16.readFileSync(path16.join(wt, f), "utf8"));
           } catch {
             return false;
           }
@@ -10394,7 +10423,7 @@ ${thisVerbHelp()}`);
         process.stderr.write(m.stderr ?? "");
         process.exitCode = m.status ?? 1;
         const kept = handedBackFile(wt);
-        if (m.status === 0 && kept) fs15.rmSync(kept, { force: true });
+        if (m.status === 0 && kept) fs16.rmSync(kept, { force: true });
         break;
       }
       const unreadAtLock = unreadLine(await situation(p), "merge-lock");
@@ -10529,12 +10558,12 @@ ${thisVerbHelp()}`);
         console.log(`run ${run2}  ${page.title}  \xB7  ${page.phase ? `phase ${page.phase.name} from #${page.phase.seq}` : "the whole run"}  \xB7  ${page.posts.length} of ${page.matched} post${page.matched === 1 ? "" : "s"}`);
         if (!page.posts.length) console.log(WORDING.threadNone);
         const group = `${page.group}/`;
-        const short = (n) => n === `${group}*` ? "all" : n.startsWith(group) ? n.slice(group.length) : n;
+        const short2 = (n) => n === `${group}*` ? "all" : n.startsWith(group) ? n.slice(group.length) : n;
         for (const m of page.posts) {
-          const to = m.mentions.length ? ` \u2192 ${m.mentions.map(short).join(",")}` : "";
+          const to = m.mentions.length ? ` \u2192 ${m.mentions.map(short2).join(",")}` : "";
           const tag = m.kind === "agreement" ? "agree: " : m.kind === "urgent" ? "URGENT: " : m.kind === "event" ? `(${m.event ?? "event"}) ` : "";
           const text = m.body.replace(/\s+/g, " ").trim();
-          console.log(`#${m.seq} ${shortAt(m.at)}  ${short(m.from)}${to}${m.about ? ` [${m.about}]` : ""}  ${tag}${text.length > THREAD_EXCERPT ? `${text.slice(0, THREAD_EXCERPT)}\u2026` : text}`);
+          console.log(`#${m.seq} ${shortAt(m.at)}  ${short2(m.from)}${to}${m.about ? ` [${m.about}]` : ""}  ${tag}${text.length > THREAD_EXCERPT ? `${text.slice(0, THREAD_EXCERPT)}\u2026` : text}`);
         }
         if (page.earlier !== null) console.log(WORDING.threadEarlier(cli, words, page.earlier));
         if (page.later !== null) console.log(WORDING.threadLater(cli, words, page.later));
