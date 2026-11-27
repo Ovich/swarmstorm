@@ -11,11 +11,12 @@ import { changedSet } from "../host/git.ts";
 import { linkPidFile } from "../host/links.ts";
 import { isAlive } from "../host/proc.ts";
 import { HEARTBEAT_MS, bundleVersion, decode, encode, readServerState, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../contract/wire.ts";
-import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
+import { locate, observe, type TranscriptCursor } from "./transcripts.ts";
+import type { Binding } from "./shell.ts";
 
 type RunId = number;
 
-/** What started the link: the verb its transcript search looks for (declared by transcripts.ts). */
+/** What started the link: the verb its transcript search looks for (declared by shell.ts). */
 export type { Binding };
 
 /** The link's clocks; tests shorten them. */
@@ -190,9 +191,8 @@ export async function runLink(opts: {
     transcript ??= locate(opts.binding, env);
     if (!transcript) return; // not found (yet), or a harness that keeps none: no activity
     const read = observe(transcript, cursor, opts.binding);
-    const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
-    if (grew) lastStirAt = Date.now();
+    if (read.grew) lastStirAt = Date.now();
     // the path rides along so the server can stat it while this link is lost (idea 1, link lost)
     const activity = { ...read.activity, transcript };
     const seen = JSON.stringify(activity);

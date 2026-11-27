@@ -10,7 +10,7 @@ import type { Board, RunId } from "../board/board.ts";
 import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, readServerState, SERVER_STARTER_ENV, type Frame, type RpcMethod, type ServerState } from "../contract/wire.ts";
 import { serverLogFile } from "../host/home.ts";
 import { linkPipe } from "../link/link.ts";
-import type { Binding } from "../link/transcripts.ts";
+import type { Binding } from "../link/shell.ts";
 
 export type RemoteBoard = { [K in RpcMethod]: (...a: Parameters<Board[K]>) => Promise<Awaited<ReturnType<Board[K]>>> };
 /** A call failed because the server's connection closed under it; the CLI adds the retry hint (board-fixes §2). */
