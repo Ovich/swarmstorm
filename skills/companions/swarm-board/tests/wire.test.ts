@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RPC_METHODS, bundleVersion, decode, encode, serverStateFile, type Frame } from "../src/wire.ts";
+import { RPC_METHODS, bundleVersion, decode, encode, serverStateFile, type Frame } from "../src/contract/wire.ts";
 
 test("a frame round-trips through encode and decode", () => {
   const frames: Frame[] = [

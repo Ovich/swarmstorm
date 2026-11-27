@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { startBoardServer } from "../src/server/server.ts";
-import { decode, encode, ORCHESTRATORS_GROUP, serverStateFile, type Frame, type Hello, type RpcMethod, type ServerState } from "../src/wire.ts";
+import { decode, encode, ORCHESTRATORS_GROUP, serverStateFile, type Frame, type Hello, type RpcMethod, type ServerState } from "../src/contract/wire.ts";
 
 const REPO = "/repos/one/.git";
 const SEATS = [

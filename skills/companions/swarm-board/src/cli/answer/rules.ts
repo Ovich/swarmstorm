@@ -1,8 +1,8 @@
 // The answer rules (board-rework D1, D2): pure functions over the member's situation choosing the lines of WORDING it
 // reads. No board read, no printing: the same situation always gives the same lines.
 import type { Message, Participant } from "../../board/board.ts";
-import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
-import { profileOf } from "../../board/kinds.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
+import { profileOf } from "../../contract/kinds.ts";
 import { codeCloseStep, codeEventStep } from "./code-rules.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";

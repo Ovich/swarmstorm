@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
-import { commonGitDir, relativeIn, repoOf, resolveIn } from "../src/place/place.ts";
+import { commonGitDir, relativeIn, repoOf, resolveIn } from "../src/host/place.ts";
 import { worktrees } from "../src/packs/code/worktrees.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 

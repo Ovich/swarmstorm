@@ -12,7 +12,7 @@
 // A day is UTC. Day folders older than KEEP_DAYS are removed at start and once a day. A failing write never fails a call.
 import fs from "node:fs";
 import path from "node:path";
-import { serverLogFile } from "../wire.ts";
+import { serverLogFile } from "../contract/wire.ts";
 
 export const TRACE_LEVELS = ["off", "info", "debug", "debug-extended"] as const;
 export type TraceLevel = (typeof TRACE_LEVELS)[number];

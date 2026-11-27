@@ -1,7 +1,7 @@
 // Place (board-rework D5): where a repository and a path are, the one answer both CLIs use. A repository is its
 // common git dir, so every worktree of it is one; a member's path is its worktree's first. aiview imports this module
 // as it imports the board reader, bundled.
-import { hiddenSpawnSync } from "../proc.ts";
+import { hiddenSpawnSync } from "./proc.ts";
 import fs from "node:fs";
 import path from "node:path";
 

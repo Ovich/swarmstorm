@@ -1,13 +1,13 @@
 // The board as the CLI sees it (swarm-relay D5, D6, D19, D29, D30, D39): every Board call a verb makes,
 // awaited over a member's link or straight to the server, either started on demand.
-import { hiddenSpawn } from "../proc.ts";
+import { hiddenSpawn } from "../host/proc.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { Board, RunId } from "../board/board.ts";
-import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type RpcMethod, type ServerState } from "../wire.ts";
+import { RPC_METHODS, bundleVersion, decode, encode, liveStartLockHolder, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type RpcMethod, type ServerState } from "../contract/wire.ts";
 import { linkPipe } from "../link/link.ts";
 import type { Binding } from "../link/transcripts.ts";
 

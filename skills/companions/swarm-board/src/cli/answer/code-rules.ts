@@ -1,7 +1,7 @@
 // The code pack's answer rules (board-split D8): which line of CODE_WORDING a member reads after a code event. Pure
 // functions over the event and its reader, as rules.ts is for the core.
 import type { Message, Participant } from "../../board/board.ts";
-import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { CODE_WORDING as CW } from "./code-wording.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 import type { Situation } from "./situation.ts";

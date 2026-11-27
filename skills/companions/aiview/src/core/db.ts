@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
+import { commonGitDir } from "../../../swarm-board/src/host/place.ts";
 import { DATA_ROOT, DOCS_ROOT, ensureHome } from "./home.ts";
 import { resolveProject, type Project } from "./projects.ts";
 import {

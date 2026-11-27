@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { serverStartLock, serverStateFile, type ServerState } from "../src/wire.ts";
+import { serverStartLock, serverStateFile, type ServerState } from "../src/contract/wire.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src");

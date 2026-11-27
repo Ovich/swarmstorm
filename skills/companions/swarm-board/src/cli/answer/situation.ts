@@ -1,7 +1,7 @@
 // The member's situation, read from the board once per verb (board-rework D1): everything the answer rules decide on.
 // The rules (rules.ts) are pure functions over it; nothing else reads the board for an answer line.
 import type { Participant } from "../../board/board.ts";
-import { profileOf } from "../../board/kinds.ts";
+import { profileOf } from "../../contract/kinds.ts";
 import type { ConnectedBoard } from "../../client/remote.ts";
 
 type Listening = "foreground" | "background" | "orchestrator";

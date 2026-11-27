@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { closeStep, foregroundBound } from "../src/cli/answer/rules.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
-import { FOREGROUND_WAIT_MS } from "../src/board/events.ts";
+import { FOREGROUND_WAIT_MS } from "../src/contract/events.ts";
 
 const worker: Situation = {
   cli: "swarm", as: "g/w1", run: 1, seat: "w1", ended: false, listenerRunning: false, listens: "background",

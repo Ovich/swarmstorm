@@ -11,7 +11,7 @@ import { WebSocketServer } from "ws";
 import { openBoard } from "../src/board/board.ts";
 import { connectBoard, connectDirectBoard } from "../src/client/remote.ts";
 import { startBoardServer } from "../src/server/server.ts";
-import { bundleVersion, decode, encode, serverStateFile, type Frame, type Hello, type ServerState } from "../src/wire.ts";
+import { bundleVersion, decode, encode, serverStateFile, type Frame, type Hello, type ServerState } from "../src/contract/wire.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 // the in-process client versions as the CLI does: from the CLI's entry (D28)

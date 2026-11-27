@@ -6,7 +6,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { canonicalPath } from "../src/place/place.ts";
+import { canonicalPath } from "../src/host/place.ts";
 import { makeRepo, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];

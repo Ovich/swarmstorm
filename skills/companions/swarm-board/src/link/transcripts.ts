@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import type { RunId } from "../board/board.ts";
 import { claudeCodeJsonl } from "../board/liveness.ts";
-import type { MemberActivity } from "../wire.ts";
+import type { MemberActivity } from "../contract/wire.ts";
 
 /** The verb a member's CLI ran that the link stands for: a member's `join`, an orchestrator's `open`. */
 export type Binding = { verb: "join"; run: RunId; seat: string } | { verb: "open"; group: string };

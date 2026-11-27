@@ -1,6 +1,6 @@
 // simple-states (spec §7): the paths a member's worktree changed since it left its target, read by its link from
 // git and sent as a `changes` frame; the server sets the member's holdings to them. The board runs no git for it.
-import { gitAnswer } from "../../git.ts";
+import { gitAnswer } from "../../host/git.ts";
 
 /** The commit `worktree`'s branch left `onto` at; null when git fails, or when HEAD is detached (the worktree
  *  switched to another commit, a base to compare against): no branch to read against. */

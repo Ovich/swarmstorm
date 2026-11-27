@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { refArg } from "../src/git.ts";
+import { refArg } from "../src/host/git.ts";
 import { commandLine, isProcessId } from "../src/link/link.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 

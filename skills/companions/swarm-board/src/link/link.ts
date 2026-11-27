@@ -1,7 +1,7 @@
 // A member's link (swarm-relay D1): the pipe its member's CLI calls come in on, one WebSocket to the
 // board server, every Call forwarded and its Result sent back to the pipe that asked. It keeps no
 // state file (D15): a restart re-locates the server and re-reads. Its one file is its pid, for `stopLinks`.
-import { hiddenSpawnSync } from "../proc.ts";
+import { hiddenSpawnSync } from "../host/proc.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -10,7 +10,7 @@ import path from "node:path";
 import { DATA_ROOT } from "../board/home.ts";
 import { HEARTBEAT_MS } from "../board/liveness.ts";
 import { changedSet } from "../packs/code/changes.ts";
-import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
+import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../contract/wire.ts";
 import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
 
 type RunId = number;

@@ -6,9 +6,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
-import { EVENTS } from "../src/board/events.ts";
+import { EVENTS } from "../src/contract/events.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
-const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
+const stepOf = (e: import("../src/contract/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
 const SEATS = [

@@ -10,7 +10,7 @@ import { openBoardReader, type BoardReader } from "../../../swarm-board/src/clie
 import type { BoardChangedEventPayload } from "../core/api.ts";
 import { TOOL_ROOT } from "../core/db.ts";
 import { DATA_ROOT } from "../core/home.ts";
-import { commonGitDir } from "../../../swarm-board/src/place/place.ts";
+import { commonGitDir } from "../../../swarm-board/src/host/place.ts";
 import type { SseHub } from "./sse.ts";
 
 interface BoardRoutes {

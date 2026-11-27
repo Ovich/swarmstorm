@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runLink } from "../src/link/link.ts";
-import { bundleVersion, serverStateFile } from "../src/wire.ts";
+import { bundleVersion, serverStateFile } from "../src/contract/wire.ts";
 
 /** A WebSocket that refuses as Node 22's does: `error`, then nothing. */
 class ErrorOnlyWebSocket {

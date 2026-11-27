@@ -2,7 +2,7 @@
 // names, checked against the store, and every call is judged against that binding before the board runs it. The
 // dispatcher never reads a call's args to decide; the kinds of every method live in one table here.
 import type { Board, Participant, Run } from "../board/board.ts";
-import { ORCHESTRATORS_GROUP, type Hello, type RpcMethod } from "../wire.ts";
+import { ORCHESTRATORS_GROUP, type Hello, type RpcMethod } from "../contract/wire.ts";
 
 /** The member a connection speaks for; null for an anonymous one (a reader, a CLI before it joins or opens). */
 export type Bound = { id: number; name: string; run: number; seat: string } | null;

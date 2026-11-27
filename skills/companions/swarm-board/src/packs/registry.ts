@@ -1,10 +1,10 @@
 // The registry (board-split#D18, D22): the one table from a run's kind and a seat's role to the member's pack and
 // verify setting, and the only place a kind or a role is looked up for it. A new pack is a folder under `src/packs/`
 // and a line in PACKS; a new kind or role is a row in MEMBER_ROWS.
-import { profileOf } from "../board/kinds.ts";
+import { profileOf } from "../contract/kinds.ts";
 import { codePack } from "./code/index.ts";
-import type { EventDef } from "../board/events.ts";
-import type { CodeEventName } from "./code/events.ts";
+import type { EventDef } from "../contract/events.ts";
+import type { CodeEventName } from "../contract/code.ts";
 import type { FlagMeta, MergedMeta } from "./code/types.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 

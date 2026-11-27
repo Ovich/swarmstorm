@@ -4,10 +4,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Conflicts, Declared, Message, MessageKind, Participant, RunId, Sharer } from "../../board/board.ts";
 import type { Flag, MemberWorktree, MergedMeta } from "./types.ts";
-import type { EventName } from "../../board/events.ts";
+import type { EventName } from "../../contract/events.ts";
 import type { PackMessageMeta } from "../registry.ts";
-import { CODE_EVENTS } from "./events.ts";
-import { trace } from "../../board/trace.ts";
+import { CODE_EVENTS } from "../../contract/code.ts";
+import { trace } from "../../host/trace.ts";
 
 export interface ClaimsDeps {
   db: DatabaseSync;

@@ -1,24 +1,24 @@
 // CLI dispatch — the agent-facing surface of the board. Human output is short lines an
 // agent reads; --json prints the same data as one object; errors go to stderr, exit 1.
-import { hiddenSpawnSync } from "../proc.ts";
+import { hiddenSpawnSync } from "../host/proc.ts";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { progressText, projectFolderName, type PackRefusal, type Sharer, type Declared, type Delivery, type Kind, type Message, type ThreadQuery, type Participant, type PhaseProgress, type RosterEntry, type SeatSpec } from "../board/board.ts";
-import type { HeldMergeLock } from "../wire.ts";
-import { profileOf } from "../board/kinds.ts";
+import type { HeldMergeLock } from "../contract/wire.ts";
+import { profileOf } from "../contract/kinds.ts";
 import { stallMsFloor } from "../board/liveness.ts";
-import { FOREGROUND_WAIT_MS, eventOf } from "../board/events.ts";
+import { FOREGROUND_WAIT_MS, eventOf } from "../contract/events.ts";
 import { DATA_ROOT, HOME_OVERRIDE, SQLITE_PATH } from "../board/home.ts";
-import { TRACE_LEVELS, readTraceLevel, traceRoot, writeTraceLevel, type TraceLevel } from "../board/trace.ts";
+import { TRACE_LEVELS, readTraceLevel, traceRoot, writeTraceLevel, type TraceLevel } from "../host/trace.ts";
 import { SERVER_CLOSED_CONNECTION, bindingOf, connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { parseArgs } from "./args.ts";
 import { fullText, seqLine } from "./format.ts";
 import { nameHandle, unmatchedMentions } from "../board/mentions.ts";
 import { boardHome, projectNamer, projectPaths, registerBoard } from "./aiview-board.ts";
 import { discoverGuides, guidesLine, type Guide } from "./guides.ts";
-import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git.ts";
-import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
+import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../host/git.ts";
+import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../host/place.ts";
 import { conflictsOf, headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { endUnmergedLine, pausedMergingStep } from "./answer/code-rules.ts";
@@ -1423,7 +1423,7 @@ if (args.verb === "--help") {
 const relaunchLink = async (): Promise<number> => {
   // the old pipe is closing: give the named pipe a moment to be free before the new link listens on it
   await new Promise((r) => setTimeout(r, 300));
-  const { hiddenSpawn } = await import("../proc.ts");
+  const { hiddenSpawn } = await import("../host/proc.ts");
   const child = hiddenSpawn(process.execPath, process.argv.slice(1), { stdio: "inherit" });
   return new Promise((resolve) => child.on("exit", (code) => resolve(code ?? 1)));
 };

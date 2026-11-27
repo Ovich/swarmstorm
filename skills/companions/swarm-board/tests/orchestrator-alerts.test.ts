@@ -11,7 +11,7 @@ import { STALL_MS_DEFAULT } from "../src/board/liveness.ts";
 import { answer, lostMentionLines } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 import { tick2 } from "./fixtures/tick2.ts";

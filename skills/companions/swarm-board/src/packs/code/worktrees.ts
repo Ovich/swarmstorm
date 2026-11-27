@@ -2,13 +2,13 @@
 // `<repo's git common dir>/swarm/worktrees/<run>/<seat>`, beside the repository's own git data, never in its tree, on branch `swarm/<run>-<group>/<seat>` from the run's base.
 // Removed once clean and merged, the branch kept; what is not removed is said, with why.
 // One entry (board-split#D13, widened by #D37): `worktrees(repo)` and the sweeps; paths, branch names, git hidden.
-import { hiddenSpawnSync } from "../../proc.ts";
+import { hiddenSpawnSync } from "../../host/proc.ts";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { baseRef, git } from "../../git.ts";
+import { baseRef, git } from "../../host/git.ts";
 import { stopLinks } from "../../link/link.ts";
-import { canonicalPath, worktreeOf } from "../../place/place.ts";
+import { canonicalPath, worktreeOf } from "../../host/place.ts";
 
 /** The one folder the board makes worktrees in, and the only one it ever removes from: `<repo>/swarm/worktrees`, `repo` the git common dir. */
 const worktreesRoot = (repo: string): string => path.join(repo, "swarm", "worktrees");

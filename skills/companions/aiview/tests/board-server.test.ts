@@ -13,7 +13,7 @@ import { openIndex, type Index } from "../src/core/db.ts";
 import { startServer } from "../src/server/index.ts";
 import type { RemoteBoard } from "../../swarm-board/src/client/remote.ts";
 import type { BoardSnapshot } from "../../swarm-board/src/client/reader.ts";
-import { serverStateFile } from "../../swarm-board/src/wire.ts";
+import { serverStateFile } from "../../swarm-board/src/contract/wire.ts";
 import { SWARM_CLI, startTestBoard, stopSpawnedBoard, type TestBoard } from "./fixtures/board-server.ts";
 
 const REPO = "/repos/one/.git";

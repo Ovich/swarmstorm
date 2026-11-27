@@ -4,7 +4,7 @@
 // call scoped to one run through its `PackCtx` (D10). Git and other slow work run in `run`, before any transaction
 // opens (D19).
 import type { Declared, Kind, Message, Participant, RunId } from "../board/board.ts";
-import type { EventDef } from "../board/events.ts";
+import type { EventDef } from "../contract/events.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
 import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
 import type { CodeMemberFact } from "./code/types.ts";

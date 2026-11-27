@@ -2,7 +2,7 @@
 // addressed to (its mentions); adding an event is a row in EVENTS and the call that posts it by its constant. A pack's events are its own (board-split D18), contributed by the registry.
 import type { PackEventName } from "../packs/registry.ts";
 import { registry } from "../packs/registry.ts";
-import type { Message, Participant } from "./board.ts";
+import type { Message, Participant } from "../board/board.ts";
 
 export type CoreEventName = "agreement" | "endorsement" | "joined" | "ended" | "opened" | "closed" | "urgent" | "phase" | "pause" | "resume" | "done" | "all-done" | "stopped" | "lost" | "unlocked" | "breach" | "composition" | "all-joined" | "awaited";
 export type EventName = CoreEventName | PackEventName;

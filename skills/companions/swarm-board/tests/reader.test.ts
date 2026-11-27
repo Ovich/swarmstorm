@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { connectBoard, type RemoteBoard } from "../src/client/remote.ts";
 import { openBoardReader, type BoardReader } from "../src/client/reader.ts";
 import { startBoardServer } from "../src/server/server.ts";
-import { serverStateFile } from "../src/wire.ts";
+import { serverStateFile } from "../src/contract/wire.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");

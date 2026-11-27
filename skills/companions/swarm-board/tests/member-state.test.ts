@@ -9,7 +9,7 @@ import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../src/board/board.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";

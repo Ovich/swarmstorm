@@ -6,22 +6,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH } from "./home.ts";
-import { canonicalPath } from "../place/place.ts";
+import { canonicalPath } from "../host/place.ts";
 import { BOARD_AUTHOR, nameHandle, parseMentions, planCode } from "./mentions.ts";
-import { type Kind, profileOf } from "./kinds.ts";
+import { type Kind, profileOf } from "../contract/kinds.ts";
 import { registry, type PackCtx, type PackRefusal, type PackMessageMeta, type PackSnapshotFields, type PackVerbInput } from "../packs/registry.ts";
 import type { MemberFact, Pack } from "../packs/types.ts";
-import { alwaysEventNames, awaitedLine, type EventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, toAuthorEventNames, wakes } from "./events.ts";
+import { alwaysEventNames, awaitedLine, type EventName, EVENTS, eventDef, eventOf, isAwaitedCause, isEvent, landingEvents, mentions as mentionsMe, toAuthorEventNames, wakes } from "../contract/events.ts";
 import { funnyName } from "./names.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, READINGS_KEPT_MS, STALL_MS_DEFAULT, stallMsFloor, badgeConfirmMs, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 export type { CoreMemberState, SeatState } from "./liveness.ts";
-import { type MemberActivity, ORCHESTRATORS_GROUP } from "../wire.ts";
+import { type MemberActivity, ORCHESTRATORS_GROUP } from "../contract/wire.ts";
 import { callLabel } from "./call-label.ts";
-import { trace } from "./trace.ts";
+import { trace } from "../host/trace.ts";
 
 export type RunId = number;
-export type { Kind } from "./kinds.ts";
-export type { EventName } from "./events.ts";
+export type { Kind } from "../contract/kinds.ts";
+export type { EventName } from "../contract/events.ts";
 export type { PackRefusal } from "../packs/registry.ts";
 /** What a merge's rebase met, as the board records it: the conflicted files (repository-relative,
  *  maybe none), or unknown and why (board D13). The CLI's conflicts.ts answers in it. */

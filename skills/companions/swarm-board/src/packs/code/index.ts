@@ -4,12 +4,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Conflicts, Participant } from "../../board/board.ts";
-import { baseAt } from "../../git.ts";
+import { baseAt } from "../../host/git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, migrateCodeTables } from "./schema.ts";
-import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
+import { CODE_EVENTS, MERGE_LOCK } from "../../contract/code.ts";
 import { sweepAll, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
