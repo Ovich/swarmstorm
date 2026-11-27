@@ -10310,9 +10310,9 @@ function contextFor(args, index, verb) {
   return {
     args,
     asJson,
-    get index() {
+    index: () => {
       if (!index) throw new Error(`verb ${verb} declares no need of the index`);
-      return index;
+      return index();
     },
     emit: (json, human) => {
       if (asJson) console.log(JSON.stringify(json));
@@ -10523,8 +10523,8 @@ async function dispatch(argv, verbs) {
   let code;
   try {
     if (verb.needs?.dist) ensureDist();
-    if (verb.needs?.index) index = openIndex();
-    code = await verb.run(contextFor(args, index, verb.name)) ?? 0;
+    const openOnce = () => index ??= openIndex();
+    code = await verb.run(contextFor(args, verb.needs?.index ? openOnce : void 0, verb.name)) ?? 0;
   } catch (err) {
     if (err instanceof Refusal) {
       console.error(err.message);
@@ -10549,9 +10549,11 @@ init_browser();
 import fs9 from "node:fs";
 import path11 from "node:path";
 var docLine = (d) => `#${d.id}  ${d.kind} [${d.tags.join(", ")}]${d.group_slug ? `  group:${d.group_slug}` : ""}  started ${d.created_at}  ${d.title}`;
-function runOpen({ args, index, emit, registerOpts }) {
+function runOpen(ctx) {
+  const { args, emit, registerOpts } = ctx;
   if (!args.positional[0]) fail(verbUsage("open"));
   ensureDist();
+  const index = ctx.index();
   const d = index.register(path11.resolve(args.positional[0]), registerOpts());
   recordRecentProject(index, d.project);
   const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
@@ -10573,12 +10575,14 @@ function runOpen({ args, index, emit, registerOpts }) {
     answerLine ? [url, answerLine].join("\n") : url
   );
 }
-function runAdd({ args, index, emit, registerOpts }) {
+function runAdd(ctx) {
+  const { args, emit, registerOpts } = ctx;
   if (!args.positional[0]) fail(verbUsage("add"));
-  const d = index.register(path11.resolve(args.positional[0]), registerOpts());
+  const d = ctx.index().register(path11.resolve(args.positional[0]), registerOpts());
   emit(d, docLine(d));
 }
-function runUpdate({ args, index, emit }) {
+function runUpdate(ctx) {
+  const { args, emit } = ctx;
   if (!args.positional[0]) fail(verbUsage("update"));
   if (args.flag("--project")) fail(`project is a directory, not metadata \u2014 use: aiview move ${args.positional[0]} --project <slug>`);
   const target = resolveRef(args.positional[0]) ?? fail(`not in index: ${args.positional[0]}`);
@@ -10590,13 +10594,15 @@ function runUpdate({ args, index, emit }) {
     groupTitle: args.flag("--group-title"),
     started: args.flag("--started")
   };
-  const d = index.update(target.id, patch);
+  const d = ctx.index().update(target.id, patch);
   emit(d, docLine(d));
 }
-function runList({ args, index, emit }) {
+function runList(ctx) {
+  const { args, emit } = ctx;
   const want = args.flags("--tag");
   const wantKind = args.flag("--kind") ?? "";
   if (args.has("--all")) fail("list --all is gone: every list is one project's; pass --project <slug> for another");
+  const index = ctx.index();
   const scope = projectOfVerb(args, index) ?? fail(noProjectLine(index.allProjects().map((p) => p.slug)));
   const docs = index.all().filter((d) => d.project === scope && (!wantKind || d.kind === wantKind) && (!want.length || want.every((t) => d.tags.includes(t))));
   emit(docs, () => {
@@ -10607,8 +10613,10 @@ function runList({ args, index, emit }) {
       );
   });
 }
-function runRemove({ args, index, asJson }) {
+function runRemove(ctx) {
+  const { args, asJson } = ctx;
   if (!args.positional.length) fail(verbUsage("remove"));
+  const index = ctx.index();
   const removed = [];
   for (const ref of args.positional) {
     const row = rowOf(index, ref);
@@ -10642,8 +10650,10 @@ function moveRefusal(from, dest, orphaned) {
   if (!taken.length) return null;
   return `target exists (${taken.join(", ")}), skipped: ${carriesSidecar ? `${dest} and ${sidecarDest}` : dest}`;
 }
-function runMove({ args, index, asJson }) {
+function runMove(ctx) {
+  const { args, asJson } = ctx;
   if (!args.positional.length) fail(verbUsage("move"));
+  const index = ctx.index();
   const target = args.flag("--project");
   if (target && !index.allProjects().some((p) => p.slug === target)) fail(noSuchProjectLine(target, index.allProjects().map((p) => p.slug)));
   const moved = [];
@@ -10691,13 +10701,14 @@ init_home2();
 init_serverstate();
 import fs10 from "node:fs";
 import path12 from "node:path";
-function runStatus({ index, emit }) {
+function runStatus(ctx) {
+  const index = ctx.index();
   const documents = index.all().length;
   const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
   const project = cwdProject;
   const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
   const server = readServerStatus();
-  emit({ home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server }, () => {
+  ctx.emit({ home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server }, () => {
     console.log(`home       ${DATA_ROOT}`);
     console.log(`docs       ${DOCS_ROOT}`);
     console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
@@ -10744,14 +10755,18 @@ function documentOf(ref) {
   const named = ref || fail(verbUsage("pending"));
   return resolveRef(named) ?? fail(`no such document: ${named}`);
 }
-function addPending({ args, index, emit }) {
+function addPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const doc = documentOf(args.positional[1]);
   const label = args.flag("--label") || fail(subVerbUsage("pending", "add"));
   const id = index.addPending(doc.id, label, args.flag("--note") ?? "");
   notifyPendingChanged(doc.id);
   emit({ id, document: doc.id, label }, `pending #${id}  ${label}  (doc #${doc.id})`);
 }
-function donePending({ args, index, emit }) {
+function donePending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const raw = (args.positional[1] ?? "").replace(/^#/, "");
   const id = Number(raw);
   if (!raw || Number.isNaN(id)) fail(subVerbUsage("pending", "done"));
@@ -10759,13 +10774,17 @@ function donePending({ args, index, emit }) {
   notifyPendingChanged(docId);
   emit({ id, document: docId }, `done #${id}`);
 }
-function clearPending({ args, index, emit }) {
+function clearPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const doc = documentOf(args.positional[1]);
   index.clearPending(doc.id);
   notifyPendingChanged(doc.id);
   emit({ document: doc.id, cleared: true }, `cleared pending for #${doc.id}`);
 }
-function listPending({ args, index, emit }) {
+function listPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const ref = args.positional[1];
   const rows = ref ? index.pendingFor(documentOf(ref).id) : index.allPending();
   emit(rows, () => {
@@ -11208,7 +11227,9 @@ init_projects();
 init_home2();
 import fs12 from "node:fs";
 import path14 from "node:path";
-function listProjects({ index, emit }) {
+function listProjects(ctx) {
+  const { emit } = ctx;
+  const index = ctx.index();
   const projects = index.allProjects();
   const docs = index.all();
   const here = projectForCwd(process.cwd(), projects)?.slug ?? null;
@@ -11224,13 +11245,17 @@ function listProjects({ index, emit }) {
     }
   );
 }
-function addProject({ args, index, emit }, slug) {
+function addProject(ctx, slug) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path14.resolve(p2)) });
   fs12.mkdirSync(docsDirFor(slug), { recursive: true });
   emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
   covers ${p.paths.join(", ")}` : ""}`);
 }
-function removeProject({ index, emit }, slug) {
+function removeProject(ctx, slug) {
+  const { emit } = ctx;
+  const index = ctx.index();
   const r = index.removeProject(slug);
   if (!r.removed)
     fail(r.documents > 0 ? `${slug} still has ${r.documents} document${r.documents === 1 ? "" : "s"}. Move or remove them first.` : `no such project: ${slug}`);
@@ -11238,6 +11263,7 @@ function removeProject({ index, emit }, slug) {
 }
 var SLUG_SUB_VERBS = { add: addProject, rm: removeProject };
 function runProject(ctx) {
+  ctx.index();
   const sub = ctx.args.positional[0] ?? "list";
   if (sub === "list") return listProjects(ctx);
   const slug = ctx.args.positional[1] || fail(projectSlugUsage(sub));
@@ -11381,7 +11407,9 @@ async function runServe({ args, emit, registerOpts }) {
     startDoc
   });
 }
-function runBoard({ args, index, emit }) {
+function runBoard(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const slug = (args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug) || fail(`no aiview project for ${process.cwd()}: declare one with aiview project add <slug> --path <dir>, or pass --project`);
   const repo = args.flag("--repo");
   if (repo === void 0 && !index.allProjects().some((p) => p.slug === slug)) fail(`no such project: ${slug}`);

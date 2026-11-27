@@ -16,22 +16,23 @@ export function fail(message: string): never {
 export interface VerbContext {
   args: ParsedArgs;
   asJson: boolean;
-  /** The index the dispatcher opened for a verb that `needs` one, closed after it ran. */
-  readonly index: Index;
+  /** The index of a verb that `needs` one, opened on this first call, after the verb's own
+   *  refusals, so a refused verb leaves the data home as it found it; the dispatcher closes it. */
+  index(): Index;
   /** One answer: the JSON under `--json`, else the human text, or a printer of it. */
   emit(json: unknown, human: string | (() => void)): void;
   /** The flags `open`, `add` and `serve` register a document with. */
   registerOpts(): RegisterOptions;
 }
 
-export function contextFor(args: ParsedArgs, index: Index | undefined, verb: string): VerbContext {
+export function contextFor(args: ParsedArgs, index: (() => Index) | undefined, verb: string): VerbContext {
   const asJson = args.has("--json");
   return {
     args,
     asJson,
-    get index(): Index {
+    index: () => {
       if (!index) throw new Error(`verb ${verb} declares no need of the index`);
-      return index;
+      return index();
     },
     emit: (json, human) => {
       if (asJson) console.log(JSON.stringify(json));

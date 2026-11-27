@@ -15,9 +15,11 @@ import type { Verb } from "../dispatch.ts";
 const docLine = (d: Document): string =>
   `#${d.id}  ${d.kind} [${d.tags.join(", ")}]${d.group_slug ? `  group:${d.group_slug}` : ""}  started ${d.created_at}  ${d.title}`;
 
-function runOpen({ args, index, emit, registerOpts }: VerbContext): void {
+function runOpen(ctx: VerbContext): void {
+  const { args, emit, registerOpts } = ctx;
   if (!args.positional[0]) fail(verbUsage("open"));
   ensureDist();
+  const index = ctx.index();
   const d = index.register(path.resolve(args.positional[0]), registerOpts());
   // the project shown last, for a new tab (D41); the tabs it moves are the server's /api/open answer
   recordRecentProject(index, d.project);
@@ -43,13 +45,15 @@ function runOpen({ args, index, emit, registerOpts }: VerbContext): void {
   );
 }
 
-function runAdd({ args, index, emit, registerOpts }: VerbContext): void {
+function runAdd(ctx: VerbContext): void {
+  const { args, emit, registerOpts } = ctx;
   if (!args.positional[0]) fail(verbUsage("add"));
-  const d = index.register(path.resolve(args.positional[0]), registerOpts());
+  const d = ctx.index().register(path.resolve(args.positional[0]), registerOpts());
   emit(d, docLine(d));
 }
 
-function runUpdate({ args, index, emit }: VerbContext): void {
+function runUpdate(ctx: VerbContext): void {
+  const { args, emit } = ctx;
   if (!args.positional[0]) fail(verbUsage("update"));
   // Kind, tags and group are metadata; project is a directory. Silently ignoring
   // --project here would look like it worked.
@@ -63,14 +67,16 @@ function runUpdate({ args, index, emit }: VerbContext): void {
     groupTitle: args.flag("--group-title"),
     started: args.flag("--started"),
   };
-  const d = index.update(target.id, patch)!;
+  const d = ctx.index().update(target.id, patch)!;
   emit(d, docLine(d));
 }
 
-function runList({ args, index, emit }: VerbContext): void {
+function runList(ctx: VerbContext): void {
+  const { args, emit } = ctx;
   const want = args.flags("--tag");
   const wantKind = args.flag("--kind") ?? "";
   if (args.has("--all")) fail("list --all is gone: every list is one project's; pass --project <slug> for another");
+  const index = ctx.index();
   // one project's documents (D41): --project, else this directory's
   const scope = projectOfVerb(args, index) ?? fail(noProjectLine(index.allProjects().map((p) => p.slug)));
   const docs = index
@@ -84,8 +90,10 @@ function runList({ args, index, emit }: VerbContext): void {
   });
 }
 
-function runRemove({ args, index, asJson }: VerbContext): void {
+function runRemove(ctx: VerbContext): void {
+  const { args, asJson } = ctx;
   if (!args.positional.length) fail(verbUsage("remove"));
+  const index = ctx.index();
   const removed: Document[] = [];
   for (const ref of args.positional) {
     const row = rowOf(index, ref);
@@ -129,8 +137,10 @@ function moveRefusal(from: string, dest: string, orphaned: boolean): string | nu
 /** Refile a document: `--project` puts it in another project, bare pulls a stray back
  *  into its own project's directory. The project IS the directory (D14), so this is
  *  the only way to reclassify one — and the caller names a project, never a path. */
-function runMove({ args, index, asJson }: VerbContext): void {
+function runMove(ctx: VerbContext): void {
+  const { args, asJson } = ctx;
   if (!args.positional.length) fail(verbUsage("move"));
+  const index = ctx.index();
   const target = args.flag("--project");
   if (target && !index.allProjects().some((p) => p.slug === target)) fail(noSuchProjectLine(target, index.allProjects().map((p) => p.slug)));
   const moved: Document[] = [];

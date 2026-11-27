@@ -7,7 +7,9 @@ import { fail, type VerbContext } from "../context.ts";
 import { projectSlugUsage, verbUsage } from "../usage.ts";
 import type { Verb } from "../dispatch.ts";
 
-function listProjects({ index, emit }: VerbContext): void {
+function listProjects(ctx: VerbContext): void {
+  const { emit } = ctx;
+  const index = ctx.index();
   const projects = index.allProjects();
   const docs = index.all();
   // `*` marks the project of this directory (D41), the one a verb here works in
@@ -24,13 +26,17 @@ function listProjects({ index, emit }: VerbContext): void {
   );
 }
 
-function addProject({ args, index, emit }: VerbContext, slug: string): void {
+function addProject(ctx: VerbContext, slug: string): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p) => path.resolve(p)) });
   fs.mkdirSync(docsDirFor(slug), { recursive: true });
   emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `\n  covers ${p.paths.join(", ")}` : ""}`);
 }
 
-function removeProject({ index, emit }: VerbContext, slug: string): void {
+function removeProject(ctx: VerbContext, slug: string): void {
+  const { emit } = ctx;
+  const index = ctx.index();
   const r = index.removeProject(slug);
   if (!r.removed)
     fail(r.documents > 0 ? `${slug} still has ${r.documents} document${r.documents === 1 ? "" : "s"}. Move or remove them first.` : `no such project: ${slug}`);
@@ -41,6 +47,7 @@ function removeProject({ index, emit }: VerbContext, slug: string): void {
 const SLUG_SUB_VERBS: Record<string, (ctx: VerbContext, slug: string) => void> = { add: addProject, rm: removeProject };
 
 function runProject(ctx: VerbContext): void {
+  ctx.index(); // every sub-verb, refused ones included, opens the index first, as it always did
   const sub = ctx.args.positional[0] ?? "list";
   if (sub === "list") return listProjects(ctx);
   const slug = ctx.args.positional[1] || fail(projectSlugUsage(sub));

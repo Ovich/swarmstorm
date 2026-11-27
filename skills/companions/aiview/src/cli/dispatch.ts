@@ -10,7 +10,8 @@ export interface Verb {
   name: string;
   /** `listed` verbs are the keys of `VERB_USAGE`; a `hidden` one answers but is never shown. */
   help: "listed" | "hidden";
-  /** What the dispatcher provides before `run`: the UI built, an index opened (and closed after). */
+  /** What the dispatcher provides: the UI built before `run`, an index opened on the verb's first
+   *  `ctx.index()` (and closed after it ran). */
   needs?: { index?: true; dist?: true };
   /** A verb that changes what the sidebar shows: the tabs are told once it succeeded. */
   mutatesIndex?: true;
@@ -29,8 +30,8 @@ export async function dispatch(argv: string[], verbs: readonly Verb[]): Promise<
   let code: number;
   try {
     if (verb.needs?.dist) ensureDist();
-    if (verb.needs?.index) index = openIndex();
-    code = (await verb.run(contextFor(args, index, verb.name))) ?? 0;
+    const openOnce = (): Index => (index ??= openIndex());
+    code = (await verb.run(contextFor(args, verb.needs?.index ? openOnce : undefined, verb.name))) ?? 0;
   } catch (err) {
     if (err instanceof Refusal) {
       console.error(err.message);

@@ -38,7 +38,9 @@ async function runServe({ args, emit, registerOpts }: VerbContext): Promise<void
 /** The project's board, aiview's /board page: `--repo` adds a repository to it (what
  *  `swarm open` does), bare reads it. The project is --project, else the one claiming this
  *  directory. Its link is the project's scoped board URL (D41). */
-function runBoard({ args, index, emit }: VerbContext): void {
+function runBoard(ctx: VerbContext): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const slug =
     (args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug) ||
     fail(`no aiview project for ${process.cwd()}: declare one with aiview project add <slug> --path <dir>, or pass --project`);

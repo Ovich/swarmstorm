@@ -11,7 +11,9 @@ function documentOf(ref: string | undefined): Document {
   return resolveRef(named) ?? fail(`no such document: ${named}`);
 }
 
-function addPending({ args, index, emit }: VerbContext): void {
+function addPending(ctx: VerbContext): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const doc = documentOf(args.positional[1]);
   const label = args.flag("--label") || fail(subVerbUsage("pending", "add"));
   const id = index.addPending(doc.id, label, args.flag("--note") ?? "");
@@ -19,7 +21,9 @@ function addPending({ args, index, emit }: VerbContext): void {
   emit({ id, document: doc.id, label }, `pending #${id}  ${label}  (doc #${doc.id})`);
 }
 
-function donePending({ args, index, emit }: VerbContext): void {
+function donePending(ctx: VerbContext): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const raw = (args.positional[1] ?? "").replace(/^#/, "");
   const id = Number(raw);
   if (!raw || Number.isNaN(id)) fail(subVerbUsage("pending", "done"));
@@ -28,14 +32,18 @@ function donePending({ args, index, emit }: VerbContext): void {
   emit({ id, document: docId }, `done #${id}`);
 }
 
-function clearPending({ args, index, emit }: VerbContext): void {
+function clearPending(ctx: VerbContext): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const doc = documentOf(args.positional[1]);
   index.clearPending(doc.id);
   notifyPendingChanged(doc.id);
   emit({ document: doc.id, cleared: true }, `cleared pending for #${doc.id}`);
 }
 
-function listPending({ args, index, emit }: VerbContext): void {
+function listPending(ctx: VerbContext): void {
+  const { args, emit } = ctx;
+  const index = ctx.index();
   const ref = args.positional[1];
   const rows = ref ? index.pendingFor(documentOf(ref).id) : index.allPending();
   emit(rows, () => {

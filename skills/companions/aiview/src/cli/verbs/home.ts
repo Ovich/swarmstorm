@@ -9,14 +9,15 @@ import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, with
 import { verbUsage } from "../usage.ts";
 import type { Verb } from "../dispatch.ts";
 
-function runStatus({ index, emit }: VerbContext): void {
+function runStatus(ctx: VerbContext): void {
+  const index = ctx.index();
   const documents = index.all().length;
   // Which project the agent is standing in, if any project claims this directory: where it writes (D14, D41).
   const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
   const project = cwdProject;
   const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
   const server = readServerStatus();
-  emit({ home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server }, () => {
+  ctx.emit({ home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server }, () => {
     console.log(`home       ${DATA_ROOT}`);
     console.log(`docs       ${DOCS_ROOT}`);
     console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
