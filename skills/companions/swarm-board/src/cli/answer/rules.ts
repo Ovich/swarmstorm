@@ -198,3 +198,15 @@ export const circlingLine = (earlier: readonly string[], name: string): string |
   const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
   return passes % 3 === 0 ? W.circling(kind, passes) : null;
 };
+
+/** `--protocol none`: a run phaseless on purpose. */
+const PHASELESS = "none";
+/** idea 3: the orchestrator's step after `open` of a task or plan run: open the protocol's first phase before any task,
+ *  or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm). */
+export const firstPhaseLine = (kind: string, protocol: string | null, cli: string, as: string): string | null => {
+  if (kind !== "task" && kind !== "plan") return null;
+  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
+  if (protocol === PHASELESS) return W.firstPhasePhaseless;
+  const phase = W.phaseCommand(cli, as);
+  return protocol ? W.firstPhaseOfProtocol(protocol, phase) : W.firstPhaseNoProtocol(phase);
+};

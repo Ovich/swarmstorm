@@ -33,6 +33,11 @@ export const CODE_VERB_USAGE = {
   },
 } satisfies Record<string, VerbUsage>;
 
+/** The code verb whose line sits in the core help (`worktree prune`), its entry of VERB_USAGE. */
+export const CODE_IN_CORE_VERB_USAGE = {
+  worktree: { lines: () => [CODE_IN_CORE_HELP.pruneLine], example: () => "worktree prune" },
+} satisfies Record<string, VerbUsage>;
+
 export const CODE_WORDING = {
   // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
   closeFinish: "merged, reported, done",
@@ -110,4 +115,22 @@ export const CODE_WORDING = {
 
   // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
   overlapSettle: (cli: Command, other: string, otherName: string, about: string, as: string) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
+
+  // ── codebase-rework#D13: lines the CLI's code verbs wrote themselves before ──
+  /** a call with no --as from a place no single member joined from (board-split D24: the core says no worktree) */
+  whoIsCalling: "who is calling? no single member joined from this worktree; pass --as <group>/<seat>",
+  /** a close kept a worktree not clean or not merged: why, and the prune once it is */
+  keptWorktree: (worktree: string, member: string, why: string | null, cli: Command) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
+  /** join, on a code run: the member's own worktree and how to work there */
+  ownWorktreeAs: (own: { branch: string; base: string; reused: boolean }, path: string, pathWord: string, member: string) =>
+    `your worktree: ${path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
+  mergeLockAgain: (cli: Command, onto: string, report: readonly string[], as: string): Command => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
+  /** merged on a code run without the merge lock */
+  mergedWithoutLock: (cli: Command, onto: string, as: string) => `merged: you do not hold the merge lock; run ${cli} merge-lock --onto ${onto} --as ${as} first, then merge, then merged again`,
+  /** end refused: the member's worktree holds work not merged; `step` what it does first, the merge command last */
+  endUnmerged: (worktree: string, left: string, step: string, merge: Command) => `end: your worktree ${worktree} holds work not merged: ${left}. ${step}: ${merge}; then end again`,
+  endCommitThenMerge: "Commit it, then merge it",
+  endMergeIt: "Merge it",
+  mergeLockReport: (cli: Command, onto: string, as: string): Command => `${cli} merge-lock --onto ${onto} --report "<what you did>" --as ${as}`,
 } as const;

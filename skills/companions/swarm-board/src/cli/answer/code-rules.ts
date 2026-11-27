@@ -46,3 +46,7 @@ export function codeEventStep(m: Message, me: Participant, cli: string, event: E
   const other = me.name === holder ? writer : holder;
   return CW.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
 }
+
+/** codebase-rework#D13: an end refused over work not merged: uncommitted work is committed first, then merged. */
+export const endUnmergedLine = (worktree: string, left: string, merge: string): string =>
+  CW.endUnmerged(worktree, left, /uncommitted/.test(left) ? CW.endCommitThenMerge : CW.endMergeIt, merge);

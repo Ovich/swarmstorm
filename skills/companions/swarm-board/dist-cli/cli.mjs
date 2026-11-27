@@ -8850,17 +8850,30 @@ var CODE_IN_CORE_HELP = {
   pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   withoutAs: "the member joined from this worktree"
 };
+var CODE_VERB_USAGE = {
+  "merge-lock": {
+    lines: () => [
+      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets"
+    ],
+    example: (as) => `merge-lock --onto main --as ${as}`
+  },
+  merged: {
+    lines: () => [
+      `  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently`
+    ],
+    example: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`
+  }
+};
+var CODE_IN_CORE_VERB_USAGE = {
+  worktree: { lines: () => [CODE_IN_CORE_HELP.pruneLine], example: () => "worktree prune" }
+};
 var CODE_WORDING = {
   // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
   closeFinish: "merged, reported, done",
   closeColumns: "| task | seat | state | merge sha |",
-  /** The code verbs' help, apart from the core (D22). */
-  usage: (cli) => [
-    `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-    "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
-    "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
-    `  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts "@orchestrator merged <sha>: <text>", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently`
-  ].join("\n"),
+  /** The code help's first line; its verbs' lines are CODE_VERB_USAGE's (D22). */
+  usageHead: (cli) => `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
   declaredNotClaimed: (paths) => `  declared, held by another: ${paths.join(", ")}; to share it, tell its holder what you change (post --about it), then claim it`,
@@ -8917,12 +8930,29 @@ var CODE_WORDING = {
   /** D63: a done with commits not merged: accepted, the branch, the count and the merge step named, the command last */
   unmergedAtDone: (unmerged, cli, onto, as) => `${unmerged}: merge it: ${cli} merge-lock --onto ${onto} --as ${as}`,
   // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
-  overlapSettle: (cli, other, otherName, about, as) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`
+  overlapSettle: (cli, other, otherName, about, as) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
+  // ── codebase-rework#D13: lines the CLI's code verbs wrote themselves before ──
+  /** a call with no --as from a place no single member joined from (board-split D24: the core says no worktree) */
+  whoIsCalling: "who is calling? no single member joined from this worktree; pass --as <group>/<seat>",
+  /** a close kept a worktree not clean or not merged: why, and the prune once it is */
+  keptWorktree: (worktree, member, why, cli) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
+  /** join, on a code run: the member's own worktree and how to work there */
+  ownWorktreeAs: (own, path15, pathWord, member) => `your worktree: ${path15} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
+  mergeLockAgain: (cli, onto, report, as) => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
+  /** merged on a code run without the merge lock */
+  mergedWithoutLock: (cli, onto, as) => `merged: you do not hold the merge lock; run ${cli} merge-lock --onto ${onto} --as ${as} first, then merge, then merged again`,
+  /** end refused: the member's worktree holds work not merged; `step` what it does first, the merge command last */
+  endUnmerged: (worktree, left, step, merge) => `end: your worktree ${worktree} holds work not merged: ${left}. ${step}: ${merge}; then end again`,
+  endCommitThenMerge: "Commit it, then merge it",
+  endMergeIt: "Merge it",
+  mergeLockReport: (cli, onto, as) => `${cli} merge-lock --onto ${onto} --report "<what you did>" --as ${as}`
 };
 
 // src/cli/answer/wording.ts
 init_events2();
 var FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1e3} s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty`;
+var FIRST_PHASE_POINTER = "(its protocol.md's phase table names them)";
 var WORDING = {
   // ── commands ──
   /** `wait --mentions`, foreground carrying its hold */
@@ -9148,7 +9178,22 @@ As planned, open it: ${confirm}`,
   /** V-48: a word that is no verb of this CLI, for every caller */
   unknownVerb: (word, cli) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
-  joinAsOtherGroup: (given, run2, group, corrected) => `join: refused: --as ${given} is not this seat of run ${run2}, whose group is ${group}: ${corrected}`
+  joinAsOtherGroup: (given, run2, group, corrected) => `join: refused: --as ${given} is not this seat of run ${run2}, whose group is ${group}: ${corrected}`,
+  // ── codebase-rework#D13: lines the CLI's verbs wrote themselves before ──
+  /** idea 3: the orchestrator's step after `open` of a task or plan run; the reading pointer before the colon, the command last (F6) */
+  phaseCommand: (cli, as) => `${cli} phase <name> "<its message>" --as ${as}`,
+  firstPhasePhaseless: "next: phaseless: the workers take tasks on call",
+  firstPhaseOfProtocol: (protocol, phase) => `next: open ${protocol}'s first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
+  firstPhaseNoProtocol: (phase) => `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
+  /** D21, D36: a member of a kind without worktree, at join: the checkout is shared, so every call names it */
+  sharedCheckoutAs: (member) => `pass --as ${member} on every call: this checkout is shared, the board cannot tell you apart`,
+  /** D49: the exact command that re-arms a wait, and its foreground form, which always holds FOREGROUND_WAIT_MS (F22) */
+  waitAgain: (cli, w) => {
+    const words = (timeout) => [cli, "wait", ...w.mentions ? ["--mentions"] : [], ...w.as !== void 0 ? ["--as", w.as] : [], ...timeout !== void 0 ? ["--timeout", timeout] : [], ...w.json ? ["--json"] : []].join(" ");
+    return { again: words(w.timeout), foreground: `${words(void 0)} --timeout ${FOREGROUND_WAIT_MS}` };
+  },
+  /** `end` once the run closed: the close ended the member; it returns its summary */
+  closedEndSummary: (run2, member) => `run ${run2} closed: ${member} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`
 };
 var shellWord = (w) => /^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`;
 
@@ -9176,6 +9221,7 @@ function codeEventStep(m, me, cli, event = eventOf(m)) {
   const other = me.name === holder ? writer : holder;
   return CODE_WORDING.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
 }
+var endUnmergedLine = (worktree, left, merge) => CODE_WORDING.endUnmerged(worktree, left, /uncommitted/.test(left) ? CODE_WORDING.endCommitThenMerge : CODE_WORDING.endMergeIt, merge);
 
 // src/cli/answer/rules.ts
 init_events2();
@@ -9288,6 +9334,13 @@ var circlingLine = (earlier, name) => {
   const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
   return passes % 3 === 0 ? WORDING.circling(kind, passes) : null;
 };
+var PHASELESS = "none";
+var firstPhaseLine = (kind, protocol, cli, as) => {
+  if (kind !== "task" && kind !== "plan") return null;
+  if (protocol === PHASELESS) return WORDING.firstPhasePhaseless;
+  const phase = WORDING.phaseCommand(cli, as);
+  return protocol ? WORDING.firstPhaseOfProtocol(protocol, phase) : WORDING.firstPhaseNoProtocol(phase);
+};
 
 // src/cli/answer/situation.ts
 init_kinds();
@@ -9358,41 +9411,94 @@ function orchestratorsLines(runs, cli, writeSeats, only) {
 // src/cli/answer/usage.ts
 init_liveness();
 init_board();
+var CORE_VERB_USAGE = {
+  open: {
+    lines: () => [
+      "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
+      CODE_IN_CORE_HELP.ontoLine,
+      `          # --stall-ms: a working member with no sign of progress this long posts stalled, default and floor ${STALL_MS_DEFAULT} ms; ends on the command that starts your link`,
+      "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
+      '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>"}]'
+    ],
+    example: () => `open --kind task --group my-team --title "the work" --seats seats.json`
+  },
+  seat: {
+    lines: () => ["  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--as <member>]   # adds a seat mid-run (orchestrator; any team orchestrator on the orchestrators board)"],
+    example: () => "seat add w1 --run 3 --as my-team/orchestrator"
+  },
+  phase: {
+    lines: () => [
+      "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--confirm] [--as <member>]   # without --confirm: the opt-in phases to weigh and the confirming call; with it, opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
+      "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header"
+    ],
+    example: (as) => `phase build "build the slices" --as ${as}`
+  },
+  pause: {
+    lines: () => [`  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person it waits on the person, the text its reason (orchestrator)`]
+  },
+  resume: { lines: () => ["  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)"] },
+  done: { lines: () => ["  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it"] },
+  close: {
+    lines: () => [`  close   --run <id> [--force] [--as <member>]                    # (orchestrator; --force for the orchestrators board, else refused); ${CODE_IN_CORE_HELP.closeRemoves}`],
+    example: () => "close --run 3 --as my-team/orchestrator"
+  },
+  join: {
+    lines: () => [`  join    --run <id> --seat <id> --doing <t> [--files "<path>,<path>,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`],
+    example: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`
+  },
+  doing: { lines: () => ["  doing   [--as <member>] <text>"] },
+  post: {
+    lines: () => ["  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent] [--task] [--after <seats>]   # prints the seq; --task (orchestrator): the post is the one seat it mentions's task, owed until its done; --after w1,w2 implies it and wakes that seat as each of them lands its work, is done or leaves; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting"]
+  },
+  agree: { lines: () => ["  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders"] },
+  endorse: { lines: () => ["  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq"] },
+  wait: {
+    lines: () => [
+      "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message to you (a mention, an event addressed to you) or an urgent post, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
+      "          # once your run is closed, wait, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
+      "          # --mentions: you listen while you work rather than wait; a seat's run: the wake brings every unread post of the run"
+    ]
+  },
+  roster: { lines: () => ["  roster  [--project <path>] [--as <member>]"] },
+  phases: { lines: () => ["  phases  [--run <id>] [--as <member>]                             # the run's phases, one line each: opened when, its posts, urgent posts and members done"] },
+  thread: {
+    lines: () => [
+      "  thread  [--run <id>] [--phase current|all|<name>] [--by <seat>] [--to <seat>] [--with <seat>] [--about <path|decision id>] [--limit <n>] [--before <seq>] [--from <seq>] [--events] [--as <member>]",
+      `          # reads the thread back, one line per post, the last ${THREAD_LIMIT} of the current phase by default; --with: a seat's posts and those to it; prints the next page's command`
+    ]
+  },
+  read: { lines: () => ["  read    <seq>                                                   # one post in full"] },
+  end: {
+    lines: () => [
+      "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
+      "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)"
+    ]
+  },
+  "log-level": { lines: () => ["  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept"] },
+  status: { lines: () => ["  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it"] },
+  ...CODE_IN_CORE_VERB_USAGE
+};
+var HIDDEN_VERB_USAGE = {
+  serve: { lines: (cli) => [`usage: ${cli} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it`] },
+  link: { lines: (cli) => [`usage: ${cli} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`] }
+};
+var VERB_USAGE = { ...CORE_VERB_USAGE, ...CODE_VERB_USAGE, ...HIDDEN_VERB_USAGE };
 var coreUsage = (cli) => [
   `usage: ${cli} <verb> [--json]        (${cli} --help code: ${CODE_IN_CORE_HELP.codeVerbs})`,
-  "  open    --kind plan|brainstorm|task --group <slug> --title <t> --seats <file.json> [--link <url>] [--stall-ms <ms>] [--protocol <name>] [--authority <role,role>] [--onto <branch>]   # opens a run, registers the project's board in aiview, prints the run id, the board's URL, then the line that starts your link (orchestrator)",
-  CODE_IN_CORE_HELP.ontoLine,
-  `          # --stall-ms: a working member with no sign of progress this long posts stalled, default and floor ${STALL_MS_DEFAULT} ms; ends on the command that starts your link`,
-  "          # --plan <slug> --seats <file.json>: the same as --kind plan --group <slug> --seats <file.json>",
-  '          # the seats file: [{"id", "role"?, "area"?, "blockers": [...], "link"?: "<URL>"}]',
-  "  seat    add <id> --run <id> [--role <r>] [--area <a>] [--blockers a,b] [--link <url>] [--as <member>]   # adds a seat mid-run (orchestrator; any team orchestrator on the orchestrators board)",
-  "  phase   <name> <text> [--for <seat>,\u2026] [--watch <seat>,\u2026] [--confirm] [--as <member>]   # without --confirm: the opt-in phases to weigh and the confirming call; with it, opens phase <name>; the current phase ends with it: a separator on the thread that wakes every member of the run (orchestrator)",
-  "          # --for: only those seats are woken and owe done (all-done counts them alone); the others read the phase as their next header",
-  `  pause   [<text>] [--as <member>]                               # every member stops where it is and waits; ${CODE_IN_CORE_HELP.pauseRefuses}, no stalled or lost alert until resume; with --person it waits on the person, the text its reason (orchestrator)`,
-  "  resume  [<message>] [--as <member>]                             # lifts the pause; every member wakes on the message and continues (orchestrator)",
-  "  done    <phase> [--as <member>]                                 # your part of the current phase is in: tells the orchestrator; when every member is done, the board tells it",
-  `  close   --run <id> [--force] [--as <member>]                    # (orchestrator; --force for the orchestrators board, else refused); ${CODE_IN_CORE_HELP.closeRemoves}`,
-  `  join    --run <id> --seat <id> --doing <t> [--files "<path>,<path>,\u2026"]   # a file not there yet is one you create, declared from the project's root; prints the roster, how you listen (a seat waits in the foreground, a worker listens in the background), then the command that starts your link; ${CODE_IN_CORE_HELP.joinMakes}`,
-  "  doing   [--as <member>] <text>",
-  "  post    [--as <member>] <body> | --file <path> [--about <path|decision id>] [--urgent] [--task] [--after <seats>]   # prints the seq; --task (orchestrator): the post is the one seat it mentions's task, owed until its done; --after w1,w2 implies it and wakes that seat as each of them lands its work, is done or leaves; --urgent (orchestrator only) wakes every waiter of the run, a pause included; --file for a long body (tables, quotes), never through shell quoting",
-  "  agree   [--as <member>] <terms> [--about <path|decision id>] [--with <seat>[,<seat>]]  # prints the seq; parties: its @-mentions, --with, else the file's other holders",
-  "  endorse [--as <member>] <seq>                                   # backs an agreement; prints the endorsement's seq",
-  "  wait    [--as <member>] [--timeout <ms>] [--mentions]           # blocks until a message to you (a mention, an event addressed to you) or an urgent post, then says how to re-arm; nothing on timeout or end; a newer wait supersedes it",
-  "          # once your run is closed, wait, roster --as, post, agree, endorse, doing and done answer: run <id> closed: run end \u2026",
-  "          # --mentions: you listen while you work rather than wait; a seat's run: the wake brings every unread post of the run",
-  "  roster  [--project <path>] [--as <member>]",
-  "  phases  [--run <id>] [--as <member>]                             # the run's phases, one line each: opened when, its posts, urgent posts and members done",
-  "  thread  [--run <id>] [--phase current|all|<name>] [--by <seat>] [--to <seat>] [--with <seat>] [--about <path|decision id>] [--limit <n>] [--before <seq>] [--from <seq>] [--events] [--as <member>]",
-  `          # reads the thread back, one line per post, the last ${THREAD_LIMIT} of the current phase by default; --with: a seat's posts and those to it; prints the next page's command`,
-  "  read    <seq>                                                   # one post in full",
-  "  end     [--as <member>]                                         # once your run is closed; refused to a member while it is open (a member never ends itself)",
-  "  end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)",
-  "  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept",
-  "  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it",
-  CODE_IN_CORE_HELP.pruneLine,
+  ...Object.values(CORE_VERB_USAGE).flatMap((u) => u.lines(cli)),
   `a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, ${CODE_IN_CORE_HELP.withoutAs}`
 ].join("\n");
-var hiddenUsage = (cli, verb) => verb === "serve" ? `usage: ${cli} serve [stop]   # the board server of the data home, started on demand by any verb; \`serve stop\` ends it` : `usage: ${cli} link --run <id> --as <member>   # a member's link, started by its agent from the line join or open prints`;
+var codeUsage = (cli) => [CODE_WORDING.usageHead(cli), ...Object.values(CODE_VERB_USAGE).flatMap((u) => u.lines(cli))].join("\n");
+var hiddenUsage = (cli, verb) => HIDDEN_VERB_USAGE[verb].lines(cli).join("\n");
+var verbHelp = (cli, verb, as) => {
+  const usage = Object.hasOwn(VERB_USAGE, verb) ? VERB_USAGE[verb] : void 0;
+  const line = usage?.lines(cli).find((l) => l.startsWith(`  ${verb} `));
+  if (!line) return coreUsage(cli);
+  const own = `usage: ${cli} ${line.trim().replace(/\s+#.*$/, "")}`;
+  const example = usage?.example?.(as);
+  return example ? `${own}
+e.g. ${cli} ${example}` : own;
+};
 
 // src/cli/answer/index.ts
 var shownLines = (shown) => shown.flatMap((m) => m.next ? [m.text, m.next] : [m.text]);
@@ -9462,25 +9568,8 @@ usage: ${CLI} ${usage}
 e.g. ${CLI} ${example}`);
 var asWord = () => quoted(args.flag("--as") ?? "<group>/<seat>");
 var USAGE = coreUsage(CLI);
-var CODE_USAGE = CODE_WORDING.usage(CLI);
-var EXAMPLES = {
-  open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat add w1 --run 3 --as my-team/orchestrator",
-  phase: (as) => `phase build "build the slices" --as ${as}`,
-  join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
-  "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
-  merged: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
-  worktree: () => "worktree prune",
-  close: () => "close --run 3 --as my-team/orchestrator"
-};
-var verbHelp = (verb = args.verb ?? "") => {
-  const line = [...USAGE.split("\n"), ...CODE_USAGE.split("\n")].find((l) => l.startsWith(`  ${verb} `));
-  if (!line) return USAGE;
-  const usage = `usage: ${CLI} ${line.trim().replace(/\s+#.*$/, "")}`;
-  const example = EXAMPLES[verb]?.(asWord());
-  return example ? `${usage}
-e.g. ${CLI} ${example}` : usage;
-};
+var CODE_USAGE = codeUsage(CLI);
+var thisVerbHelp = () => verbHelp(CLI, args.verb ?? "", asWord());
 var CliError = class extends Error {
 };
 var fail = (msg) => {
@@ -9565,7 +9654,7 @@ var writeOrchestratorSeats = (repo, seats) => {
   return file.split(path14.sep).join("/");
 };
 var need = (flag) => args.flag(flag) ?? fail(`${flag} is required
-${verbHelp()}`);
+${thisVerbHelp()}`);
 var readRun = async (verb) => args.flag("--run") !== void 0 ? runArg() : (await placedCaller())?.run ?? fail(WORDING.readWhichRun(verb));
 var seqFlag = (flag) => {
   const raw = args.flag(flag);
@@ -9589,7 +9678,7 @@ var tellLinkToStart = (print) => {
   linkToStart = null;
 };
 async function caller() {
-  const p = await placedCaller() ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
+  const p = await placedCaller() ?? fail(CODE_WORDING.whoIsCalling);
   const direct = board;
   if (p.place && fs14.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
@@ -9669,7 +9758,6 @@ var refusedPaused = async (p, verb) => {
   emit({ run: p.run, paused: true, refused: verb, next: line }, WORDING.verbRefused(verb, line));
   return true;
 };
-var PHASELESS = "none";
 var mergeLocksHeld = async () => {
   const projects = [...new Set((await board.runs()).map((r) => r.repo))];
   const lockOf = async (project) => {
@@ -9681,13 +9769,6 @@ var mergeLocksHeld = async () => {
   };
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []);
-};
-var firstPhaseLine = (kind, group, protocol) => {
-  if (kind !== "task" && kind !== "plan") return null;
-  if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
-  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord2(`${group}/orchestrator`)}`;
-  const pointer = "(its protocol.md's phase table names them)";
-  return protocol ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}` : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
 var answeredGate = async (p, listener = false) => {
   const s = await situation(p);
@@ -9802,13 +9883,13 @@ function openKindAndGroup() {
   const plan = args.flag("--plan");
   if (plan !== void 0 && kind !== "plan") fail(`open: --plan means --kind plan; a ${kind} run takes --group <slug>`);
   const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)
-${verbHelp()}`);
+${thisVerbHelp()}`);
   return { kind, group };
 }
 function joinedSeat() {
   const seat = args.flag("--seat");
   return seat ?? fail(`--seat is required
-${verbHelp()}`);
+${thisVerbHelp()}`);
 }
 var POSTS_MARKDOWN = "posts are markdown, rendered on the board: steps as a list, options as a table, a task or a report in short headed parts, a flow or a structure as a mermaid block; more than one line goes through post --file <path>";
 var seatCommands = (as) => WORDING.seatCommands(self().join(" "), shellWord2(as), FOREGROUND_WAIT_MS);
@@ -9858,7 +9939,7 @@ async function main() {
     case "open": {
       const { kind, group } = openKindAndGroup();
       const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required
-${verbHelp()}`);
+${thisVerbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === void 0 ? void 0 : Number(rawStall);
       if (stallMs !== void 0 && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
@@ -9906,7 +9987,7 @@ ${verbHelp()}`);
         });
         const link = startLinkLine({ name: `${run2.group}/orchestrator`, run: run2.id });
         const doc = registerBoard({ home, cwd: process.cwd(), repo: run2.repo });
-        const next = firstPhaseLine(run2.kind, run2.group, protocol ?? null);
+        const next = firstPhaseLine(run2.kind, protocol ?? null, self().join(" "), shellWord2(`${run2.group}/orchestrator`));
         const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run2.id);
         const seatIds = run2.seats.map((s) => s.id);
         const seatsJoin = seatIds.length ? WORDING.seatsJoin(seatIds, WORDING.seatJoin(self().join(" "), run2.id, shellWord2(run2.group), shellWord2("waiting for a task"))) : null;
@@ -9926,7 +10007,7 @@ ${verbHelp()}`);
     case "seat": {
       if (args.positional[0] === "add") {
         const id = args.positional[1] ?? fail(`seat add: which id?
-${verbHelp()}`);
+${thisVerbHelp()}`);
         const run2 = runArg();
         await orchestratorOf("seat add", run2, (as) => WORDING.seatAdd(self().join(" "), shellWord2(id), run2, as));
         const role = args.flag("--role");
@@ -9942,7 +10023,7 @@ ${verbHelp()}`);
         break;
       }
       fail(`seat: add <id>, the one thing it does
-${verbHelp()}`);
+${thisVerbHelp()}`);
     }
     case "close": {
       const run2 = runArg();
@@ -9963,7 +10044,7 @@ ${verbHelp()}`);
         if (lockHolder) console.log(CODE_WORDING.closedLockHolder(lockHolder));
         const n = swept.length - kept.length;
         if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
-        for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
+        for (const w of kept) console.log(CODE_WORDING.keptWorktree(w.worktree, w.member, w.why, self().join(" ")));
       });
       break;
     }
@@ -9971,7 +10052,7 @@ ${verbHelp()}`);
       const p = await caller();
       const [name, ...said] = args.positional;
       if (!name) fail(`phase: which phase?
-${verbHelp()}`);
+${thisVerbHelp()}`);
       if (!phaseKind(name)) fail(WORDING.phaseNoKind(name));
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       const watch = args.list("--watch");
@@ -10076,7 +10157,7 @@ ${verbHelp()}`);
       const link = startLinkLine({ name: member.name, run: member.run });
       const shared = member.pack === null;
       const verifier = shared && member.verify;
-      const as = verifier ? WORDING.verifierAs(member.name) : shared ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart` : own ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord2(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call` : null;
+      const as = verifier ? WORDING.verifierAs(member.name) : shared ? WORDING.sharedCheckoutAs(member.name) : own ? CODE_WORDING.ownWorktreeAs(own, fwd(own.path), shellWord2(fwd(own.path)), member.name) : null;
       const unmergedNow = !shared && own?.reused ? await board.packCall(member, "unmerged", {}) : null;
       const lockNotHeld = unmergedNow && await board.packCall(member, "held-merge-lock", {}) == null;
       const lockNotHeldLine = lockNotHeld && own ? CODE_WORDING.lockNotHeldAtJoin(CODE_WORDING.unmergedFact(unmergedNow.branch, unmergedNow.left), self().join(" "), shellWord2(own.base), shellWord2(member.name)) : null;
@@ -10169,12 +10250,7 @@ ${verbHelp()}`);
         emit(d, answer({ verb: "wait", outcome: "superseded" }, await situation(p)).lines[0]);
         break;
       }
-      const again = [...self(), "wait"];
-      if (mentionsOnly) again.push("--mentions");
-      if (args.flag("--as")) again.push("--as", shellWord2(args.flag("--as")));
-      if (raw !== void 0) again.push("--timeout", raw);
-      if (asJson) again.push("--json");
-      const foregroundAgain = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
+      const { again, foreground: foregroundAgain } = WORDING.waitAgain(self().join(" "), { mentions: mentionsOnly, as: args.flag("--as") ? shellWord2(args.flag("--as")) : void 0, timeout: raw, json: asJson });
       if (!d.full.length) {
         const ended = (await board.participant(p.name))?.ended ?? true;
         if (ended) {
@@ -10182,12 +10258,12 @@ ${verbHelp()}`);
           break;
         }
         const idle = mentionsOnly && await board.idle(p);
-        const a2 = answer({ verb: "wait", outcome: "empty", idle, again: again.join(" "), foregroundAgain }, await situation(p));
+        const a2 = answer({ verb: "wait", outcome: "empty", idle, again, foregroundAgain }, await situation(p));
         emit({ ...d, ...idle ? { idle: true } : {}, next: a2.next }, a2.next);
         break;
       }
       const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
-      const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d) }, await situation(p, true));
+      const a = answer({ verb: "wait", outcome: "woke", again, foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d) }, await situation(p, true));
       emit({ phase: a.phase, next: a.next, ...d, ...a.lines.includes(WORDING.delivered) ? { delivered: WORDING.delivered } : {} }, () => {
         for (const l of a.lines) console.log(l);
       });
@@ -10236,7 +10312,7 @@ ${verbHelp()}`);
       if (deliver) reportGiven();
       const piped = deliver && args.has("--report-stdin") ? reportGiven() : void 0;
       const reportArgs = piped !== void 0 ? ["--report", piped] : args.flag("--report-file") !== void 0 ? ["--report-file", path14.resolve(args.flag("--report-file"))] : args.flag("--report") !== void 0 ? ["--report", args.flag("--report")] : [];
-      const again = () => [...self(), "merge-lock", "--onto", shellWord2(onto), ...piped !== void 0 ? ["--report-stdin"] : reportArgs.map(shellWord2), "--as", shellWord2(p.name)].join(" ");
+      const again = () => CODE_WORDING.mergeLockAgain(self().join(" "), shellWord2(onto), piped !== void 0 ? ["--report-stdin"] : reportArgs.map(shellWord2), shellWord2(p.name));
       const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
@@ -10361,7 +10437,7 @@ ${verbHelp()}`);
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
         if (unlocked === void 0) {
-          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", shellWord2((await runOf(p.run))?.base ?? "<branch>"), "--as", shellWord2(p.name)].join(" ")} first, then merge, then merged again`);
+          return fail(CODE_WORDING.mergedWithoutLock(self().join(" "), shellWord2((await runOf(p.run))?.base ?? "<branch>"), shellWord2(p.name)));
         }
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
@@ -10390,7 +10466,7 @@ ${verbHelp()}`);
     case "end": {
       const asker = await caller();
       if ((await board.runs()).every((r) => r.id !== asker.run)) {
-        const line = `run ${asker.run} closed: ${asker.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
+        const line = WORDING.closedEndSummary(asker.run, asker.name);
         linkToStart = null;
         emit({ member: asker.name, ended: true, closed: true, next: line }, line);
         break;
@@ -10412,11 +10488,7 @@ ${verbHelp()}`);
         fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), WORDING.closeRun(self().join(" "), p.run, shellWord2(asker.name))));
       }
       if (refusal && !lostSeat) {
-        const { worktree: mine2, left } = refusal;
-        const who = `--as ${shellWord2(p.name)}`;
-        fail(
-          `end: your worktree ${mine2} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} --report "<what you did>" ${who}; then end again`
-        );
+        fail(endUnmergedLine(refusal.worktree, refusal.left, CODE_WORDING.mergeLockReport(self().join(" "), base ?? "<branch>", shellWord2(p.name))));
       }
       const before = endedSeat === void 0 ? null : (await board.roster(p.repo)).find((r) => r.name === p.name) ?? null;
       await board.end(p);
@@ -10434,7 +10506,7 @@ ${verbHelp()}`);
     }
     case "worktree": {
       if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune
-${verbHelp()}`);
+${thisVerbHelp()}`);
       const repos = (await board.runs()).map((r) => r.repo);
       const out = await board.packCall(null, "prune", { repos }) ?? [];
       const kept = out.filter((o) => !o.removed);
@@ -10495,7 +10567,7 @@ ${verbHelp()}`);
     case "read": {
       const seq = Number(String(args.positional[0] ?? "").replace(/^#/, ""));
       if (!Number.isInteger(seq) || seq <= 0) fail(`read: which post? read <seq>, the number thread prints
-${verbHelp()}`);
+${thisVerbHelp()}`);
       const m = await board.message(projectRepo(), seq) ?? fail(WORDING.noPost(seq));
       emit(m, () => {
         console.log(`#${m.seq} ${m.at}  ${m.from}${m.mentions.length ? ` \u2192 ${m.mentions.join(", ")}` : ""}${m.about ? `  [${m.about}]` : ""}${m.kind === "msg" ? "" : `  (${m.event ?? m.kind})`}  run ${m.run}`);

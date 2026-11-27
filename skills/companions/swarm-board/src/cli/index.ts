@@ -21,7 +21,7 @@ import { baseAt, baseRef, git, gitAnswer, refArg, worktreeHolding } from "../git
 import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../place/place.ts";
 import { conflictsOf, headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
-import { pausedMergingStep } from "./answer/code-rules.ts";
+import { endUnmergedLine, pausedMergingStep } from "./answer/code-rules.ts";
 import { answer, closedConnectionHint, CODE_WORDING, codeUsage, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, verbHelp, WORDING, type Situation } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
@@ -195,7 +195,7 @@ const tellLinkToStart = (print: (line: string) => void): void => {
 /** The caller: --as names it; otherwise the member that joined from this worktree, asked of the server
  *  directly (D29). From then on the verb's calls go through that member's link. */
 async function caller(): Promise<Participant> {
-  const p = (await placedCaller()) ?? fail("who is calling? no single member joined from this worktree; pass --as <group>/<seat>");
+  const p = (await placedCaller()) ?? fail(CODE_WORDING.whoIsCalling);
   const direct = board;
   if (p.place && fs.existsSync(p.place)) callerWorktree = p.place;
   const member = { name: p.name, run: p.run };
@@ -331,8 +331,6 @@ const refusedPaused = async (p: Participant, verb: string): Promise<boolean> => 
   emit({ run: p.run, paused: true, refused: verb, next: line }, WORDING.verbRefused(verb, line));
   return true;
 };
-/** `--protocol none`: a run phaseless on purpose. */
-const PHASELESS = "none";
 
 /** board-split D52 (U-F18): the merge lock of each project with an open run, its holder and since; none held: empty. */
 const mergeLocksHeld = async (): Promise<{ project: string; holder: string; since: string; waiters: string[] }[]> => {
@@ -347,19 +345,6 @@ const mergeLocksHeld = async (): Promise<{ project: string; holder: string; sinc
   };
   const held = await Promise.all(projects.map(async (project) => ({ project, lock: await lockOf(project) })));
   return held.flatMap((h) => (h.lock ? [{ project: h.project, holder: h.lock.holder, since: h.lock.since, waiters: h.lock.waiters ?? [] }] : []));
-};
-/** The orchestrator's step after `open` of a task or plan run (idea 3): open the protocol's first phase before any
- *  task, or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm).
- *  The reading pointer sits before the colon, the command last (F6). */
-const firstPhaseLine = (kind: Kind, group: string, protocol: string | null): string | null => {
-  if (kind !== "task" && kind !== "plan") return null;
-  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
-  if (protocol === PHASELESS) return "next: phaseless: the workers take tasks on call";
-  const command = `${self().join(" ")} phase <name> "<its message>" --as ${shellWord(`${group}/orchestrator`)}`;
-  const pointer = "(its protocol.md's phase table names them)";
-  return protocol
-    ? `next: open ${protocol}'s first phase before any task ${pointer}: ${command}`
-    : `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${pointer}: ${command}`;
 };
 
 
@@ -653,7 +638,7 @@ async function main(): Promise<void> {
         // the person watches the project's board on aiview's /board page
         const doc = registerBoard({ home, cwd: process.cwd(), repo: run.repo });
         // the orchestrator's next step, the answer's last line (idea 3): the first phase, or why there is none
-        const next = firstPhaseLine(run.kind, run.group, protocol ?? null);
+        const next = rules.firstPhaseLine(run.kind, protocol ?? null, self().join(" "), shellWord(`${run.group}/orchestrator`));
         // every orchestrator registers on the project's orchestrators board, whatever its roles
         const orchestrators = orchestratorsLines(await board.runs(), self().join(" "), writeOrchestratorSeats, run.id);
         // V-16 (AGENTS rule 10): how each declared seat joins, runnable as printed
@@ -716,7 +701,7 @@ async function main(): Promise<void> {
         if (lockHolder) console.log(CODE_WORDING.closedLockHolder(lockHolder));
         const n = swept.length - kept.length;
         if (n) console.log(`${n} worktree${n === 1 ? "" : "s"} removed (branches kept)`);
-        for (const w of kept) console.log(`kept ${w.worktree} (${w.member}): ${w.why}; merge it or discard it, then: ${self().join(" ")} worktree prune`);
+        for (const w of kept) console.log(CODE_WORDING.keptWorktree(w.worktree, w.member, w.why, self().join(" ")));
       });
       break;
     }
@@ -865,9 +850,9 @@ async function main(): Promise<void> {
       const as = verifier
         ? WORDING.verifierAs(member.name)
         : shared
-        ? `pass --as ${member.name} on every call: this checkout is shared, the board cannot tell you apart`
+        ? WORDING.sharedCheckoutAs(member.name)
         : own
-          ? `your worktree: ${fwd(own.path)} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${shellWord(fwd(own.path))}, never cd into it; pass --as ${member.name} on every call`
+          ? CODE_WORDING.ownWorktreeAs(own, fwd(own.path), shellWord(fwd(own.path)), member.name)
           : null;
       // board-split D59: a member re-joining a seat whose branch holds work not merged, without the merge lock (its last
       // member's was released when it went lost), is told so and how to take it again
@@ -982,14 +967,9 @@ async function main(): Promise<void> {
         break;
       }
       // the member's next step, before the message: the exact command that re-arms this listener (D49)
-      const again = [...self(), "wait"];
-      if (mentionsOnly) again.push("--mentions");
-      if (args.flag("--as")) again.push("--as", shellWord(args.flag("--as")!));
-      if (raw !== undefined) again.push("--timeout", raw);
-      if (asJson) again.push("--json");
       // every foreground re-arm holds 150000, under the 180 s a harness lets a foreground command run (F22), whatever the caller gave: an old 110000
       // habit stays on 2-min turns otherwise (v1-c); a background listener (the orchestrator's) keeps its own form
-      const foregroundAgain = [...again.filter((w, i) => w !== "--timeout" && again[i - 1] !== "--timeout"), "--timeout", String(FOREGROUND_WAIT_MS)].join(" ");
+      const { again, foreground: foregroundAgain } = WORDING.waitAgain(self().join(" "), { mentions: mentionsOnly, as: args.flag("--as") ? shellWord(args.flag("--as")!) : undefined, timeout: raw, json: asJson });
       if (!d.full.length) {
         // a timeout: the line to run again (B7); the member ended: it says so, nothing to re-arm (G26)
         const ended = (await board.participant(p.name))?.ended ?? true;
@@ -999,12 +979,12 @@ async function main(): Promise<void> {
         }
         // a member with nothing to do ends rather than wake every 150 s (tokens); the orchestrator dispatches it again
         const idle = mentionsOnly && (await board.idle(p));
-        const a = answer({ verb: "wait", outcome: "empty", idle, again: again.join(" "), foregroundAgain }, await situation(p));
+        const a = answer({ verb: "wait", outcome: "empty", idle, again, foregroundAgain }, await situation(p));
         emit({ ...d, ...(idle ? { idle: true } : {}), next: a.next }, a.next!);
         break;
       }
       const phaseEvent = d.full.some((m) => eventOf(m) === "phase");
-      const a = answer({ verb: "wait", outcome: "woke", again: again.join(" "), foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d) }, await situation(p, true));
+      const a = answer({ verb: "wait", outcome: "woke", again, foregroundAgain, phaseEvent, mentionsOnly, shown: shownOf(d) }, await situation(p, true));
       // F28: a background listener's end is also announced by the harness; the same event, already delivered here
       emit({ phase: a.phase, next: a.next, ...d, ...(a.lines.includes(WORDING.delivered) ? { delivered: WORDING.delivered } : {}) }, () => {
         for (const l of a.lines) console.log(l);
@@ -1067,7 +1047,7 @@ async function main(): Promise<void> {
       const piped = deliver && args.has("--report-stdin") ? reportGiven()! : undefined;
       const reportArgs = piped !== undefined ? ["--report", piped] : args.flag("--report-file") !== undefined ? ["--report-file", path.resolve(args.flag("--report-file")!)] : args.flag("--report") !== undefined ? ["--report", args.flag("--report")!] : [];
       /** The same call, as the member runs it again once what was handed back is fixed. */
-      const again = (): string => [...self(), "merge-lock", "--onto", shellWord(onto), ...(piped !== undefined ? ["--report-stdin"] : reportArgs.map(shellWord)), "--as", shellWord(p.name)].join(" ");
+      const again = (): string => CODE_WORDING.mergeLockAgain(self().join(" "), shellWord(onto), piped !== undefined ? ["--report-stdin"] : reportArgs.map(shellWord), shellWord(p.name));
       const unmergedIn = (wt: string): string[] => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
       const rebasingIn = (wt: string): boolean => ["rebase-merge", "rebase-apply"].some((dir) => {
         const at = git(wt, "rev-parse", "--git-path", dir);
@@ -1216,7 +1196,7 @@ async function main(): Promise<void> {
       const unlocked = args.flag("--unlocked")?.trim();
       if (!lock && p.pack !== null) {
         if (unlocked === undefined) {
-          return fail(`merged: you do not hold the merge lock; run ${[...self(), "merge-lock", "--onto", shellWord((await runOf(p.run))?.base ?? "<branch>"), "--as", shellWord(p.name)].join(" ")} first, then merge, then merged again`);
+          return fail(CODE_WORDING.mergedWithoutLock(self().join(" "), shellWord((await runOf(p.run))?.base ?? "<branch>"), shellWord(p.name)));
         }
         if (!p.name.endsWith("/orchestrator")) fail("merged: --unlocked is the orchestrator's alone; take the merge lock: merge-lock --onto <branch>");
         if (!unlocked) fail('merged: --unlocked "<why>" says why the merge skipped the lock');
@@ -1257,7 +1237,7 @@ async function main(): Promise<void> {
       const asker = await caller();
       // its run closed: the close ended it; end answers what the closed line promised, the summary to return
       if ((await board.runs()).every((r) => r.id !== asker.run)) {
-        const line = `run ${asker.run} closed: ${asker.name} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`;
+        const line = WORDING.closedEndSummary(asker.run, asker.name);
         // ended: no link to start
         linkToStart = null;
         emit({ member: asker.name, ended: true, closed: true, next: line }, line);
@@ -1288,11 +1268,7 @@ async function main(): Promise<void> {
         fail(CODE_WORDING.endSeatUnmerged(p.name, CODE_WORDING.unmergedFact(live?.branch ?? "", live?.left ?? refusal.left), WORDING.closeRun(self().join(" "), p.run, shellWord(asker.name))));
       }
       if (refusal && !lostSeat) {
-        const { worktree: mine, left } = refusal;
-        const who = `--as ${shellWord(p.name)}`;
-        fail(
-          `end: your worktree ${mine} holds work not merged: ${left}. ${/uncommitted/.test(left) ? "Commit it, then merge it" : "Merge it"}: ${self().join(" ")} merge-lock --onto ${base ?? "<branch>"} --report "<what you did>" ${who}; then end again`,
-        );
+        fail(endUnmergedLine(refusal.worktree, refusal.left, CODE_WORDING.mergeLockReport(self().join(" "), base ?? "<branch>", shellWord(p.name))));
       }
       // break-flow V-29: the orchestrator ending a seat is told the state its member was in, and what it is told now
       const before = endedSeat === undefined ? null : ((await board.roster(p.repo)).find((r) => r.name === p.name) ?? null);
