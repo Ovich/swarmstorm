@@ -52,15 +52,15 @@ usage: aiview <verb> [--json]
 
 $ aiview open
 exit 1
-usage: aiview open <file> [--kind k] [--tag t]... [--group g] [--port p] [--open]
+usage: aiview open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]
 
 $ aiview add
 exit 1
-usage: aiview add <file.md> [--kind k] [--tag t]...
+usage: aiview add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]
 
 $ aiview update
 exit 1
-usage: aiview update <file|#id> [--kind k] [--tag t] [--untag t] [--group g|--ungroup] [--group-title T] [--started ISO]
+usage: aiview update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]
 
 $ aiview remove
 exit 1

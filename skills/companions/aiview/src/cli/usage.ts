@@ -4,9 +4,9 @@
 /** Each listed verb, in the order the top-level usage shows it: its lines there, and its
  *  refusal when that says more than its first line's synopsis. */
 export const VERB_USAGE = {
-  open: { lines: ["open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]"], refusal: "open <file> [--kind k] [--tag t]... [--group g] [--port p] [--open]" },
-  add: { lines: ["add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]"], refusal: "add <file.md> [--kind k] [--tag t]..." },
-  update: { lines: ["update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]"], refusal: "update <file|#id> [--kind k] [--tag t] [--untag t] [--group g|--ungroup] [--group-title T] [--started ISO]" },
+  open: { lines: ["open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]"] },
+  add: { lines: ["add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]"] },
+  update: { lines: ["update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]"] },
   list: { lines: ["list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project"] },
   project: { lines: ["project <add|list|rm> [slug] [--title T] [--path P]..."] },
   remove: { lines: ["remove <file|#id>..."] },
