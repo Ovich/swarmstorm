@@ -22,7 +22,7 @@ import { relativeIn, repoOf as placeRepoOf, resolveIn, worktreeOf } from "../pla
 import { conflictsOf, headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "./conflicts.ts";
 import { runLink } from "../link/link.ts";
 import { pausedMergingStep } from "./answer/code-rules.ts";
-import { answer, closedConnectionHint, CODE_WORDING, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, WORDING, type Situation } from "./answer/index.ts";
+import { answer, closedConnectionHint, CODE_WORDING, codeUsage, coreUsage, orchestratorsLines, ORCHESTRATORS_GROUP, eventStep, lostMentionLines, type WriteOrchestratorSeats, hiddenUsage, readSituation, verbHelp, WORDING, type Situation } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
 
 const args = parseArgs(process.argv.slice(2));
@@ -42,27 +42,10 @@ const asWord = (): string => quoted(args.flag("--as") ?? "<group>/<seat>");
 const USAGE = coreUsage(CLI);
 
 /** The verbs of a kind with claims (a plan run's), apart from the core (D22). */
-const CODE_USAGE = CODE_WORDING.usage(CLI);
+const CODE_USAGE = codeUsage(CLI);
 
-/** V9: one corrected form per verb, the caller's --as in it: what an argument error offers to copy. */
-const EXAMPLES: Record<string, (as: string) => string> = {
-  open: () => `open --kind task --group my-team --title "the work" --seats seats.json`,
-  seat: () => "seat add w1 --run 3 --as my-team/orchestrator",
-  phase: (as) => `phase build "build the slices" --as ${as}`,
-  join: () => `join --run 3 --seat w1 --doing "joining" --as my-team/w1`,
-  "merge-lock": (as) => `merge-lock --onto main --as ${as}`,
-  merged: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
-  worktree: () => "worktree prune",
-  close: () => "close --run 3 --as my-team/orchestrator",
-};
-/** V9: the usage of the verb being called alone, from the help's own lines, and one corrected form; never the whole help. */
-const verbHelp = (verb = args.verb ?? ""): string => {
-  const line = [...USAGE.split("\n"), ...CODE_USAGE.split("\n")].find((l) => l.startsWith(`  ${verb} `));
-  if (!line) return USAGE;
-  const usage = `usage: ${CLI} ${line.trim().replace(/\s+#.*$/, "")}`;
-  const example = EXAMPLES[verb]?.(asWord());
-  return example ? `${usage}\ne.g. ${CLI} ${example}` : usage;
-};
+/** V9: the usage of the verb being called alone, and one corrected form with the caller's --as; never the whole help. */
+const thisVerbHelp = (): string => verbHelp(CLI, args.verb ?? "", asWord());
 
 class CliError extends Error {}
 const fail = (msg: string): never => {
@@ -175,7 +158,7 @@ const writeOrchestratorSeats: WriteOrchestratorSeats = (repo, seats) => {
   // forward slashes: the path is one shell word on every platform, printed unquoted
   return file.split(path.sep).join("/");
 };
-const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${verbHelp()}`);
+const need = (flag: string): string => args.flag(flag) ?? fail(`${flag} is required\n${thisVerbHelp()}`);
 
 /** The run a read names: --run, else the caller's own (--as, or the member joined from this worktree). */
 const readRun = async (verb: string): Promise<number> => (args.flag("--run") !== undefined ? runArg() : ((await placedCaller())?.run ?? fail(WORDING.readWhichRun(verb))));
@@ -530,14 +513,14 @@ function openKindAndGroup(): { kind: Kind; group: string } {
   }
   const plan = args.flag("--plan");
   if (plan !== undefined && kind !== "plan") fail(`open: --plan means --kind plan; a ${kind} run takes --group <slug>`);
-  const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)\n${verbHelp()}`);
+  const group = args.flag("--group") ?? plan ?? fail(`open: --group <slug> is required (or --plan <slug> for a plan run)\n${thisVerbHelp()}`);
   return { kind, group };
 }
 
 /** `join`'s member id: `--seat`. */
 function joinedSeat(): string {
   const seat = args.flag("--seat");
-  return seat ?? fail(`--seat is required\n${verbHelp()}`);
+  return seat ?? fail(`--seat is required\n${thisVerbHelp()}`);
 }
 
 /** What a seat's join tells it of its posts, before the listener line (D2). */
@@ -611,7 +594,7 @@ async function main(): Promise<void> {
     }
     case "open": {
       const { kind, group } = openKindAndGroup();
-      const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${verbHelp()}`);
+      const seatsFile = args.flag("--seats") ?? fail(`open: --seats <file.json> is required\n${thisVerbHelp()}`);
       const rawStall = args.flag("--stall-ms");
       const stallMs = rawStall === undefined ? undefined : Number(rawStall);
       if (stallMs !== undefined && !(Number.isInteger(stallMs) && stallMs > 0)) fail(`--stall-ms takes a positive whole number of ms, got ${rawStall}`);
@@ -693,7 +676,7 @@ async function main(): Promise<void> {
     }
     case "seat": {
       if (args.positional[0] === "add") {
-        const id = args.positional[1] ?? fail(`seat add: which id?\n${verbHelp()}`);
+        const id = args.positional[1] ?? fail(`seat add: which id?\n${thisVerbHelp()}`);
         const run = runArg();
         await orchestratorOf("seat add", run, (as) => WORDING.seatAdd(self().join(" "), shellWord(id), run, as));
         const role = args.flag("--role");
@@ -708,7 +691,7 @@ async function main(): Promise<void> {
         emit({ run, seat: added }, `${id} added`);
         break;
       }
-      fail(`seat: add <id>, the one thing it does\n${verbHelp()}`);
+      fail(`seat: add <id>, the one thing it does\n${thisVerbHelp()}`);
     }
     case "close": {
       const run = runArg();
@@ -740,7 +723,7 @@ async function main(): Promise<void> {
     case "phase": {
       const p = await caller();
       const [name, ...said] = args.positional;
-      if (!name) fail(`phase: which phase?\n${verbHelp()}`);
+      if (!name) fail(`phase: which phase?\n${thisVerbHelp()}`);
       if (!rules.phaseKind(name)) fail(WORDING.phaseNoKind(name));
       const text = said.join(" ") || fail(`phase ${name}: what does it ask?`);
       // --watch: the members whose done wakes the orchestrator the moment it lands (idea 2, §3)
@@ -1330,7 +1313,7 @@ async function main(): Promise<void> {
       break;
     }
     case "worktree": {
-      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${verbHelp()}`);
+      if (args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${thisVerbHelp()}`);
       // each repository the board knows a run of: its worktrees folder is the only one walked, by the code pack; the
       // latest member to join from a folder says which run it belongs to
       const repos = (await board.runs()).map((r) => r.repo);
@@ -1393,7 +1376,7 @@ async function main(): Promise<void> {
     }
     case "read": {
       const seq = Number(String(args.positional[0] ?? "").replace(/^#/, ""));
-      if (!Number.isInteger(seq) || seq <= 0) fail(`read: which post? read <seq>, the number thread prints\n${verbHelp()}`);
+      if (!Number.isInteger(seq) || seq <= 0) fail(`read: which post? read <seq>, the number thread prints\n${thisVerbHelp()}`);
       const m = (await board.message(projectRepo(), seq)) ?? fail(WORDING.noPost(seq));
       emit(m, () => {
         console.log(`#${m.seq} ${m.at}  ${m.from}${m.mentions.length ? ` → ${m.mentions.join(", ")}` : ""}${m.about ? `  [${m.about}]` : ""}${m.kind === "msg" ? "" : `  (${m.event ?? m.kind})`}  run ${m.run}`);

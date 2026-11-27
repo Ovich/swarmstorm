@@ -1,7 +1,7 @@
 // The code pack's wording (board-split D8): every line a code verb (merge-lock, merged) or a code event
 // (an overlap) makes a member read, and the code verbs' help. Still the answer module (AGENTS rule 13); which line a member
 // reads is code-rules.ts's choice. The core lines stay in wording.ts.
-import type { Command } from "./wording.ts";
+import type { Command, VerbUsage } from "./wording.ts";
 
 /** The code pack's words inside the core help's lines (D12: one static help, its code parts the pack's), so the
  *  core help reads as before. */
@@ -15,18 +15,31 @@ export const CODE_IN_CORE_HELP = {
   withoutAs: "the member joined from this worktree",
 };
 
+/** The code verbs' entries of VERB_USAGE (codebase-rework#D12): their help lines and the corrected form an argument
+ *  error offers, in help order. */
+export const CODE_VERB_USAGE = {
+  "merge-lock": {
+    lines: () => [
+      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
+    ],
+    example: (as) => `merge-lock --onto main --as ${as}`,
+  },
+  merged: {
+    lines: () => [
+      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
+    ],
+    example: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
+  },
+} satisfies Record<string, VerbUsage>;
+
 export const CODE_WORDING = {
   // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
   closeFinish: "merged, reported, done",
   closeColumns: "| task | seat | state | merge sha |",
-  /** The code verbs' help, apart from the core (D22). */
-  usage: (cli: Command): string =>
-    [
-      `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
-      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
-      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
-    ].join("\n"),
+  /** The code help's first line; its verbs' lines are CODE_VERB_USAGE's (D22). */
+  usageHead: (cli: Command): string =>
+    `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */

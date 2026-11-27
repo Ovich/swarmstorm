@@ -7,6 +7,10 @@ const FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1000} s, as Claude Code
 /** A command as printed: the words joined, ready to copy. */
 export type Command = string;
 
+/** A verb's entry in VERB_USAGE (usage.ts): its help lines, and the corrected form an argument error offers to copy,
+ *  `as` the caller's --as. */
+export type VerbUsage = { lines: (cli: Command) => readonly string[]; example?: (as: string) => string };
+
 export const WORDING = {
   // ── commands ──
   /** `wait --mentions`, foreground carrying its hold */

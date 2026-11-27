@@ -8,6 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { shellWord, verbHelp } from "../src/cli/answer/index.ts";
 
 const TOOL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SOURCE_CLI = path.join(TOOL, "src", "cli", "index.ts");
@@ -38,3 +39,16 @@ test("D23: --help and --help code print the pinned help", () => {
 test("D23: a hidden verb's help prints its pinned usage line and starts nothing", () => {
   for (const verb of ["serve", "link"]) matchesPinned(verb, helpOf([verb, "--help"]));
 });
+
+// Each verb's own usage, as an argument error prints it (V9), pinned from today's `verbHelp` (cli/index.ts at
+// 00ad156e) over `swarm` and no --as: one entry per verb of `help.verbs.json`.
+test("D23: each verb's own usage and corrected form render as pinned", () => {
+  const file = path.join(PINNED, "help.verbs.json");
+  const pinned = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, string>;
+  const rendered = Object.fromEntries(Object.keys(pinned).map((verb) => [verb, verbHelp("swarm", verb, shellWord("<group>/<seat>"))]));
+  if (process.env.GOLDEN_UPDATE === "1") fs.writeFileSync(file, `${JSON.stringify(rendered, null, 2)}\n`);
+  assert.deepEqual(rendered, pinned);
+});
+
+// codebase-rework#D12 (P2): the verb table's keys equal VERB_USAGE's keys; the assertion lands here with the table.
+// D12-TABLE-KEYS
