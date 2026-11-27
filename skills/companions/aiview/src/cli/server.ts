@@ -6,7 +6,7 @@ import path from "node:path";
 import { hiddenSpawn, hiddenSpawnSync } from "../../../swarm-board/src/host/proc.ts";
 import { TOOL_ROOT, type Index } from "../core/db.ts";
 import { defaultPort, firstFreePort } from "../core/home.ts";
-import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { isAlive, readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import type { ShowResponse } from "../core/api.ts";
@@ -107,15 +107,6 @@ function spawnDetachedServer(port: number): number {
 /** Busy-wait a little: the CLI is synchronous and has no event loop to sleep on. */
 const pause = (ms: number): void => {
   hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
-};
-
-const isAlive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 };
 
 /** Stop the server at this pid and wait until it is gone; its files may stay behind (on
