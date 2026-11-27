@@ -1,7 +1,7 @@
 // A closed run's merged files, where the claims row sits for an open run: collapsed by default,
 // its count; opened, one path per line with who merged it. Reuses the claims row's classes.
 import { useState } from "react";
-import type { MergedFileRow } from "../../../lib/board/view.ts";
+import type { MergedFileRow } from "../../../lib/board/runs.ts";
 import { MemberName } from "./chips.tsx";
 
 export function MergedFilesRow({ rows }: { rows: MergedFileRow[] }) {

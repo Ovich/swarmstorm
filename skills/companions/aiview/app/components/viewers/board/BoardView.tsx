@@ -2,7 +2,9 @@
 // run's head and conversation (the agent roster left of the conversation, the claims row). aiview's theme; board.css reaches only `.board`.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "../../../hooks/useBoard.ts";
-import { agents, archive, claimRows, conversation, mergedFileRows, narrow, nicksOf, openingRun, pauseChip, runHue, runTabs, seatCount, type Narrow, type Pick, type RunId } from "../../../lib/board/view.ts";
+import { runHue, seatCount, type RunId } from "../../../lib/board/names.ts";
+import { agents, archive, claimRows, mergedFileRows, nicksOf, openingRun, pauseChip, runTabs } from "../../../lib/board/runs.ts";
+import { conversation, narrow, type Narrow, type Pick } from "../../../lib/board/conversation.ts";
 import { readRunInHash } from "../../../lib/board/hash.ts";
 import { ConversationFilters } from "./ConversationFilters.tsx";
 import { NicksContext } from "./chips.tsx";

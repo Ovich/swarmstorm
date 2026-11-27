@@ -1,7 +1,8 @@
 // The board's top row (D7, prototype #643): Archive first, opening the closed runs, then one tab per open run, an
 // archived run picked as a tab with ×, and the merge lock at the row's end, always visible.
 import type { BoardSnapshot } from "../../../../../swarm-board/src/client/reader.ts";
-import { phaseCountText, runHue, seatCount, type RunId, type RunTab } from "../../../lib/board/view.ts";
+import { runHue, seatCount, type RunId } from "../../../lib/board/names.ts";
+import { phaseCountText, type RunTab } from "../../../lib/board/runs.ts";
 import { MergeLock } from "./MergeLock.tsx";
 
 /** A tab's count, as words: a plan's slices merged of its slices, a brainstorm's or a task's seats (rule 12); null for none. */

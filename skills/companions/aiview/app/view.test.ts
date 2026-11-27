@@ -1,7 +1,9 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { agents, archive, claimRows, conversation, flagAnswer, flagOf, mergedFileRows, narrow, pauseChip, runTabs, type Item } from "./lib/board/view.ts";
+import { agents, archive, claimRows, mergedFileRows, pauseChip, runTabs } from "./lib/board/runs.ts";
+import { conversation, flagAnswer, narrow, type Item } from "./lib/board/conversation.ts";
+import { readEvent } from "./lib/board/lines.ts";
 import { PHASE, PHASED } from "./board-fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
@@ -244,6 +246,11 @@ describe("claimRows (D7)", () => {
 });
 
 describe("flags (D10)", () => {
+  /** The flag a row raises, as the board's line reader reads it, or null. */
+  const flagOf = (e: SnapshotEvent) => {
+    const read = readEvent(e);
+    return read.kind === "flag" ? { writer: read.writer, path: read.path, holder: read.holder } : null;
+  };
   const P = "a.ts";
   const at = (s: number, kind: SnapshotEvent["kind"], from: string, body: string, about: string | null = P): SnapshotEvent => ({
     seq: s, at: AT, kind, from, body, about, run: 1,

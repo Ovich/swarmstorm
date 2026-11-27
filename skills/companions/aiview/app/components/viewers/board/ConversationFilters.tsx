@@ -2,7 +2,8 @@
 // counted within what the pick shows, then File ▾, a searchable menu of every file the items are
 // about. Escape, × or a click outside closes the menu.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { basename, conversationFiles, filterCounts, type Item, type KindFilter, type Narrow } from "../../../lib/board/view.ts";
+import { basename } from "../../../lib/board/names.ts";
+import { conversationFiles, filterCounts, type Item, type KindFilter, type Narrow } from "../../../lib/board/conversation.ts";
 
 const KINDS: { kind: KindFilter; label: string }[] = [
   { kind: "all", label: "All" },

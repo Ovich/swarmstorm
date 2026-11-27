@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { conversation, TIPS } from "./lib/board/view.ts";
+import { conversation, TIPS } from "./lib/board/conversation.ts";
 import { Conversation } from "./components/viewers/board/Conversation.tsx";
 import { TipLayer } from "./components/viewers/board/Tip.tsx";
 import { PHASED } from "./board-fixtures.ts";
