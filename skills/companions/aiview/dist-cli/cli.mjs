@@ -130,8 +130,8 @@ var init_home2 = __esm({
     init_home();
     init_proc();
     isPersonHome = (root) => {
-      const fold = (p) => process.platform === "win32" ? path3.resolve(p).toLowerCase() : path3.resolve(p);
-      return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
+      const fold2 = (p) => process.platform === "win32" ? path3.resolve(p).toLowerCase() : path3.resolve(p);
+      return fold2(root) === fold2(NEW_HOME) || fold2(root) === fold2(OLD_HOME);
     };
     HOME_PORT = 4321;
     DOCS_ROOT = path3.join(DATA_ROOT, "docs");
@@ -9303,10 +9303,38 @@ var init_links = __esm({
   }
 });
 
-// ../swarm-board/src/link/adapters.ts
-var init_adapters = __esm({
-  "../swarm-board/src/link/adapters.ts"() {
+// ../swarm-board/src/link/shell.ts
+var KILL_WAYS;
+var init_shell = __esm({
+  "../swarm-board/src/link/shell.ts"() {
     "use strict";
+    KILL_WAYS = {
+      pkill: () => "name",
+      killall: () => "name",
+      taskkill: (rest, before) => /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? before : "fed",
+      "stop-process": (rest, before) => /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? before : "fed",
+      kill: (rest, before) => rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? before : "fed",
+      wmic: (rest, before) => /\b(delete|terminate)\b/i.test(rest) ? "name" : before,
+      "invoke-cimmethod": (rest, before) => /terminate/i.test(rest) ? "fed" : before,
+      fuser: (rest, before) => /(^|\s)-k\b/.test(rest) ? "fed" : before
+    };
+    KILL_WAYS.spps = KILL_WAYS["stop-process"];
+  }
+});
+
+// ../swarm-board/src/link/activity.ts
+var init_activity = __esm({
+  "../swarm-board/src/link/activity.ts"() {
+    "use strict";
+    init_shell();
+  }
+});
+
+// ../swarm-board/src/link/harness/claude-code.ts
+var init_claude_code = __esm({
+  "../swarm-board/src/link/harness/claude-code.ts"() {
+    "use strict";
+    init_shell();
   }
 });
 
@@ -9314,7 +9342,8 @@ var init_adapters = __esm({
 var init_transcripts = __esm({
   "../swarm-board/src/link/transcripts.ts"() {
     "use strict";
-    init_adapters();
+    init_activity();
+    init_claude_code();
   }
 });
 
