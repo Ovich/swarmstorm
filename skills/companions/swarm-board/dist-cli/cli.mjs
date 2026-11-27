@@ -542,32 +542,187 @@ var init_home2 = __esm({
   }
 });
 
-// src/host/place.ts
+// src/board/store/changes.ts
+function makeChanges(db, inTransaction) {
+  const localWakers = /* @__PURE__ */ new Set();
+  const touch = () => {
+    for (const wake of [...localWakers]) queueMicrotask(wake);
+  };
+  let dirty = false;
+  const listeners = /* @__PURE__ */ new Set();
+  let watching = null;
+  let versions = /* @__PURE__ */ new Map();
+  const readVersions = () => new Map(db.prepare("SELECT repo, version FROM changes").all().map((r) => [String(r.repo), Number(r.version)]));
+  return {
+    bump(repo) {
+      db.prepare("INSERT INTO changes (repo, version) VALUES (?, 1) ON CONFLICT (repo) DO UPDATE SET version = version + 1").run(repo);
+      if (inTransaction()) dirty = true;
+      else touch();
+    },
+    onLocal(fn) {
+      localWakers.add(fn);
+      return () => {
+        localWakers.delete(fn);
+      };
+    },
+    committed(ok) {
+      if (dirty) {
+        dirty = false;
+        if (ok) touch();
+      }
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      if (!watching) {
+        versions = readVersions();
+        const check = () => {
+          let next;
+          try {
+            next = readVersions();
+          } catch {
+            return;
+          }
+          const moved = [...next].filter(([repo, v]) => versions.get(repo) !== v).map(([repo]) => repo);
+          versions = next;
+          for (const repo of moved) for (const l of [...listeners]) l(repo);
+        };
+        localWakers.add(check);
+        const poll = setInterval(check, WAIT_POLL_MS);
+        poll.unref?.();
+        watching = { close: () => (localWakers.delete(check), clearInterval(poll)) };
+      }
+      return () => {
+        listeners.delete(listener);
+        if (!listeners.size && watching) {
+          watching.close();
+          watching = null;
+        }
+      };
+    },
+    close() {
+      watching?.close();
+      watching = null;
+      listeners.clear();
+    }
+  };
+}
+var WAIT_POLL_MS;
+var init_changes = __esm({
+  "src/board/store/changes.ts"() {
+    "use strict";
+    WAIT_POLL_MS = 1e3;
+  }
+});
+
+// src/board/store/migrations.ts
+var MIGRATIONS;
+var init_migrations = __esm({
+  "src/board/store/migrations.ts"() {
+    "use strict";
+    MIGRATIONS = ["CREATE TABLE IF NOT EXISTS runs (\n  id INTEGER PRIMARY KEY,\n  repo TEXT NOT NULL,\n  plan TEXT NOT NULL,\n  title TEXT NOT NULL,\n  state TEXT NOT NULL DEFAULT 'open',\n  opened_at TEXT NOT NULL,\n  closed_at TEXT,\n  link TEXT,\n  -- what kind of work a run is (D25)\n  kind TEXT NOT NULL DEFAULT 'plan',\n  -- 1 once the run's stale event is in main; any member call resets it (D19)\n  stale_flagged INTEGER NOT NULL DEFAULT 0,\n  -- set when prune removed the run's contents; the row stays so its id is never reused (D61): never listed\n  pruned_at TEXT,\n  -- the run's current phase, set by 'phase': its name and its text; null until one is opened\n  phase TEXT,\n  phase_text TEXT,\n  -- set by pause, the orchestrator's reason; null when the run is not paused\n  paused TEXT,\n  -- when resume last lifted a pause: the stall check counts silence from it, never through the pause\n  resumed_at TEXT,\n  -- the run's stall threshold, and the stalled events posted since a counter last moved\n  stall_ms INTEGER NOT NULL DEFAULT 600000,\n  protocol TEXT,\n  -- board-split#D28: the roles the run's orchestrator holds, a JSON array\n  authority TEXT,\n  -- the branch a run's members start from, recorded at open (its pack reads it)\n  base TEXT,\n  stall_posts INTEGER NOT NULL DEFAULT 0,\n  -- idea 2: a pause waiting on the person; the current phase's watched members (JSON ids); the phase a member was last shown\n  paused_person INTEGER NOT NULL DEFAULT 0,\n  phase_watch TEXT,\n  -- the seats the current phase is for ('phase --for', JSON ids); null: every member\n  phase_for TEXT,\n  -- board-split D49: when the current phase opened; a member owes it, and can stall on it, only from then\n  phase_at TEXT\n);\nCREATE TABLE IF NOT EXISTS seats (\n  run INTEGER NOT NULL,\n  id TEXT NOT NULL,\n  role TEXT,\n  area TEXT,\n  blockers TEXT NOT NULL DEFAULT '[]',\n  state TEXT NOT NULL DEFAULT 'ready',\n  ord INTEGER NOT NULL,\n  link TEXT,\n  PRIMARY KEY (run, id)\n);\nCREATE TABLE IF NOT EXISTS participants (\n  id INTEGER PRIMARY KEY,\n  run INTEGER NOT NULL,\n  seat TEXT NOT NULL,\n  place TEXT,\n  doing TEXT NOT NULL DEFAULT '',\n  files TEXT NOT NULL DEFAULT '[]',\n  since_seq INTEGER NOT NULL DEFAULT 0,\n  joined_at TEXT NOT NULL,\n  ended_at TEXT,\n  last_call TEXT,\n  calls INTEGER NOT NULL DEFAULT 0,\n  waiting INTEGER NOT NULL DEFAULT 0,\n  -- 1 while a 'wait --mentions' is pending: a listener, not a wait (D49)\n  listening INTEGER NOT NULL DEFAULT 0,\n  nick TEXT,\n  -- the member's pack and verify setting, chosen at join (board-split#D11, D22); pack_chosen 0 on an\n  -- orchestrator's row, read as its kind's default\n  pack TEXT,\n  verify INTEGER NOT NULL DEFAULT 0,\n  pack_chosen INTEGER NOT NULL DEFAULT 0,\n  -- moved by every 'wait' start: a pending wait whose number is no longer this one is superseded (D64)\n  wait_gen INTEGER NOT NULL DEFAULT 0,\n  -- 1 once an orchestrator's quiet event is posted; its next call posts back and resets it (D15)\n  -- the member's last post, done or doing (swarm-relay D36)\n  progress_at TEXT,\n  -- board-split D49: the member's last board call that is not a self-report (a post, 'doing', an endorsement): what a\n  -- stall is measured from out of a wait\n  board_call_at TEXT,\n  quiet_flagged INTEGER NOT NULL DEFAULT 0,\n  -- simple-states: whether the member owed the open phase when its link dropped (1/0); null while its link is up\n  dropped_owing INTEGER,\n  -- board-fixes#D5: when the member's doing text was set, and the last seq then; null on an orchestrator's row\n  doing_at TEXT,\n  doing_seq INTEGER,\n  phase_shown TEXT,\n  -- the member's 'wait --mentions' that returned empty on their hold, in a row: two while it owes nothing make it idle\n  empty_waits INTEGER NOT NULL DEFAULT 0,\n  idle_ended INTEGER NOT NULL DEFAULT 0,\n  -- S22 (board-split D25): when the seat's current member joined, a re-join included; joined_at keeps the seat's first\n  -- join. Null on a first join: read as joined_at\n  seated_at TEXT,\n  UNIQUE (run, seat)\n);\nCREATE TABLE IF NOT EXISTS messages (\n  seq INTEGER PRIMARY KEY AUTOINCREMENT,\n  repo TEXT NOT NULL,\n  author INTEGER NOT NULL,\n  body TEXT NOT NULL,\n  about TEXT,\n  kind TEXT NOT NULL DEFAULT 'msg',\n  mentions TEXT NOT NULL DEFAULT '[]',\n  at TEXT NOT NULL,\n  -- 1: written by the board itself in a member's name (a pack's notice), never a member's own word\n  by_board INTEGER NOT NULL DEFAULT 0,\n  -- a board event's data beside its text (D11)\n  meta TEXT,\n  -- a message's run (D31, plan D13): its author's run\n  run INTEGER,\n  endorses INTEGER,\n  -- the board event a message is (D59); null on plain posts\n  event TEXT,\n  -- board-fixes#D13: 1 on an orchestrator's task to one seat; the seats it waits on ('--after', JSON), null for none\n  task INTEGER NOT NULL DEFAULT 0,\n  after TEXT\n);\nCREATE INDEX IF NOT EXISTS messages_repo ON messages (repo, seq);\nCREATE TABLE IF NOT EXISTS deliveries (\n  participant INTEGER NOT NULL,\n  seq INTEGER NOT NULL,\n  -- board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery\n  at TEXT,\n  PRIMARY KEY (participant, seq)\n);\n-- a version per project, moved by every write: what onChange compares (D39)\nCREATE TABLE IF NOT EXISTS changes (\n  repo TEXT PRIMARY KEY,\n  version INTEGER NOT NULL\n);\n-- one row per counted call, written by countCall in the verb's transaction (D25); deleted with its run\nCREATE TABLE IF NOT EXISTS call_log (participant INTEGER NOT NULL, at TEXT NOT NULL, verb TEXT NOT NULL);\nCREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);\n-- the board's own settings: last-upkeep (D16)\nCREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);\n-- a member done with a phase, once per run, member and phase; a phase opened again clears its rows\nCREATE TABLE IF NOT EXISTS phase_done (run INTEGER NOT NULL, participant INTEGER NOT NULL, phase TEXT NOT NULL, at TEXT NOT NULL,\n  PRIMARY KEY (run, participant, phase));\n-- a member's transcript (member: its seat id, or orchestrator) and where its token counter stands\nCREATE TABLE IF NOT EXISTS transcripts (run INTEGER NOT NULL, member TEXT NOT NULL, path TEXT NOT NULL, adapter TEXT,\n  offset INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, readable INTEGER NOT NULL DEFAULT 0,\n  read_at TEXT, moved_at TEXT, PRIMARY KEY (run, member));\n-- the poller's readings, pruned past READINGS_KEPT_MS\nCREATE TABLE IF NOT EXISTS token_readings (run INTEGER NOT NULL, member TEXT NOT NULL, t TEXT NOT NULL, tokens INTEGER NOT NULL);\nCREATE INDEX IF NOT EXISTS token_readings_by_run ON token_readings (run, t);\n-- a liveness warning posted, once per member and condition (none, unreadable); a good read clears unreadable\nCREATE TABLE IF NOT EXISTS liveness_warned (run INTEGER NOT NULL, member TEXT NOT NULL, cond TEXT NOT NULL, PRIMARY KEY (run, member, cond));\n-- board-split D55: a member's lost or stalled episode: pending at its predicate's first tick, opened at the second\n-- (its alarm), closed when the predicate is false (recovered), or at end\nCREATE TABLE IF NOT EXISTS badge_episodes (run INTEGER NOT NULL, member TEXT NOT NULL, badge TEXT NOT NULL, pending_at INTEGER NOT NULL, opened_at INTEGER, closed_at INTEGER,\n  -- board-split D55 (amended, U-F27): since when an open episode's predicate reads false, its close pending\n  clearing_at INTEGER);\nCREATE INDEX IF NOT EXISTS badge_episodes_open ON badge_episodes (run, member, badge, closed_at);\n-- a member's latest activity, from its link's frames (swarm-relay D9);\nCREATE TABLE IF NOT EXISTS member_activity (\n  run INTEGER NOT NULL, member TEXT NOT NULL,\n  grew_at INTEGER, tokens INTEGER NOT NULL DEFAULT 0, context INTEGER,\n  open_tool TEXT, open_target TEXT, open_since INTEGER, last_tool TEXT,\n  finished INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,\n  open_wait INTEGER NOT NULL DEFAULT 0,\n  -- idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link\n  in_turn INTEGER,\n  last_line TEXT,\n  bg_target TEXT,\n  bg_since INTEGER,\n  bg_grew_at INTEGER,\n  transcript TEXT,\n  -- board-split D45: the open call's and the background task's own description and whole command, for the card's line\n  open_label TEXT,\n  open_command TEXT,\n  bg_label TEXT,\n  bg_command TEXT,\n  -- D4 (G16): the link's report of the member's background listener; null before the link reports it\n  listener_running INTEGER,\n  listener_ended_at INTEGER,\n  PRIMARY KEY (run, member));\n-- a member's link as the server last saw it: connected, else lost since lost_at (ms epoch); swarm-relay D37\nCREATE TABLE IF NOT EXISTS member_links (\n  run INTEGER NOT NULL, member TEXT NOT NULL, connected INTEGER NOT NULL, lost_at INTEGER,\n  -- board-split D55: a link's last heartbeat and its drop cause\n  seen_at INTEGER,\n  cause TEXT,\n  PRIMARY KEY (run, member));\n-- board-split D55: the board server's own facts (server_up_at, ms epoch)\nCREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);\nCREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq);\n-- board-fixes#D14: a run's own messages read by run alone (a member's open task, its stale doing, the tasks awaiting it),\n-- which messages_channel cannot serve without the repo: on a store of 16k messages each read was a full scan\nCREATE INDEX IF NOT EXISTS messages_run ON messages (run, seq);\n"];
+  }
+});
+
+// src/board/store/store.ts
 import fs8 from "node:fs";
 import path8 from "node:path";
+async function openStore(dbPath) {
+  process.removeAllListeners("warning");
+  process.on("warning", (w) => {
+    if (w.name !== "ExperimentalWarning") console.warn(w);
+  });
+  const { DatabaseSync } = await import("node:sqlite");
+  fs8.mkdirSync(path8.dirname(dbPath), { recursive: true });
+  const db = new DatabaseSync(dbPath, { timeout: 5e3 });
+  const prepareAnew = db.prepare.bind(db);
+  const prepared = /* @__PURE__ */ new Map();
+  db.prepare = (sql) => prepared.get(sql) ?? prepared.set(sql, prepareAnew(sql)).get(sql);
+  db.exec(`
+    -- WAL: a write appends to the log and returns; NORMAL syncs the log at checkpoints, not at
+    -- each commit, so a power cut may lose the last writes but never corrupts the store.
+    -- A rollback journal synced every commit and capped the server near 800 writes a second.
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
+    -- concurrent verb fails outright with SQLITE_BUSY.
+    PRAGMA busy_timeout = 5000;
+  `);
+  let depth = 0;
+  const changes = makeChanges(db, () => depth > 0);
+  const tx = (fn) => {
+    if (depth > 0) return fn();
+    db.exec("BEGIN IMMEDIATE");
+    depth++;
+    let ok = false;
+    try {
+      const out = fn();
+      db.exec("COMMIT");
+      ok = true;
+      return out;
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    } finally {
+      depth--;
+      changes.committed(ok);
+    }
+  };
+  migrate(db);
+  return {
+    db,
+    tx,
+    now: () => (/* @__PURE__ */ new Date()).toISOString(),
+    changes,
+    close() {
+      changes.close();
+      db.close();
+    }
+  };
+}
+function migrate(db) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    for (const text of MIGRATIONS) db.exec(text);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+var init_store = __esm({
+  "src/board/store/store.ts"() {
+    "use strict";
+    init_changes();
+    init_migrations();
+  }
+});
+
+// src/host/place.ts
+import fs9 from "node:fs";
+import path9 from "node:path";
 function canonicalPath(p) {
-  const resolved = real(path8.resolve(p));
+  const resolved = real(path9.resolve(p));
   return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
 }
 function repoOf(dir) {
   const common = git(dir, "rev-parse", "--git-common-dir");
-  return common ? real(path8.resolve(dir, common)) : null;
+  return common ? real(path9.resolve(dir, common)) : null;
 }
 function worktreeOf(dir) {
   const top = git(dir, "rev-parse", "--show-toplevel");
-  return top ? path8.resolve(top) : null;
+  return top ? path9.resolve(top) : null;
 }
 function resolveIn(root, spec, opts = {}) {
-  if (path8.isAbsolute(spec)) return { abs: spec, missing: [] };
+  if (path9.isAbsolute(spec)) return { abs: spec, missing: [] };
   const cwd = opts.cwd ?? process.cwd();
-  const here = root && !inside(root, cwd) ? path8.resolve(root, spec) : path8.resolve(cwd, spec);
-  if (fs8.existsSync(here)) return { abs: here, missing: [] };
-  const fromRoot = root ? path8.resolve(root, spec) : null;
-  if (fromRoot && fs8.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
+  const here = root && !inside(root, cwd) ? path9.resolve(root, spec) : path9.resolve(cwd, spec);
+  if (fs9.existsSync(here)) return { abs: here, missing: [] };
+  const fromRoot = root ? path9.resolve(root, spec) : null;
+  if (fromRoot && fs9.existsSync(fromRoot)) return { abs: fromRoot, missing: [] };
   return { abs: here, missing: opts.create ? [] : [here, ...fromRoot && fromRoot !== here ? [fromRoot] : []] };
 }
 function relativeIn(root, abs) {
-  return (root ? path8.relative(root, abs) : abs).split(path8.sep).join("/");
+  return (root ? path9.relative(root, abs) : abs).split(path9.sep).join("/");
 }
 var real, inside;
 var init_place = __esm({
@@ -576,32 +731,32 @@ var init_place = __esm({
     init_git();
     real = (p) => {
       try {
-        return fs8.realpathSync.native(p);
+        return fs9.realpathSync.native(p);
       } catch {
         return p;
       }
     };
     inside = (root, dir) => {
-      const rel = path8.relative(path8.resolve(root), path8.resolve(dir));
-      return !rel.startsWith("..") && !path8.isAbsolute(rel);
+      const rel = path9.relative(path9.resolve(root), path9.resolve(dir));
+      return !rel.startsWith("..") && !path9.isAbsolute(rel);
     };
   }
 });
 
 // src/host/trace.ts
-import fs9 from "node:fs";
-import path9 from "node:path";
+import fs10 from "node:fs";
+import path10 from "node:path";
 function readTraceLevel(dataRoot) {
   try {
-    const w = fs9.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
+    const w = fs10.readFileSync(traceLevelFile(dataRoot), "utf8").trim();
     return TRACE_LEVELS.includes(w) ? w : "info";
   } catch {
     return "info";
   }
 }
 function writeTraceLevel(dataRoot, level) {
-  fs9.mkdirSync(traceRoot(dataRoot), { recursive: true });
-  fs9.writeFileSync(traceLevelFile(dataRoot), `${level}
+  fs10.mkdirSync(traceRoot(dataRoot), { recursive: true });
+  fs10.writeFileSync(traceLevelFile(dataRoot), `${level}
 `);
 }
 function makeTracer(dataRoot) {
@@ -611,7 +766,7 @@ function makeTracer(dataRoot) {
   const levelNow = () => {
     let m = 0;
     try {
-      m = fs9.statSync(traceLevelFile(dataRoot)).mtimeMs;
+      m = fs10.statSync(traceLevelFile(dataRoot)).mtimeMs;
     } catch {
     }
     if (m !== stamp) {
@@ -623,12 +778,12 @@ function makeTracer(dataRoot) {
   const made = /* @__PURE__ */ new Set();
   const append = (file, line) => {
     try {
-      const dir = path9.dirname(file);
+      const dir = path10.dirname(file);
       if (!made.has(dir)) {
-        fs9.mkdirSync(dir, { recursive: true });
+        fs10.mkdirSync(dir, { recursive: true });
         made.add(dir);
       }
-      fs9.appendFileSync(file, `${JSON.stringify(line)}
+      fs10.appendFileSync(file, `${JSON.stringify(line)}
 `);
     } catch {
     }
@@ -637,7 +792,7 @@ function makeTracer(dataRoot) {
   const kv = (o) => Object.entries(o).filter(([, v]) => v !== null && v !== void 0).map(([k, v]) => `${k}=${typeof v === "string" && /[s"=]/.test(v) ? JSON.stringify(v) : typeof v === "object" ? JSON.stringify(v) : v}`).join(" ");
   const say = (sev, what, o) => {
     try {
-      fs9.appendFileSync(serverLogFile(dataRoot), `${kv({ at: (/* @__PURE__ */ new Date()).toISOString(), level: sev, event: what, ...o })}
+      fs10.appendFileSync(serverLogFile(dataRoot), `${kv({ at: (/* @__PURE__ */ new Date()).toISOString(), level: sev, event: what, ...o })}
 `);
     } catch {
     }
@@ -674,17 +829,17 @@ function makeTracer(dataRoot) {
       infoOf(kind, fields);
       if (l === "info") return;
       const at = /* @__PURE__ */ new Date();
-      append(path9.join(root, dayOf(at), "events.jsonl"), { ...fields, at: at.toISOString(), kind });
+      append(path10.join(root, dayOf(at), "events.jsonl"), { ...fields, at: at.toISOString(), kind });
     },
     message(run2, fields) {
       if (levelNow() !== "debug-extended") return;
       const at = /* @__PURE__ */ new Date();
-      append(path9.join(root, dayOf(at), "messages", `run-${run2}.jsonl`), { at: at.toISOString(), run: run2, ...fields });
+      append(path10.join(root, dayOf(at), "messages", `run-${run2}.jsonl`), { at: at.toISOString(), run: run2, ...fields });
     },
     prune(at = /* @__PURE__ */ new Date()) {
       const oldest = dayOf(new Date(at.getTime() - KEEP_DAYS * 864e5));
       try {
-        for (const d of fs9.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs9.rmSync(path9.join(root, d), { recursive: true, force: true });
+        for (const d of fs10.readdirSync(root)) if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d < oldest) fs10.rmSync(path10.join(root, d), { recursive: true, force: true });
       } catch {
       }
     }
@@ -701,8 +856,8 @@ var init_trace = __esm({
     LONG_WAIT_MS = 6e4;
     MANY_UNREAD = 5;
     INFO_EVENTS = /* @__PURE__ */ new Set(["opened", "closed", "phase", "all-done", "joined", "ended", "lost", "pause", "resume"]);
-    traceRoot = (dataRoot) => path9.join(dataRoot, "logs");
-    traceLevelFile = (dataRoot) => path9.join(traceRoot(dataRoot), "level");
+    traceRoot = (dataRoot) => path10.join(dataRoot, "logs");
+    traceLevelFile = (dataRoot) => path10.join(traceRoot(dataRoot), "level");
     SILENT = { event() {
     }, message() {
     }, prune() {
@@ -957,8 +1112,8 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
   const live = db.prepare("SELECT c.path, c.participant, p.seat, r.plan FROM claims c JOIN participants p ON p.id = c.participant JOIN runs r ON r.id = p.run WHERE c.repo = ? ORDER BY c.rowid").all(repo).filter((c) => isLive(Number(c.participant)));
   const files = /* @__PURE__ */ new Map();
   for (const c of live) {
-    const path23 = String(c.path);
-    (files.get(path23) ?? files.set(path23, { path: path23, holders: [] }).get(path23)).holders.push(`${c.plan}/${c.seat}`);
+    const path24 = String(c.path);
+    (files.get(path24) ?? files.set(path24, { path: path24, holders: [] }).get(path24)).holders.push(`${c.plan}/${c.seat}`);
   }
   for (const r of people) {
     if (String(r.seat) === orchestratorSeat || !isLive(Number(r.id))) continue;
@@ -968,7 +1123,7 @@ function codeSnapshotOf(deps, repo, people, orchestratorSeat) {
       if (f && !f.holders.includes(name)) f.holders.push(name);
     }
   }
-  const sharedBy = (path23, id) => live.some((c) => String(c.path) === path23 && Number(c.participant) !== id);
+  const sharedBy = (path24, id) => live.some((c) => String(c.path) === path24 && Number(c.participant) !== id);
   const lockHistory = db.prepare("SELECT t.asked_at, t.granted_at, t.merged_at, t.refused, p.seat, r.plan FROM lock_requests t JOIN participants p ON p.id = t.participant JOIN runs r ON r.id = p.run WHERE t.repo = ? ORDER BY t.asked_at DESC, t.rowid DESC LIMIT 50").all(repo).map((t) => ({
     member: `${t.plan}/${t.seat}`,
     askedAt: String(t.asked_at),
@@ -1057,9 +1212,9 @@ var init_schema = __esm({
 });
 
 // src/packs/code/worktrees.ts
-import fs10 from "node:fs";
+import fs11 from "node:fs";
 import os5 from "node:os";
-import path10 from "node:path";
+import path11 from "node:path";
 function run(cwd, ...argv) {
   const r = hiddenSpawnSync("git", argv, { cwd, encoding: "utf8" });
   return { ok: r.status === 0, out: (r.stdout ?? "").trim(), err: (r.stderr ?? "").trim() || (r.error?.message ?? "") };
@@ -1067,16 +1222,16 @@ function run(cwd, ...argv) {
 function inLinkedWorktree(cwd) {
   const dir = git(cwd, "rev-parse", "--absolute-git-dir");
   const common = git(cwd, "rev-parse", "--git-common-dir");
-  return !!dir && !!common && !same(dir, path10.resolve(cwd, common));
+  return !!dir && !!common && !same(dir, path11.resolve(cwd, common));
 }
 function ensureWorktree(cwd, repo, runId, group, seat, base) {
   const at = worktreeDir(repo, runId, seat);
   const branch = branchFor(runId, group, seat);
-  const top = fs10.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
+  const top = fs11.existsSync(at) ? git(at, "rev-parse", "--show-toplevel") : null;
   if (top && same(top, at)) return { path: at, branch: git(at, "rev-parse", "--abbrev-ref", "HEAD") ?? branch, reused: true };
-  if (fs10.existsSync(at) && fs10.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
+  if (fs11.existsSync(at) && fs11.readdirSync(at).length) throw new Error(`${at} exists and is not a worktree: remove it, then join again`);
   run(cwd, "worktree", "prune");
-  fs10.mkdirSync(path10.dirname(at), { recursive: true });
+  fs11.mkdirSync(path11.dirname(at), { recursive: true });
   const from = baseRef(cwd, base);
   const argv = !branchExists(cwd, branch) ? ["-b", branch, "--end-of-options", at, from] : isAncestor(cwd, branch, from) ? ["-B", branch, "--end-of-options", at, from] : ["--end-of-options", at, branch];
   const r = run(cwd, "worktree", "add", "-q", ...argv);
@@ -1088,7 +1243,7 @@ function targetName(cwd, into) {
   return /^[0-9a-f]{7,40}$/i.test(into) ? `commit ${into.slice(0, 8)} (the run's base; it was opened on no branch)` : into;
 }
 function leftover(wt, into) {
-  if (!fs10.existsSync(wt)) return null;
+  if (!fs11.existsSync(wt)) return null;
   const status = run(wt, "status", "--porcelain", "--untracked-files=all");
   if (!status.ok) return `git status failed: ${status.err}`;
   const changed = status.out.split(/\r?\n/).filter(Boolean).length;
@@ -1102,7 +1257,7 @@ function leftover(wt, into) {
   return null;
 }
 function removeWorktree(wt, repo) {
-  if (!fs10.existsSync(wt)) {
+  if (!fs11.existsSync(wt)) {
     run(os5.tmpdir(), `--git-dir=${repo}`, "worktree", "prune");
     return null;
   }
@@ -1120,7 +1275,7 @@ function worktrees(repo) {
     place(run2, group, seat, cwd) {
       if (inLinkedWorktree(cwd) && !owned(worktreeOf(cwd), repo)) return null;
       const at = worktreeDir(repo, run2, seat);
-      return { path: at, branch: branchFor(run2, group, seat), reused: fs10.existsSync(at) };
+      return { path: at, branch: branchFor(run2, group, seat), reused: fs11.existsSync(at) };
     },
     /** The seat's worktree, made from `base` or reused when it is there; git runs from the repository's git dir. */
     forSeat(run2, group, seat, base) {
@@ -1162,14 +1317,14 @@ var init_worktrees = __esm({
     init_git();
     init_links();
     init_place();
-    worktreesRoot = (repo) => path10.join(repo, "swarm", "worktrees");
+    worktreesRoot = (repo) => path11.join(repo, "swarm", "worktrees");
     fold2 = canonicalPath;
     safe = (s) => s.replace(/[^A-Za-z0-9._-]/g, "_");
-    worktreeDir = (repo, run2, seat) => path10.join(worktreesRoot(repo), String(run2), safe(seat));
+    worktreeDir = (repo, run2, seat) => path11.join(worktreesRoot(repo), String(run2), safe(seat));
     branchFor = (run2, group, seat) => `swarm/${run2}-${group}/${seat}`;
-    owned = (wt, repo) => !!wt && fold2(path10.dirname(path10.dirname(wt))) === fold2(worktreesRoot(repo));
+    owned = (wt, repo) => !!wt && fold2(path11.dirname(path11.dirname(wt))) === fold2(worktreesRoot(repo));
     worktreeDirs = (repos) => {
-      const sub = (d) => fs10.existsSync(d) ? fs10.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path10.join(d, e.name)) : [];
+      const sub = (d) => fs11.existsSync(d) ? fs11.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path11.join(d, e.name)) : [];
       return [...new Set(repos)].flatMap((repo) => sub(worktreesRoot(repo)).flatMap(sub));
     };
     same = (a, b) => fold2(a) === fold2(b);
@@ -1179,10 +1334,10 @@ var init_worktrees = __esm({
 });
 
 // src/packs/code/index.ts
-import fs11 from "node:fs";
-import path11 from "node:path";
+import fs12 from "node:fs";
+import path12 from "node:path";
 function makeWorktree(verb, member, input, ctx) {
-  if (!member.place || !worktrees(member.repo).owns(member.place) || fs11.existsSync(member.place)) return { made: false };
+  if (!member.place || !worktrees(member.repo).owns(member.place) || fs12.existsSync(member.place)) return { made: false };
   const base = ctx.base ?? (typeof input.cwd === "string" ? baseAt(input.cwd) : null);
   if (!base) return { refused: { reason: "git", verb, detail: `${member.name}: no base to make the worktree from` } };
   try {
@@ -1205,7 +1360,7 @@ var init_code2 = __esm({
     slashed = (p) => p.split("\\").join("/");
     ownWorktree = (member) => {
       const seatTrees = worktrees(member.repo);
-      return seatTrees.owns(member.place) && fs11.existsSync(member.place) ? slashed(member.place) : null;
+      return seatTrees.owns(member.place) && fs12.existsSync(member.place) ? slashed(member.place) : null;
     };
     tablesOf = (ctx) => ctx.tables;
     tableWrite = (countedAs, apply, progress = false) => ({
@@ -1270,14 +1425,14 @@ var init_code2 = __esm({
             return tables.seatWorktrees(typeof input.run === "number" ? input.run : void 0);
           // a run's close: its worktrees go once clean and merged, each seat's link stopped first
           case "close": {
-            const trees = tables.seatWorktrees(Number(input.run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs11.existsSync(w.worktree));
+            const trees = tables.seatWorktrees(Number(input.run)).filter((w) => worktrees(w.repo).owns(w.worktree) && fs12.existsSync(w.worktree));
             return trees.map((w) => ({ worktree: slashed(w.worktree), member: w.member, ...worktrees(w.repo).release({ run: w.run, member: w.member, worktree: w.worktree }, w.base) }));
           }
           // `worktree prune`: every worktree folder of each repository the board knows, judged by its latest record
           case "prune": {
             const known = tables.seatWorktrees();
             const repos = [.../* @__PURE__ */ new Set([...known.map((k) => k.repo), ...input.repos])];
-            const fold3 = (s) => process.platform === "win32" ? path11.resolve(s).toLowerCase() : path11.resolve(s);
+            const fold3 = (s) => process.platform === "win32" ? path12.resolve(s).toLowerCase() : path12.resolve(s);
             const recordOf = (dir) => known.filter((k) => fold3(k.worktree) === fold3(dir)).at(-1) ?? null;
             return sweepAll(repos, recordOf).map((o) => ({ ...o, worktree: slashed(o.worktree) }));
           }
@@ -1526,8 +1681,7 @@ var init_owing = __esm({
 });
 
 // src/board/board.ts
-import fs12 from "node:fs";
-import path12 from "node:path";
+import path13 from "node:path";
 function alarmSubjectOf(m) {
   const head = /^\S+ (\S+?\/\S+?):? /.exec(m.body)?.[1];
   return head ?? null;
@@ -1540,209 +1694,10 @@ function messageLine(m) {
   return `#${m.seq} ${m.from}${kind}${about}: ${text}`;
 }
 async function openBoard(dbPath = SQLITE_PATH) {
-  process.removeAllListeners("warning");
-  process.on("warning", (w) => {
-    if (w.name !== "ExperimentalWarning") console.warn(w);
-  });
-  const { DatabaseSync } = await import("node:sqlite");
-  fs12.mkdirSync(path12.dirname(dbPath), { recursive: true });
-  const db = new DatabaseSync(dbPath, { timeout: 5e3 });
-  const prepareAnew = db.prepare.bind(db);
-  const prepared = /* @__PURE__ */ new Map();
-  db.prepare = (sql) => prepared.get(sql) ?? prepared.set(sql, prepareAnew(sql)).get(sql);
-  db.exec(`
-    -- WAL: a write appends to the log and returns; NORMAL syncs the log at checkpoints, not at
-    -- each commit, so a power cut may lose the last writes but never corrupts the store.
-    -- A rollback journal synced every commit and capped the server near 800 writes a second.
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-    -- Several CLI processes write, and aiview reads, concurrently; without a busy timeout a
-    -- concurrent verb fails outright with SQLITE_BUSY.
-    PRAGMA busy_timeout = 5000;
-    CREATE TABLE IF NOT EXISTS runs (
-      id INTEGER PRIMARY KEY,
-      repo TEXT NOT NULL,
-      plan TEXT NOT NULL,
-      title TEXT NOT NULL,
-      state TEXT NOT NULL DEFAULT 'open',
-      opened_at TEXT NOT NULL,
-      closed_at TEXT,
-      link TEXT,
-      -- what kind of work a run is (D25)
-      kind TEXT NOT NULL DEFAULT 'plan',
-      -- 1 once the run's stale event is in main; any member call resets it (D19)
-      stale_flagged INTEGER NOT NULL DEFAULT 0,
-      -- set when prune removed the run's contents; the row stays so its id is never reused (D61): never listed
-      pruned_at TEXT,
-      -- the run's current phase, set by 'phase': its name and its text; null until one is opened
-      phase TEXT,
-      phase_text TEXT,
-      -- set by pause, the orchestrator's reason; null when the run is not paused
-      paused TEXT,
-      -- when resume last lifted a pause: the stall check counts silence from it, never through the pause
-      resumed_at TEXT,
-      -- the run's stall threshold, and the stalled events posted since a counter last moved
-      stall_ms INTEGER NOT NULL DEFAULT ${STALL_MS_DEFAULT},
-      protocol TEXT,
-      -- board-split#D28: the roles the run's orchestrator holds, a JSON array
-      authority TEXT,
-      -- the branch a run's members start from, recorded at open (its pack reads it)
-      base TEXT,
-      stall_posts INTEGER NOT NULL DEFAULT 0,
-      -- idea 2: a pause waiting on the person; the current phase's watched members (JSON ids); the phase a member was last shown
-      paused_person INTEGER NOT NULL DEFAULT 0,
-      phase_watch TEXT,
-      -- the seats the current phase is for ('phase --for', JSON ids); null: every member
-      phase_for TEXT,
-      -- board-split D49: when the current phase opened; a member owes it, and can stall on it, only from then
-      phase_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS seats (
-      run INTEGER NOT NULL,
-      id TEXT NOT NULL,
-      role TEXT,
-      area TEXT,
-      blockers TEXT NOT NULL DEFAULT '[]',
-      state TEXT NOT NULL DEFAULT 'ready',
-      ord INTEGER NOT NULL,
-      link TEXT,
-      PRIMARY KEY (run, id)
-    );
-    CREATE TABLE IF NOT EXISTS participants (
-      id INTEGER PRIMARY KEY,
-      run INTEGER NOT NULL,
-      seat TEXT NOT NULL,
-      place TEXT,
-      doing TEXT NOT NULL DEFAULT '',
-      files TEXT NOT NULL DEFAULT '[]',
-      since_seq INTEGER NOT NULL DEFAULT 0,
-      joined_at TEXT NOT NULL,
-      ended_at TEXT,
-      last_call TEXT,
-      calls INTEGER NOT NULL DEFAULT 0,
-      waiting INTEGER NOT NULL DEFAULT 0,
-      -- 1 while a 'wait --mentions' is pending: a listener, not a wait (D49)
-      listening INTEGER NOT NULL DEFAULT 0,
-      nick TEXT,
-      -- the member's pack and verify setting, chosen at join (board-split#D11, D22); pack_chosen 0 on an
-      -- orchestrator's row, read as its kind's default
-      pack TEXT,
-      verify INTEGER NOT NULL DEFAULT 0,
-      pack_chosen INTEGER NOT NULL DEFAULT 0,
-      -- moved by every 'wait' start: a pending wait whose number is no longer this one is superseded (D64)
-      wait_gen INTEGER NOT NULL DEFAULT 0,
-      -- 1 once an orchestrator's quiet event is posted; its next call posts back and resets it (D15)
-      -- the member's last post, done or doing (swarm-relay D36)
-      progress_at TEXT,
-      -- board-split D49: the member's last board call that is not a self-report (a post, 'doing', an endorsement): what a
-      -- stall is measured from out of a wait
-      board_call_at TEXT,
-      quiet_flagged INTEGER NOT NULL DEFAULT 0,
-      -- simple-states: whether the member owed the open phase when its link dropped (1/0); null while its link is up
-      dropped_owing INTEGER,
-      -- board-fixes#D5: when the member's doing text was set, and the last seq then; null on an orchestrator's row
-      doing_at TEXT,
-      doing_seq INTEGER,
-      phase_shown TEXT,
-      -- the member's 'wait --mentions' that returned empty on their hold, in a row: two while it owes nothing make it idle
-      empty_waits INTEGER NOT NULL DEFAULT 0,
-      idle_ended INTEGER NOT NULL DEFAULT 0,
-      -- S22 (board-split D25): when the seat's current member joined, a re-join included; joined_at keeps the seat's first
-      -- join. Null on a first join: read as joined_at
-      seated_at TEXT,
-      UNIQUE (run, seat)
-    );
-    CREATE TABLE IF NOT EXISTS messages (
-      seq INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo TEXT NOT NULL,
-      author INTEGER NOT NULL,
-      body TEXT NOT NULL,
-      about TEXT,
-      kind TEXT NOT NULL DEFAULT 'msg',
-      mentions TEXT NOT NULL DEFAULT '[]',
-      at TEXT NOT NULL,
-      -- 1: written by the board itself in a member's name (a pack's notice), never a member's own word
-      by_board INTEGER NOT NULL DEFAULT 0,
-      -- a board event's data beside its text (D11)
-      meta TEXT,
-      -- a message's run (D31, plan D13): its author's run
-      run INTEGER,
-      endorses INTEGER,
-      -- the board event a message is (D59); null on plain posts
-      event TEXT,
-      -- board-fixes#D13: 1 on an orchestrator's task to one seat; the seats it waits on ('--after', JSON), null for none
-      task INTEGER NOT NULL DEFAULT 0,
-      after TEXT
-    );
-    CREATE INDEX IF NOT EXISTS messages_repo ON messages (repo, seq);
-    CREATE TABLE IF NOT EXISTS deliveries (
-      participant INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      -- board-split D54: when a message was delivered to its member, so a task's owing clock starts at its delivery
-      at TEXT,
-      PRIMARY KEY (participant, seq)
-    );
-    -- a version per project, moved by every write: what onChange compares (D39)
-    CREATE TABLE IF NOT EXISTS changes (
-      repo TEXT PRIMARY KEY,
-      version INTEGER NOT NULL
-    );
-    -- one row per counted call, written by countCall in the verb's transaction (D25); deleted with its run
-    CREATE TABLE IF NOT EXISTS call_log (participant INTEGER NOT NULL, at TEXT NOT NULL, verb TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS call_log_by_participant ON call_log (participant, at);
-    -- the board's own settings: last-upkeep (D16)
-    CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
-    -- a member done with a phase, once per run, member and phase; a phase opened again clears its rows
-    CREATE TABLE IF NOT EXISTS phase_done (run INTEGER NOT NULL, participant INTEGER NOT NULL, phase TEXT NOT NULL, at TEXT NOT NULL,
-      PRIMARY KEY (run, participant, phase));
-    -- a member's transcript (member: its seat id, or orchestrator) and where its token counter stands
-    CREATE TABLE IF NOT EXISTS transcripts (run INTEGER NOT NULL, member TEXT NOT NULL, path TEXT NOT NULL, adapter TEXT,
-      offset INTEGER NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, readable INTEGER NOT NULL DEFAULT 0,
-      read_at TEXT, moved_at TEXT, PRIMARY KEY (run, member));
-    -- the poller's readings, pruned past READINGS_KEPT_MS
-    CREATE TABLE IF NOT EXISTS token_readings (run INTEGER NOT NULL, member TEXT NOT NULL, t TEXT NOT NULL, tokens INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS token_readings_by_run ON token_readings (run, t);
-    -- a liveness warning posted, once per member and condition (none, unreadable); a good read clears unreadable
-    CREATE TABLE IF NOT EXISTS liveness_warned (run INTEGER NOT NULL, member TEXT NOT NULL, cond TEXT NOT NULL, PRIMARY KEY (run, member, cond));
-    -- board-split D55: a member's lost or stalled episode: pending at its predicate's first tick, opened at the second
-    -- (its alarm), closed when the predicate is false (recovered), or at end
-    CREATE TABLE IF NOT EXISTS badge_episodes (run INTEGER NOT NULL, member TEXT NOT NULL, badge TEXT NOT NULL, pending_at INTEGER NOT NULL, opened_at INTEGER, closed_at INTEGER,
-      -- board-split D55 (amended, U-F27): since when an open episode's predicate reads false, its close pending
-      clearing_at INTEGER);
-    CREATE INDEX IF NOT EXISTS badge_episodes_open ON badge_episodes (run, member, badge, closed_at);
-    -- a member's latest activity, from its link's frames (swarm-relay D9);
-    CREATE TABLE IF NOT EXISTS member_activity (
-      run INTEGER NOT NULL, member TEXT NOT NULL,
-      grew_at INTEGER, tokens INTEGER NOT NULL DEFAULT 0, context INTEGER,
-      open_tool TEXT, open_target TEXT, open_since INTEGER, last_tool TEXT,
-      finished INTEGER NOT NULL DEFAULT 0, at INTEGER NOT NULL,
-      open_wait INTEGER NOT NULL DEFAULT 0,
-      -- idea 1: the turn state, the last line, the awaited background task and the transcript's path, from the link
-      in_turn INTEGER,
-      last_line TEXT,
-      bg_target TEXT,
-      bg_since INTEGER,
-      bg_grew_at INTEGER,
-      transcript TEXT,
-      -- board-split D45: the open call's and the background task's own description and whole command, for the card's line
-      open_label TEXT,
-      open_command TEXT,
-      bg_label TEXT,
-      bg_command TEXT,
-      -- D4 (G16): the link's report of the member's background listener; null before the link reports it
-      listener_running INTEGER,
-      listener_ended_at INTEGER,
-      PRIMARY KEY (run, member));
-    -- a member's link as the server last saw it: connected, else lost since lost_at (ms epoch); swarm-relay D37
-    CREATE TABLE IF NOT EXISTS member_links (
-      run INTEGER NOT NULL, member TEXT NOT NULL, connected INTEGER NOT NULL, lost_at INTEGER,
-      -- board-split D55: a link's last heartbeat and its drop cause
-      seen_at INTEGER,
-      cause TEXT,
-      PRIMARY KEY (run, member));
-    -- board-split D55: the board server's own facts (server_up_at, ms epoch)
-    CREATE TABLE IF NOT EXISTS server_facts (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
-  `);
+  const store = await openStore(dbPath);
+  const { db, now } = store;
+  const transaction = store.tx;
+  const bump = store.changes.bump;
   const endClosedOrchestratorSeats = () => {
     const at = (/* @__PURE__ */ new Date()).toISOString();
     db.prepare(
@@ -1752,41 +1707,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
     ).run(at, ORCHESTRATORS_GROUP);
   };
   endClosedOrchestratorSeats();
-  db.exec("CREATE INDEX IF NOT EXISTS messages_channel ON messages (repo, run, seq)");
-  db.exec("CREATE INDEX IF NOT EXISTS messages_run ON messages (run, seq)");
-  const localWakers = /* @__PURE__ */ new Set();
-  const touch = () => {
-    for (const wake of [...localWakers]) queueMicrotask(wake);
-  };
-  const now = () => (/* @__PURE__ */ new Date()).toISOString();
-  let depth = 0;
-  let dirty = false;
-  const transaction = (fn) => {
-    if (depth > 0) return fn();
-    db.exec("BEGIN IMMEDIATE");
-    depth++;
-    let ok = false;
-    try {
-      const out = fn();
-      db.exec("COMMIT");
-      ok = true;
-      return out;
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    } finally {
-      depth--;
-      if (dirty) {
-        dirty = false;
-        if (ok) touch();
-      }
-    }
-  };
-  const bump = (repo) => {
-    db.prepare("INSERT INTO changes (repo, version) VALUES (?, 1) ON CONFLICT (repo) DO UPDATE SET version = version + 1").run(repo);
-    if (depth > 0) dirty = true;
-    else touch();
-  };
   const runRowOrNone = (id) => db.prepare("SELECT * FROM runs WHERE id = ?").get(id);
   const runRow = (id) => runRowOrNone(id) ?? (() => {
     throw new Error(`unknown run ${id}`);
@@ -1926,17 +1846,17 @@ async function openBoard(dbPath = SQLITE_PATH) {
   const slashes = (rel) => rel.split(/[\\/]+/).filter((x) => x && x !== ".").join("/");
   const roots = (repo) => {
     const out = /* @__PURE__ */ new Set();
-    if (path12.basename(repo).toLowerCase() === ".git") out.add(path12.resolve(path12.dirname(repo)));
+    if (path13.basename(repo).toLowerCase() === ".git") out.add(path13.resolve(path13.dirname(repo)));
     const rows = db.prepare("SELECT DISTINCT p.place FROM participants p JOIN runs r ON r.id = p.run WHERE r.repo = ? AND p.place IS NOT NULL").all(repo);
-    for (const r of rows) out.add(path12.resolve(String(r.place)));
+    for (const r of rows) out.add(path13.resolve(String(r.place)));
     return [...out].sort((a, b) => b.length - a.length);
   };
   const relPath = (repo, file) => {
-    if (!path12.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
-    const abs = fold3(path12.resolve(file));
+    if (!path13.isAbsolute(file) && !file.startsWith("/")) return slashes(file) || null;
+    const abs = fold3(path13.resolve(file));
     for (const root of roots(repo)) {
       const r = fold3(root);
-      if (abs.startsWith(r.endsWith(path12.sep) ? r : r + path12.sep)) return slashes(path12.resolve(file).slice(root.length)) || null;
+      if (abs.startsWith(r.endsWith(path13.sep) ? r : r + path13.sep)) return slashes(path13.resolve(file).slice(root.length)) || null;
     }
     return null;
   };
@@ -2057,10 +1977,6 @@ async function openBoard(dbPath = SQLITE_PATH) {
       paused: r.paused == null ? null : { text: String(r.paused), person: Number(r.paused_person ?? 0) === 1 }
     };
   };
-  const listeners = /* @__PURE__ */ new Set();
-  let watching = null;
-  let versions = /* @__PURE__ */ new Map();
-  const readVersions = () => new Map(db.prepare("SELECT repo, version FROM changes").all().map((r) => [String(r.repo), Number(r.version)]));
   const insertSeat = (run2, s, ord) => {
     db.prepare("INSERT INTO seats (run, id, role, area, blockers, link, ord) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
       run2,
@@ -2464,7 +2380,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const packName = given.pack?.name ?? null;
       const verify = given.verify ? 1 : 0;
       if (files.length && packName === null) throw new Error(registry.declaredRefused(profile.kind));
-      const where = place && packName !== null ? path12.resolve(place) : null;
+      const where = place && packName !== null ? path13.resolve(place) : null;
       return transaction(() => {
         let entry2 = "new";
         const id = transaction(() => {
@@ -2533,7 +2449,7 @@ async function openBoard(dbPath = SQLITE_PATH) {
       const rows = db.prepare(`${PARTICIPANT_SQL} WHERE p.place IS NOT NULL AND p.ended_at IS NULL AND r.state = 'open'`).all().filter(
         (r) => {
           const root = canonicalPath(String(r.place));
-          return here === root || here.startsWith(root.endsWith(path12.sep) ? root : root + path12.sep);
+          return here === root || here.startsWith(root.endsWith(path13.sep) ? root : root + path13.sep);
         }
       );
       if (!rows.length) return null;
@@ -2923,10 +2839,12 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         let poll;
         let timer;
         let timedOut = false;
+        let offLocal = () => {
+        };
         const finish = (d) => {
           if (settled) return;
           settled = true;
-          localWakers.delete(check);
+          offLocal();
           abort?.removeEventListener("abort", onAbort);
           clearInterval(poll);
           clearTimeout(timer);
@@ -2962,7 +2880,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         const onAbort = () => finish({ full: [] });
         if (abort?.aborted) return onAbort();
         abort?.addEventListener("abort", onAbort);
-        localWakers.add(check);
+        offLocal = store.changes.onLocal(check);
         poll = setInterval(check, WAIT_POLL_MS);
         if (timeoutMs !== void 0)
           timer = setTimeout(() => {
@@ -3152,32 +3070,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       };
     },
     onChange(listener) {
-      listeners.add(listener);
-      if (!watching) {
-        versions = readVersions();
-        const check = () => {
-          let next;
-          try {
-            next = readVersions();
-          } catch {
-            return;
-          }
-          const moved = [...next].filter(([repo, v]) => versions.get(repo) !== v).map(([repo]) => repo);
-          versions = next;
-          for (const repo of moved) for (const l of [...listeners]) l(repo);
-        };
-        localWakers.add(check);
-        const poll = setInterval(check, WAIT_POLL_MS);
-        poll.unref?.();
-        watching = { close: () => (localWakers.delete(check), clearInterval(poll)) };
-      }
-      return () => {
-        listeners.delete(listener);
-        if (!listeners.size && watching) {
-          watching.close();
-          watching = null;
-        }
-      };
+      return store.changes.onChange(listener);
     },
     recordLink(run2, member, link) {
       const before = db.prepare("SELECT connected, cause FROM member_links WHERE run = ? AND member = ?").get(run2, member);
@@ -3200,10 +3093,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
       }));
     },
     close() {
-      watching?.close();
-      watching = null;
-      listeners.clear();
-      db.close();
+      store.close();
     }
   };
   const PROGRESS_VERBS = /* @__PURE__ */ new Set(["post", "done", "setDoing", "endorse"]);
@@ -3232,11 +3122,13 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
   board.wait = counted("wait", board.wait);
   return board;
 }
-var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, THREAD_EVENTS, shownInThread, THREAD_LIMIT, THREAD_LIMIT_MAX, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, WAIT_POLL_MS, LINE_WIDTH, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
+var projectFolderName, goneSuffix, PROTOCOL_NAME, AUTHORITY_ROLE, authorityOf, THREAD_EVENTS, shownInThread, THREAD_LIMIT, THREAD_LIMIT_MAX, BOARD_ALARMS, PHASE_NAME, SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, LINE_WIDTH, WAIT_LOG_EVERY_MS, UPKEEP_EVERY_MS, LAST_UPKEEP, RETENTION_DAYS, DAY_MS, EVENTS_SHOWN, CASELESS;
 var init_board = __esm({
   "src/board/board.ts"() {
     "use strict";
     init_home2();
+    init_store();
+    init_changes();
     init_place();
     init_mentions();
     init_kinds();
@@ -3249,8 +3141,8 @@ var init_board = __esm({
     init_trace();
     init_owing();
     projectFolderName = (repo) => {
-      const base = path12.basename(repo);
-      return base.toLowerCase() === ".git" ? path12.basename(path12.dirname(repo)) : base.replace(/\.git$/i, "");
+      const base = path13.basename(repo);
+      return base.toLowerCase() === ".git" ? path13.basename(path13.dirname(repo)) : base.replace(/\.git$/i, "");
     };
     goneSuffix = (gone) => gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "";
     PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -3275,7 +3167,6 @@ var init_board = __esm({
     SEAT_STOOD_FOR_CLOSED_SQL = `(SELECT CASE WHEN o.state = 'closed' THEN o.id END FROM runs o
   WHERE o.repo = (SELECT repo FROM runs WHERE id = s.run) AND o.plan = s.id AND o.id != s.run ORDER BY (o.state = 'open') DESC, o.id DESC LIMIT 1)`;
     ORCHESTRATOR = "orchestrator";
-    WAIT_POLL_MS = 1e3;
     LINE_WIDTH = 100;
     WAIT_LOG_EVERY_MS = 60 * 1e3;
     UPKEEP_EVERY_MS = 5 * 60 * 1e3;
@@ -7030,7 +6921,7 @@ var init_authority = __esm({
 
 // src/server/instance.ts
 import fs21 from "node:fs";
-import path21 from "node:path";
+import path22 from "node:path";
 async function takeInstance(dataRoot) {
   logStart(dataRoot);
   await takeStartLock(dataRoot);
@@ -7118,7 +7009,7 @@ function bind(server, host, port) {
 }
 function logStart(dataRoot) {
   fs21.mkdirSync(dataRoot, { recursive: true });
-  fs21.appendFileSync(serverLogFile(dataRoot), `serve: home ${path21.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
+  fs21.appendFileSync(serverLogFile(dataRoot), `serve: home ${path22.resolve(dataRoot)}, pid ${process.pid}, started by ${process.ppid} ${starterCommandLine()}
 `);
 }
 function starterCommandLine() {
@@ -7508,7 +7399,7 @@ __export(server_exports, {
 });
 import crypto4 from "node:crypto";
 import http from "node:http";
-import path22 from "node:path";
+import path23 from "node:path";
 async function startBoardServer(opts) {
   const instance = await takeInstance(opts.dataRoot);
   try {
@@ -7521,7 +7412,7 @@ async function startBoardServer(opts) {
 async function runBoardServer(opts, instance) {
   const host = opts.host ?? "127.0.0.1";
   const now = opts.now ?? (() => /* @__PURE__ */ new Date());
-  const board = await openBoard(path22.join(opts.dataRoot, "swarm.sqlite"));
+  const board = await openBoard(path23.join(opts.dataRoot, "swarm.sqlite"));
   const tracer = makeTracer(opts.dataRoot);
   setTracer(tracer);
   tracer.prune();
@@ -8775,7 +8666,7 @@ var CODE_WORDING = {
   reportStdinEmpty: "merged: --report-stdin read no report: pipe it in, a heredoc for a long one",
   // S32: said at the grant, before the rebase and the report, never after the report is written
   conflictsInReport: "if your rebase conflicts in a file another member changed, resolve it and say how in merged's --report",
-  tellResolved: (path23, member) => `if you resolved a conflict in ${path23}, tell them: swarm post "@${member} I resolved ${path23}: <how>" --about ${path23}`,
+  tellResolved: (path24, member) => `if you resolved a conflict in ${path24}, tell them: swarm post "@${member} I resolved ${path24}: <how>" --about ${path24}`,
   // ── board-split T52: the lock, the held claim, the unmerged work (V-2, V-7, V-13) ──
   /** V-36 (D71): the paused line of the merge lock's holder: finish that merge, then stop */
   pausedMerging: (run2, why, wait) => `run ${run2} is paused${why}. You hold the merge lock: finish that merge (rebase, quick check, fast-forward, merged), start nothing else, then wait in the foreground for the resume: ${wait}`,
@@ -8804,7 +8695,7 @@ var CODE_WORDING = {
   /** a close kept a worktree not clean or not merged: why, and the prune once it is */
   keptWorktree: (worktree, member, why, cli) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
   /** join, on a code run: the member's own worktree and how to work there */
-  ownWorktreeAs: (own, path23, pathWord, member) => `your worktree: ${path23} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  ownWorktreeAs: (own, path24, pathWord, member) => `your worktree: ${path24} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
   /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
   mergeLockAgain: (cli, onto, report, as) => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
   /** merged on a code run without the merge lock */
@@ -9425,16 +9316,16 @@ ${owes}` : rearm;
 // src/cli/context.ts
 init_home2();
 import fs15 from "node:fs";
-import path15 from "node:path";
+import path16 from "node:path";
 init_home();
 init_place();
 
 // src/cli/aiview-board.ts
 init_proc();
 import fs13 from "node:fs";
-import path13 from "node:path";
+import path14 from "node:path";
 function aiviewLauncher(toolRoot2) {
-  const file = process.env.SWARM_AIVIEW ?? path13.join(toolRoot2, "..", "aiview", "aiview.mjs");
+  const file = process.env.SWARM_AIVIEW ?? path14.join(toolRoot2, "..", "aiview", "aiview.mjs");
   return fs13.existsSync(file) ? file : null;
 }
 var callAiview = (launcher, cwd, argv) => {
@@ -9477,12 +9368,12 @@ function projectNamer(input) {
   const listed = launcher ? callAiview(launcher, input.cwd, ["project"]) : null;
   const projects = listed?.ok && Array.isArray(listed.out) ? listed.out : [];
   const norm = (p) => {
-    const forward = path13.resolve(p).split("\\").join("/").replace(/\/+$/, "");
+    const forward = path14.resolve(p).split("\\").join("/").replace(/\/+$/, "");
     return process.platform === "win32" ? forward.toLowerCase() : forward;
   };
   const covers = (root, checkout) => checkout === root || checkout.startsWith(`${root}/`);
   return (repo) => {
-    const checkout = norm(path13.basename(repo).toLowerCase() === ".git" ? path13.dirname(repo) : repo);
+    const checkout = norm(path14.basename(repo).toLowerCase() === ".git" ? path14.dirname(repo) : repo);
     return projects.find((p) => p.paths.some((root) => covers(norm(root), checkout)))?.slug ?? input.fallback(repo);
   };
 }
@@ -9574,15 +9465,15 @@ init_place();
 init_proc();
 import { createHash } from "node:crypto";
 import fs14 from "node:fs";
-import path14 from "node:path";
+import path15 from "node:path";
 var fwd = (p) => p.split("\\").join("/");
 var swarmBoardFolderAbove = (from) => {
-  for (let dir = from; ; dir = path14.dirname(dir)) {
-    if (fs14.existsSync(path14.join(dir, "swarm.mjs"))) return dir;
-    if (path14.dirname(dir) === dir) return from;
+  for (let dir = from; ; dir = path15.dirname(dir)) {
+    if (fs14.existsSync(path15.join(dir, "swarm.mjs"))) return dir;
+    if (path15.dirname(dir) === dir) return from;
   }
 };
-var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path14.dirname(path14.resolve(process.argv[1])));
+var toolRoot = () => process.env.SWARM_ROOT ?? swarmBoardFolderAbove(path15.dirname(path15.resolve(process.argv[1])));
 var projectNameOf = () => projectNamer({ toolRoot: toolRoot(), cwd: process.cwd(), fallback: projectFolderName });
 function repoOf2(dir) {
   return repoOf(dir) ?? fail(`not in a git repository: ${dir}`);
@@ -9615,12 +9506,12 @@ function commitChanged(worktree, sha) {
   return r.status === 0 ? r.stdout.split("\0").filter(Boolean) : [];
 }
 var writeOrchestratorSeats = (repo, seats) => {
-  const project = path14.basename(path14.dirname(repo)).replace(/[^\w.-]/g, "_");
-  const file = path14.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
-  fs14.mkdirSync(path14.dirname(file), { recursive: true });
+  const project = path15.basename(path15.dirname(repo)).replace(/[^\w.-]/g, "_");
+  const file = path15.join(DATA_ROOT, "orchestrators", `${project}-${createHash("sha1").update(repo).digest("hex").slice(0, 8)}.seats.json`);
+  fs14.mkdirSync(path15.dirname(file), { recursive: true });
   fs14.writeFileSync(file, `${JSON.stringify(seats, null, 2)}
 `);
-  return file.split(path14.sep).join("/");
+  return file.split(path15.sep).join("/");
 };
 
 // src/cli/context.ts
@@ -9681,7 +9572,7 @@ ${ctx.verbHelp()}`),
     projectRepo() {
       const asked = args.flag("--project");
       if (asked === void 0) return repoOf(process.cwd()) ?? fail(WORDING.notInRepository(process.cwd()));
-      if (fs15.existsSync(asked)) return repoOf2(path15.resolve(asked)) ?? fail(WORDING.noProject(asked));
+      if (fs15.existsSync(asked)) return repoOf2(path16.resolve(asked)) ?? fail(WORDING.noProject(asked));
       const covered = projectPaths({ toolRoot: toolRoot(), cwd: process.cwd(), name: asked }) ?? [];
       const repo = covered.filter((p) => fs15.existsSync(p)).map((p) => repoOf2(p)).find((r) => r !== null);
       return repo ?? fail(WORDING.noProject(asked));
@@ -9825,7 +9716,7 @@ async function dispatch(argv, verbs) {
 init_git();
 init_place();
 import fs16 from "node:fs";
-import path16 from "node:path";
+import path17 from "node:path";
 var isPackRefusal = (fact) => typeof fact === "object" && fact !== null && "refused" in fact;
 function refusedCodeVerb(fact) {
   const r = fact.refused;
@@ -9851,7 +9742,7 @@ async function memberWorktree(ctx, runId, seat) {
 }
 async function madeWorktree(ctx, p, verb) {
   if (p.place && fs16.existsSync(p.place)) return;
-  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path16.dirname(p.repo);
+  const cwd = worktreeOf(process.cwd()) && repoOf2(process.cwd()) === p.repo ? process.cwd() : path17.dirname(p.repo);
   const made = await packVerb(ctx, p, verb, { cwd });
   if (made?.made) ctx.callerWorktree = p.place;
 }
@@ -9883,13 +9774,13 @@ function reportGiven(ctx) {
   let fromFile;
   if (reportFile !== void 0) {
     try {
-      fromFile = fs16.readFileSync(path16.resolve(reportFile), "utf8").trim();
+      fromFile = fs16.readFileSync(path17.resolve(reportFile), "utf8").trim();
     } catch {
       fail(CODE_WORDING.reportFileUnreadable(reportFile));
     }
   }
   const given = ctx.args.flag("--report")?.trim();
-  if (given && given !== "-" && fs16.existsSync(path16.resolve(given)) && fs16.statSync(path16.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
+  if (given && given !== "-" && fs16.existsSync(path17.resolve(given)) && fs16.statSync(path17.resolve(given)).isFile()) fail(CODE_WORDING.reportIsAFile(given));
   return fromFile || given || void 0;
 }
 
@@ -10039,11 +9930,11 @@ async function endorseVerb(ctx, p) {
 
 // src/cli/verbs/join.ts
 init_events();
-import path18 from "node:path";
+import path19 from "node:path";
 
 // src/cli/guides.ts
 import fs17 from "node:fs";
-import path17 from "node:path";
+import path18 from "node:path";
 function flowItems(list) {
   const items = [];
   let item = "";
@@ -10097,7 +9988,7 @@ function guidesIn(dir, keep, fallback = () => null) {
   const out = [];
   for (const f of folders) {
     try {
-      const g = parseGuide(fs17.readFileSync(path17.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
+      const g = parseGuide(fs17.readFileSync(path18.join(dir, f, "SKILL.md"), "utf8"), f, fallback(f));
       if (g) out.push(g);
     } catch {
     }
@@ -10107,8 +9998,8 @@ function guidesIn(dir, keep, fallback = () => null) {
 var SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
 var SHIPPED_GUIDES = /* @__PURE__ */ new Set(["guide-complexity", "guide-deepen-module"]);
 function discoverGuides(toolRoot2, repoRoot) {
-  const shipped = guidesIn(path17.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
-  const project = repoRoot ? guidesIn(path17.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
+  const shipped = guidesIn(path18.resolve(toolRoot2, "..", "..", "..", "skills", "guides"), () => true, (f) => SHIPPED_GUIDES.has(f) ? SHIPPED_GUIDE_PATHS : null);
+  const project = repoRoot ? guidesIn(path18.join(repoRoot, ".claude", "skills"), (f) => f.startsWith("guide-")) : [];
   const names = new Set(project.map((g) => g.name));
   return [...shipped.filter((g) => !names.has(g.name)), ...project];
 }
@@ -10166,7 +10057,7 @@ var guidesHere = (p) => discoverGuides(toolRoot(), p.place ?? worktreeOf(process
 var parseFile = (ctx, spec) => ({ path: repoRelative(ctx.pathsRoot(), declaredPath(spec)) });
 var declaredPath = (file, root = worktreeOf(process.cwd())) => {
   const { abs, missing } = resolveIn(root, file);
-  return missing.length && root ? path18.resolve(root, file) : abs;
+  return missing.length && root ? path19.resolve(root, file) : abs;
 };
 
 // src/cli/verbs/link.ts
@@ -10209,7 +10100,7 @@ init_events();
 init_git();
 init_proc();
 import fs18 from "node:fs";
-import path19 from "node:path";
+import path20 from "node:path";
 
 // src/cli/conflicts.ts
 init_git();
@@ -10264,7 +10155,7 @@ async function mergeLockVerb(ctx, p) {
   const holding = p.place ? worktreeHolding(p.place, onto) : null;
   if (holding) {
     ctx.exitCode = EXIT.ontoCheckedOut;
-    const holder = (await ctx.board.roster(p.repo)).find((r2) => r2.worktree && path19.resolve(r2.worktree).toLowerCase() === path19.resolve(holding).toLowerCase());
+    const holder = (await ctx.board.roster(p.repo)).find((r2) => r2.worktree && path20.resolve(r2.worktree).toLowerCase() === path20.resolve(holding).toLowerCase());
     const line = CODE_WORDING.ontoCheckedOutAtMerge(onto, holding, holder?.name ?? null, CODE_WORDING.detach(shellWord(holding)));
     ctx.emit({ member: p.name, granted: false, checkedOutAt: holding, next: line }, line);
     return;
@@ -10273,16 +10164,16 @@ async function mergeLockVerb(ctx, p) {
   const deliver = !!p.place && !ctx.args.has("--lock-only");
   if (deliver) reportGiven(ctx);
   const piped = deliver && ctx.args.has("--report-stdin") ? reportGiven(ctx) : void 0;
-  const reportArgs = piped !== void 0 ? ["--report", piped] : ctx.args.flag("--report-file") !== void 0 ? ["--report-file", path19.resolve(ctx.args.flag("--report-file"))] : ctx.args.flag("--report") !== void 0 ? ["--report", ctx.args.flag("--report")] : [];
+  const reportArgs = piped !== void 0 ? ["--report", piped] : ctx.args.flag("--report-file") !== void 0 ? ["--report-file", path20.resolve(ctx.args.flag("--report-file"))] : ctx.args.flag("--report") !== void 0 ? ["--report", ctx.args.flag("--report")] : [];
   const again = () => CODE_WORDING.mergeLockAgain(ctx.cli, shellWord(onto), piped !== void 0 ? ["--report-stdin"] : reportArgs.map(shellWord), shellWord(p.name));
   const unmergedIn = (wt) => (git(wt, "diff", "--name-only", "--diff-filter=U") ?? "").split("\n").filter(Boolean);
   const rebasingIn = (wt) => ["rebase-merge", "rebase-apply"].some((dir) => {
     const at = git(wt, "rev-parse", "--git-path", dir);
-    return !!at && fs18.existsSync(path19.resolve(wt, at));
+    return !!at && fs18.existsSync(path20.resolve(wt, at));
   });
   const handedBackFile = (wt) => {
     const at = git(wt, "rev-parse", "--git-path", "swarm-handed-back");
-    return at ? path19.resolve(wt, at) : null;
+    return at ? path20.resolve(wt, at) : null;
   };
   const handedBack = (wt) => {
     try {
@@ -10306,7 +10197,7 @@ async function mergeLockVerb(ctx, p) {
     const open = unmergedIn(wt);
     const marked = open.filter((f) => {
       try {
-        return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs18.readFileSync(path19.join(wt, f), "utf8"));
+        return /^(<<<<<<<|>>>>>>>)( |$)/m.test(fs18.readFileSync(path20.join(wt, f), "utf8"));
       } catch {
         return false;
       }
@@ -10431,7 +10322,7 @@ init_liveness();
 init_home2();
 init_home();
 import fs19 from "node:fs";
-import path20 from "node:path";
+import path21 from "node:path";
 init_git();
 async function openVerb(ctx) {
   const { kind, group } = openKindAndGroup(ctx);
@@ -10519,7 +10410,7 @@ e.g. a seats file: [{"id": "w1", "role": "builder", "blockers": []}, {"id": "v1"
 function readSeats(file) {
   let raw;
   try {
-    raw = JSON.parse(fs19.readFileSync(path20.resolve(file), "utf8"));
+    raw = JSON.parse(fs19.readFileSync(path21.resolve(file), "utf8"));
   } catch (e) {
     return seatsFail(`cannot read seats from ${file}: ${e.message}`);
   }
