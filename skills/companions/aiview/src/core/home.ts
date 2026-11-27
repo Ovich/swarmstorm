@@ -4,22 +4,18 @@
 // (app/, dist/, dist-cli/, node_modules/); the data home holds what it can't
 // (the index, the server files, the documents). Delete the checkout, clone it
 // again, rebuild — nothing of the user's is lost, because none of it was there.
-import { hiddenSpawnSync } from "../proc.ts";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { DATA_ROOT, NEW_HOME, OLD_HOME } from "../../../swarm-board/src/host/home.ts";
+import { hiddenSpawnSync } from "../../../swarm-board/src/host/proc.ts";
 
-/** Data home: $SWARMSTORM_HOME (or $CHARRETTE_HOME, its name before the rename), else ~/swarmstorm_appdata;
- *  an install from before the rename keeps ~/charrette_appdata while no ~/swarmstorm_appdata exists, so nothing moves. */
-const homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-const NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
-const OLD_HOME = path.join(os.homedir(), "charrette_appdata");
+/** Data home: swarm-board's host/home.ts, the one copy both companions read (codebase-rework#D17). */
+export { DATA_ROOT };
 /** Whether `root` is the person's own data home (either default name), not a scratch, test or dev one. */
 export const isPersonHome = (root: string): boolean => {
   const fold = (p: string) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
   return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
 };
-export const DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
 
 /** The default home's port; another data home gets its own, so two homes' servers never clash (G22). */
 const HOME_PORT = 4321;

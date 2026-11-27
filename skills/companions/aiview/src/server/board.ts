@@ -10,7 +10,8 @@ import { openBoardReader, type BoardReader } from "../../../swarm-board/src/clie
 import type { BoardChangedEventPayload } from "../core/api.ts";
 import { TOOL_ROOT } from "../core/db.ts";
 import { DATA_ROOT } from "../core/home.ts";
-import { commonGitDir } from "../../../swarm-board/src/host/place.ts";
+import { canonicalPath, commonGitDir } from "../../../swarm-board/src/host/place.ts";
+import { serverStateFile } from "../../../swarm-board/src/host/home.ts";
 import type { SseHub } from "./sse.ts";
 
 interface BoardRoutes {
@@ -21,8 +22,6 @@ interface BoardRoutes {
 
 /** The swarm launcher beside aiview's own, as the plugin lays the two companions out. */
 const DEFAULT_SWARM_ENTRY = path.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
-/** What a running board server writes in its data home: one there, the reader opens at start. */
-const SERVER_STATE_FILE = "swarm-server.json";
 
 export function mountBoard(
   sse: SseHub,
@@ -65,7 +64,7 @@ export function mountBoard(
     return opening;
   };
   // Opened at start when a board server is there, so a tab hears board changes before it asks.
-  if (fs.existsSync(path.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {}); // a failure answers on the next request
+  if (fs.existsSync(serverStateFile(dataRoot))) openReader().catch(() => {}); // a failure answers on the next request
 
   const json = (res: http.ServerResponse, obj: unknown, status = 200): void => {
     if (res.headersSent) return;
@@ -76,13 +75,11 @@ export function mountBoard(
   /** The project a request names, `?project=` (D47); null when it names none. */
   const projectAsked = (q: URLSearchParams): string | null => q.get("project");
 
-  /** Whether two spellings name one repository: `/` or `\`, on Windows any case, a worktree's `.git` its common one (aiview stores `/`, the board keys `\`). */
+  /** Whether two spellings name one repository: `/` or `\`, any case where the file system ignores it, a worktree's
+   *  `.git` its common one (aiview stores `/`, the board keys `\`), in host/place.ts's one canonical form. */
   const sameRepo = (a: string, b: string): boolean => {
-    const norm = (r: string) => {
-      // a worktree's own `.git` (a file) names its repository's common git dir, as the board keys it (G6)
-      const g = fs.existsSync(r) && fs.statSync(r).isFile() ? commonGitDir(r) : r;
-      return process.platform === "win32" ? path.resolve(g).toLowerCase() : path.resolve(g);
-    };
+    // a worktree's own `.git` (a file) names its repository's common git dir, as the board keys it (G6)
+    const norm = (r: string) => canonicalPath(fs.existsSync(r) && fs.statSync(r).isFile() ? commonGitDir(r) : r);
     return norm(a) === norm(b);
   };
 

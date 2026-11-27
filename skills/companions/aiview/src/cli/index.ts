@@ -2,7 +2,7 @@
 // ensure registered, ensure server, print URL. Unknown verbs fall to legacy
 // (dies in Phase 8 cutover).
 import { spawnSync } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starter of the line marked so
-import { hiddenSpawn, hiddenSpawnSync } from "../proc.ts";
+import { hiddenSpawn, hiddenSpawnSync } from "../../../swarm-board/src/host/proc.ts";
 import { openBrowser } from "../core/browser.ts";
 import fs from "node:fs";
 import path from "node:path";
