@@ -52,3 +52,10 @@ test("every usage answer reads as its golden", () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("the listed verbs of the table are the keys of the usage record", async () => {
+  const { VERBS } = await import("../src/cli/verbs/index.ts");
+  const { VERB_USAGE } = await import("../src/cli/usage.ts");
+  const listed = VERBS.filter((v) => v.help === "listed").map((v) => v.name);
+  assert.deepEqual([...listed].sort(), Object.keys(VERB_USAGE).sort());
+});
