@@ -84,7 +84,7 @@ const HIDDEN_VERB_USAGE = {
 
 /** Every verb of the CLI, keyed by its name: the core help's, the code pack's, the hidden ones. */
 export const VERB_USAGE = { ...CORE_VERB_USAGE, ...CODE_VERB_USAGE, ...HIDDEN_VERB_USAGE } satisfies Record<string, VerbUsage>;
-type VerbName = keyof typeof VERB_USAGE;
+export type VerbName = keyof typeof VERB_USAGE;
 
 /** The core verbs' help. */
 export const coreUsage = (cli: Command): string =>

@@ -8,7 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { shellWord, verbHelp } from "../src/cli/answer/index.ts";
+import { shellWord, verbHelp, VERB_USAGE } from "../src/cli/answer/index.ts";
+import { VERBS } from "../src/cli/verbs/index.ts";
 
 const TOOL = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SOURCE_CLI = path.join(TOOL, "src", "cli", "index.ts");
@@ -50,5 +51,8 @@ test("D23: each verb's own usage and corrected form render as pinned", () => {
   assert.deepEqual(rendered, pinned);
 });
 
-// codebase-rework#D12 (P2): the verb table's keys equal VERB_USAGE's keys; the assertion lands here with the table.
-// D12-TABLE-KEYS
+// codebase-rework#D12: an entry of the verb table holds no text, so every verb it runs has its usage, and every usage
+// a verb that runs.
+test("D12: the verb table's names equal VERB_USAGE's keys", () => {
+  assert.deepEqual(VERBS.flatMap((v) => v.names), Object.keys(VERB_USAGE));
+});
