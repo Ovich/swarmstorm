@@ -255,6 +255,7 @@
 .board .agent-strip .card.lost { opacity: .55; box-shadow: none; background: var(--surface); }
 .board .agent-strip .card:has(.activity) .doing { -webkit-line-clamp: 1; }
 .board .card .ages { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: nowrap; }
+.board .card .context { display: block; width: fit-content; margin-top: 2px; font-size: 11px; color: var(--muted-foreground); white-space: nowrap; }
 .board .card .activity { display: block; margin-top: 2px; font: 11px ui-monospace, "Cascadia Code", SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted-foreground); white-space: pre; overflow: hidden; text-overflow: ellipsis; }
 /* board-split#D35: the state word's own classes; trouble a badge beside it, its reason on hover */
 .board .state.away, .board .state.stopped, .board .state.lost { color: var(--muted-foreground); }
@@ -324,7 +325,7 @@
 .board .who { font-size: 11px; font-weight: 500; border-radius: 4px; }
 .board .tag { font-size: 11px; font-weight: 500; }
 .board .code { font-family: var(--font-sans); font-size: 11px; border: 0; background: var(--surface-2); color: var(--foreground); padding: 0 5px; border-radius: 4px; }
-.board .card .meta, .board .card .ages, .board .card .activity,
+.board .card .meta, .board .card .ages, .board .card .context, .board .card .activity,
 .board .item .time, .board .event .time { font-family: var(--font-sans); font-size: 12px; font-variant-numeric: tabular-nums; }
 .board .card { background: var(--card); box-shadow: none; }
 .board .card:hover { box-shadow: 0 0 0 1px var(--border); }

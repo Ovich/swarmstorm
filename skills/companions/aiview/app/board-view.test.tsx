@@ -396,6 +396,22 @@ test("a stopped card keeps its doing line on its face", () => {
   expect(activeCard().querySelector(".doing")).toBeTruthy();
 });
 
+// ── the member's context size (product-shape#D5) ───────────────────────────────
+
+const contextOf = (card: HTMLElement) => card.querySelector('[data-component="ContextSize"]') as HTMLElement | null;
+
+test("a card shows its context size k-rounded, its age on the tip", () => {
+  show([APP], 1, [withMember({ context: { tokens: 142_400, at: minutesAgo(3) } })]);
+  const size = contextOf(activeCard())!;
+  expect(size.textContent).toBe("context 142k");
+  expect(size.dataset.tip).toBe("read 3 min ago");
+});
+
+test("a card with a null context shows none", () => {
+  show([APP], 1, [withMember({ context: null })]);
+  expect(contextOf(activeCard())).toBeNull();
+});
+
 // ── ClaimsRow ────────────────────────────────────────────────────────────────────
 
 const SHARED: BoardSnapshot = { ...LIVE, files: [...LIVE.files, { path: "src/shared.ts", holders: ["refresh-tokens/S3", "audit-log/S1"] }] };

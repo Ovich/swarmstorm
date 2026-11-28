@@ -5,6 +5,7 @@
 // badge with its reason on hover, never the word.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
 import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
+import { contextSizeText } from "../../../lib/board/context.ts";
 import { hhmm, ORCHESTRATOR } from "../../../lib/board/names.ts";
 import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 
@@ -166,6 +167,17 @@ function MemberAges({ activity, now }: { activity: MemberActivity; now: number }
   );
 }
 
+/** The member's context size on the card face, `context 142k`, its age on the page's tip (product-shape#D5); none when
+ *  the board read none. */
+function ContextSize({ p, now }: { p: SnapshotMember; now: number }) {
+  if (!p.context) return null;
+  return (
+    <span className="context tip" tabIndex={0} data-tip={`read ${ageSince(p.context.at, now)} ago`} data-component="ContextSize">
+      {contextSizeText(p.context.tokens)}
+    </span>
+  );
+}
+
 /** Now, every minute is enough: busy and quiet count in minutes between two snapshots. */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -207,6 +219,7 @@ function AgentCard({ p, hue, followed, onFollow, now }: { p: SnapshotMember; hue
       {/* the doing line, never the word (D49) */}
       {p.state === "stopped" && !!p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
+      <ContextSize p={p} now={now} />
       <ActivityLine line={line} state={activity?.state ?? p.state} />
     </button>
   );
@@ -425,6 +438,7 @@ function AgentHoverCard({ p, hue, now, top, left }: { p: SnapshotMember; hue: nu
       <UnreadCount p={p} />
       {p.state === "stopped" && p.doing && <span className="doing">{p.doing}</span>}
       {activity && <MemberAges activity={activity} now={now} />}
+      <ContextSize p={p} now={now} />
       <ActivityLine line={line} state={activity?.state ?? p.state} />
     </div>
   );
