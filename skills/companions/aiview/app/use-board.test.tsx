@@ -2,7 +2,7 @@
 // repository's `board-changed` on aiview's /events, and the server's 404 message.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { useBoard } from "./hooks/useBoard.ts";
+import { useBoard } from "./board/useBoard.ts";
 
 class FakeEventSource {
   static last: FakeEventSource | null = null;

@@ -1,7 +1,7 @@
 // How the merge lock writes a duration: seconds under a minute, minutes and seconds under ten, floored past.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { formatDuration } from "../app/lib/board/duration.ts";
+import { formatDuration } from "../app/board/duration.ts";
 
 test("formatDuration floors, never rounds up", () => {
   const S = 1000, M = 60 * S;

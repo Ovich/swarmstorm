@@ -4,7 +4,7 @@
 // orchestrator as one of its cards, each with its token counter. And a tab of an older build reloads.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { BoardView } from "./components/viewers/board/BoardView.tsx";
+import { BoardView } from "./board/BoardView.tsx";
 import { isStaleBuild, pageBuild, reloadOnNewBuild } from "./lib/build.ts";
 
 class FakeEventSource {

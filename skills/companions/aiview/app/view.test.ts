@@ -1,10 +1,10 @@
 // The board page's view model (plan D1, D7, D8, D13-D16, D18, D20), on snapshots built here.
 import { describe, expect, test } from "vitest";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { agents, archive, claimRows, mergedFileRows, pauseChip, runTabs } from "./lib/board/runs.ts";
-import { conversation, flagAnswer, narrow, type Item } from "./lib/board/conversation.ts";
-import { readEvent } from "./lib/board/lines.ts";
-import { PHASE, PHASED } from "./board-fixtures.ts";
+import { agents, archive, claimRows, mergedFileRows, pauseChip, runTabs } from "./board/run/runs.ts";
+import { conversation, flagAnswer, narrow, type Item } from "./board/conversation/conversation.ts";
+import { readEvent } from "./board/lines.ts";
+import { PHASE, PHASED } from "./board/fixtures.ts";
 
 const AT = "2026-10-14T10:00:00Z";
 const run = (id: number, group: string, code: string, open = true): RunSummary => ({

@@ -5,10 +5,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { conversation, TIPS } from "./lib/board/conversation.ts";
-import { Conversation } from "./components/viewers/board/Conversation.tsx";
-import { TipLayer } from "./components/viewers/board/Tip.tsx";
-import { PHASED } from "./board-fixtures.ts";
+import { conversation, TIPS } from "./board/conversation/conversation.ts";
+import { Conversation } from "./board/conversation/Conversation.tsx";
+import { TipLayer } from "./board/Tip.tsx";
+import { PHASED } from "./board/fixtures.ts";
 
 // jsdom cannot lay mermaid out: it is mocked, its render resolving an svg
 vi.mock("mermaid", () => ({
@@ -83,7 +83,7 @@ test("decided and talk carry no edge class; a plain message no word", () => {
 });
 
 test("the stylesheet: an item has no fill but the open flag's tint and act's; act a red edge, wait an amber one", () => {
-  const css = readFileSync(join(__dirname, "components/viewers/board/board.css"), "utf8");
+  const css = readFileSync(join(__dirname, "board/board.css"), "utf8");
   // every rule whose selector is the item itself, with any of its classes, under the board's root
   const itemRules = [...css.matchAll(/^\.board (\.item(?:\.[\w-]+)*)\s*\{([^}]*)\}/gm)].map((m) => ({ selector: m[1], body: m[2] }));
   expect(itemRules.filter((r) => /background/.test(r.body)).map((r) => r.selector)).toEqual([".item.flag.open", ".item.act"]);
@@ -145,7 +145,7 @@ test("a member reads its mark, then its nick and role, code·seat on hover; the 
 
 // ── What the board looked like before the move, kept (plan D9): board.css's source, and the DOM ──
 
-const boardCss = () => readFileSync(join(__dirname, "components/viewers/board/board.css"), "utf8");
+const boardCss = () => readFileSync(join(__dirname, "board/board.css"), "utf8");
 const ruleOf = (css: string, selector: string): string => {
   const at = css.indexOf(`\n${selector} {`);
   expect(at, selector).toBeGreaterThanOrEqual(0);
@@ -226,7 +226,7 @@ test("a phase is a line cut by its name, its text on hover; neither a post nor a
   expect(sep.querySelector(".name")?.textContent).toBe("diverge");
   expect(sep.querySelector(".said")?.textContent).toBe("every name a run could carry, no judgment yet");
   expect(sep.querySelector(".head, .time")).toBeNull();
-  const css = readFileSync(join(import.meta.dirname, "components/viewers/board/board.css"), "utf8");
+  const css = readFileSync(join(import.meta.dirname, "board/board.css"), "utf8");
   expect(css).toMatch(/\.board \.phase::before, \.board \.phase::after \{[^}]*border-top: 1px solid/);
   expect(css).toMatch(/\.board \.phase \.label \{[^}]*white-space: nowrap/);
   expect(css).toMatch(/\.board \.phase \.said \{ display: none; \}/);

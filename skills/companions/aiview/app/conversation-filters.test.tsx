@@ -4,9 +4,9 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { conversation, narrow, type Narrow } from "./lib/board/conversation.ts";
-import { Conversation } from "./components/viewers/board/Conversation.tsx";
-import { ConversationFilters } from "./components/viewers/board/ConversationFilters.tsx";
+import { conversation, narrow, type Narrow } from "./board/conversation/conversation.ts";
+import { Conversation } from "./board/conversation/Conversation.tsx";
+import { ConversationFilters } from "./board/conversation/ConversationFilters.tsx";
 
 vi.mock("mermaid", () => ({
   default: { initialize: () => {}, render: async () => ({ svg: "<svg></svg>" }) },

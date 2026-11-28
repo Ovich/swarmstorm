@@ -3,14 +3,14 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { BoardSnapshot } from "../../swarm-board/src/client/reader.ts";
-import type { BoardState } from "./hooks/useBoard.ts";
-import { ALL_CLOSED, APP, BRAINSTORM, CLOSED, LIVE, NICKS, OTHER, PHASED, REPOS, SITE } from "./board-fixtures.ts";
+import type { BoardState } from "./board/useBoard.ts";
+import { ALL_CLOSED, APP, BRAINSTORM, CLOSED, LIVE, NICKS, OTHER, PHASED, REPOS, SITE } from "./board/fixtures.ts";
 
 const source = vi.hoisted(() => ({
   calls: [] as { repo: string | null; run: number | null }[],
   boards: {} as Record<string, BoardSnapshot>,
 }));
-vi.mock("./hooks/useBoard.ts", () => ({
+vi.mock("./board/useBoard.ts", () => ({
   useBoard: (q: { repo: string | null; run: number | null }): BoardState => {
     source.calls.push(q);
     const all = Object.values(source.boards);
@@ -20,11 +20,11 @@ vi.mock("./hooks/useBoard.ts", () => ({
   },
 }));
 
-import { BoardView } from "./components/viewers/board/BoardView.tsx";
-import { AgentLabel, AgentMark, MemberTag } from "./components/viewers/board/chips.tsx";
-import { countText } from "./components/viewers/board/RunTabs.tsx";
-import type { RunTab } from "./lib/board/runs.ts";
-import { CLAIMS_EXPANDED_KEY } from "./components/viewers/board/ClaimsRow.tsx";
+import { BoardView } from "./board/BoardView.tsx";
+import { AgentLabel, AgentMark, MemberTag } from "./board/chips.tsx";
+import { countText } from "./board/run/RunTabs.tsx";
+import type { RunTab } from "./board/run/runs.ts";
+import { CLAIMS_EXPANDED_KEY } from "./board/code/ClaimsRow.tsx";
 
 afterEach(() => {
   cleanup();
@@ -567,7 +567,7 @@ test("the run's head shows its current phase, name and text; a run with no phase
 });
 
 test("a phase opened more than once reads its iteration: build 1, verify 1, build 2, verify 2; a phase opened once stays bare", async () => {
-  const { phaseLabels, RunViewSwitch } = await import("./components/viewers/board/RunViewSwitch.tsx");
+  const { phaseLabels, RunViewSwitch } = await import("./board/run/RunViewSwitch.tsx");
   const loop = [{ name: "build", text: "" }, { name: "verify", text: "" }, { name: "build", text: "" }, { name: "verify", text: "walk again" }];
   expect(phaseLabels(loop)).toEqual(["build 1", "verify 1", "build 2", "verify 2"]);
   expect(phaseLabels([{ name: "diverge" }, { name: "converge" }])).toEqual(["diverge", "converge"]);
@@ -577,7 +577,7 @@ test("a phase opened more than once reads its iteration: build 1, verify 1, buil
 });
 
 test("a phase segment clicked hands back its separator's seq, for the conversation to scroll to its start", async () => {
-  const { RunViewSwitch } = await import("./components/viewers/board/RunViewSwitch.tsx");
+  const { RunViewSwitch } = await import("./board/run/RunViewSwitch.tsx");
   const picked: number[] = [];
   render(<RunViewSwitch phases={[{ name: "build", text: "", seq: 3 }, { name: "verify", text: "walk", seq: 9 }]} onPhase={(s) => picked.push(s)} />);
   const segs = document.querySelectorAll<HTMLButtonElement>('[data-component="PhaseStrip"] button.pseg');

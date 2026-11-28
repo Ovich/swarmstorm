@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { seqRefs } from "./lib/board/post.ts";
+import { seqRefs } from "./board/conversation/post.ts";
 
 const mermaidMock = vi.hoisted(() => ({
   imported: 0,
@@ -20,7 +20,7 @@ vi.mock("mermaid", () => {
   };
 });
 
-import { PostBody } from "./components/viewers/board/PostBody.tsx";
+import { PostBody } from "./board/conversation/PostBody.tsx";
 
 afterEach(cleanup);
 // MermaidView picks its theme from the OS scheme; jsdom has no matchMedia.
@@ -148,19 +148,19 @@ describe("PostBody markdown", () => {
 
 // The board draws diagrams only through aiview's MermaidView: nothing under its folders imports mermaid.
 test("nothing of the board imports mermaid itself", () => {
-  const roots = [join(__dirname, "components/viewers/board"), join(__dirname, "lib/board")];
+  const roots = ["board", "board/run", "board/members", "board/conversation", "board/code"].map((dir) => join(__dirname, dir));
   const files = roots.flatMap((dir) => readdirSync(dir).filter((f) => /\.tsx?$/.test(f)).map((f) => join(dir, f)));
   expect(files.length).toBeGreaterThan(0);
   const importing = files.filter((f) => /from\s+["']mermaid["']|import\(\s*["']mermaid["']\s*\)/.test(readFileSync(f, "utf8")));
   expect(importing).toEqual([]);
-  expect(safeExists(join(__dirname, "components/viewers/board/PostDiagram.tsx"))).toBe(false);
+  expect(safeExists(join(__dirname, "board/conversation/PostDiagram.tsx"))).toBe(false);
 });
 
 // Kept last in the file and isolated by module: mermaid is imported only once a block needs it.
 test("a body without a block never imports mermaid", async () => {
   vi.resetModules();
   mermaidMock.imported = 0;
-  const { PostBody: Fresh } = await import("./components/viewers/board/PostBody.tsx");
+  const { PostBody: Fresh } = await import("./board/conversation/PostBody.tsx");
   render(<Fresh body="no diagram here @S3" shown={new Set()} />);
   await new Promise((r) => setTimeout(r, 20));
   expect(mermaidMock.imported).toBe(0);

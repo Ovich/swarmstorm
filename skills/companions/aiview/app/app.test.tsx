@@ -3,15 +3,15 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 afterEach(cleanup);
-import { applyFilters, applyScope } from "./hooks/useFilters.ts";
+import { applyFilters, applyScope } from "./documents/useFilters.ts";
 import { truncatePath, kindHue } from "./lib/utils.ts";
-import { DocPath } from "./components/docs/DocPath.tsx";
+import { DocPath } from "./documents/DocPath.tsx";
 import { shouldLoad } from "./App.tsx";
-import { docActivity, sidebarEntries } from "./hooks/useSidebarEntries.ts";
-import { DocItem } from "./components/docs/DocItem.tsx";
-import { ProjectSelector } from "./components/shell/ProjectSelector.tsx";
-import { Sidebar } from "./components/shell/Sidebar.tsx";
-import { DocumentsPanel as DocumentsPage } from "./components/docs/DocumentsPage.tsx";
+import { docActivity, sidebarEntries } from "./shell/useSidebarEntries.ts";
+import { DocItem } from "./documents/DocItem.tsx";
+import { ProjectSelector } from "./shell/ProjectSelector.tsx";
+import { Sidebar } from "./shell/Sidebar.tsx";
+import { DocumentsPanel as DocumentsPage } from "./documents/DocumentsPage.tsx";
 import type { DocumentWithState } from "./lib/api.ts";
 import { readFileSync } from "node:fs";
 
@@ -70,7 +70,7 @@ describe("utils", () => {
 
 describe("sidebarEntries", () => {
   test("groups collapse into containers, members oldest-first, entries by latest activity", async () => {
-    const { sidebarEntries } = await import("./hooks/useSidebarEntries.ts");
+    const { sidebarEntries } = await import("./shell/useSidebarEntries.ts");
     // activity is the file's mtime (updated_at), not the index's last_seen_at
     const docs = [
       doc({ id: 1, group_slug: "g", created_at: "2026-08-20T00:00:00Z", updated_at: "2026-08-23T00:00:00Z" }),
@@ -87,7 +87,7 @@ describe("sidebarEntries", () => {
     expect(group.docs.map((d) => d.id)).toEqual([2, 1]); // oldest-first inside
   });
   test("unknown group title falls back to slug", async () => {
-    const { sidebarEntries } = await import("./hooks/useSidebarEntries.ts");
+    const { sidebarEntries } = await import("./shell/useSidebarEntries.ts");
     const entries = sidebarEntries([doc({ id: 1, group_slug: "x" })], {});
     expect(entries[0].type === "group" && entries[0].title).toBe("x");
   });
@@ -210,7 +210,7 @@ describe("tag chips", () => {
   const at = (day: number) => `2026-09-${String(day).padStart(2, "0")}T10:00:00Z`;
 
   test("the most recently active tags come first, and the project's own slug is left out", async () => {
-    const { recentTags } = await import("./hooks/useFilters.ts");
+    const { recentTags } = await import("./documents/useFilters.ts");
     const docs = [
       doc({ id: 1, tags: ["JOBS", "old", "shared"], updated_at: at(1) }),
       doc({ id: 2, tags: ["jobs", "new"], updated_at: at(9) }),
@@ -236,7 +236,7 @@ describe("tag chips", () => {
   });
 
   test("past the first twelve the rest fold behind a count, and a chosen tag stays in sight", async () => {
-    const { TAGS_SHOWN } = await import("./components/shell/Sidebar.tsx");
+    const { TAGS_SHOWN } = await import("./shell/Sidebar.tsx");
     const docs = Array.from({ length: TAGS_SHOWN + 3 }, (_, i) =>
       doc({ id: i + 1, tags: [`t${i}`], updated_at: at(i + 1) }),
     );
@@ -362,7 +362,7 @@ describe("Sidebar — clicking a row's kind chip", () => {
 
 describe("composition overlay", () => {
   test("withOverlay appends the layer before </body> with the summary and target", async () => {
-    const { withOverlay, OVERLAY_MARK, shortName } = await import("./lib/overlay.ts");
+    const { withOverlay, OVERLAY_MARK, shortName } = await import("./prototype/overlay.ts");
     const summary = { sources: ["2026-09-03-dock-tools.prototype.html"], errors: [{ ref: "a#B", message: 'Not "found"' }], warnings: [] };
     const out = withOverlay("<html><body><p>host</p></body></html>", { bindings: summary, target: "ToolPrefix" });
     expect(out.indexOf(OVERLAY_MARK)).toBeGreaterThan(out.indexOf("<p>host</p>"));
@@ -409,8 +409,8 @@ describe("PrototypeFrame modes", () => {
   afterEach(() => localStorage.clear());
 
   test("the mode toggle persists and Composition injects the overlay", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
-    const { OVERLAY_MARK } = await import("./lib/overlay.ts");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
+    const { OVERLAY_MARK } = await import("./prototype/overlay.ts");
     const bindings = { sources: ["tools.prototype.html"], errors: [], warnings: [] };
     render(<PrototypeFrame html="<html><body><p>h</p></body></html>" bindings={bindings} />);
     const frame = () => document.querySelector("iframe")!;
@@ -424,7 +424,7 @@ describe("PrototypeFrame modes", () => {
   });
 
   test("a message from the frame's own window opens the source; others are ignored", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     const onOpenSource = vi.fn();
     render(<PrototypeFrame html="<html><body></body></html>" onOpenSource={onOpenSource} />);
     const frame = document.querySelector("iframe")!;
@@ -436,8 +436,8 @@ describe("PrototypeFrame modes", () => {
   });
 
   test("a workbench has no toggle at all (the OS theme), fills the page, and leaves the stored choices for the next prototype", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
-    const { OVERLAY_MARK } = await import("./lib/overlay.ts");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
+    const { OVERLAY_MARK } = await import("./prototype/overlay.ts");
     localStorage.setItem("aiview.viewport", "mobile");
     localStorage.setItem("aiview.prototypeMode", "composition");
     const bindings = { sources: ["tools.prototype.html"], errors: [], warnings: [] };
@@ -500,7 +500,7 @@ describe("the board page", () => {
   });
 
   // jsdom resolves no stylesheet: the seam is board.css's source, read from disk
-  const boardCss = () => readFileSync(`${import.meta.dirname}/components/viewers/board/board.css`, "utf8");
+  const boardCss = () => readFileSync(`${import.meta.dirname}/board/board.css`, "utf8");
 
   test("the board takes aiview's theme: no toggle of its own, no ?theme=, no token of aiview's redefined (D12)", async () => {
     standInBoard();
@@ -540,7 +540,7 @@ describe("prototype full screen", () => {
   });
 
   test("the hover bar asks the browser for full screen on the stage, and leaves it again", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     const request = vi.fn(() => Promise.resolve());
     const exit = vi.fn(() => Promise.resolve());
     (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen = request;
@@ -567,7 +567,7 @@ describe("prototype full screen", () => {
   });
 
   test("without the API the stage covers the window, and Escape leaves it", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     render(<PrototypeFrame html="<html><body><p>h</p></body></html>" />);
     const stage = document.querySelector('[data-component="PrototypeStage"]')!;
     fireEvent.click(screen.getByLabelText("Full screen"));
@@ -584,7 +584,7 @@ describe("prototype theme", () => {
   const themed = `<html><head><style>:root{--bg:#fff}@media (prefers-color-scheme: dark){:root{--bg:#000}}@media (prefers-color-scheme: light){:root{--bg:#eee}}</style></head><body><p>screen</p></body></html>`;
 
   test("withTheme rewrites the media condition, never the rules inside it", async () => {
-    const { withTheme, THEME_MARK } = await import("./lib/theme.ts");
+    const { withTheme, THEME_MARK } = await import("./prototype/theme.ts");
 
     // system is a true no-op: a prototype behaves exactly as it does on disk
     expect(withTheme(themed, "system")).toBe(themed);
@@ -605,7 +605,7 @@ describe("prototype theme", () => {
   });
 
   test("spacing and case in the media query do not matter, and a file with no body still gets the script", async () => {
-    const { withTheme, THEME_MARK } = await import("./lib/theme.ts");
+    const { withTheme, THEME_MARK } = await import("./prototype/theme.ts");
     const odd = `<style>@media (PREFERS-COLOR-SCHEME : dark){b{color:red}}</style>`;
     const out = withTheme(odd, "dark");
     expect(out).toContain("@media (min-width: 0px){b{color:red}}");
@@ -613,7 +613,7 @@ describe("prototype theme", () => {
   });
 
   test("the toggle sits in the toolbar, persists, and forces the frame", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     render(<PrototypeFrame html={themed} />);
     const frame = () => document.querySelector("iframe")!;
 
@@ -634,7 +634,7 @@ describe("prototype variants", () => {
   const page = `<html><body><p>screen</p><div class="prototype-bar" data-component="PrototypeBar"><button data-aiview-variant="documents" aria-pressed="true">documents</button><button data-aiview-variant="profile">your profile</button><button data-aiview-action="reset">reset</button></div></body></html>`;
 
   test("prototypeControls reads variants, the pressed one, and actions from static markup", async () => {
-    const { prototypeControls, withBridge, BRIDGE_MARK } = await import("./lib/bridge.ts");
+    const { prototypeControls, withBridge, BRIDGE_MARK } = await import("./prototype/bridge.ts");
     const c = prototypeControls(page);
     expect(c.variants).toEqual([{ name: "documents", label: "documents" }, { name: "profile", label: "your profile" }]);
     expect(c.initial).toBe("documents");
@@ -647,7 +647,7 @@ describe("prototype variants", () => {
   });
 
   test("the frame mirrors the variants, drives the page by message, and keeps the choice across a reload", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     render(<PrototypeFrame html={page} />);
     const frame = document.querySelector("iframe")!;
     const posted: unknown[] = [];
@@ -667,7 +667,7 @@ describe("prototype variants", () => {
   });
 
   test("a prototype without controls shows no variant toolbar", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     render(<PrototypeFrame html="<html><body><p>h</p></body></html>" />);
     expect(document.querySelector('[data-component="VariantToggle"]')).toBeNull();
     expect(document.querySelector('[data-component="PrototypeActions"]')).toBeNull();
@@ -704,7 +704,7 @@ describe("useDocuments: the stream is watched, not trusted", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => documents }) as unknown as Response));
     const { renderHook } = await import("@testing-library/react");
-    const { useDocuments } = await import("./hooks/useDocuments.ts");
+    const { useDocuments } = await import("./documents/useDocuments.ts");
     return renderHook(() => useDocuments());
   };
 
@@ -765,7 +765,7 @@ describe("useDocuments: the tab's own project", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.stubGlobal("fetch", fetchMock);
     const { renderHook, waitFor } = await import("@testing-library/react");
-    const { useDocuments } = await import("./hooks/useDocuments.ts");
+    const { useDocuments } = await import("./documents/useDocuments.ts");
     const hook = renderHook(() => useDocuments());
     await waitFor(() => expect(hook.result.current.projectKnown).toBe(true));
     return hook;
@@ -826,7 +826,7 @@ describe("Sidebar footer: the way to the repository", () => {
 
 describe("pointing at a prototype's components", () => {
   test("the spotlight is installed once, idle, inside the body", async () => {
-    const { withSpotlight, pointMessage, SPOTLIGHT_MARK } = await import("./lib/spotlight.ts");
+    const { withSpotlight, pointMessage, SPOTLIGHT_MARK } = await import("./prototype/spotlight.ts");
     const once = withSpotlight("<html><body><p>x</p></body></html>");
     expect(once.indexOf(SPOTLIGHT_MARK)).toBeLessThan(once.indexOf("</body>"));
     expect(withSpotlight(once)).toBe(once);
@@ -834,7 +834,7 @@ describe("pointing at a prototype's components", () => {
   });
 
   test("the toolbar says what the agent is pointing at, and the person can stop it", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     const onClear = vi.fn();
     const { container, rerender } = render(
       <PrototypeFrame html="<html><body></body></html>" pointed={["ApplicationStrip", "MenuSquare"]} onClearPointer={onClear} />,
@@ -862,7 +862,7 @@ describe("color scheme", () => {
 
 describe("pinned documents in the menu", () => {
   test("one menu item per kind holding a pin, its documents by title; nothing pinned, nothing shown", async () => {
-    const { pinnedByKind, kindPlural } = await import("./components/shell/PinnedNav.tsx");
+    const { pinnedByKind, kindPlural } = await import("./shell/PinnedNav.tsx");
     const docs = [
       doc({ id: 1, kind: "workbench", title: "B bench", pinned: true }),
       doc({ id: 2, kind: "workbench", title: "A bench", pinned: true }),
@@ -908,7 +908,7 @@ describe("sketches, a list apart from the documents", () => {
   ];
 
   test("a document is in one list: a sketch in Sketches alone, the board in neither", async () => {
-    const { inSection } = await import("./components/docs/DocumentsPage.tsx");
+    const { inSection } = await import("./documents/DocumentsPage.tsx");
     expect(docs.filter((d) => inSection(d, "documents")).map((d) => d.id)).toEqual([1]);
     expect(docs.filter((d) => inSection(d, "sketches")).map((d) => d.id)).toEqual([2]);
   });
@@ -938,7 +938,7 @@ describe("sketches, a list apart from the documents", () => {
   });
 
   test("a sketch frame offers viewport and theme, never Composition", async () => {
-    const { PrototypeFrame } = await import("./components/viewers/PrototypeFrame.tsx");
+    const { PrototypeFrame } = await import("./prototype/PrototypeFrame.tsx");
     localStorage.setItem("aiview.prototypeMode", "composition");
     render(<PrototypeFrame html="<html><body><p>h</p></body></html>" sketch />);
     expect(document.querySelector('[data-component="PrototypeViewportToggle"]')).not.toBeNull();

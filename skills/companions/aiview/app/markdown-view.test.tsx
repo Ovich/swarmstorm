@@ -7,7 +7,7 @@ vi.mock("mermaid", () => ({
   default: { initialize: () => {}, render: async () => ({ svg: '<svg data-testid="doc-drawn"></svg>' }) },
 }));
 
-import { MarkdownView } from "./components/viewers/MarkdownView.tsx";
+import { MarkdownView } from "./documents/viewers/MarkdownView.tsx";
 
 afterEach(cleanup);
 // MermaidView picks its theme from the OS scheme; jsdom has no matchMedia.

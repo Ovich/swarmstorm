@@ -2,8 +2,8 @@
 import { expect, test } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { MERMAID_URL } from "./components/viewers/MermaidView";
-import { SHIKI_URL } from "./components/viewers/CodeView";
+import { MERMAID_URL } from "./documents/viewers/MermaidView";
+import { SHIKI_URL } from "./documents/viewers/CodeView";
 
 test("the CDN's mermaid is package.json's version", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
