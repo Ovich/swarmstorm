@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
-import { npmInstallArgs, npmInvocation, projectTypescriptVersion } from "./cruiser-install.mjs";
+import { cruiserTypescriptVersion, npmInstallArgs, npmInvocation, projectTypescriptVersion } from "./cruiser-install.mjs";
 
 const cruiserVersion = "18.5.0";
 const core =
@@ -36,9 +36,12 @@ const root = resolve(option("root") ?? ".");
 if (!existsSync(join(root, "package.json")) && !existsSync(join(root, "tsconfig.json")))
   fail(`no package.json or tsconfig.json in ${root}`, "--root <the folder of the package to graph>");
 
+const projectTs = projectTypescriptVersion(root);
+if (projectTs.refused) fail(projectTs.refused, "fix or reinstall the project's typescript package, then run again");
+/** The TypeScript the parse runs with; `ts.fallback` names it when it is not the project's own. */
+const ts = cruiserTypescriptVersion(projectTs.version);
+
 const cruiser = () => {
-  const ts = projectTypescriptVersion(root);
-  if (ts.refused) fail(ts.refused, "fix or reinstall the project's typescript package, then run again");
   const cache = join(homedir(), ".cache", "swarmstorm-depgraph", `${cruiserVersion}-ts${ts.version}`);
   const bin = join(cache, "node_modules", "dependency-cruiser", "bin", "dependency-cruiser.mjs");
   if (!existsSync(bin)) {
@@ -83,6 +86,7 @@ if (nodes === 0) fail("the graph is empty", "--from must hold source files; wide
 
 const out = option("out");
 if (!out) {
+  if (ts.fallback) console.error(`parsed with ${ts.fallback}`);
   process.stdout.write(mermaid);
   process.exit(0);
 }
@@ -96,6 +100,6 @@ const commit = (() => {
 const shown = args.filter((each) => each !== "--out" && each !== out).join(" ");
 writeFileSync(
   out,
-  `# ${option("title") ?? `Dependency graph · ${from}`}\n\nParsed at \`${commit}\` with dependency-cruiser ${cruiserVersion}: ${nodes} modules, ${edges} dependencies. Made again with:\n\n\`\`\`sh\nnode graph.mjs ${shown}\n\`\`\`\n\n\`\`\`mermaid\n${mermaid.trim()}\n\`\`\`\n`,
+  `# ${option("title") ?? `Dependency graph · ${from}`}\n\nParsed at \`${commit}\` with dependency-cruiser ${cruiserVersion}${ts.fallback ? ` on ${ts.fallback}` : ""}: ${nodes} modules, ${edges} dependencies. Made again with:\n\n\`\`\`sh\nnode graph.mjs ${shown}\n\`\`\`\n\n\`\`\`mermaid\n${mermaid.trim()}\n\`\`\`\n`,
 );
-console.log(JSON.stringify({ out, nodes, edges, ms: Math.round(performance.now() - began) }));
+console.log(JSON.stringify({ out, nodes, edges, ms: Math.round(performance.now() - began), ...(ts.fallback ? { typescript: ts.fallback } : {}) }));

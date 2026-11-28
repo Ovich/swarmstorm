@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { hhmm, type Item } from "../../../lib/board/view.ts";
+import { hhmm } from "../../../lib/board/names.ts";
+import type { Item } from "../../../lib/board/conversation.ts";
 import { AgentLabel, AgentMark, RichText } from "./chips.tsx";
 import { PostBody } from "./PostBody.tsx";
 

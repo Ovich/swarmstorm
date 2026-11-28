@@ -22,6 +22,16 @@ export function projectTypescriptVersion(root) {
   }
 }
 
+/**
+ * The TypeScript dependency-cruiser parses with, for a project on `projectVersion` (codebase-rework#D25): the
+ * project's own, except from TypeScript 7 on, whose compiler dependency-cruiser cannot load; then TypeScript 6,
+ * and `fallback` says so for the report line.
+ */
+export function cruiserTypescriptVersion(projectVersion) {
+  if (Number(projectVersion.split(".")[0]) < 7) return { version: projectVersion };
+  return { version: "6", fallback: `TypeScript 6, as dependency-cruiser cannot load the project's TypeScript ${projectVersion}` };
+}
+
 /** The npm arguments that install the cruiser and `typescript@<version>` into `cache`. */
 export const npmInstallArgs = (cache, cruiserVersion, typescriptVersion) => [
   "install", "--silent", "--no-audit", "--no-fund", "--prefix", cache, `dependency-cruiser@${cruiserVersion}`, `typescript@${typescriptVersion}`,

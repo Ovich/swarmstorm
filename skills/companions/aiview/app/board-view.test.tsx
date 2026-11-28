@@ -23,7 +23,7 @@ vi.mock("./hooks/useBoard.ts", () => ({
 import { BoardView } from "./components/viewers/board/BoardView.tsx";
 import { AgentLabel, AgentMark, MemberTag } from "./components/viewers/board/chips.tsx";
 import { countText } from "./components/viewers/board/RunTabs.tsx";
-import type { RunTab } from "./lib/board/view.ts";
+import type { RunTab } from "./lib/board/runs.ts";
 import { CLAIMS_EXPANDED_KEY } from "./components/viewers/board/ClaimsRow.tsx";
 
 afterEach(() => {

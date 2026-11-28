@@ -13,23 +13,92 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// src/proc.ts
+// ../swarm-board/src/host/proc.ts
 import { spawn, spawnSync } from "node:child_process";
-function hiddenSpawnSync(command, args2, options = {}) {
-  return spawnSync(command, args2, { ...options, windowsHide: true });
+function hiddenSpawnSync(command, args, options = {}) {
+  return spawnSync(command, args, { ...options, windowsHide: true });
+}
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === "EPERM";
+  }
 }
 var hiddenSpawn;
 var init_proc = __esm({
-  "src/proc.ts"() {
+  "../swarm-board/src/host/proc.ts"() {
     "use strict";
-    hiddenSpawn = (command, args2, options = {}) => spawn(command, args2, { ...options, windowsHide: true });
+    hiddenSpawn = (command, args, options = {}) => spawn(command, args, { ...options, windowsHide: true });
+  }
+});
+
+// ../swarm-board/src/host/git.ts
+var init_git = __esm({
+  "../swarm-board/src/host/git.ts"() {
+    "use strict";
+    init_proc();
+  }
+});
+
+// ../swarm-board/src/host/place.ts
+import fs from "node:fs";
+import path from "node:path";
+function canonicalPath(p) {
+  const resolved = real(path.resolve(p));
+  return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
+}
+function commonGitDir(dotGit) {
+  if (!fs.statSync(dotGit).isFile()) return dotGit;
+  const own = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, "utf8"))?.[1]?.trim();
+  if (!own) return dotGit;
+  const dir = path.resolve(path.dirname(dotGit), own);
+  const common = path.join(dir, "commondir");
+  return fs.existsSync(common) ? path.resolve(dir, fs.readFileSync(common, "utf8").trim()) : dir;
+}
+var real;
+var init_place = __esm({
+  "../swarm-board/src/host/place.ts"() {
+    "use strict";
+    init_git();
+    real = (p) => {
+      try {
+        return fs.realpathSync.native(p);
+      } catch {
+        return p;
+      }
+    };
+  }
+});
+
+// ../swarm-board/src/host/home.ts
+import fs2 from "node:fs";
+import os from "node:os";
+import path2 from "node:path";
+function serverStateFile(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.json");
+}
+function serverLogFile(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.log");
+}
+function serverStartLock(dataRoot) {
+  return path2.join(dataRoot, "swarm-server.lock");
+}
+var HOME_FROM_ENV, NEW_HOME, OLD_HOME, DATA_ROOT;
+var init_home = __esm({
+  "../swarm-board/src/host/home.ts"() {
+    "use strict";
+    HOME_FROM_ENV = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
+    NEW_HOME = path2.join(os.homedir(), "swarmstorm_appdata");
+    OLD_HOME = path2.join(os.homedir(), "charrette_appdata");
+    DATA_ROOT = HOME_FROM_ENV ? path2.resolve(HOME_FROM_ENV) : !fs2.existsSync(NEW_HOME) && fs2.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
   }
 });
 
 // src/core/home.ts
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import fs3 from "node:fs";
+import path3 from "node:path";
 function defaultPort(root = DATA_ROOT) {
   const home = normalHome(root);
   if (home === normalHome(NEW_HOME) || home === normalHome(OLD_HOME)) return HOME_PORT;
@@ -38,9 +107,9 @@ function defaultPort(root = DATA_ROOT) {
   return 4400 + hash % 500;
 }
 function normalHome(root) {
-  let p = path.resolve(root);
+  let p = path3.resolve(root);
   try {
-    p = fs.realpathSync.native(p);
+    p = fs3.realpathSync.native(p);
   } catch {
   }
   return p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
@@ -52,98 +121,31 @@ function firstFreePort(from) {
   return Number.isInteger(port) && port > 0 ? port : from;
 }
 function ensureHome() {
-  fs.mkdirSync(DOCS_ROOT, { recursive: true });
+  fs3.mkdirSync(DOCS_ROOT, { recursive: true });
 }
-var homeFromEnv, NEW_HOME, OLD_HOME, isPersonHome, DATA_ROOT, HOME_PORT, DOCS_ROOT, docsDirFor;
-var init_home = __esm({
+var isPersonHome, HOME_PORT, DOCS_ROOT, docsDirFor;
+var init_home2 = __esm({
   "src/core/home.ts"() {
     "use strict";
-    init_proc();
-    homeFromEnv = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME = path.join(os.homedir(), "swarmstorm_appdata");
-    OLD_HOME = path.join(os.homedir(), "charrette_appdata");
-    isPersonHome = (root) => {
-      const fold = (p) => process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p);
-      return fold(root) === fold(NEW_HOME) || fold(root) === fold(OLD_HOME);
-    };
-    DATA_ROOT = homeFromEnv ? path.resolve(homeFromEnv) : !fs.existsSync(NEW_HOME) && fs.existsSync(OLD_HOME) ? OLD_HOME : NEW_HOME;
-    HOME_PORT = 4321;
-    DOCS_ROOT = path.join(DATA_ROOT, "docs");
-    docsDirFor = (projectSlug) => path.join(DOCS_ROOT, projectSlug);
-  }
-});
-
-// src/core/browser.ts
-import { spawn as spawn2 } from "node:child_process";
-function browserRefusal(noBrowser = process.env.AIVIEW_NO_BROWSER, dataRoot = DATA_ROOT) {
-  if (noBrowser === "1") return "AIVIEW_NO_BROWSER=1";
-  if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
-  return null;
-}
-function browserCommand(url, platform = process.platform) {
-  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", url]];
-  if (platform === "darwin") return ["open", [url]];
-  return ["xdg-open", [url]];
-}
-function launchBrowser(url) {
-  const [program, argv] = browserCommand(url);
-  try {
-    spawn2(program, argv, { detached: true, stdio: "ignore", windowsHide: true }).unref();
-  } catch (e) {
-    console.error(`could not open browser: ${e.message}`);
-  }
-}
-function openBrowser(url) {
-  const refused = browserRefusal();
-  if (refused) {
-    console.error(`aiview: no browser opened for ${url} (${refused})`);
-    return refused;
-  }
-  launchBrowser(url);
-  return null;
-}
-var init_browser = __esm({
-  "src/core/browser.ts"() {
-    "use strict";
     init_home();
-  }
-});
-
-// ../swarm-board/src/proc.ts
-import { spawn as spawn3, spawnSync as spawnSync2 } from "node:child_process";
-var hiddenSpawn2;
-var init_proc2 = __esm({
-  "../swarm-board/src/proc.ts"() {
-    "use strict";
-    hiddenSpawn2 = (command, args2, options = {}) => spawn3(command, args2, { ...options, windowsHide: true });
-  }
-});
-
-// ../swarm-board/src/place/place.ts
-import fs2 from "node:fs";
-import path2 from "node:path";
-function commonGitDir(dotGit) {
-  if (!fs2.statSync(dotGit).isFile()) return dotGit;
-  const own = /^gitdir:\s*(.+)$/m.exec(fs2.readFileSync(dotGit, "utf8"))?.[1]?.trim();
-  if (!own) return dotGit;
-  const dir = path2.resolve(path2.dirname(dotGit), own);
-  const common = path2.join(dir, "commondir");
-  return fs2.existsSync(common) ? path2.resolve(dir, fs2.readFileSync(common, "utf8").trim()) : dir;
-}
-var init_place = __esm({
-  "../swarm-board/src/place/place.ts"() {
-    "use strict";
-    init_proc2();
+    init_proc();
+    isPersonHome = (root) => {
+      const fold2 = (p) => process.platform === "win32" ? path3.resolve(p).toLowerCase() : path3.resolve(p);
+      return fold2(root) === fold2(NEW_HOME) || fold2(root) === fold2(OLD_HOME);
+    };
+    HOME_PORT = 4321;
+    DOCS_ROOT = path3.join(DATA_ROOT, "docs");
+    docsDirFor = (projectSlug) => path3.join(DOCS_ROOT, projectSlug);
   }
 });
 
 // src/core/projects.ts
-import path3 from "node:path";
+import path4 from "node:path";
 function isInside(child, parent) {
   if (!parent) return false;
   const c = norm(child);
   const p = norm(parent);
-  return c === p || c.startsWith(p + path3.sep);
+  return c === p || c.startsWith(p + path4.sep);
 }
 function projectForCwd(dir, projects) {
   let best = null;
@@ -161,8 +163,8 @@ function projectForCwd(dir, projects) {
   return best;
 }
 function projectFromDocsPath(absFile, docsRoot) {
-  if (!isInside(path3.dirname(absFile), docsRoot)) return null;
-  const [first, ...rest] = path3.relative(docsRoot, absFile).split(/[\\/]/);
+  if (!isInside(path4.dirname(absFile), docsRoot)) return null;
+  const [first, ...rest] = path4.relative(docsRoot, absFile).split(/[\\/]/);
   return rest.length > 0 && first ? first : null;
 }
 function resolveProject({ explicit, absFile, docsRoot, existing, fallback }) {
@@ -174,20 +176,20 @@ var init_projects = __esm({
   "src/core/projects.ts"() {
     "use strict";
     norm = (p) => {
-      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path3.sep);
+      const unified = p.replace(/[\\/]+$/, "").split(/[\\/]/).join(path4.sep);
       return process.platform === "win32" ? unified.toLowerCase() : unified;
     };
   }
 });
 
 // src/core/paths.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
+import fs4 from "node:fs";
+import path5 from "node:path";
 function repoRootOf(start) {
   let dir = start;
   for (; ; ) {
-    if (fs3.existsSync(path4.join(dir, ".git"))) return dir;
-    const parent = path4.dirname(dir);
+    if (fs4.existsSync(path5.join(dir, ".git"))) return dir;
+    const parent = path5.dirname(dir);
     if (parent === dir) return start;
     dir = parent;
   }
@@ -196,17 +198,17 @@ function sidecarOf(absPath) {
   return /\.workbench\.html$/i.test(absPath) ? absPath.replace(/\.html$/i, "") : null;
 }
 function kindFromName(file) {
-  const parts = path4.basename(file).split(".");
+  const parts = path5.basename(file).split(".");
   return parts.length >= 3 ? currentKind(parts[parts.length - 2]) : "";
 }
 function titleOf(text, file) {
-  if (isSwarm(file)) return path4.basename(file);
+  if (isSwarm(file)) return path5.basename(file);
   const m = isHtml(file) ? text.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] ?? text.match(/<h1[^>]*>([^<]+)<\/h1>/i)?.[1] : text.match(/^#\s+(.+)$/m)?.[1];
-  return (m ?? path4.basename(file)).trim();
+  return (m ?? path5.basename(file)).trim();
 }
 function toStored(abs, root) {
-  const rel = path4.relative(root, abs);
-  return rel && !rel.startsWith("..") && !path4.isAbsolute(rel) ? rel.split(path4.sep).join("/") : abs;
+  const rel = path5.relative(root, abs);
+  return rel && !rel.startsWith("..") && !path5.isAbsolute(rel) ? rel.split(path5.sep).join("/") : abs;
 }
 var isHtml, isPdf, isSwarm, formatOf, currentKind, projectRoot, readDoc, toAbs;
 var init_paths = __esm({
@@ -217,22 +219,22 @@ var init_paths = __esm({
     isSwarm = (file) => /\.swarm\.json$/i.test(file);
     formatOf = (file) => isHtml(file) ? "html" : isPdf(file) ? "pdf" : isSwarm(file) ? "swarm" : "markdown";
     currentKind = (kind) => kind.toLowerCase();
-    projectRoot = (file) => path4.basename(repoRootOf(path4.dirname(file)));
-    readDoc = (p) => fs3.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
-    toAbs = (stored, root) => path4.isAbsolute(stored) ? stored : path4.resolve(root, ...stored.split("/"));
+    projectRoot = (file) => path5.basename(repoRootOf(path5.dirname(file)));
+    readDoc = (p) => fs4.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+    toAbs = (stored, root) => path5.isAbsolute(stored) ? stored : path5.resolve(root, ...stored.split("/"));
   }
 });
 
 // src/core/db.ts
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import path6 from "node:path";
 import { fileURLToPath } from "node:url";
 function findToolRoot() {
   if (process.env.AIVIEW_ROOT) return process.env.AIVIEW_ROOT;
-  let dir = path5.dirname(fileURLToPath(import.meta.url));
+  let dir = path6.dirname(fileURLToPath(import.meta.url));
   for (; ; ) {
-    if (fs4.existsSync(path5.join(dir, "package.json"))) return dir;
-    const parent = path5.dirname(dir);
+    if (fs5.existsSync(path6.join(dir, "package.json"))) return dir;
+    const parent = path6.dirname(dir);
     if (parent === dir) return dir;
     dir = parent;
   }
@@ -263,20 +265,20 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
     "CREATE TABLE IF NOT EXISTS projects (slug TEXT PRIMARY KEY, title TEXT, paths TEXT NOT NULL DEFAULT '[]', board_repos TEXT NOT NULL DEFAULT '[]')"
   );
   db.exec("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
-  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path5.join(path5.resolve(p), ".git")).filter((g) => fs4.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
+  const gitDirsOf = (pathsJson) => JSON.parse(pathsJson).map((p) => path6.join(path6.resolve(p), ".git")).filter((g) => fs5.existsSync(g)).map((g) => commonGitDir(g).split("\\").join("/"));
   const boardReposOf = (slug) => {
     const row = db.prepare("SELECT board_repos, paths FROM projects WHERE slug = ?").get(slug);
     if (!row) return [];
     const seen = /* @__PURE__ */ new Set();
     const repos = [];
     const keyed = (r) => {
-      const g = /[\\/]\.git$/i.test(r) ? r : path5.join(r, ".git");
-      return fs4.existsSync(g) && fs4.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
+      const g = /[\\/]\.git$/i.test(r) ? r : path6.join(r, ".git");
+      return fs5.existsSync(g) && fs5.statSync(g).isFile() ? commonGitDir(g).split("\\").join("/") : r;
     };
     for (const r of [...JSON.parse(row.board_repos).map(keyed), ...JSON.parse(row.board_repos).length === 0 ? gitDirsOf(row.paths) : []]) {
-      const folder = path5.resolve(r).replace(/[\\/]\.git$/i, "");
+      const folder = path6.resolve(r).replace(/[\\/]\.git$/i, "");
       const key = process.platform === "win32" ? folder.toLowerCase() : folder;
-      if (seen.has(key) || !fs4.existsSync(folder)) continue;
+      if (seen.has(key) || !fs5.existsSync(folder)) continue;
       seen.add(key);
       repos.push(r);
     }
@@ -329,7 +331,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
   };
   return {
     register(absFile, { kind = "", tags: extraTags = [], started = "", group = "", groupTitle = "", project = "" } = {}) {
-      if (!fs4.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
+      if (!fs5.existsSync(absFile)) throw new Error(`no such file: ${absFile}`);
       const file = toStored(absFile, root);
       const content = isPdf(absFile) ? "" : readDoc(absFile);
       const existing = db.prepare("SELECT * FROM documents WHERE file_path = ?").get(file);
@@ -408,7 +410,7 @@ function openIndex(dbPath = SQLITE_PATH, root = STORE_ROOT) {
       return db.prepare("SELECT * FROM documents ORDER BY created_at DESC, id DESC").all().map(parse2).map((d) => {
         let stat = null;
         try {
-          stat = fs4.statSync(d.abs_path);
+          stat = fs5.statSync(d.abs_path);
         } catch {
           stat = null;
         }
@@ -497,7 +499,7 @@ var init_db = __esm({
   async "src/core/db.ts"() {
     "use strict";
     init_place();
-    init_home();
+    init_home2();
     init_projects();
     init_paths();
     process.removeAllListeners("warning");
@@ -506,9 +508,182 @@ var init_db = __esm({
     });
     ({ DatabaseSync } = await import("node:sqlite"));
     TOOL_ROOT = findToolRoot();
-    SQLITE_PATH = path5.join(DATA_ROOT, "aiview.sqlite");
+    SQLITE_PATH = path6.join(DATA_ROOT, "aiview.sqlite");
     STORE_ROOT = DATA_ROOT;
     now = () => (/* @__PURE__ */ new Date()).toISOString();
+  }
+});
+
+// src/core/serverstate.ts
+import fs6 from "node:fs";
+import path8 from "node:path";
+function writeServerFiles(port, version, token) {
+  ensureHome();
+  if (version === null) fs6.rmSync(VERSION_FILE, { force: true });
+  else fs6.writeFileSync(VERSION_FILE, version);
+  fs6.writeFileSync(TOKEN_FILE, token, { mode: 384 });
+  fs6.writeFileSync(PID_FILE, String(process.pid));
+  fs6.writeFileSync(PORT_FILE, String(port));
+}
+function clearServerFiles() {
+  if (readInt(PID_FILE) === process.pid) {
+    try {
+      fs6.rmSync(PID_FILE, { force: true });
+      fs6.rmSync(PORT_FILE, { force: true });
+      fs6.rmSync(VERSION_FILE, { force: true });
+      fs6.rmSync(TOKEN_FILE, { force: true });
+    } catch {
+    }
+  }
+}
+function readServerStatus() {
+  const pid = readInt(PID_FILE);
+  const port = readInt(PORT_FILE);
+  if (pid === null || port === null)
+    return { running: false, pid: null, port: null, version: null, stale: pid !== null || port !== null };
+  const version = readText(VERSION_FILE);
+  if (!isAlive(pid)) return { running: false, pid, port, version, stale: true };
+  return { running: true, pid, port, version, stale: false };
+}
+var PID_FILE, PORT_FILE, VERSION_FILE, TOKEN_FILE, readInt, readText, readServerToken;
+var init_serverstate = __esm({
+  "src/core/serverstate.ts"() {
+    "use strict";
+    init_proc();
+    init_home2();
+    PID_FILE = path8.join(DATA_ROOT, "aiview.pid");
+    PORT_FILE = path8.join(DATA_ROOT, "aiview.port");
+    VERSION_FILE = path8.join(DATA_ROOT, "aiview.version");
+    TOKEN_FILE = path8.join(DATA_ROOT, "aiview.token");
+    readInt = (f) => {
+      try {
+        const n = Number(fs6.readFileSync(f, "utf8").trim());
+        return Number.isInteger(n) && n > 0 ? n : null;
+      } catch {
+        return null;
+      }
+    };
+    readText = (f) => {
+      try {
+        const t = fs6.readFileSync(f, "utf8").trim();
+        return t === "" ? null : t;
+      } catch {
+        return null;
+      }
+    };
+    readServerToken = () => readText(TOKEN_FILE);
+  }
+});
+
+// src/server/guard.ts
+import crypto from "node:crypto";
+function makeGuard({ port, token, devOrigins = [] }) {
+  const hosts = /* @__PURE__ */ new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
+  const origins = /* @__PURE__ */ new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins]);
+  const isPost = (req) => req.method === "POST";
+  const checks = [
+    (req) => hosts.has((header(req, "host") ?? "").toLowerCase()) ? null : { status: 421, reason: "host not allowed" },
+    (req) => {
+      const origin = header(req, "origin");
+      return origin === void 0 || origins.has(origin) ? null : { status: 403, reason: "origin not allowed" };
+    },
+    (req) => !isPost(req) || (header(req, "content-type") ?? "").split(";")[0].trim().toLowerCase() === "application/json" ? null : { status: 415, reason: "a POST is application/json" },
+    (req) => !isPost(req) || sameToken(header(req, TOKEN_HEADER) ?? cookieToken(req), token) ? null : { status: 403, reason: "missing or wrong token" }
+  ];
+  return {
+    check(req) {
+      for (const check3 of checks) {
+        const refusal = check3(req);
+        if (refusal) return refusal;
+      }
+      return null;
+    }
+  };
+}
+var TOKEN_HEADER, TOKEN_COOKIE, newServerToken, tokenCookie, header, cookieToken, sameToken;
+var init_guard = __esm({
+  "src/server/guard.ts"() {
+    "use strict";
+    TOKEN_HEADER = "x-aiview-token";
+    TOKEN_COOKIE = "aiview_token";
+    newServerToken = () => crypto.randomBytes(32).toString("hex");
+    tokenCookie = (token) => `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`;
+    header = (req, name) => {
+      const v = req.headers[name];
+      return Array.isArray(v) ? v[0] : v;
+    };
+    cookieToken = (req) => {
+      for (const part of (header(req, "cookie") ?? "").split(";")) {
+        const eq = part.indexOf("=");
+        if (eq > 0 && part.slice(0, eq).trim() === TOKEN_COOKIE) return part.slice(eq + 1).trim();
+      }
+      return void 0;
+    };
+    sameToken = (given, token) => {
+      if (given === void 0) return false;
+      const a = Buffer.from(given);
+      const b = Buffer.from(token);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    };
+  }
+});
+
+// src/core/collectionversion.ts
+import fs7 from "node:fs";
+import path9 from "node:path";
+function collectionVersion(toolRoot) {
+  for (let dir = path9.dirname(path9.resolve(toolRoot)); ; dir = path9.dirname(dir)) {
+    const manifest = path9.join(dir, ".claude-plugin", "plugin.json");
+    if (fs7.existsSync(manifest)) {
+      try {
+        const parsed = JSON.parse(fs7.readFileSync(manifest, "utf8"));
+        return typeof parsed.version === "string" ? parsed.version : null;
+      } catch {
+        return null;
+      }
+    }
+    if (path9.dirname(dir) === dir) return null;
+  }
+}
+var init_collectionversion = __esm({
+  "src/core/collectionversion.ts"() {
+    "use strict";
+  }
+});
+
+// src/core/browser.ts
+import { spawn as spawn2 } from "node:child_process";
+function browserRefusal(noBrowser = process.env.AIVIEW_NO_BROWSER, dataRoot = DATA_ROOT) {
+  if (noBrowser === "1") return "AIVIEW_NO_BROWSER=1";
+  if (!isPersonHome(dataRoot)) return `the data home ${dataRoot} is not the person's own`;
+  return null;
+}
+function browserCommand(url, platform = process.platform) {
+  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", url]];
+  if (platform === "darwin") return ["open", [url]];
+  return ["xdg-open", [url]];
+}
+function launchBrowser(url) {
+  const [program, argv] = browserCommand(url);
+  try {
+    spawn2(program, argv, { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  } catch (e) {
+    console.error(`could not open browser: ${e.message}`);
+  }
+}
+function openBrowser(url) {
+  const refused = browserRefusal();
+  if (refused) {
+    console.error(`aiview: no browser opened for ${url} (${refused})`);
+    return refused;
+  }
+  launchBrowser(url);
+  return null;
+}
+var init_browser = __esm({
+  "src/core/browser.ts"() {
+    "use strict";
+    init_home2();
   }
 });
 
@@ -4812,7 +4987,7 @@ var init_open_element_stack = __esm({
 });
 
 // node_modules/parse5/dist/parser/formatting-element-list.js
-var NOAH_ARK_CAPACITY, EntryType, MARKER, FormattingElementList;
+var NOAH_ARK_CAPACITY, EntryType, MARKER2, FormattingElementList;
 var init_formatting_element_list = __esm({
   "node_modules/parse5/dist/parser/formatting-element-list.js"() {
     NOAH_ARK_CAPACITY = 3;
@@ -4820,7 +4995,7 @@ var init_formatting_element_list = __esm({
       EntryType2[EntryType2["Marker"] = 0] = "Marker";
       EntryType2[EntryType2["Element"] = 1] = "Element";
     })(EntryType || (EntryType = {}));
-    MARKER = { type: EntryType.Marker };
+    MARKER2 = { type: EntryType.Marker };
     FormattingElementList = class {
       constructor(treeAdapter) {
         this.treeAdapter = treeAdapter;
@@ -4871,7 +5046,7 @@ var init_formatting_element_list = __esm({
       }
       //Mutations
       insertMarker() {
-        this.entries.unshift(MARKER);
+        this.entries.unshift(MARKER2);
       }
       pushElement(element, token) {
         this._ensureNoahArkCondition(element);
@@ -4901,7 +5076,7 @@ var init_formatting_element_list = __esm({
        * @see https://html.spec.whatwg.org/multipage/parsing.html#clear-the-list-of-active-formatting-elements-up-to-the-last-marker
        */
       clearToLastMarker() {
-        const markerIdx = this.entries.indexOf(MARKER);
+        const markerIdx = this.entries.indexOf(MARKER2);
         if (markerIdx === -1) {
           this.entries.length = 0;
         } else {
@@ -8883,154 +9058,10 @@ var init_pointer = __esm({
   }
 });
 
-// src/core/serverstate.ts
-import fs5 from "node:fs";
-import path6 from "node:path";
-function writeServerFiles(port, version, token) {
-  ensureHome();
-  if (version === null) fs5.rmSync(VERSION_FILE, { force: true });
-  else fs5.writeFileSync(VERSION_FILE, version);
-  fs5.writeFileSync(TOKEN_FILE, token, { mode: 384 });
-  fs5.writeFileSync(PID_FILE, String(process.pid));
-  fs5.writeFileSync(PORT_FILE, String(port));
-}
-function clearServerFiles() {
-  if (readInt(PID_FILE) === process.pid) {
-    try {
-      fs5.rmSync(PID_FILE, { force: true });
-      fs5.rmSync(PORT_FILE, { force: true });
-      fs5.rmSync(VERSION_FILE, { force: true });
-      fs5.rmSync(TOKEN_FILE, { force: true });
-    } catch {
-    }
-  }
-}
-function readServerStatus() {
-  const pid = readInt(PID_FILE);
-  const port = readInt(PORT_FILE);
-  if (pid === null || port === null)
-    return { running: false, pid: null, port: null, version: null, stale: pid !== null || port !== null };
-  const version = readText(VERSION_FILE);
-  if (!alive(pid)) return { running: false, pid, port, version, stale: true };
-  return { running: true, pid, port, version, stale: false };
-}
-var PID_FILE, PORT_FILE, VERSION_FILE, TOKEN_FILE, readInt, alive, readText, readServerToken;
-var init_serverstate = __esm({
-  "src/core/serverstate.ts"() {
-    "use strict";
-    init_home();
-    PID_FILE = path6.join(DATA_ROOT, "aiview.pid");
-    PORT_FILE = path6.join(DATA_ROOT, "aiview.port");
-    VERSION_FILE = path6.join(DATA_ROOT, "aiview.version");
-    TOKEN_FILE = path6.join(DATA_ROOT, "aiview.token");
-    readInt = (f) => {
-      try {
-        const n = Number(fs5.readFileSync(f, "utf8").trim());
-        return Number.isInteger(n) && n > 0 ? n : null;
-      } catch {
-        return null;
-      }
-    };
-    alive = (pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    readText = (f) => {
-      try {
-        const t = fs5.readFileSync(f, "utf8").trim();
-        return t === "" ? null : t;
-      } catch {
-        return null;
-      }
-    };
-    readServerToken = () => readText(TOKEN_FILE);
-  }
-});
-
-// src/server/guard.ts
-import crypto from "node:crypto";
-function makeGuard({ port, token, devOrigins = [] }) {
-  const hosts = /* @__PURE__ */ new Set([`localhost:${port}`, `127.0.0.1:${port}`]);
-  const origins = /* @__PURE__ */ new Set([`http://localhost:${port}`, `http://127.0.0.1:${port}`, ...devOrigins]);
-  const isPost = (req) => req.method === "POST";
-  const checks = [
-    (req) => hosts.has((header(req, "host") ?? "").toLowerCase()) ? null : { status: 421, reason: "host not allowed" },
-    (req) => {
-      const origin = header(req, "origin");
-      return origin === void 0 || origins.has(origin) ? null : { status: 403, reason: "origin not allowed" };
-    },
-    (req) => !isPost(req) || (header(req, "content-type") ?? "").split(";")[0].trim().toLowerCase() === "application/json" ? null : { status: 415, reason: "a POST is application/json" },
-    (req) => !isPost(req) || sameToken(header(req, TOKEN_HEADER) ?? cookieToken(req), token) ? null : { status: 403, reason: "missing or wrong token" }
-  ];
-  return {
-    check(req) {
-      for (const check3 of checks) {
-        const refusal = check3(req);
-        if (refusal) return refusal;
-      }
-      return null;
-    }
-  };
-}
-var TOKEN_HEADER, TOKEN_COOKIE, newServerToken, tokenCookie, header, cookieToken, sameToken;
-var init_guard = __esm({
-  "src/server/guard.ts"() {
-    "use strict";
-    TOKEN_HEADER = "x-aiview-token";
-    TOKEN_COOKIE = "aiview_token";
-    newServerToken = () => crypto.randomBytes(32).toString("hex");
-    tokenCookie = (token) => `${TOKEN_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/`;
-    header = (req, name) => {
-      const v = req.headers[name];
-      return Array.isArray(v) ? v[0] : v;
-    };
-    cookieToken = (req) => {
-      for (const part of (header(req, "cookie") ?? "").split(";")) {
-        const eq = part.indexOf("=");
-        if (eq > 0 && part.slice(0, eq).trim() === TOKEN_COOKIE) return part.slice(eq + 1).trim();
-      }
-      return void 0;
-    };
-    sameToken = (given, token) => {
-      if (given === void 0) return false;
-      const a = Buffer.from(given);
-      const b = Buffer.from(token);
-      return a.length === b.length && crypto.timingSafeEqual(a, b);
-    };
-  }
-});
-
-// src/core/collectionversion.ts
-import fs6 from "node:fs";
-import path7 from "node:path";
-function collectionVersion(toolRoot) {
-  for (let dir = path7.dirname(path7.resolve(toolRoot)); ; dir = path7.dirname(dir)) {
-    const manifest = path7.join(dir, ".claude-plugin", "plugin.json");
-    if (fs6.existsSync(manifest)) {
-      try {
-        const parsed = JSON.parse(fs6.readFileSync(manifest, "utf8"));
-        return typeof parsed.version === "string" ? parsed.version : null;
-      } catch {
-        return null;
-      }
-    }
-    if (path7.dirname(dir) === dir) return null;
-  }
-}
-var init_collectionversion = __esm({
-  "src/core/collectionversion.ts"() {
-    "use strict";
-  }
-});
-
 // src/core/watcher.ts
 import { EventEmitter } from "node:events";
-import fs7 from "node:fs";
-import path8 from "node:path";
+import fs14 from "node:fs";
+import path16 from "node:path";
 var SIDECAR_MANIFEST, DocWatcher;
 var init_watcher = __esm({
   "src/core/watcher.ts"() {
@@ -9055,17 +9086,17 @@ var init_watcher = __esm({
         this.debounceMs = debounceMs;
       }
       ensureWatch(doc) {
-        const dir = path8.dirname(doc.abs_path);
+        const dir = path16.dirname(doc.abs_path);
         const sidecar = sidecarOf(doc.abs_path);
         if (sidecar) {
           let inDir = this.benches.get(dir);
           if (!inDir) this.benches.set(dir, inDir = /* @__PURE__ */ new Map());
-          inDir.set(path8.basename(sidecar), doc);
+          inDir.set(path16.basename(sidecar), doc);
           this.ensureSidecarWatch(doc);
         }
         if (this.watched.has(dir)) return;
         try {
-          const w = fs7.watch(dir, (_event, name) => {
+          const w = fs14.watch(dir, (_event, name) => {
             if (!name) return;
             const bench = this.benches.get(dir)?.get(String(name));
             if (bench) {
@@ -9074,7 +9105,7 @@ var init_watcher = __esm({
             }
             const hit = this.resolve(dir, String(name));
             if (hit) this.schedule(hit.id);
-            for (const id of this.hostsOf(path8.resolve(dir, String(name)))) this.schedule(id);
+            for (const id of this.hostsOf(path16.resolve(dir, String(name)))) this.schedule(id);
           });
           this.watched.set(dir, w);
         } catch (e) {
@@ -9086,12 +9117,12 @@ var init_watcher = __esm({
         const dir = sidecarOf(doc.abs_path);
         if (!dir || this.sidecars.has(dir)) return;
         try {
-          if (!fs7.statSync(dir).isDirectory()) return;
+          if (!fs14.statSync(dir).isDirectory()) return;
         } catch {
           return;
         }
         try {
-          const w = fs7.watch(dir, (_event, name) => {
+          const w = fs14.watch(dir, (_event, name) => {
             if (name && String(name) === SIDECAR_MANIFEST) this.scheduleData(doc.id);
           });
           w.on("error", () => {
@@ -9106,11 +9137,11 @@ var init_watcher = __esm({
       /** Replace (never merge) the set of files `hostId` depends on. An empty list clears it. */
       setSources(hostId, absPaths) {
         if (absPaths.length === 0) this.sources.delete(hostId);
-        else this.sources.set(hostId, new Set(absPaths.map((p) => path8.resolve(p))));
+        else this.sources.set(hostId, new Set(absPaths.map((p) => path16.resolve(p))));
       }
       /** The hosts composed from `absPath`. */
       hostsOf(absPath) {
-        const key = path8.resolve(absPath);
+        const key = path16.resolve(absPath);
         const ids = [];
         for (const [id, set] of this.sources) if (set.has(key)) ids.push(id);
         return ids;
@@ -9152,10 +9183,10 @@ var init_mentions = __esm({
   }
 });
 
-// ../swarm-board/src/wire.ts
+// ../swarm-board/src/contract/wire.ts
 import crypto2 from "node:crypto";
-import fs8 from "node:fs";
-import path9 from "node:path";
+import fs15 from "node:fs";
+import path17 from "node:path";
 function encode(f) {
   return JSON.stringify(f);
 }
@@ -9166,34 +9197,33 @@ function decode(text) {
   return f;
 }
 function builtCliOf(entry2) {
-  const file = path9.resolve(entry2);
-  const bundle = path9.join(path9.dirname(file), "dist-cli", "cli.mjs");
-  return fs8.existsSync(bundle) ? bundle : file;
+  const file = path17.resolve(entry2);
+  const bundle = path17.join(path17.dirname(file), "dist-cli", "cli.mjs");
+  return fs15.existsSync(bundle) ? bundle : file;
 }
 function bundleVersion(entry2) {
   if (entry2 === void 0) return ownVersion ??= bundleVersion(process.argv[1] ?? "");
   const file = builtCliOf(entry2);
-  const st = fs8.statSync(file);
+  const st = fs15.statSync(file);
   const key = `${file}|${st.mtimeMs}|${st.size}`;
   let v = versionsByBuild.get(key);
   if (v === void 0) {
-    v = crypto2.createHash("sha256").update(fs8.readFileSync(file)).digest("hex").slice(0, 16);
+    v = crypto2.createHash("sha256").update(fs15.readFileSync(file)).digest("hex").slice(0, 16);
     versionsByBuild.set(key, v);
   }
   return v;
 }
-function serverStateFile(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.json");
-}
-function serverLogFile(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.log");
-}
-function serverStartLock(dataRoot) {
-  return path9.join(dataRoot, "swarm-server.lock");
+function readServerState(dataRoot) {
+  try {
+    const s = JSON.parse(fs15.readFileSync(serverStateFile(dataRoot), "utf8"));
+    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
+  } catch {
+    return null;
+  }
 }
 function serverLockHolder(dataRoot) {
   try {
-    const pid = Number(fs8.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    const pid = Number(fs15.readFileSync(serverStartLock(dataRoot), "utf8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
@@ -9203,27 +9233,21 @@ function liveStartLockHolder(dataRoot) {
   const holder = serverLockHolder(dataRoot);
   if (holder === null || !isAlive(holder)) return null;
   try {
-    if (JSON.parse(fs8.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
+    if (JSON.parse(fs15.readFileSync(serverStateFile(dataRoot), "utf8")).pid === holder) return holder;
   } catch {
   }
   try {
-    return Date.now() - fs8.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+    return Date.now() - fs15.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
   } catch {
     return null;
   }
 }
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
+var RPC_METHODS, FRAME_TYPES, versionsByBuild, ownVersion, HEARTBEAT_MS, SERVER_STARTER_ENV, START_LOCK_GRACE_MS;
 var init_wire = __esm({
-  "../swarm-board/src/wire.ts"() {
+  "../swarm-board/src/contract/wire.ts"() {
     "use strict";
+    init_home();
+    init_proc();
     RPC_METHODS = [
       "openRun",
       "addSeat",
@@ -9264,55 +9288,53 @@ var init_wire = __esm({
     ];
     FRAME_TYPES = /* @__PURE__ */ new Set(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
     versionsByBuild = /* @__PURE__ */ new Map();
+    HEARTBEAT_MS = 5 * 1e3;
     SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
     START_LOCK_GRACE_MS = 15e3;
   }
 });
 
-// ../swarm-board/src/board/home.ts
-import fs9 from "node:fs";
-import os2 from "node:os";
-import path10 from "node:path";
-var homeFromEnv2, NEW_HOME2, OLD_HOME2, DATA_ROOT2, HOME_OVERRIDE, SQLITE_PATH2;
-var init_home2 = __esm({
-  "../swarm-board/src/board/home.ts"() {
+// ../swarm-board/src/host/links.ts
+var init_links = __esm({
+  "../swarm-board/src/host/links.ts"() {
     "use strict";
-    homeFromEnv2 = process.env.SWARMSTORM_HOME ?? process.env.CHARRETTE_HOME;
-    NEW_HOME2 = path10.join(os2.homedir(), "swarmstorm_appdata");
-    OLD_HOME2 = path10.join(os2.homedir(), "charrette_appdata");
-    DATA_ROOT2 = homeFromEnv2 ? path10.resolve(homeFromEnv2) : !fs9.existsSync(NEW_HOME2) && fs9.existsSync(OLD_HOME2) ? OLD_HOME2 : NEW_HOME2;
-    HOME_OVERRIDE = homeFromEnv2 && path10.resolve(homeFromEnv2) !== NEW_HOME2 && process.env.SWARMSTORM_PRINT_HOME !== "0" ? DATA_ROOT2 : null;
-    SQLITE_PATH2 = path10.join(DATA_ROOT2, "swarm.sqlite");
+    init_home();
+    init_proc();
   }
 });
 
-// ../swarm-board/src/board/liveness.ts
-var NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, BADGE_CONFIRM_MS, READINGS_KEPT_MS, LOST_MS, HEARTBEAT_MS;
-var init_liveness = __esm({
-  "../swarm-board/src/board/liveness.ts"() {
+// ../swarm-board/src/link/shell.ts
+var KILL_WAYS;
+var init_shell = __esm({
+  "../swarm-board/src/link/shell.ts"() {
     "use strict";
-    NO_TRANSCRIPT_MS = Number(process.env.SWARM_NO_TRANSCRIPT_MS) || 30 * 1e3;
-    STALL_MS_DEFAULT = 10 * 60 * 1e3;
-    BADGE_CONFIRM_MS = 10 * 1e3;
-    READINGS_KEPT_MS = 10 * 60 * 1e3;
-    LOST_MS = 60 * 1e3;
-    HEARTBEAT_MS = 5 * 1e3;
+    KILL_WAYS = {
+      pkill: () => "name",
+      killall: () => "name",
+      taskkill: (rest, before) => /\/IM\b/i.test(rest) ? "name" : /\/PID\s+\d+(\s|$)/i.test(rest) && !/[$%]/.test(rest) ? before : "fed",
+      "stop-process": (rest, before) => /-Name\b|-ProcessName\b/i.test(rest) ? "name" : /-Id\s+[\d,\s]+$/i.test(rest) ? before : "fed",
+      kill: (rest, before) => rest.split(/\s+/).every((w) => /^(-\d+|-[A-Z]+|-s|\d+)$/.test(w)) ? before : "fed",
+      wmic: (rest, before) => /\b(delete|terminate)\b/i.test(rest) ? "name" : before,
+      "invoke-cimmethod": (rest, before) => /terminate/i.test(rest) ? "fed" : before,
+      fuser: (rest, before) => /(^|\s)-k\b/.test(rest) ? "fed" : before
+    };
+    KILL_WAYS.spps = KILL_WAYS["stop-process"];
   }
 });
 
-// ../swarm-board/src/git.ts
-var init_git = __esm({
-  "../swarm-board/src/git.ts"() {
+// ../swarm-board/src/link/activity.ts
+var init_activity = __esm({
+  "../swarm-board/src/link/activity.ts"() {
     "use strict";
-    init_proc2();
+    init_shell();
   }
 });
 
-// ../swarm-board/src/packs/code/changes.ts
-var init_changes = __esm({
-  "../swarm-board/src/packs/code/changes.ts"() {
+// ../swarm-board/src/link/harness/claude-code.ts
+var init_claude_code = __esm({
+  "../swarm-board/src/link/harness/claude-code.ts"() {
     "use strict";
-    init_git();
+    init_shell();
   }
 });
 
@@ -9320,27 +9342,28 @@ var init_changes = __esm({
 var init_transcripts = __esm({
   "../swarm-board/src/link/transcripts.ts"() {
     "use strict";
-    init_liveness();
+    init_activity();
+    init_claude_code();
   }
 });
 
 // ../swarm-board/src/link/link.ts
 import crypto3 from "node:crypto";
-import os3 from "node:os";
-import path11 from "node:path";
+import os2 from "node:os";
+import path18 from "node:path";
 function linkPipe(dataRoot, run, member) {
-  const home = crypto3.createHash("sha256").update(path11.resolve(dataRoot)).digest("hex").slice(0, 12);
+  const home = crypto3.createHash("sha256").update(path18.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path11.join(os3.tmpdir(), `${name}.sock`);
+  return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path18.join(os2.tmpdir(), `${name}.sock`);
 }
 var CHANGES_EVERY_MS, DEFAULT_TIMING;
 var init_link = __esm({
   "../swarm-board/src/link/link.ts"() {
     "use strict";
-    init_proc2();
-    init_home2();
-    init_liveness();
-    init_changes();
+    init_home();
+    init_git();
+    init_links();
+    init_proc();
     init_wire();
     init_transcripts();
     CHANGES_EVERY_MS = 2e3;
@@ -9365,10 +9388,10 @@ __export(remote_exports, {
   openLinkPipe: () => openLinkPipe
 });
 import crypto4 from "node:crypto";
-import fs10 from "node:fs";
+import fs16 from "node:fs";
 import net from "node:net";
-import os4 from "node:os";
-import path12 from "node:path";
+import os3 from "node:os";
+import path19 from "node:path";
 function withEnv(vars, start) {
   const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
   for (const [k, v] of Object.entries(vars)) process.env[k] = v;
@@ -9381,31 +9404,15 @@ function withEnv(vars, start) {
     }
   }
 }
-function isAlive2(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === "EPERM";
-  }
-}
-function readServerState(dataRoot) {
-  try {
-    const s = JSON.parse(fs10.readFileSync(serverStateFile(dataRoot), "utf8"));
-    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
-  } catch {
-    return null;
-  }
-}
 async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   const found = readServerState(dataRoot);
   if (found && isCurrent(found, swarmEntry)) return found;
-  if (found && found.pid !== process.pid && isAlive2(found.pid)) {
+  if (found && found.pid !== process.pid && isAlive(found.pid)) {
     try {
       process.kill(found.pid);
     } catch {
     }
-    for (const until = Date.now() + START_TIMEOUT_MS; isAlive2(found.pid) && Date.now() < until; ) await pause(START_POLL_MS);
+    for (const until = Date.now() + START_TIMEOUT_MS; isAlive(found.pid) && Date.now() < until; ) await pause2(START_POLL_MS);
   }
   const startedElsewhere = () => liveStartLockHolder(dataRoot) !== null;
   let exited = null;
@@ -9413,30 +9420,30 @@ async function ensureServer(dataRoot, swarmEntry = entry()[0]) {
   if (!startedElsewhere()) {
     let log = "ignore";
     try {
-      fs10.mkdirSync(dataRoot, { recursive: true });
-      log = fs10.openSync(serverLogFile(dataRoot), "a");
-      fs10.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
+      fs16.mkdirSync(dataRoot, { recursive: true });
+      log = fs16.openSync(serverLogFile(dataRoot), "a");
+      fs16.writeSync(log, `--- ${(/* @__PURE__ */ new Date()).toISOString()} pid ${process.pid} starts a server of ${bundleVersion(swarmEntry)} (found ${found ? `${found.version}, pid ${found.pid}` : "none"})
 `);
     } catch {
     }
     const child = withEnv(
       { SWARMSTORM_HOME: dataRoot, [SERVER_STARTER_ENV]: process.argv.join(" ") },
-      () => hiddenSpawn2(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
+      () => hiddenSpawn(process.execPath, [swarmEntry, "serve"], { detached: true, cwd: DETACHED_CWD, stdio: ["ignore", log, log], windowsHide: true })
     );
     child.on("exit", (code, signal) => exited = signal ? `it was killed by ${signal}` : `it exited with code ${code}`);
     child.on("error", (e) => exited = e.message);
     child.unref();
-    if (typeof log === "number") fs10.closeSync(log);
+    if (typeof log === "number") fs16.closeSync(log);
   }
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = readServerState(dataRoot);
     if (s && isCurrent(s, swarmEntry)) return s;
     if (exited && !startedElsewhere()) break;
-    await pause(START_POLL_MS);
+    await pause2(START_POLL_MS);
   }
   let said = "";
   try {
-    const all = fs10.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all = fs16.readFileSync(serverLogFile(dataRoot), "utf8").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const lines = all.slice(all.map((l) => l.startsWith("--- ")).lastIndexOf(true) + 1);
     said = lines.find((l) => /^(\w*Error|swarm\b)[^:]*:/.test(l)) ?? lines.filter((l) => !/^Node\.js v/.test(l)).pop() ?? "";
   } catch {
@@ -9467,7 +9474,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const marker = linkDownMarker(dataRoot, member);
   const answered = (s) => {
     try {
-      fs10.rmSync(marker, { force: true });
+      fs16.rmSync(marker, { force: true });
     } catch {
     }
     return s;
@@ -9475,22 +9482,22 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   const there = await connectPipe(pipe);
   if (there) return answered(there);
   if (harnessWaitMs != null) {
-    const wait = fs10.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
+    const wait = fs16.existsSync(marker) ? Math.min(harnessWaitMs, downWaitMs) : harnessWaitMs;
     for (const until = Date.now() + wait; Date.now() < until; ) {
-      await pause(START_POLL_MS);
+      await pause2(START_POLL_MS);
       const s = await connectPipe(pipe);
       if (s) return answered(s);
     }
     try {
-      fs10.mkdirSync(path12.dirname(marker), { recursive: true });
-      fs10.writeFileSync(marker, String(Date.now()));
+      fs16.mkdirSync(path19.dirname(marker), { recursive: true });
+      fs16.writeFileSync(marker, String(Date.now()));
     } catch {
     }
     return null;
   }
   const child = withEnv(
     { SWARMSTORM_HOME: dataRoot },
-    () => hiddenSpawn2(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
+    () => hiddenSpawn(process.execPath, [...entry(), ...linkVerbArgs(member)], { detached: true, cwd: DETACHED_CWD, stdio: "ignore", windowsHide: true })
   );
   child.on("error", () => {
   });
@@ -9498,7 +9505,7 @@ async function openLinkPipe(dataRoot, member, harnessWaitMs, downWaitMs = LINK_D
   for (const until = Date.now() + START_TIMEOUT_MS; Date.now() < until; ) {
     const s = await connectPipe(pipe);
     if (s) return s;
-    await pause(START_POLL_MS);
+    await pause2(START_POLL_MS);
   }
   throw new Error(`swarm: ${member.name}'s link did not start`);
 }
@@ -9529,10 +9536,10 @@ function callsOver(firstSend) {
   const callPrefix = crypto4.randomUUID();
   let closed = null;
   return {
-    call(method, args2) {
+    call(method, args) {
       if (closed) return Promise.reject(new Error(closed));
       const id = `${callPrefix}-${++next}`;
-      const given = [...args2];
+      const given = [...args];
       while (given.length && given[given.length - 1] === void 0) given.pop();
       const frame = { type: "call", id, method, args: given };
       return new Promise((resolve, reject) => {
@@ -9653,24 +9660,25 @@ async function serverBoard(state, member) {
   conn.onClose(() => calls.fail(SERVER_CLOSED_CONNECTION));
   return Object.assign(asRemote(calls.call), { close: conn.close });
 }
-var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, pause, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
+var SERVER_CLOSED_CONNECTION, START_TIMEOUT_MS, START_POLL_MS, entry, pause2, DETACHED_CWD, isCurrent, linkVerbArgs, HARNESS_LINK_WAIT_MS, LINK_DOWN_WAIT_MS, linkDownMarker, inHarnessSession;
 var init_remote = __esm({
   "../swarm-board/src/client/remote.ts"() {
     "use strict";
-    init_proc2();
+    init_proc();
     init_wire();
+    init_home();
     init_link();
     SERVER_CLOSED_CONNECTION = "swarm: the board server closed the connection";
     START_TIMEOUT_MS = Number(process.env.SWARM_START_TIMEOUT_MS) || 15e3;
     START_POLL_MS = 50;
     entry = () => [process.argv[1]];
-    pause = (ms) => new Promise((r) => setTimeout(r, ms));
-    DETACHED_CWD = os4.tmpdir();
-    isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive2(s.pid);
+    pause2 = (ms) => new Promise((r) => setTimeout(r, ms));
+    DETACHED_CWD = os3.tmpdir();
+    isCurrent = (s, swarmEntry) => !!s && s.version === bundleVersion(swarmEntry) && isAlive(s.pid);
     linkVerbArgs = (member) => ["link", "--run", String(member.run), "--as", member.name];
     HARNESS_LINK_WAIT_MS = 1e4;
     LINK_DOWN_WAIT_MS = 1e3;
-    linkDownMarker = (dataRoot, member) => path12.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
+    linkDownMarker = (dataRoot, member) => path19.join(dataRoot, "link-down", `${member.run}-${member.name.replace(/[^A-Za-z0-9_-]/g, "_")}`);
     inHarnessSession = (sessionId = process.env.CLAUDE_CODE_SESSION_ID) => !!sessionId;
   }
 });
@@ -9721,20 +9729,20 @@ async function openBoardReader(opts) {
   };
   let connection = connect();
   await connection;
-  function callOn(conn, method, args2) {
+  function callOn(conn, method, args) {
     if (!READING.includes(method)) return Promise.reject(new Error(`the reader does not call ${method}`));
     return new Promise((resolve, reject) => {
       const id = `reader-${process.pid}-${++next}`;
       pending.set(id, { resolve, reject });
       try {
-        conn.send({ type: "call", id, method, args: args2 });
+        conn.send({ type: "call", id, method, args });
       } catch (e) {
         pending.delete(id);
         reject(e);
       }
     });
   }
-  const call = (method, args2) => connection.then((conn) => callOn(conn, method, args2));
+  const call = (method, args) => connection.then((conn) => callOn(conn, method, args));
   return {
     repos: () => call("repos", []),
     projects: () => call("repos", []),
@@ -9762,8 +9770,8 @@ var init_reader = __esm({
 });
 
 // src/server/board.ts
-import fs11 from "node:fs";
-import path13 from "node:path";
+import fs17 from "node:fs";
+import path20 from "node:path";
 function mountBoard(sse, opts = {}) {
   const dataRoot = opts.dataRoot ?? DATA_ROOT;
   const swarmEntry = opts.swarmEntry ?? DEFAULT_SWARM_ENTRY;
@@ -9792,7 +9800,7 @@ function mountBoard(sse, opts = {}) {
     );
     return opening;
   };
-  if (fs11.existsSync(path13.join(dataRoot, SERVER_STATE_FILE))) openReader().catch(() => {
+  if (fs17.existsSync(serverStateFile(dataRoot))) openReader().catch(() => {
   });
   const json = (res, obj, status = 200) => {
     if (res.headersSent) return;
@@ -9801,10 +9809,7 @@ function mountBoard(sse, opts = {}) {
   };
   const projectAsked = (q) => q.get("project");
   const sameRepo = (a, b) => {
-    const norm2 = (r) => {
-      const g = fs11.existsSync(r) && fs11.statSync(r).isFile() ? commonGitDir(r) : r;
-      return process.platform === "win32" ? path13.resolve(g).toLowerCase() : path13.resolve(g);
-    };
+    const norm2 = (r) => canonicalPath(fs17.existsSync(r) && fs17.statSync(r).isFile() ? commonGitDir(r) : r);
     return norm2(a) === norm2(b);
   };
   const repoOfKey = (repos, key) => {
@@ -9859,16 +9864,16 @@ function mountBoard(sse, opts = {}) {
     }
   };
 }
-var DEFAULT_SWARM_ENTRY, SERVER_STATE_FILE;
+var DEFAULT_SWARM_ENTRY;
 var init_board = __esm({
   async "src/server/board.ts"() {
     "use strict";
     init_reader();
     await init_db();
-    init_home();
+    init_home2();
     init_place();
-    DEFAULT_SWARM_ENTRY = path13.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
-    SERVER_STATE_FILE = "swarm-server.json";
+    init_home();
+    DEFAULT_SWARM_ENTRY = path20.join(TOOL_ROOT, "..", "swarm-board", "swarm.mjs");
   }
 });
 
@@ -9936,19 +9941,19 @@ __export(server_exports, {
   servedBuild: () => servedBuild,
   startServer: () => startServer
 });
-import fs12 from "node:fs";
+import fs18 from "node:fs";
 import http from "node:http";
-import path14 from "node:path";
+import path21 from "node:path";
 function servedBuild(distDir) {
   try {
-    return /assets\/(index-[\w-]+\.js)/.exec(fs12.readFileSync(path14.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
+    return /assets\/(index-[\w-]+\.js)/.exec(fs18.readFileSync(path21.join(distDir, "index.html"), "utf8"))?.[1] ?? null;
   } catch {
     return null;
   }
 }
 function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeState = true, heartbeatMs, boardDataRoot, swarmEntry, openTab = openBrowser, token = newServerToken() }) {
   const sse = createSseHub(heartbeatMs, () => {
-    const build = servedBuild(path14.join(toolRoot, "dist"));
+    const build = servedBuild(path21.join(toolRoot, "dist"));
     return build ? { build } : {};
   });
   const board = mountBoard(sse, {
@@ -9962,7 +9967,7 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
   });
   const version = collectionVersion(toolRoot);
   const watcher = new DocWatcher(
-    (dir, name) => index.all().find((d) => path14.dirname(d.abs_path) === dir && path14.basename(d.abs_path) === name)
+    (dir, name) => index.all().find((d) => path21.dirname(d.abs_path) === dir && path21.basename(d.abs_path) === name)
   );
   watcher.on("changed", ({ id }) => {
     index.touch(id);
@@ -9981,8 +9986,8 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     const projects = index.allProjects();
     if (projects.some((x) => x.slug === key)) return key;
     const checkoutOf = (repo) => repo.replace(/[\\/]+$/, "").replace(/[\\/]\.git$/i, "");
-    if (path14.isAbsolute(key)) return projectForCwd(checkoutOf(key), projects)?.slug ?? null;
-    const named = (repo) => path14.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
+    if (path21.isAbsolute(key)) return projectForCwd(checkoutOf(key), projects)?.slug ?? null;
+    const named = (repo) => path21.basename(checkoutOf(repo)).toLowerCase() === key.toLowerCase();
     for (const x of projects) {
       const repo = index.boardRepos(x.slug).find(named);
       if (repo) return projectForCwd(checkoutOf(repo), projects)?.slug ?? x.slug;
@@ -9995,19 +10000,19 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     const browserRefusal2 = openTab(`http://localhost:${server.address().port}/#${hash}`);
     return browserRefusal2 === null ? { tabs: 0, opened: true } : { tabs: 0, opened: false, browserRefusal: browserRefusal2 };
   };
-  const distDir = path14.join(toolRoot, "dist");
-  const useDist = fs12.existsSync(path14.join(distDir, "index.html"));
+  const distDir = path21.join(toolRoot, "dist");
+  const useDist = fs18.existsSync(path21.join(distDir, "index.html"));
   const serveStatic = (res, p) => {
     if (!useDist)
       return send(res, 404, `aiview UI not built. Run: npm install && npm run build  (in ${toolRoot})`, "text/plain");
-    const f = path14.resolve(distDir, "." + p.replaceAll("..", ""));
-    const indexHtml = path14.join(distDir, "index.html");
-    if (f !== indexHtml && f.startsWith(distDir) && fs12.existsSync(f) && fs12.statSync(f).isFile()) {
-      const hashed = f.startsWith(path14.join(distDir, "assets") + path14.sep);
-      const mime = MIME[path14.extname(f).toLowerCase()] ?? "application/octet-stream";
-      return send(res, 200, fs12.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
+    const f = path21.resolve(distDir, "." + p.replaceAll("..", ""));
+    const indexHtml = path21.join(distDir, "index.html");
+    if (f !== indexHtml && f.startsWith(distDir) && fs18.existsSync(f) && fs18.statSync(f).isFile()) {
+      const hashed = f.startsWith(path21.join(distDir, "assets") + path21.sep);
+      const mime = MIME[path21.extname(f).toLowerCase()] ?? "application/octet-stream";
+      return send(res, 200, fs18.readFileSync(f), mime, hashed ? "public, max-age=31536000, immutable" : "no-cache");
     }
-    return send(res, 200, fs12.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache", { "set-cookie": tokenCookie(token) });
+    return send(res, 200, fs18.readFileSync(indexHtml), "text/html; charset=utf-8", "no-cache", { "set-cookie": tokenCookie(token) });
   };
   let guard = null;
   const server = http.createServer((req, res) => {
@@ -10164,49 +10169,49 @@ function startServer(index, { port, open, startDoc, toolRoot = TOOL_ROOT, writeS
     if (a) {
       const doc = index.get(Number(a[1]));
       if (!doc) return send(res, 404, "not found", "text/plain");
-      const dir = path14.dirname(doc.abs_path);
-      const asked = path14.resolve(dir, decodeURIComponent(a[2]));
-      if (asked !== dir && !asked.startsWith(dir + path14.sep)) return send(res, 403, "forbidden", "text/plain");
+      const dir = path21.dirname(doc.abs_path);
+      const asked = path21.resolve(dir, decodeURIComponent(a[2]));
+      if (asked !== dir && !asked.startsWith(dir + path21.sep)) return send(res, 403, "forbidden", "text/plain");
       let base;
       let f;
       try {
-        base = fs12.realpathSync(dir);
-        f = fs12.realpathSync(asked);
+        base = fs18.realpathSync(dir);
+        f = fs18.realpathSync(asked);
       } catch {
         return send(res, 404, "not found", "text/plain");
       }
-      if (f !== base && !f.startsWith(base + path14.sep)) return send(res, 403, "forbidden", "text/plain");
-      if (!fs12.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
-      return send(res, 200, fs12.readFileSync(f), MIME[path14.extname(f).toLowerCase()] ?? "application/octet-stream");
+      if (f !== base && !f.startsWith(base + path21.sep)) return send(res, 403, "forbidden", "text/plain");
+      if (!fs18.statSync(f).isFile()) return send(res, 404, "not found", "text/plain");
+      return send(res, 200, fs18.readFileSync(f), MIME[path21.extname(f).toLowerCase()] ?? "application/octet-stream");
     }
     const r = p.match(/^\/api\/raw\/(\d+)$/);
     if (r) {
       const doc = index.get(Number(r[1]));
-      if (!doc || !fs12.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
+      if (!doc || !fs18.existsSync(doc.abs_path)) return send(res, 404, "not found", "text/plain");
       watcher.ensureWatch(doc);
       const html = isHtml(doc.file_path);
       const type = isPdf(doc.file_path) ? "application/pdf" : html ? "text/html; charset=utf-8" : "text/plain; charset=utf-8";
-      return send(res, 200, fs12.readFileSync(doc.abs_path), type, "no-store", html ? { "content-security-policy": RAW_HTML_CSP } : {});
+      return send(res, 200, fs18.readFileSync(doc.abs_path), type, "no-store", html ? { "content-security-policy": RAW_HTML_CSP } : {});
     }
     const m = p.match(/^\/api\/document\/(\d+)$/);
     if (m) {
       const doc = index.get(Number(m[1]));
       if (!doc) return json(res, { error: "not found" }, 404);
       const pending = index.pendingFor(doc.id);
-      if (!fs12.existsSync(doc.abs_path))
+      if (!fs18.existsSync(doc.abs_path))
         return json(res, { document: doc, content: null, pending });
       watcher.ensureWatch(doc);
       if (isPdf(doc.file_path))
         return json(res, { document: doc, format: "pdf", content: null, pending });
       if (isHtml(doc.file_path)) {
-        const dir = path14.dirname(doc.abs_path);
+        const dir = path21.dirname(doc.abs_path);
         const reader = (name) => {
           if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-          const f = path14.join(dir, name);
-          return fs12.existsSync(f) && fs12.statSync(f).isFile() ? readDoc(f) : void 0;
+          const f = path21.join(dir, name);
+          return fs18.existsSync(f) && fs18.statSync(f).isFile() ? readDoc(f) : void 0;
         };
         const { html, sources, errors, warnings } = resolveBindings(readDoc(doc.abs_path), reader);
-        watcher.setSources(doc.id, sources.map((s) => path14.join(dir, s)));
+        watcher.setSources(doc.id, sources.map((s) => path21.join(dir, s)));
         return json(res, {
           document: doc,
           format: "html",
@@ -10287,28 +10292,8 @@ var init_server = __esm({
   }
 });
 
-// src/cli/index.ts
-init_proc();
-init_browser();
+// src/cli/dispatch.ts
 await init_db();
-init_bind();
-init_paths();
-init_pointer();
-init_projects();
-import { spawnSync as spawnSync3 } from "node:child_process";
-import fs13 from "node:fs";
-import path15 from "node:path";
-
-// src/core/boardhash.ts
-function boardHash(project, run) {
-  return `#board&project=${encodeURIComponent(project)}${run ? `&run=${run}` : ""}`;
-}
-
-// src/cli/index.ts
-init_home();
-init_serverstate();
-init_guard();
-init_collectionversion();
 
 // src/cli/args.ts
 var VALUE_FLAGS = /* @__PURE__ */ new Set([
@@ -10340,6 +10325,513 @@ function parseArgs(argv) {
   };
 }
 
+// src/cli/context.ts
+await init_db();
+init_projects();
+import path7 from "node:path";
+var Refusal = class extends Error {
+};
+function fail(message) {
+  throw new Refusal(message);
+}
+function contextFor(args, index, verb) {
+  const asJson = args.has("--json");
+  return {
+    args,
+    asJson,
+    index: () => {
+      if (!index) throw new Error(`verb ${verb} declares no need of the index`);
+      return index();
+    },
+    emit: (json, human) => {
+      if (asJson) console.log(JSON.stringify(json));
+      else if (typeof human === "string") console.log(human);
+      else human();
+    },
+    registerOpts: () => ({
+      kind: args.flag("--kind") ?? "",
+      tags: args.flags("--tag"),
+      started: args.flag("--started") ?? "",
+      group: args.flag("--group") ?? "",
+      groupTitle: args.flag("--group-title") ?? "",
+      project: args.flag("--project") ?? ""
+    })
+  };
+}
+function withIndex(use) {
+  const index = openIndex();
+  try {
+    return use(index);
+  } finally {
+    index.close();
+  }
+}
+var resolveRef = (ref) => withIndex((index) => rowOf(index, ref));
+var rowOf = (index, ref) => /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path7.resolve(ref));
+var projectOfVerb = (args, index) => args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+var agentProject = (fallback) => withIndex((index) => projectForCwd(process.cwd(), index.allProjects())?.slug ?? fallback);
+function noProjectLine(known) {
+  return `no aiview project for ${process.cwd()}: pass --project <slug>, or declare one with aiview project add <slug> --path <dir>${known.length ? `
+known: ${known.join(", ")}` : ""}`;
+}
+var noSuchProjectLine = (slug, known) => `no such project: ${slug}${known.length ? `
+known: ${known.join(", ")}` : ""}`;
+
+// src/cli/server.ts
+init_proc();
+await init_db();
+init_home2();
+init_serverstate();
+init_guard();
+init_collectionversion();
+import { spawnSync as spawnSync2 } from "node:child_process";
+import fs8 from "node:fs";
+import path10 from "node:path";
+function postToServer(route, body) {
+  return askServer(route, body) !== null;
+}
+function askServer(route, body) {
+  const st = readServerStatus();
+  if (!st.running || st.port === null) return null;
+  const b = JSON.stringify(body);
+  const headers = {
+    host: `127.0.0.1:${st.port}`,
+    "content-type": "application/json",
+    "content-length": Buffer.byteLength(b),
+    [TOKEN_HEADER]: readServerToken() ?? ""
+  };
+  const r = hiddenSpawnSync(
+    process.execPath,
+    [
+      "-e",
+      `const b=${JSON.stringify(b)};const q=require('node:http').request(
+         {host:'127.0.0.1',port:${st.port},path:${JSON.stringify(route)},method:'POST',
+          headers:${JSON.stringify(headers)}},
+         r=>{r.pipe(process.stdout);r.on('end',()=>process.exitCode=r.statusCode===200?0:1)});
+       q.on('error',()=>process.exit(1));q.end(b);`
+    ],
+    { timeout: 5e3, encoding: "utf8" }
+  );
+  return r.status === 0 ? r.stdout : null;
+}
+function askServerToMove(route, body) {
+  const answer = askServer(route, body);
+  return answer === null ? null : JSON.parse(answer);
+}
+function recordRecentProject(index, slug) {
+  if (!postToServer("/api/recent-project", { project: slug })) index.recordRecentProject(slug);
+}
+function notifyPendingChanged(documentId) {
+  postToServer("/api/pending-changed", { id: documentId });
+}
+function notifyIndexChanged() {
+  postToServer("/api/index-changed", {});
+}
+function ensureDist() {
+  if (fs8.existsSync(path10.join(TOOL_ROOT, "dist", "index.html"))) return;
+  if (!fs8.existsSync(path10.join(TOOL_ROOT, "app", "index.html"))) return;
+  console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const r = spawnSync2(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  if (r.status !== 0) fail(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
+}
+function spawnDetachedServer(port) {
+  try {
+    fs8.rmSync(PORT_FILE, { force: true });
+    fs8.rmSync(PID_FILE, { force: true });
+  } catch {
+  }
+  const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
+    detached: true,
+    stdio: "ignore",
+    cwd: TOOL_ROOT
+  });
+  child.unref();
+  const t0 = Date.now();
+  for (; ; ) {
+    const st = readServerStatus();
+    if (st.running && st.port !== null && st.pid === child.pid) return st.port;
+    if (Date.now() - t0 > 1e4) fail(`aiview: server did not come up within 10s (port ${port} may be in use \u2014 retry with --port <n>)`);
+    pause(120);
+  }
+}
+var pause = (ms) => {
+  hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
+};
+function stopServerProcess(pid) {
+  try {
+    process.kill(pid);
+  } catch {
+  }
+  const t0 = Date.now();
+  while (isAlive(pid)) {
+    if (Date.now() - t0 > 5e3) fail(`aiview: the running server (pid ${pid}) is an older version and did not stop within 5s; stop it and retry`);
+    pause(100);
+  }
+}
+function portOfInstalledServer(asked) {
+  const wanted = asked ?? process.env.AIVIEW_PORT;
+  const st = readServerStatus();
+  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(wanted !== void 0 ? Number(wanted) : firstFreePort(defaultPort()));
+  const installed = collectionVersion(TOOL_ROOT);
+  if (installed === null || st.version === installed) return st.port;
+  stopServerProcess(st.pid);
+  return spawnDetachedServer(st.port);
+}
+var movedLine = (r, project, verb) => {
+  if (r.browserRefusal) return noBrowserLine(project, r.browserRefusal);
+  if (r.opened) return `no tab showed ${project}: opened a new one`;
+  return `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
+};
+var noBrowserLine = (project, refusal) => `no tab showed ${project}, and no browser opened (${refusal}): give the person the link`;
+
+// src/cli/usage.ts
+var VERB_USAGE = {
+  open: { lines: ["open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]"] },
+  add: { lines: ["add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]"] },
+  update: { lines: ["update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]"] },
+  list: { lines: ["list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project"] },
+  project: { lines: ["project <add|list|rm> [slug] [--title T] [--path P]..."] },
+  remove: { lines: ["remove <file|#id>..."] },
+  move: { lines: ["move <file|#id>... [--project <slug>]    # refile: file + index together"] },
+  serve: { lines: ["serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]"] },
+  pending: {
+    lines: [
+      "pending add <file|#id> --label L [--note N]   # work the reader is waiting on",
+      "pending done <#pendingId>                     # the work landed; the card goes away",
+      "pending list [<file|#id>] | clear <file|#id>"
+    ],
+    refusal: "pending <add|done|list|clear> ..."
+  },
+  status: { lines: ["status"] },
+  path: {
+    lines: ["path <filename> [--project <slug>]       # where this document belongs, joined for this OS"],
+    refusal: "path <filename> [--project <slug>] | aiview path #<id>"
+  },
+  components: { lines: ["components <file|#id>                    # what this prototype offers to siblings, what it pulls, every name on its page and its variants"] },
+  check: { lines: ["check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any"] },
+  show: {
+    lines: [
+      "show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link",
+      "show --done                              # the question is answered: every tab goes back to what the person was reading"
+    ],
+    refusal: "show <file|#id> [--component Name]... [--variant v]  |  aiview show --done"
+  },
+  tracker: {
+    lines: [
+      "tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
+      "tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice"
+    ],
+    refusal: "tracker <check|sync> <file|#id>"
+  },
+  plan: { lines: ["plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0"] },
+  board: { lines: ["board [--project <name>] [--open]   # the project's board page: its repositories; prints the link"] },
+  init: { lines: ["init                                     # create the data home; report where everything lives"] }
+};
+var TOP_USAGE = ["usage: aiview <verb> [--json]", ...Object.values(VERB_USAGE).flatMap((u) => u.lines.map((l) => `  ${l}`))].join("\n");
+var synopsis = (line) => line.replace(/\s+# .*$/, "");
+function verbUsage(verb) {
+  const usage = VERB_USAGE[verb];
+  return `usage: aiview ${usage.refusal ?? synopsis(usage.lines[0])}`;
+}
+function subVerbUsage(verb, sub) {
+  const line = VERB_USAGE[verb].lines.find((l) => l.startsWith(`${verb} ${sub} `));
+  return `usage: aiview ${synopsis(line)}`;
+}
+var projectSlugUsage = (sub) => `usage: aiview project ${sub} <slug>`;
+
+// src/cli/dispatch.ts
+async function dispatch(argv, verbs) {
+  const args = parseArgs(argv);
+  const verb = verbs.find((v) => v.name === args.verb);
+  if (!verb) {
+    console.error(TOP_USAGE);
+    return 1;
+  }
+  let index;
+  let code;
+  try {
+    if (verb.needs?.dist) ensureDist();
+    const openOnce = () => index ??= openIndex();
+    code = await verb.run(contextFor(args, verb.needs?.index ? openOnce : void 0, verb.name)) ?? 0;
+  } catch (err) {
+    if (err instanceof Refusal) {
+      console.error(err.message);
+      return 1;
+    }
+    if (process.env.AIVIEW_DEBUG === "1") throw err;
+    console.error(`aiview ${args.verb}: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  } finally {
+    index?.close();
+  }
+  if (code === 0 && verb.mutatesIndex) notifyIndexChanged();
+  return code;
+}
+
+// src/cli/verbs/documents.ts
+init_paths();
+init_projects();
+init_home2();
+init_serverstate();
+init_browser();
+import fs9 from "node:fs";
+import path11 from "node:path";
+var docLine = (d) => `#${d.id}  ${d.kind} [${d.tags.join(", ")}]${d.group_slug ? `  group:${d.group_slug}` : ""}  started ${d.created_at}  ${d.title}`;
+function runOpen(ctx) {
+  const { args, emit, registerOpts } = ctx;
+  if (!args.positional[0]) fail(verbUsage("open"));
+  ensureDist();
+  const index = ctx.index();
+  const d = index.register(path11.resolve(args.positional[0]), registerOpts());
+  recordRecentProject(index, d.project);
+  const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
+  const port = portOfInstalledServer(args.flag("--port"));
+  const url = `http://localhost:${port}/#doc=${d.id}`;
+  const moved = askServerToMove("/api/open", { id: d.id, project });
+  const localRefusal = !moved && args.has("--open") ? openBrowser(url) : void 0;
+  const answerLine = moved ? movedLine(moved, project, "opened") : localRefusal ? noBrowserLine(project, localRefusal) : null;
+  emit(
+    {
+      id: d.id,
+      url,
+      project,
+      tabs: moved?.tabs ?? 0,
+      opened: moved?.opened ?? localRefusal === null,
+      browserRefusal: moved?.browserRefusal ?? localRefusal ?? null,
+      server: readServerStatus()
+    },
+    answerLine ? [url, answerLine].join("\n") : url
+  );
+}
+function runAdd(ctx) {
+  const { args, emit, registerOpts } = ctx;
+  if (!args.positional[0]) fail(verbUsage("add"));
+  const d = ctx.index().register(path11.resolve(args.positional[0]), registerOpts());
+  emit(d, docLine(d));
+}
+function runUpdate(ctx) {
+  const { args, emit } = ctx;
+  if (!args.positional[0]) fail(verbUsage("update"));
+  if (args.flag("--project")) fail(`project is a directory, not metadata \u2014 use: aiview move ${args.positional[0]} --project <slug>`);
+  const target = resolveRef(args.positional[0]) ?? fail(`not in index: ${args.positional[0]}`);
+  const patch = {
+    kind: args.flag("--kind"),
+    addTags: args.flags("--tag"),
+    removeTags: args.flags("--untag"),
+    group: args.has("--ungroup") ? null : args.flag("--group") ?? void 0,
+    groupTitle: args.flag("--group-title"),
+    started: args.flag("--started")
+  };
+  const d = ctx.index().update(target.id, patch);
+  emit(d, docLine(d));
+}
+function runList(ctx) {
+  const { args, emit } = ctx;
+  const want = args.flags("--tag");
+  const wantKind = args.flag("--kind") ?? "";
+  if (args.has("--all")) fail("list --all is gone: every list is one project's; pass --project <slug> for another");
+  const index = ctx.index();
+  const scope = projectOfVerb(args, index) ?? fail(noProjectLine(index.allProjects().map((p) => p.slug)));
+  const docs = index.all().filter((d) => d.project === scope && (!wantKind || d.kind === wantKind) && (!want.length || want.every((t) => d.tags.includes(t))));
+  emit(docs, () => {
+    for (const d of docs)
+      console.log(
+        `started ${d.created_at}  ${d.kind.padEnd(12)} [${d.tags.join(", ")}]  ${d.title}${d.exists ? "" : "  (missing)"}
+    ${d.file_path}`
+      );
+  });
+}
+function runRemove(ctx) {
+  const { args, asJson } = ctx;
+  if (!args.positional.length) fail(verbUsage("remove"));
+  const index = ctx.index();
+  const removed = [];
+  for (const ref of args.positional) {
+    const row = rowOf(index, ref);
+    if (!row) {
+      console.error(`not in index: ${ref}`);
+      continue;
+    }
+    index.remove(row.id);
+    removed.push(row);
+    if (!asJson) console.log(`removed #${row.id}  ${row.title}  (file untouched)`);
+  }
+  if (asJson) console.log(JSON.stringify({ removed }));
+}
+function moveAcrossVolumes(from, to) {
+  try {
+    fs9.renameSync(from, to);
+  } catch (e) {
+    if (e.code !== "EXDEV") throw e;
+    fs9.cpSync(from, to, { recursive: true });
+    fs9.rmSync(from, { recursive: true });
+  }
+}
+function moveRefusal(from, dest, orphaned) {
+  if (dest === from) return `already there: ${from}`;
+  if (!fs9.existsSync(from) && !orphaned) return `missing file, not moved: ${from}`;
+  if (orphaned) return null;
+  const sidecarFrom = sidecarOf(from);
+  const sidecarDest = sidecarOf(dest);
+  const carriesSidecar = sidecarFrom !== null && fs9.existsSync(sidecarFrom);
+  const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs9.existsSync(p));
+  if (!taken.length) return null;
+  return `target exists (${taken.join(", ")}), skipped: ${carriesSidecar ? `${dest} and ${sidecarDest}` : dest}`;
+}
+function runMove(ctx) {
+  const { args, asJson } = ctx;
+  if (!args.positional.length) fail(verbUsage("move"));
+  const index = ctx.index();
+  const target = args.flag("--project");
+  if (target && !index.allProjects().some((p) => p.slug === target)) fail(noSuchProjectLine(target, index.allProjects().map((p) => p.slug)));
+  const moved = [];
+  for (const ref of args.positional) {
+    const row = rowOf(index, ref);
+    if (!row) {
+      console.error(`not in index: ${ref}`);
+      continue;
+    }
+    const from = row.abs_path;
+    const dir = docsDirFor(target ?? row.project);
+    const dest = path11.join(dir, path11.basename(from));
+    const orphaned = dest !== from && !fs9.existsSync(from) && fs9.existsSync(dest);
+    const refusal = moveRefusal(from, dest, orphaned);
+    if (refusal) {
+      console.error(refusal);
+      continue;
+    }
+    fs9.mkdirSync(dir, { recursive: true });
+    if (!orphaned) {
+      moveAcrossVolumes(from, dest);
+      const sidecarFrom = sidecarOf(from);
+      if (sidecarFrom !== null && fs9.existsSync(sidecarFrom)) moveAcrossVolumes(sidecarFrom, sidecarOf(dest));
+    }
+    const d = index.move(row.id, dest);
+    moved.push(d);
+    if (!asJson) console.log(`moved #${d.id}  ${from}
+           -> ${dest}`);
+  }
+  if (asJson) console.log(JSON.stringify({ moved }));
+}
+var DOCUMENT_VERBS = [
+  { name: "open", help: "listed", needs: { index: true }, mutatesIndex: true, run: runOpen },
+  { name: "add", help: "listed", needs: { index: true }, mutatesIndex: true, run: runAdd },
+  { name: "update", help: "listed", needs: { index: true }, mutatesIndex: true, run: runUpdate },
+  { name: "list", help: "listed", needs: { index: true }, run: runList },
+  { name: "remove", help: "listed", needs: { index: true }, mutatesIndex: true, run: runRemove },
+  { name: "move", help: "listed", needs: { index: true }, mutatesIndex: true, run: runMove }
+];
+
+// src/cli/verbs/home.ts
+await init_db();
+init_projects();
+init_home2();
+init_serverstate();
+import fs10 from "node:fs";
+import path12 from "node:path";
+function runStatus(ctx) {
+  const index = ctx.index();
+  const documents = index.all().length;
+  const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
+  const project = cwdProject;
+  const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
+  const server = readServerStatus();
+  ctx.emit({ home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server }, () => {
+    console.log(`home       ${DATA_ROOT}`);
+    console.log(`docs       ${DOCS_ROOT}`);
+    console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
+    if (projectDocs) console.log(`write to   ${projectDocs}`);
+    console.log(`sqlite     ${SQLITE_PATH}`);
+    console.log(`tool       ${TOOL_ROOT}`);
+    console.log(`documents  ${documents}`);
+    console.log(
+      `server     ${server.running ? `up (pid ${server.pid}, port ${server.port}, version ${server.version ?? "unrecorded"})` : server.stale ? "down (stale pidfile)" : "down"}`
+    );
+  });
+}
+function runPath({ args, emit }) {
+  const name = args.positional[0] || fail(verbUsage("path"));
+  if (/^#?\d+$/.test(name)) {
+    const doc = resolveRef(name) ?? fail(`no document ${name.startsWith("#") ? name : `#${name}`} in the index`);
+    emit({ path: doc.abs_path, dir: path12.dirname(doc.abs_path), project: doc.project }, doc.abs_path);
+    return;
+  }
+  const { slug, known } = withIndex((index) => ({ slug: projectOfVerb(args, index), known: index.allProjects().map((p) => p.slug) }));
+  if (slug === null) fail(noProjectLine(known));
+  if (!known.includes(slug)) fail(noSuchProjectLine(slug, known));
+  const dir = docsDirFor(slug);
+  fs10.mkdirSync(dir, { recursive: true });
+  const full = path12.join(dir, path12.basename(name));
+  emit({ path: full, dir, project: slug }, full);
+}
+function runInit({ emit }) {
+  ensureHome();
+  emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
+    console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
+    console.log(`documents  ${path12.join(DOCS_ROOT, "<project>")}`);
+    console.log(`tool       ${TOOL_ROOT}      (the checkout: rebuildable, safe to delete)`);
+  });
+}
+var HOME_VERBS = [
+  { name: "status", help: "listed", needs: { index: true }, run: runStatus },
+  { name: "path", help: "listed", run: runPath },
+  { name: "init", help: "listed", run: runInit }
+];
+
+// src/cli/verbs/pending.ts
+function documentOf(ref) {
+  const named = ref || fail(verbUsage("pending"));
+  return resolveRef(named) ?? fail(`no such document: ${named}`);
+}
+function addPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const doc = documentOf(args.positional[1]);
+  const label = args.flag("--label") || fail(subVerbUsage("pending", "add"));
+  const id = index.addPending(doc.id, label, args.flag("--note") ?? "");
+  notifyPendingChanged(doc.id);
+  emit({ id, document: doc.id, label }, `pending #${id}  ${label}  (doc #${doc.id})`);
+}
+function donePending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const raw = (args.positional[1] ?? "").replace(/^#/, "");
+  const id = Number(raw);
+  if (!raw || Number.isNaN(id)) fail(subVerbUsage("pending", "done"));
+  const docId = index.donePending(id) ?? fail(`no such pending item: #${id}`);
+  notifyPendingChanged(docId);
+  emit({ id, document: docId }, `done #${id}`);
+}
+function clearPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const doc = documentOf(args.positional[1]);
+  index.clearPending(doc.id);
+  notifyPendingChanged(doc.id);
+  emit({ document: doc.id, cleared: true }, `cleared pending for #${doc.id}`);
+}
+function listPending(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const ref = args.positional[1];
+  const rows = ref ? index.pendingFor(documentOf(ref).id) : index.allPending();
+  emit(rows, () => {
+    if (!rows.length) return console.log("nothing pending");
+    for (const r of rows) console.log(`#${r.id}  doc #${r.document_id}  ${r.label}${r.note ? ` \u2014 ${r.note}` : ""}  since ${r.started_at}`);
+  });
+}
+var PENDING_SUB_VERBS = { add: addPending, done: donePending, clear: clearPending };
+function runPending(ctx) {
+  const sub = ctx.args.positional[0] ?? "";
+  (Object.hasOwn(PENDING_SUB_VERBS, sub) ? PENDING_SUB_VERBS[sub] : listPending)(ctx);
+}
+var PENDING_VERBS = [{ name: "pending", help: "listed", needs: { index: true }, run: runPending }];
+
+// src/cli/verbs/plan.ts
+import fs11 from "node:fs";
+import path13 from "node:path";
+
 // src/core/tracker.ts
 var GLYPH_CLASS = /* @__PURE__ */ new Map([
   ["\u2705", "done"],
@@ -10355,7 +10847,7 @@ var CLASSDEF = /^\s*classDef\s+(\w+)\b/;
 var SUBGRAPH = /^\s*subgraph\s+([A-Za-z_][\w.-]*)\s*\[\s*"?(.*?)"?\s*\]\s*$/;
 var END = /^\s*end\s*$/;
 var sliceOf = (id) => (/^SL(\d+)$/i.exec(id) ?? /^S(\d+)\.\w+$/i.exec(id))?.[1];
-var MARKER2 = /^\s*%%\s*(aiview:)?tracker\b/i;
+var MARKER = /^\s*%%\s*(aiview:)?tracker\b/i;
 var MANDATE_LINE = /^\s*(\*\*)?mandate(\*\*)?\s*:/i;
 function findTracker(text) {
   const lines = text.split("\n");
@@ -10381,7 +10873,7 @@ function findTracker(text) {
     let indent = "  ";
     for (let i = block.from; i < block.to; i++) {
       const raw = lines[i];
-      if (MARKER2.test(raw)) {
+      if (MARKER.test(raw)) {
         marked = true;
         continue;
       }
@@ -10680,745 +11172,59 @@ function check2(plan) {
   return out;
 }
 
-// src/cli/index.ts
+// src/cli/verbs/plan.ts
 var LF = String.fromCharCode(10);
 var CRLF = String.fromCharCode(13, 10);
-var args = parseArgs(process.argv.slice(2));
-var asJson = args.has("--json");
-var USAGE = [
-  "usage: aiview <verb> [--json]",
-  "  open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]",
-  "  add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]",
-  "  update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]",
-  "  list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project",
-  "  project <add|list|rm> [slug] [--title T] [--path P]...",
-  "  remove <file|#id>...",
-  "  move <file|#id>... [--project <slug>]    # refile: file + index together",
-  "  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]",
-  "  pending add <file|#id> --label L [--note N]   # work the reader is waiting on",
-  "  pending done <#pendingId>                     # the work landed; the card goes away",
-  "  pending list [<file|#id>] | clear <file|#id>",
-  "  status",
-  "  path <filename> [--project <slug>]       # where this document belongs, joined for this OS",
-  "  components <file|#id>                    # what this prototype offers to siblings, what it pulls, every name on its page and its variants",
-  "  check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any",
-  "  show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link",
-  "  show --done                              # the question is answered: every tab goes back to what the person was reading",
-  "  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees",
-  "  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice",
-  "  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0",
-  "  board [--project <name>] [--open]   # the project's board page: its repositories; prints the link",
-  "  init                                     # create the data home; report where everything lives"
-].join("\n");
-var registerOpts = () => ({
-  kind: args.flag("--kind") ?? "",
-  tags: args.flags("--tag"),
-  started: args.flag("--started") ?? "",
-  group: args.flag("--group") ?? "",
-  groupTitle: args.flag("--group-title") ?? "",
-  project: args.flag("--project") ?? ""
-});
-function postToServer(route, body) {
-  return askServer(route, body) !== null;
-}
-function askServer(route, body) {
-  const st = readServerStatus();
-  if (!st.running || st.port === null) return null;
-  const b = JSON.stringify(body);
-  const headers = {
-    host: `127.0.0.1:${st.port}`,
-    "content-type": "application/json",
-    "content-length": Buffer.byteLength(b),
-    [TOKEN_HEADER]: readServerToken() ?? ""
-  };
-  const r = hiddenSpawnSync(
-    process.execPath,
-    [
-      "-e",
-      `const b=${JSON.stringify(b)};const q=require('node:http').request(
-         {host:'127.0.0.1',port:${st.port},path:${JSON.stringify(route)},method:'POST',
-          headers:${JSON.stringify(headers)}},
-         r=>{r.pipe(process.stdout);r.on('end',()=>process.exitCode=r.statusCode===200?0:1)});
-       q.on('error',()=>process.exit(1));q.end(b);`
-    ],
-    { timeout: 5e3, encoding: "utf8" }
-  );
-  return r.status === 0 ? r.stdout : null;
-}
-function recordRecentProject(index, slug) {
-  if (!postToServer("/api/recent-project", { project: slug })) index.recordRecentProject(slug);
-}
-function projectOfVerb(index) {
-  return args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
-}
-function noProjectLine(known) {
-  return `no aiview project for ${process.cwd()}: pass --project <slug>, or declare one with aiview project add <slug> --path <dir>${known.length ? `
-known: ${known.join(", ")}` : ""}`;
-}
-function notifyPendingChanged(documentId) {
-  postToServer("/api/pending-changed", { id: documentId });
-}
-function notifyIndexChanged() {
-  postToServer("/api/index-changed", {});
-}
-var MUTATES_INDEX = /* @__PURE__ */ new Set(["add", "open", "update", "remove", "move", "project", "board"]);
-var docLine = (d) => `#${d.id}  ${d.kind} [${d.tags.join(", ")}]${d.group_slug ? `  group:${d.group_slug}` : ""}  started ${d.created_at}  ${d.title}`;
-var emit = (json, human) => {
-  if (asJson) console.log(JSON.stringify(json));
-  else if (typeof human === "string") console.log(human);
-  else human();
-};
-function ensureDist() {
-  if (fs13.existsSync(path15.join(TOOL_ROOT, "dist", "index.html"))) return;
-  if (!fs13.existsSync(path15.join(TOOL_ROOT, "app", "index.html"))) return;
-  console.error("aiview: dist/ missing \u2014 building the UI once\u2026");
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync3(npm, ["run", "build"], { cwd: TOOL_ROOT, stdio: "inherit", shell: process.platform === "win32" });
-  if (r.status !== 0) {
-    console.error(`aiview: UI build failed. Run: npm install && npm run build  (in ${TOOL_ROOT})`);
-    process.exit(1);
-  }
-}
-function spawnDetachedServer(port) {
-  try {
-    fs13.rmSync(PORT_FILE, { force: true });
-    fs13.rmSync(PID_FILE, { force: true });
-  } catch {
-  }
-  const child = hiddenSpawn(process.execPath, [process.argv[1], "serve", "--port", String(port)], {
-    detached: true,
-    stdio: "ignore",
-    cwd: TOOL_ROOT
-  });
-  child.unref();
-  const t0 = Date.now();
-  for (; ; ) {
-    const st = readServerStatus();
-    if (st.running && st.port !== null && st.pid === child.pid) return st.port;
-    if (Date.now() - t0 > 1e4) {
-      console.error(`aiview: server did not come up within 10s (port ${port} may be in use \u2014 retry with --port <n>)`);
-      process.exit(1);
-    }
-    pause2(120);
-  }
-}
-var pause2 = (ms) => {
-  hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
-};
-var isAlive3 = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-function stopServerProcess(pid) {
-  try {
-    process.kill(pid);
-  } catch {
-  }
-  const t0 = Date.now();
-  while (isAlive3(pid)) {
-    if (Date.now() - t0 > 5e3) {
-      console.error(`aiview: the running server (pid ${pid}) is an older version and did not stop within 5s; stop it and retry`);
-      process.exit(1);
-    }
-    pause2(100);
-  }
-}
-function portOfInstalledServer() {
-  const asked = args.flag("--port") ?? process.env.AIVIEW_PORT;
-  const st = readServerStatus();
-  if (!st.running || st.port === null || st.pid === null) return spawnDetachedServer(asked !== void 0 ? Number(asked) : firstFreePort(defaultPort()));
-  const installed = collectionVersion(TOOL_ROOT);
-  if (installed === null || st.version === installed) return st.port;
-  stopServerProcess(st.pid);
-  return spawnDetachedServer(st.port);
-}
-function agentProject(fallback) {
-  const index = openIndex();
-  try {
-    return projectForCwd(process.cwd(), index.allProjects())?.slug ?? fallback;
-  } finally {
-    index.close();
-  }
-}
-var movedLine = (r, project, verb) => {
-  if (r.browserRefusal) return noBrowserLine(project, r.browserRefusal);
-  if (r.opened) return `no tab showed ${project}: opened a new one`;
-  return `${verb} in ${r.tabs} open tab${r.tabs > 1 ? "s" : ""} on ${project}`;
-};
-var noBrowserLine = (project, refusal) => `no tab showed ${project}, and no browser opened (${refusal}): give the person the link`;
-function resolveRef(ref) {
-  const index = openIndex();
-  try {
-    return /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
-  } finally {
-    index.close();
-  }
-}
-function cmdStatus() {
-  const index = openIndex();
-  const documents = index.all().length;
-  const cwdProject = projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
-  const project = cwdProject;
-  const projectDocs = cwdProject === null ? null : docsDirFor(cwdProject);
-  index.close();
-  const server = readServerStatus();
-  emit(
-    { home: DATA_ROOT, docs: DOCS_ROOT, project, projectDocs, cwdProject, sqlite: SQLITE_PATH, tool: TOOL_ROOT, documents, server },
-    () => {
-      console.log(`home       ${DATA_ROOT}`);
-      console.log(`docs       ${DOCS_ROOT}`);
-      console.log(`project    ${project ?? "(none for this directory: pass --project)"}`);
-      if (projectDocs) console.log(`write to   ${projectDocs}`);
-      console.log(`sqlite     ${SQLITE_PATH}`);
-      console.log(`tool       ${TOOL_ROOT}`);
-      console.log(`documents  ${documents}`);
-      console.log(
-        `server     ${server.running ? `up (pid ${server.pid}, port ${server.port}, version ${server.version ?? "unrecorded"})` : server.stale ? "down (stale pidfile)" : "down"}`
-      );
-    }
-  );
-}
-function cmdPath() {
-  const name = args.positional[0];
-  if (!name) {
-    console.error("usage: aiview path <filename> [--project <slug>] | aiview path #<id>");
-    process.exit(1);
-  }
-  if (/^#?\d+$/.test(name)) {
-    const doc = resolveRef(name);
-    if (!doc) {
-      console.error(`no document ${name.startsWith("#") ? name : `#${name}`} in the index`);
-      process.exit(1);
-    }
-    emit({ path: doc.abs_path, dir: path15.dirname(doc.abs_path), project: doc.project }, doc.abs_path);
-    return;
-  }
-  const index = openIndex();
-  const slug = projectOfVerb(index);
-  const known = index.allProjects().map((p) => p.slug);
-  index.close();
-  if (slug === null) {
-    console.error(noProjectLine(known));
-    process.exit(1);
-  }
-  if (!known.includes(slug)) {
-    console.error(`no such project: ${slug}${known.length ? `
-known: ${known.join(", ")}` : ""}`);
-    process.exit(1);
-  }
-  const dir = docsDirFor(slug);
-  fs13.mkdirSync(dir, { recursive: true });
-  const full = path15.join(dir, path15.basename(name));
-  emit({ path: full, dir, project: slug }, full);
-}
-function prototypeArg(usage) {
-  const ref = args.positional[0];
-  if (!ref) {
-    console.error(usage);
-    process.exit(1);
-  }
-  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
-  if (!fs13.existsSync(abs)) {
-    console.error(`no such file: ${abs}`);
-    process.exit(1);
-  }
-  if (!isHtml(abs)) {
-    console.error(`not an html prototype: ${abs}`);
-    process.exit(1);
-  }
+function planFile(ref) {
+  const abs = resolveRef(ref)?.abs_path ?? path13.resolve(ref);
+  if (!fs11.existsSync(abs)) fail(`no such file: ${abs}`);
   return abs;
 }
-function cmdComponents() {
-  const abs = prototypeArg("usage: aiview components <file|#id>");
-  const r = listComponents(readDoc(abs));
-  const vocabulary = pageVocabulary(abs);
-  emit({ file: path15.basename(abs), ...r, ...vocabulary }, () => {
-    if (!r.offers.length) console.log("offers   nothing: no data-component in this file");
-    for (const o of r.offers)
-      console.log(
-        `offers   ${o.name}  <${o.tag}>${o.within ? `  within ${o.within}` : ""}${o.warnings.length ? `  !! ${o.warnings.join(", ")}` : ""}`
-      );
-    for (const x of r.pulls) console.log(`pulls    ${x.name || x.ref}  from ${x.file || "(invalid ref)"}`);
-    if (!r.pulls.length) console.log("pulls    nothing: no data-bind in this file");
-    console.log(`page     ${vocabulary.page.join(", ") || "no component"}`);
-    console.log(`variants ${vocabulary.variants.join(", ") || "none declared"}`);
-  });
-}
-function composed(abs) {
-  const dir = path15.dirname(abs);
-  const reader = (name) => {
-    if (/[\\/]/.test(name) || name.includes("..")) return void 0;
-    const f = path15.join(dir, name);
-    return fs13.existsSync(f) && fs13.statSync(f).isFile() ? readDoc(f) : void 0;
-  };
-  return resolveBindings(readDoc(abs), reader);
-}
-function pageVocabulary(abs) {
-  const raw = readDoc(abs);
-  const html = composed(abs).html;
-  const names = [...listComponents(html).offers, ...listComponents(raw).pulls].map((c) => c.name).filter(Boolean);
-  return {
-    page: [...new Set(names)],
-    variants: [...new Set([...html.matchAll(/data-aiview-variant="([^"]+)"/g)].map((m) => m[1]))]
-  };
-}
-function cmdShow() {
-  const usage = "usage: aiview show <file|#id> [--component Name]... [--variant v]  |  aiview show --done";
-  if (args.has("--done")) {
-    const answer2 = askServer("/api/show-done", {});
-    const tabs = answer2 === null ? 0 : JSON.parse(answer2).tabs;
-    emit({ done: true, tabs }, tabs ? `${tabs} open tab${tabs > 1 ? "s" : ""} sent back to what the person was reading` : "no tab is open: nothing to send back");
-    return;
+function syncTracker({ emit }, abs, raw, body, tracker) {
+  const crlf = raw.includes(CRLF);
+  const { text, changed } = sync(body, tracker);
+  if (changed) {
+    const tmp = `${abs}.aiview-${process.pid}`;
+    fs11.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
+    fs11.renameSync(tmp, abs);
   }
-  const abs = prototypeArg(usage);
-  const doc = resolveRef(args.positional[0]);
-  if (!doc) {
-    console.error(`not registered: ${abs}. Register and serve it with: aiview open <file>`);
-    process.exit(1);
-  }
-  const components = args.flags("--component");
-  const variant = args.flag("--variant");
-  const { page: known, variants } = pageVocabulary(abs);
-  const wrong = [...components, ...variant ? [variant] : []].find((n) => !isName(n)) !== void 0 ? "a name holds letters, digits, dot, dash and underscore only" : unknownNames(components, known, "component") ?? (variant ? unknownNames([variant], variants, "variant") : void 0);
-  if (wrong) {
-    console.error(wrong);
-    process.exit(1);
-  }
-  ensureDist();
-  const port = portOfInstalledServer();
-  const pointer = { id: doc.id, components, ...variant ? { variant } : {} };
-  const url = `http://localhost:${port}/#${pointerHash(pointer)}`;
-  const project = agentProject(doc.project);
-  const answer = askServer("/api/show", { ...pointer, project });
-  const moved = answer === null ? null : JSON.parse(answer);
-  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, browserRefusal: moved?.browserRefusal ?? null }, () => {
-    console.log(url);
-    console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
-  });
-}
-function cmdCheck() {
-  const abs = prototypeArg("usage: aiview check <file|#id>");
-  const r = composed(abs);
-  emit({ file: path15.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
-    console.log(`${r.bound} bound from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}${r.sources.length ? `: ${r.sources.join(", ")}` : ""}`);
-    for (const e of r.errors) console.log(`error    ${e.ref}: ${e.message}`);
-    for (const w of r.warnings) console.log(`warning  ${w.ref}: ${w.message}`);
-    if (!r.errors.length && !r.warnings.length) console.log("ok");
-  });
-  if (r.errors.length) process.exit(1);
-}
-function cmdInit() {
-  ensureHome();
-  emit({ home: DATA_ROOT, docs: DOCS_ROOT, sqlite: SQLITE_PATH, tool: TOOL_ROOT }, () => {
-    console.log(`data home  ${DATA_ROOT}      (yours: index, server files, documents \u2014 never versioned)`);
-    console.log(`documents  ${path15.join(DOCS_ROOT, "<project>")}`);
-    console.log(`tool       ${TOOL_ROOT}      (the checkout: rebuildable, safe to delete)`);
-  });
-}
-function cmdAdd() {
-  if (!args.positional[0]) {
-    console.error("usage: aiview add <file.md> [--kind k] [--tag t]...");
-    process.exit(1);
-  }
-  const index = openIndex();
-  const d = index.register(path15.resolve(args.positional[0]), registerOpts());
-  index.close();
-  emit(d, docLine(d));
-}
-function cmdUpdate() {
-  if (!args.positional[0]) {
-    console.error("usage: aiview update <file|#id> [--kind k] [--tag t] [--untag t] [--group g|--ungroup] [--group-title T] [--started ISO]");
-    process.exit(1);
-  }
-  if (args.flag("--project")) {
-    console.error(`project is a directory, not metadata \u2014 use: aiview move ${args.positional[0]} --project <slug>`);
-    process.exit(1);
-  }
-  const target = resolveRef(args.positional[0]);
-  if (!target) {
-    console.error(`not in index: ${args.positional[0]}`);
-    process.exit(1);
-  }
-  const patch = {
-    kind: args.flag("--kind"),
-    addTags: args.flags("--tag"),
-    removeTags: args.flags("--untag"),
-    group: args.has("--ungroup") ? null : args.flag("--group") ?? void 0,
-    groupTitle: args.flag("--group-title"),
-    started: args.flag("--started")
-  };
-  const index = openIndex();
-  const d = index.update(target.id, patch);
-  index.close();
-  emit(d, docLine(d));
-}
-function cmdList() {
-  const want = args.flags("--tag");
-  const wantKind = args.flag("--kind") ?? "";
-  if (args.has("--all")) {
-    console.error("list --all is gone: every list is one project's; pass --project <slug> for another");
-    process.exit(1);
-  }
-  const index = openIndex();
-  const scope = projectOfVerb(index);
-  if (scope === null) {
-    const known = index.allProjects().map((p) => p.slug);
-    index.close();
-    console.error(noProjectLine(known));
-    process.exit(1);
-  }
-  const docs = index.all().filter(
-    (d) => d.project === scope && (!wantKind || d.kind === wantKind) && (!want.length || want.every((t) => d.tags.includes(t)))
-  );
-  index.close();
-  emit(docs, () => {
-    for (const d of docs)
-      console.log(
-        `started ${d.created_at}  ${d.kind.padEnd(12)} [${d.tags.join(", ")}]  ${d.title}${d.exists ? "" : "  (missing)"}
-    ${d.file_path}`
-      );
-  });
-}
-function cmdRemove() {
-  if (!args.positional.length) {
-    console.error("usage: aiview remove <file|#id>...");
-    process.exit(1);
-  }
-  const index = openIndex();
-  const removed = [];
-  for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
-    if (!row) {
-      console.error(`not in index: ${ref}`);
-      continue;
-    }
-    index.remove(row.id);
-    removed.push(row);
-    if (!asJson) console.log(`removed #${row.id}  ${row.title}  (file untouched)`);
-  }
-  index.close();
-  if (asJson) console.log(JSON.stringify({ removed }));
-}
-function cmdProject() {
-  const sub = args.positional[0] ?? "list";
-  const index = openIndex();
-  try {
-    if (sub === "list") {
-      const projects = index.allProjects();
-      const docs = index.all();
-      const here = projectForCwd(process.cwd(), projects)?.slug ?? null;
-      const count = (slug2) => docs.filter((d) => d.project === slug2).length;
-      emit(
-        projects.map((p) => ({ ...p, documents: count(p.slug), here: p.slug === here })),
-        () => {
-          for (const p of projects)
-            console.log(
-              `${p.slug === here ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `
-    covers ${p.paths.join(", ")}` : ""}`
-            );
-        }
-      );
-      return;
-    }
-    const slug = args.positional[1];
-    if (!slug) {
-      console.error(`usage: aiview project ${sub} <slug>`);
-      process.exit(1);
-    }
-    if (sub === "add") {
-      const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path15.resolve(p2)) });
-      fs13.mkdirSync(docsDirFor(slug), { recursive: true });
-      emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
-  covers ${p.paths.join(", ")}` : ""}`);
-      return;
-    }
-    if (sub === "rm") {
-      const r = index.removeProject(slug);
-      if (!r.removed) {
-        console.error(
-          r.documents > 0 ? `${slug} still has ${r.documents} document${r.documents === 1 ? "" : "s"}. Move or remove them first.` : `no such project: ${slug}`
-        );
-        process.exit(1);
-      }
-      emit(r, `removed project ${slug}  (its directory is left on disk)`);
-      return;
-    }
-    console.error("usage: aiview project <add|list|rm> [slug] [--title T] [--path P]...");
-    process.exit(1);
-  } finally {
-    index.close();
-  }
-}
-function moveAcrossVolumes(from, to) {
-  try {
-    fs13.renameSync(from, to);
-  } catch (e) {
-    if (e.code !== "EXDEV") throw e;
-    fs13.cpSync(from, to, { recursive: true });
-    fs13.rmSync(from, { recursive: true });
-  }
-}
-function cmdMove() {
-  if (!args.positional.length) {
-    console.error("usage: aiview move <file|#id>... [--project <slug>]");
-    process.exit(1);
-  }
-  const target = args.flag("--project");
-  const index = openIndex();
-  if (target && !index.allProjects().some((p) => p.slug === target)) {
-    const known = index.allProjects().map((p) => p.slug);
-    console.error(`no such project: ${target}${known.length ? `
-known: ${known.join(", ")}` : ""}`);
-    index.close();
-    process.exit(1);
-  }
-  const moved = [];
-  for (const ref of args.positional) {
-    const row = /^#?\d+$/.test(ref) ? index.get(Number(ref.replace("#", ""))) : index.getByPath(path15.resolve(ref));
-    if (!row) {
-      console.error(`not in index: ${ref}`);
-      continue;
-    }
-    const from = row.abs_path;
-    const dir = docsDirFor(target ?? row.project);
-    const dest = path15.join(dir, path15.basename(from));
-    if (dest === from) {
-      console.error(`already there: ${from}`);
-      continue;
-    }
-    const sidecarFrom = sidecarOf(from);
-    const sidecarDest = sidecarOf(dest);
-    const carriesSidecar = sidecarFrom !== null && fs13.existsSync(sidecarFrom);
-    const orphaned = !fs13.existsSync(from) && fs13.existsSync(dest);
-    if (!fs13.existsSync(from) && !orphaned) {
-      console.error(`missing file, not moved: ${from}`);
-      continue;
-    }
-    if (!orphaned) {
-      const taken = [dest, ...carriesSidecar ? [sidecarDest] : []].filter((p) => fs13.existsSync(p));
-      if (taken.length) {
-        const named = carriesSidecar ? `${dest} and ${sidecarDest}` : dest;
-        console.error(`target exists (${taken.join(", ")}), skipped: ${named}`);
-        continue;
-      }
-    }
-    fs13.mkdirSync(dir, { recursive: true });
-    if (!orphaned) {
-      moveAcrossVolumes(from, dest);
-      if (carriesSidecar) moveAcrossVolumes(sidecarFrom, sidecarDest);
-    }
-    const d = index.move(row.id, dest);
-    moved.push(d);
-    if (!asJson) console.log(`moved #${d.id}  ${from}
-           -> ${dest}`);
-  }
-  index.close();
-  if (asJson) console.log(JSON.stringify({ moved }));
-}
-function cmdOpen() {
-  if (!args.positional[0]) {
-    console.error("usage: aiview open <file> [--kind k] [--tag t]... [--group g] [--port p] [--open]");
-    process.exit(1);
-  }
-  ensureDist();
-  const index = openIndex();
-  const d = index.register(path15.resolve(args.positional[0]), registerOpts());
-  recordRecentProject(index, d.project);
-  const project = projectForCwd(process.cwd(), index.allProjects())?.slug ?? d.project;
-  index.close();
-  const port = portOfInstalledServer();
-  const url = `http://localhost:${port}/#doc=${d.id}`;
-  const answer = askServer("/api/open", { id: d.id, project });
-  const moved = answer === null ? null : JSON.parse(answer);
-  const localRefusal = !moved && args.has("--open") ? openBrowser(url) : void 0;
-  const answerLine = moved ? movedLine(moved, project, "opened") : localRefusal ? noBrowserLine(project, localRefusal) : null;
+  const after = findTracker(text);
+  const left = after ? check(after) : [];
   emit(
-    {
-      id: d.id,
-      url,
-      project,
-      tabs: moved?.tabs ?? 0,
-      opened: moved?.opened ?? localRefusal === null,
-      browserRefusal: moved?.browserRefusal ?? localRefusal ?? null,
-      server: readServerStatus()
-    },
-    answerLine ? [url, answerLine].join("\n") : url
+    { file: path13.basename(abs), changed, findings: left.length },
+    () => console.log(
+      changed ? `synced ${path13.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
+    )
   );
+  return left.length ? 1 : 0;
 }
-function cmdBoard() {
-  const index = openIndex();
-  try {
-    const slug = args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug ?? null;
-    if (!slug) {
-      console.error(`no aiview project for ${process.cwd()}: declare one with aiview project add <slug> --path <dir>, or pass --project`);
-      process.exit(1);
-    }
-    const repo = args.flag("--repo");
-    if (repo === void 0 && !index.allProjects().some((p) => p.slug === slug)) {
-      console.error(`no such project: ${slug}`);
-      process.exit(1);
-    }
-    const repos = repo === void 0 ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
-    recordRecentProject(index, slug);
-    ensureDist();
-    const url = `http://localhost:${portOfInstalledServer()}/${boardHash(slug)}`;
-    if (args.has("--open")) {
-      openBrowser(url);
-    }
-    emit({ project: slug, repos, url, server: readServerStatus() }, [url, ...repos.map((x) => `  ${x}`)].join("\n"));
-  } finally {
-    index.close();
-  }
-}
-async function cmdServe() {
-  if (args.has("--detach")) {
-    ensureDist();
-    if (args.positional[0]) {
-      const index2 = openIndex();
-      index2.register(path15.resolve(args.positional[0]), registerOpts());
-      index2.close();
-    }
-    const port = portOfInstalledServer();
-    emit({ server: readServerStatus() }, `aiview server up on http://localhost:${port}/`);
-    return;
-  }
-  ensureDist();
-  const { startServer: startServer2 } = await init_server().then(() => server_exports);
-  const index = openIndex();
-  const startDoc = args.positional[0] ? index.register(path15.resolve(args.positional[0]), registerOpts()) : null;
-  startServer2(index, {
-    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
-    open: args.has("--open"),
-    startDoc
-  });
-}
-function cmdPending() {
-  const sub = args.positional[0];
-  const index = openIndex();
-  const needDoc = (ref2) => {
-    if (!ref2) {
-      console.error("usage: aiview pending <add|done|list|clear> ...");
-      process.exit(1);
-    }
-    const doc = resolveRef(ref2);
-    if (!doc) {
-      console.error(`no such document: ${ref2}`);
-      process.exit(1);
-    }
-    return doc;
-  };
-  if (sub === "add") {
-    const doc = needDoc(args.positional[1]);
-    const label = args.flag("--label");
-    if (!label) {
-      console.error("usage: aiview pending add <file|#id> --label L [--note N]");
-      process.exit(1);
-    }
-    const id = index.addPending(doc.id, label, args.flag("--note") ?? "");
-    index.close();
-    notifyPendingChanged(doc.id);
-    emit({ id, document: doc.id, label }, `pending #${id}  ${label}  (doc #${doc.id})`);
-    return;
-  }
-  if (sub === "done") {
-    const raw = (args.positional[1] ?? "").replace(/^#/, "");
-    const id = Number(raw);
-    if (!raw || Number.isNaN(id)) {
-      console.error("usage: aiview pending done <#pendingId>");
-      process.exit(1);
-    }
-    const docId = index.donePending(id);
-    index.close();
-    if (docId === null) {
-      console.error(`no such pending item: #${id}`);
-      process.exit(1);
-    }
-    notifyPendingChanged(docId);
-    emit({ id, document: docId }, `done #${id}`);
-    return;
-  }
-  if (sub === "clear") {
-    const doc = needDoc(args.positional[1]);
-    index.clearPending(doc.id);
-    index.close();
-    notifyPendingChanged(doc.id);
-    emit({ document: doc.id, cleared: true }, `cleared pending for #${doc.id}`);
-    return;
-  }
-  const ref = args.positional[1];
-  const rows = ref ? index.pendingFor(needDoc(ref).id) : index.allPending();
-  index.close();
-  emit(rows, () => {
-    if (!rows.length) return console.log("nothing pending");
-    for (const r of rows) console.log(`#${r.id}  doc #${r.document_id}  ${r.label}${r.note ? ` \u2014 ${r.note}` : ""}  since ${r.started_at}`);
-  });
-}
-function cmdTracker() {
-  const mode = args.positional[0] === "sync" ? "sync" : "check";
-  const ref = args.positional[1] ?? (args.positional[0] === "check" || args.positional[0] === "sync" ? void 0 : args.positional[0]);
-  if (!ref) {
-    console.error("usage: aiview tracker <check|sync> <file|#id>");
-    process.exit(1);
-  }
-  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
-  if (!fs13.existsSync(abs)) {
-    console.error(`no such file: ${abs}`);
-    process.exit(1);
-  }
-  const raw = fs13.readFileSync(abs, "utf8");
-  const body = raw.split(CRLF).join(LF);
-  const tracker = findTracker(body);
-  if (!tracker) {
-    console.error(`no tracker in ${path15.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
-    process.exit(1);
-  }
-  if (mode === "sync") {
-    const crlf = raw.includes(CRLF);
-    const { text, changed } = sync(body, tracker);
-    if (changed) {
-      const tmp = `${abs}.aiview-${process.pid}`;
-      fs13.writeFileSync(tmp, crlf ? text.split(LF).join(CRLF) : text, "utf8");
-      fs13.renameSync(tmp, abs);
-    }
-    const after = findTracker(text);
-    const left = after ? check(after) : [];
-    emit(
-      { file: path15.basename(abs), changed, findings: left.length },
-      () => console.log(
-        changed ? `synced ${path15.basename(abs)}: the class lines now follow the glyphs${left.length ? `, ${left.length} finding(s) remain` : ""}` : `nothing to sync: the class lines already follow the glyphs`
-      )
-    );
-    if (left.length) process.exit(1);
-    return;
-  }
+function checkTracker({ emit }, abs, tracker) {
   const findings = check(tracker);
-  emit({ file: path15.basename(abs), nodes: tracker.nodes.length, findings }, () => {
+  emit({ file: path13.basename(abs), nodes: tracker.nodes.length, findings }, () => {
     if (!findings.length) return console.log(`ok  ${tracker.nodes.length} steps, glyphs and classes agree`);
     for (const f of findings) console.log(`line ${f.line}  ${f.text}`);
     console.log(`${findings.length} finding(s) in ${tracker.nodes.length} steps`);
   });
-  if (findings.length) process.exit(1);
+  return findings.length ? 1 : 0;
 }
-function cmdPlan() {
+function runTracker(ctx) {
+  const [first, second] = ctx.args.positional;
+  const mode = first === "sync" ? "sync" : "check";
+  const ref = second ?? (first === "check" || first === "sync" ? void 0 : first);
+  const abs = planFile(ref || fail(verbUsage("tracker")));
+  const raw = fs11.readFileSync(abs, "utf8");
+  const body = raw.split(CRLF).join(LF);
+  const tracker = findTracker(body) ?? fail(`no tracker in ${path13.basename(abs)}: no mermaid block whose nodes open with \u2705 \u25B6 \u23F8 \u2B1C \u2716`);
+  return mode === "sync" ? syncTracker(ctx, abs, raw, body, tracker) : checkTracker(ctx, abs, tracker);
+}
+function runPlan({ args, emit }) {
   const ref = args.positional[0] === "check" ? args.positional[1] : args.positional[0];
-  if (!ref) {
-    console.error("usage: aiview plan check <file|#id>");
-    process.exit(1);
-  }
-  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
-  if (!fs13.existsSync(abs)) {
-    console.error(`no such file: ${abs}`);
-    process.exit(1);
-  }
-  const plan = readApproval(fs13.readFileSync(abs, "utf8").split(CRLF).join(LF));
+  const abs = planFile(ref || fail(verbUsage("plan")));
+  const plan = readApproval(fs11.readFileSync(abs, "utf8").split(CRLF).join(LF));
   const findings = check2(plan);
   emit(
     {
-      file: path15.basename(abs),
+      file: path13.basename(abs),
       approved: plan.approved,
       decisions: plan.decisions.length,
       defaults: plan.defaults.map((d) => ({ id: d.id, kind: d.kind, line: d.line })),
@@ -11440,76 +11246,224 @@ function cmdPlan() {
     }
   );
 }
-async function runVerb() {
-  switch (args.verb) {
-    case "pending":
-      cmdPending();
-      break;
-    case "status":
-      cmdStatus();
-      break;
-    case "path":
-      cmdPath();
-      break;
-    case "init":
-      cmdInit();
-      break;
-    case "components":
-      cmdComponents();
-      break;
-    case "show":
-      cmdShow();
-      break;
-    case "check":
-      cmdCheck();
-      break;
-    case "tracker":
-      cmdTracker();
-      break;
-    case "plan":
-      cmdPlan();
-      break;
-    case "add":
-      cmdAdd();
-      break;
-    case "update":
-      cmdUpdate();
-      break;
-    case "list":
-      cmdList();
-      break;
-    case "remove":
-      cmdRemove();
-      break;
-    case "move":
-      cmdMove();
-      break;
-    case "project":
-      cmdProject();
-      break;
-    case "use":
-      console.error("aiview use is gone: each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
-      process.exit(1);
-      break;
-    case "open":
-      cmdOpen();
-      break;
-    case "serve":
-      await cmdServe();
-      break;
-    case "board":
-      cmdBoard();
-      break;
-    default:
-      console.error(USAGE);
-      process.exit(1);
+var PLAN_VERBS = [
+  { name: "tracker", help: "listed", run: runTracker },
+  { name: "plan", help: "listed", run: runPlan }
+];
+
+// src/cli/verbs/project.ts
+init_projects();
+init_home2();
+import fs12 from "node:fs";
+import path14 from "node:path";
+function listProjects(ctx) {
+  const { emit } = ctx;
+  const index = ctx.index();
+  const projects = index.allProjects();
+  const docs = index.all();
+  const here = projectForCwd(process.cwd(), projects)?.slug ?? null;
+  const count = (slug) => docs.filter((d) => d.project === slug).length;
+  emit(
+    projects.map((p) => ({ ...p, documents: count(p.slug), here: p.slug === here })),
+    () => {
+      for (const p of projects)
+        console.log(
+          `${p.slug === here ? "*" : " "} ${p.slug.padEnd(14)} ${String(count(p.slug)).padStart(3)} docs  ${docsDirFor(p.slug)}${p.paths.length ? `
+    covers ${p.paths.join(", ")}` : ""}`
+        );
+    }
+  );
+}
+function addProject(ctx, slug) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const p = index.upsertProject(slug, { title: args.flag("--title"), addPaths: args.flags("--path").map((p2) => path14.resolve(p2)) });
+  fs12.mkdirSync(docsDirFor(slug), { recursive: true });
+  emit({ ...p, docs: docsDirFor(slug) }, `${p.slug}  ${docsDirFor(slug)}${p.paths.length ? `
+  covers ${p.paths.join(", ")}` : ""}`);
+}
+function removeProject(ctx, slug) {
+  const { emit } = ctx;
+  const index = ctx.index();
+  const r = index.removeProject(slug);
+  if (!r.removed)
+    fail(r.documents > 0 ? `${slug} still has ${r.documents} document${r.documents === 1 ? "" : "s"}. Move or remove them first.` : `no such project: ${slug}`);
+  emit(r, `removed project ${slug}  (its directory is left on disk)`);
+}
+var SLUG_SUB_VERBS = { add: addProject, rm: removeProject };
+function runProject(ctx) {
+  ctx.index();
+  const sub = ctx.args.positional[0] ?? "list";
+  if (sub === "list") return listProjects(ctx);
+  const slug = ctx.args.positional[1] || fail(projectSlugUsage(sub));
+  const subVerb = Object.hasOwn(SLUG_SUB_VERBS, sub) ? SLUG_SUB_VERBS[sub] : fail(verbUsage("project"));
+  subVerb(ctx, slug);
+}
+function runUse() {
+  return fail("aiview use is gone: each verb takes its project from this directory or --project <slug>, and each tab keeps its own");
+}
+var PROJECT_VERBS = [
+  { name: "project", help: "listed", needs: { index: true }, mutatesIndex: true, run: runProject },
+  { name: "use", help: "hidden", run: runUse }
+];
+
+// src/cli/verbs/prototype.ts
+init_bind();
+init_paths();
+init_pointer();
+import fs13 from "node:fs";
+import path15 from "node:path";
+function prototypeArg(args, verb) {
+  const ref = args.positional[0] || fail(verbUsage(verb));
+  const abs = resolveRef(ref)?.abs_path ?? path15.resolve(ref);
+  if (!fs13.existsSync(abs)) fail(`no such file: ${abs}`);
+  if (!isHtml(abs)) fail(`not an html prototype: ${abs}`);
+  return abs;
+}
+function composed(abs) {
+  const dir = path15.dirname(abs);
+  const reader = (name) => {
+    if (/[\\/]/.test(name) || name.includes("..")) return void 0;
+    const f = path15.join(dir, name);
+    return fs13.existsSync(f) && fs13.statSync(f).isFile() ? readDoc(f) : void 0;
+  };
+  return resolveBindings(readDoc(abs), reader);
+}
+function pageVocabulary(abs) {
+  const raw = readDoc(abs);
+  const html = composed(abs).html;
+  const names = [...listComponents(html).offers, ...listComponents(raw).pulls].map((c) => c.name).filter(Boolean);
+  return {
+    page: [...new Set(names)],
+    variants: [...new Set([...html.matchAll(/data-aiview-variant="([^"]+)"/g)].map((m) => m[1]))]
+  };
+}
+function runComponents({ args, emit }) {
+  const abs = prototypeArg(args, "components");
+  const r = listComponents(readDoc(abs));
+  const vocabulary = pageVocabulary(abs);
+  emit({ file: path15.basename(abs), ...r, ...vocabulary }, () => {
+    if (!r.offers.length) console.log("offers   nothing: no data-component in this file");
+    for (const o of r.offers)
+      console.log(
+        `offers   ${o.name}  <${o.tag}>${o.within ? `  within ${o.within}` : ""}${o.warnings.length ? `  !! ${o.warnings.join(", ")}` : ""}`
+      );
+    for (const x of r.pulls) console.log(`pulls    ${x.name || x.ref}  from ${x.file || "(invalid ref)"}`);
+    if (!r.pulls.length) console.log("pulls    nothing: no data-bind in this file");
+    console.log(`page     ${vocabulary.page.join(", ") || "no component"}`);
+    console.log(`variants ${vocabulary.variants.join(", ") || "none declared"}`);
+  });
+}
+function runCheck({ args, emit }) {
+  const abs = prototypeArg(args, "check");
+  const r = composed(abs);
+  emit({ file: path15.basename(abs), bound: r.bound, sources: r.sources, errors: r.errors, warnings: r.warnings }, () => {
+    console.log(`${r.bound} bound from ${r.sources.length} source${r.sources.length === 1 ? "" : "s"}${r.sources.length ? `: ${r.sources.join(", ")}` : ""}`);
+    for (const e of r.errors) console.log(`error    ${e.ref}: ${e.message}`);
+    for (const w of r.warnings) console.log(`warning  ${w.ref}: ${w.message}`);
+    if (!r.errors.length && !r.warnings.length) console.log("ok");
+  });
+  return r.errors.length ? 1 : 0;
+}
+function showDone({ emit }) {
+  const answer = askServer("/api/show-done", {});
+  const tabs = answer === null ? 0 : JSON.parse(answer).tabs;
+  emit({ done: true, tabs }, tabs ? `${tabs} open tab${tabs > 1 ? "s" : ""} sent back to what the person was reading` : "no tab is open: nothing to send back");
+}
+function wrongName(abs, components, variant) {
+  if ([...components, ...variant ? [variant] : []].some((n) => !isName(n))) return "a name holds letters, digits, dot, dash and underscore only";
+  const { page: known, variants } = pageVocabulary(abs);
+  return unknownNames(components, known, "component") ?? (variant ? unknownNames([variant], variants, "variant") : void 0);
+}
+function runShow(ctx) {
+  const { args, emit } = ctx;
+  if (args.has("--done")) return showDone(ctx);
+  const abs = prototypeArg(args, "show");
+  const doc = resolveRef(args.positional[0]) ?? fail(`not registered: ${abs}. Register and serve it with: aiview open <file>`);
+  const components = args.flags("--component");
+  const variant = args.flag("--variant");
+  const wrong = wrongName(abs, components, variant);
+  if (wrong) fail(wrong);
+  ensureDist();
+  const port = portOfInstalledServer(args.flag("--port"));
+  const pointer = { id: doc.id, components, ...variant ? { variant } : {} };
+  const url = `http://localhost:${port}/#${pointerHash(pointer)}`;
+  const project = agentProject(doc.project);
+  const moved = askServerToMove("/api/show", { ...pointer, project });
+  emit({ id: doc.id, url, components, variant: variant ?? null, project, tabs: moved?.tabs ?? 0, opened: moved?.opened ?? false, browserRefusal: moved?.browserRefusal ?? null }, () => {
+    console.log(url);
+    console.log(moved ? movedLine(moved, project, "shown") : "no aiview server answered: give the person the link");
+  });
+}
+var PROTOTYPE_VERBS = [
+  { name: "components", help: "listed", run: runComponents },
+  { name: "check", help: "listed", run: runCheck },
+  { name: "show", help: "listed", run: runShow }
+];
+
+// src/cli/verbs/viewer.ts
+await init_db();
+init_projects();
+import path22 from "node:path";
+
+// src/core/boardhash.ts
+function boardHash(project, run) {
+  return `#board&project=${encodeURIComponent(project)}${run ? `&run=${run}` : ""}`;
+}
+
+// src/cli/verbs/viewer.ts
+init_home2();
+init_serverstate();
+init_browser();
+async function runServe({ args, emit, registerOpts }) {
+  const startFile = args.positional[0];
+  if (args.has("--detach")) {
+    if (startFile) {
+      const index2 = openIndex();
+      index2.register(path22.resolve(startFile), registerOpts());
+      index2.close();
+    }
+    const port = portOfInstalledServer(args.flag("--port"));
+    emit({ server: readServerStatus() }, `aiview server up on http://localhost:${port}/`);
+    return;
   }
+  const { startServer: startServer2 } = await init_server().then(() => server_exports);
+  const index = openIndex();
+  const startDoc = startFile ? index.register(path22.resolve(startFile), registerOpts()) : null;
+  startServer2(index, {
+    port: Number(args.flag("--port") ?? process.env.AIVIEW_PORT ?? defaultPort()),
+    open: args.has("--open"),
+    startDoc
+  });
 }
-try {
-  await runVerb();
-} catch (err) {
-  if (process.env.AIVIEW_DEBUG === "1") throw err;
-  console.error(`aiview ${args.verb}: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+function runBoard(ctx) {
+  const { args, emit } = ctx;
+  const index = ctx.index();
+  const slug = (args.flag("--project") ?? projectForCwd(process.cwd(), index.allProjects())?.slug) || fail(`no aiview project for ${process.cwd()}: declare one with aiview project add <slug> --path <dir>, or pass --project`);
+  const repo = args.flag("--repo");
+  if (repo === void 0 && !index.allProjects().some((p) => p.slug === slug)) fail(`no such project: ${slug}`);
+  const repos = repo === void 0 ? index.boardRepos(slug) : index.addBoardRepo(slug, repo);
+  recordRecentProject(index, slug);
+  ensureDist();
+  const url = `http://localhost:${portOfInstalledServer(args.flag("--port"))}/${boardHash(slug)}`;
+  if (args.has("--open")) openBrowser(url);
+  emit({ project: slug, repos, url, server: readServerStatus() }, [url, ...repos.map((x) => `  ${x}`)].join("\n"));
 }
-if (MUTATES_INDEX.has(args.verb ?? "")) notifyIndexChanged();
+var VIEWER_VERBS = [
+  { name: "serve", help: "listed", needs: { dist: true }, run: runServe },
+  { name: "board", help: "listed", needs: { index: true }, mutatesIndex: true, run: runBoard }
+];
+
+// src/cli/verbs/index.ts
+var VERBS = [
+  ...DOCUMENT_VERBS,
+  ...PROJECT_VERBS,
+  ...VIEWER_VERBS,
+  ...PENDING_VERBS,
+  ...HOME_VERBS,
+  ...PROTOTYPE_VERBS,
+  ...PLAN_VERBS
+];
+
+// src/cli/index.ts
+process.exitCode = await dispatch(process.argv.slice(2), VERBS);

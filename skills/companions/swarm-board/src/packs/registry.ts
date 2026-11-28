@@ -1,18 +1,12 @@
 // The registry (board-split#D18, D22): the one table from a run's kind and a seat's role to the member's pack and
 // verify setting, and the only place a kind or a role is looked up for it. A new pack is a folder under `src/packs/`
 // and a line in PACKS; a new kind or role is a row in MEMBER_ROWS.
-import { profileOf } from "../board/kinds.ts";
+import { profileOf } from "../contract/kinds.ts";
 import { codePack } from "./code/index.ts";
-import type { EventDef } from "../board/events.ts";
-import type { CodeEventName } from "./code/events.ts";
-import type { FlagMeta, MergedMeta } from "./code/types.ts";
 import type { Kind, MemberPackRow, Pack, PackSnapshot, PackSnapshotDeps, PackTables, PackTablesDeps } from "./types.ts";
 
 /** Every pack, by its name. */
 const PACKS: Record<string, Pack> = { [codePack.name]: codePack };
-
-/** The names of every pack's events, for the core's `EventName`: one per pack in PACKS. */
-export type PackEventName = CodeEventName;
 
 /** `role: null` is the kind's default, for a seat whose role has no row of its own (D11). */
 type MemberRowSpec = { kind: Kind; role: string | null; pack: string | null; verify: boolean };
@@ -37,10 +31,6 @@ export const registry = {
   /** Why a join declaring files is refused in a run of `kind`, whose seats have no pack to hold them. */
   declaredRefused(kind: string): string {
     return `join: a ${kind} run has no claims`;
-  },
-  /** Every pack's events (D18), in PACKS' order. */
-  events(): Record<string, EventDef<string>> {
-    return Object.assign({}, ...Object.values(PACKS).map((p) => p.events ?? {}));
   },
   /** The pack stored under `name` on a member; null for core only or a name no longer registered. */
   packNamed(name: string | null): Pack | null {
@@ -75,9 +65,3 @@ export const registry = {
     return opener.openTables(deps);
   },
 };
-
-export type { CodeSnapshotFields as PackSnapshotFields, LockTurn, SnapshotFile } from "./code/snapshot.ts";
-export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
-export type { HeldMergeLock } from "./code/claims.ts";
-/** The data a pack's events carry on a message, for the core's `MessageMeta`: one per pack in PACKS. */
-export type PackMessageMeta = MergedMeta | FlagMeta;

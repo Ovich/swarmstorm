@@ -9,7 +9,7 @@ import { openBoard, type Board } from "../src/board/board.ts";
 import type { Presence } from "../src/board/board.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
 import { tick2 } from "./fixtures/tick2.ts";
-const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
+const stepOf = (e: import("../src/contract/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 const REPO = "/repos/one/.git";
 let dir: string;

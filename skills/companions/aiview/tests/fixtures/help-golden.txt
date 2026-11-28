@@ -1,0 +1,115 @@
+$ aiview 
+exit 1
+usage: aiview <verb> [--json]
+  open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]
+  add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]
+  update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]
+  list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project
+  project <add|list|rm> [slug] [--title T] [--path P]...
+  remove <file|#id>...
+  move <file|#id>... [--project <slug>]    # refile: file + index together
+  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]
+  pending add <file|#id> --label L [--note N]   # work the reader is waiting on
+  pending done <#pendingId>                     # the work landed; the card goes away
+  pending list [<file|#id>] | clear <file|#id>
+  status
+  path <filename> [--project <slug>]       # where this document belongs, joined for this OS
+  components <file|#id>                    # what this prototype offers to siblings, what it pulls, every name on its page and its variants
+  check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any
+  show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link
+  show --done                              # the question is answered: every tab goes back to what the person was reading
+  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees
+  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice
+  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0
+  board [--project <name>] [--open]   # the project's board page: its repositories; prints the link
+  init                                     # create the data home; report where everything lives
+
+$ aiview --help
+exit 1
+usage: aiview <verb> [--json]
+  open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]
+  add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]
+  update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]
+  list [--kind k] [--tag t]... [--project p]   # the project of this directory, else --project
+  project <add|list|rm> [slug] [--title T] [--path P]...
+  remove <file|#id>...
+  move <file|#id>... [--project <slug>]    # refile: file + index together
+  serve [file] [--port <n>, default 4321, another data home its own] [--open] [--detach]
+  pending add <file|#id> --label L [--note N]   # work the reader is waiting on
+  pending done <#pendingId>                     # the work landed; the card goes away
+  pending list [<file|#id>] | clear <file|#id>
+  status
+  path <filename> [--project <slug>]       # where this document belongs, joined for this OS
+  components <file|#id>                    # what this prototype offers to siblings, what it pulls, every name on its page and its variants
+  check <file|#id>                         # do this prototype's bindings resolve? errors as text, exit 1 if any
+  show <file|#id> [--component Name]... [--variant v]   # point the person's viewer at these components of a prototype; prints the link
+  show --done                              # the question is answered: every tab goes back to what the person was reading
+  tracker check <file|#id>                 # a plan's tracker judged against itself; exit 1 if anything disagrees
+  tracker sync <file|#id>                  # rewrite the class lines from the glyphs, the one place a step's state is written twice
+  plan check <file|#id>                    # a plan's approval against its decisions: warns on agent defaults never confirmed; always exit 0
+  board [--project <name>] [--open]   # the project's board page: its repositories; prints the link
+  init                                     # create the data home; report where everything lives
+
+$ aiview open
+exit 1
+usage: aiview open <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO] [--port p] [--open]
+
+$ aiview add
+exit 1
+usage: aiview add <file> [--kind k] [--tag t]... [--group g [--group-title T]] [--started ISO]
+
+$ aiview update
+exit 1
+usage: aiview update <file|#id> [--kind k] [--tag t]... [--untag t]... [--group g|--ungroup] [--group-title T] [--started ISO]
+
+$ aiview remove
+exit 1
+usage: aiview remove <file|#id>...
+
+$ aiview move
+exit 1
+usage: aiview move <file|#id>... [--project <slug>]
+
+$ aiview project add
+exit 1
+usage: aiview project add <slug>
+
+$ aiview project bogus x
+exit 1
+usage: aiview project <add|list|rm> [slug] [--title T] [--path P]...
+
+$ aiview pending clear
+exit 1
+usage: aiview pending <add|done|list|clear> ...
+
+$ aiview pending add #1
+exit 1
+usage: aiview pending add <file|#id> --label L [--note N]
+
+$ aiview pending done
+exit 1
+usage: aiview pending done <#pendingId>
+
+$ aiview path
+exit 1
+usage: aiview path <filename> [--project <slug>] | aiview path #<id>
+
+$ aiview components
+exit 1
+usage: aiview components <file|#id>
+
+$ aiview check
+exit 1
+usage: aiview check <file|#id>
+
+$ aiview show
+exit 1
+usage: aiview show <file|#id> [--component Name]... [--variant v]  |  aiview show --done
+
+$ aiview tracker
+exit 1
+usage: aiview tracker <check|sync> <file|#id>
+
+$ aiview plan
+exit 1
+usage: aiview plan check <file|#id>

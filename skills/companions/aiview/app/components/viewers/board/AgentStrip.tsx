@@ -5,7 +5,7 @@
 // badge with its reason on hover, never the word.
 import { useContext, useEffect, useState, type CSSProperties } from "react";
 import type { Liveness, SnapshotMember } from "../../../../../swarm-board/src/client/reader.ts";
-import { hhmm, ORCHESTRATOR } from "../../../lib/board/view.ts";
+import { hhmm, ORCHESTRATOR } from "../../../lib/board/names.ts";
 import { AgentLabel, AgentMark, NicksContext } from "./chips.tsx";
 
 /** A member's activity as the server computes it (swarm-relay#D9, #D20), its two ages' instants included (swarm-relay#D38). */

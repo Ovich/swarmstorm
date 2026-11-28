@@ -1,7 +1,8 @@
 // The archive (D7, D18, prototype #643): every closed run, newest first, searchable on title, code,
 // orchestrator and kind; a drawer from the left. A row picks the run; ×, Escape or a click outside closes.
 import { useEffect, useRef, useState } from "react";
-import { seatCount, type ArchivedRun, type RunId } from "../../../lib/board/view.ts";
+import { seatCount, type RunId } from "../../../lib/board/names.ts";
+import type { ArchivedRun } from "../../../lib/board/runs.ts";
 
 /** "Oct 14, 22:28", local time. */
 function closedAt(iso: string): string {

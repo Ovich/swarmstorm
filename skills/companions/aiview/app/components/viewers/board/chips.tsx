@@ -1,7 +1,7 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { BOARD_AUTHOR } from "../../../../../swarm-board/src/client/reader.ts";
 import { SEQ_REF } from "../../../lib/board/post.ts";
-import { runHue, memberLabel } from "../../../lib/board/view.ts";
+import { runHue, memberLabel } from "../../../lib/board/names.ts";
 
 /** A member's chip, "RT·S3": the KindChip recipe at its light tone, in its run's hue (D19). */
 export function MemberTag({ name, plan = true }: { name: string; plan?: boolean }) {

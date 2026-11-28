@@ -2,7 +2,7 @@
 // are shared by two members or more; opened, one file per line with who changes it, a shared one marked by a faint
 // "shared". A viewer's opening it is remembered in their browser.
 import { useState } from "react";
-import type { ClaimRow } from "../../../lib/board/view.ts";
+import type { ClaimRow } from "../../../lib/board/runs.ts";
 import { MemberName } from "./chips.tsx";
 
 export const CLAIMS_EXPANDED_KEY = "swarm.filemap.expanded";

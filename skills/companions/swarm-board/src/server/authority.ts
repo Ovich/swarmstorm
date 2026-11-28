@@ -2,12 +2,12 @@
 // names, checked against the store, and every call is judged against that binding before the board runs it. The
 // dispatcher never reads a call's args to decide; the kinds of every method live in one table here.
 import type { Board, Participant, Run } from "../board/board.ts";
-import { ORCHESTRATORS_GROUP, type Hello, type RpcMethod } from "../wire.ts";
+import { ORCHESTRATORS_GROUP, type Hello, type RpcMethod } from "../contract/wire.ts";
 
 /** The member a connection speaks for; null for an anonymous one (a reader, a CLI before it joins or opens). */
 export type Bound = { id: number; name: string; run: number; seat: string } | null;
 
-type Authority = {
+export type Authority = {
   /** At the Hello: the member it names, which must exist in that run (ended members included). */
   bind(hello: Hello): Bound | "unknown member";
   /** The refusal text for `method` called with `args` over a connection bound to `bound`, or null when allowed. */
@@ -105,7 +105,7 @@ export function makeAuthority(board: Board): Authority {
     end: selfOrOwnRunsOrchestrator,
     packCall,
     // orchestrator-only: acting for the orchestrator itself; that it is the orchestrator is the board's own rule
-    // (board.ts phase, pause, resume), whose refusal the CLI words
+    // (phases.ts phase, pause, resume), whose refusal the CLI words
     phase: self,
     pause: self,
     resume: self,

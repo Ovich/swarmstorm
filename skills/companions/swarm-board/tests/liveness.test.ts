@@ -1,5 +1,5 @@
 import { quietMember } from "./fixtures/quiet-member.ts";
-// Liveness: the Claude Code JSONL adapter and its registry, and the member states the server's tick
+// Liveness: the token counter read through the Claude Code harness, and the member states the server's tick
 // derives from each link's activity (swarm-relay D9, D11, D12, D31), the clock and presence injected.
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
@@ -8,8 +8,9 @@ import os from "node:os";
 import path from "node:path";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { ADAPTERS, claudeCodeJsonl, readTranscript } from "../src/board/liveness.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import { observe } from "../src/link/transcripts.ts";
+import { claudeCode } from "../src/link/harness/claude-code.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/one/.git";
@@ -28,29 +29,36 @@ afterEach(() => {
 
 const line = (usage: Record<string, number> | null): string => JSON.stringify({ type: usage ? "assistant" : "user", message: usage ? { usage } : { content: "x" } }) + "\n";
 
-test("the Claude Code adapter sums the four usage counts over complete lines, by byte offset; a torn last line waits", () => {
+test("the Claude Code harness sums the four usage counts over complete lines, by byte offset; a torn last line waits", () => {
   const f = path.join(dir, "t.jsonl");
   fs.writeFileSync(f, line(null) + line({ input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000 }));
-  const first = readTranscript(f, null)!;
-  assert.equal(first.adapter, "claude-code-jsonl");
-  assert.equal(first.cursor.tokens, 1115);
-  assert.equal(first.cursor.offset, fs.statSync(f).size);
+  const first = observe(f, null);
+  assert.equal(first.activity.tokens, 1115);
+  assert.equal(observe(f, first.cursor).grew, false, "read to the file's end");
   fs.appendFileSync(f, line({ input_tokens: 1, output_tokens: 2 }) + '{"type":"assist');
-  const second = readTranscript(f, first)!;
-  assert.equal(second.cursor.tokens, 1118);
+  const second = observe(f, first.cursor);
+  assert.equal(second.activity.tokens, 1118);
   fs.appendFileSync(f, 'ant","message":{"usage":{"output_tokens":7}}}\n');
-  assert.equal(readTranscript(f, second)!.cursor.tokens, 1125);
+  const third = observe(f, second.cursor);
+  assert.equal(third.activity.tokens, 1125);
   // nothing new: the same reading
-  assert.deepEqual(readTranscript(f, readTranscript(f, second)), readTranscript(f, second));
+  const again = observe(f, third.cursor);
+  assert.equal(again.grew, false);
+  assert.deepEqual(again.activity, third.activity);
 });
 
-test("a missing file, or one no adapter recognises, reads null; the registry holds the Claude Code adapter", () => {
-  assert.equal(readTranscript(path.join(dir, "none.jsonl"), null), null);
+test("a missing file, or one not in Claude Code's format, reads no tokens and never grows; the harness counts a usage line", () => {
+  const missing = observe(path.join(dir, "none.jsonl"), null);
+  assert.deepEqual([missing.activity.tokens, missing.activity.grewAt], [0, null]);
   const text = path.join(dir, "t.txt");
   fs.writeFileSync(text, "hello\nworld\n");
-  assert.equal(readTranscript(text, null), null);
-  assert.equal(claudeCodeJsonl.read(Buffer.from("[1]\n"), { offset: 0, tokens: 0 }), null);
-  assert.ok(ADAPTERS.includes(claudeCodeJsonl));
+  const foreign = observe(text, null);
+  assert.deepEqual([foreign.activity.tokens, foreign.activity.grewAt, observe(text, foreign.cursor).grew], [0, null, false]);
+  const array = path.join(dir, "a.jsonl");
+  fs.writeFileSync(array, "[1]\n");
+  const notObject = observe(array, null);
+  assert.deepEqual([notObject.activity.tokens, notObject.activity.grewAt, observe(array, notObject.cursor).grew], [0, null, false]);
+  assert.deepEqual(claudeCode.decode('{"message":{"usage":{"output_tokens":7}}}', 0), [{ kind: "tokens", tokens: 7 }]);
 });
 
 /** Every member's link as the test sets it; a member not set is connected. */

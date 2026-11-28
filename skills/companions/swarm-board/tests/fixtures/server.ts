@@ -4,7 +4,9 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isAlive, serverLockHolder, serverStartLock, serverStateFile } from "../../src/wire.ts";
+import { serverLockHolder } from "../../src/contract/wire.ts";
+import { isAlive } from "../../src/host/proc.ts";
+import { serverStartLock, serverStateFile } from "../../src/host/home.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "cli", "index.ts");
 /** How many 50 ms polls a server stopped or killed here has to be gone: counted, not timed, as a test

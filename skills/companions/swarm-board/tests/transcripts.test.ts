@@ -5,8 +5,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { commandActsAsOther, locate, observe } from "../src/link/transcripts.ts";
-import { claudeCodeJsonl } from "../src/board/liveness.ts";
+import { locate, observe } from "../src/link/transcripts.ts";
+import { commandFacts } from "../src/link/shell.ts";
+import { claudeCode } from "../src/link/harness/claude-code.ts";
 import { bashCall, jsonl, prompt, textLine, toolCall, toolResult, writeMain, writeSubagent } from "./fixtures/transcripts.ts";
 
 const SESSION = "11111111-aaaa-bbbb-cccc-000000000001";
@@ -72,14 +73,13 @@ test("observe on a growing file reads only the appended lines, moves grewAt, and
   fs.utimesSync(file, 1_700_000_000, 1_700_000_000);
   const first = observe(file, null);
   assert.equal(first.activity.grewAt, 1_700_000_000_000);
-  const size = fs.statSync(file).size;
-  assert.equal(first.cursor.offset, size);
+  assert.equal(observe(file, first.cursor).grew, false, "the whole file read: nothing left");
   fs.appendFileSync(file, jsonl([textLine("b", u)]));
   fs.utimesSync(file, 1_700_000_050, 1_700_000_050);
   const second = observe(file, first.cursor);
   assert.equal(second.activity.grewAt, 1_700_000_050_000);
-  assert.equal(second.cursor.offset, fs.statSync(file).size);
-  const whole = claudeCodeJsonl.read(fs.readFileSync(file), { offset: 0, tokens: 0 })!;
+  assert.equal(observe(file, second.cursor).grew, false, "the whole file read: nothing left");
+  const whole = observe(file, null).activity;
   assert.equal(second.activity.tokens, whole.tokens);
   assert.equal(second.activity.tokens, 2230);
   // nothing appended: grewAt stays
@@ -104,13 +104,12 @@ test("context is the last assistant line's input + cache_creation + cache_read t
 });
 
 test("finished follows meta.json; no meta.json at all: the locator reports null", async () => {
-  const { LOCATORS } = await import("../src/link/transcripts.ts");
   const done = writeSubagent(root, PROJECT, SESSION, "done", [textLine("a")], { finished: true });
   const running = writeSubagent(root, PROJECT, SESSION, "running", [textLine("a")], {});
   const bare = writeSubagent(root, PROJECT, SESSION, "bare", [textLine("a")], null);
   assert.equal(observe(done, null).activity.finished, true);
   assert.equal(observe(running, null).activity.finished, false);
-  assert.equal(LOCATORS[0].finished(bare), null);
+  assert.equal(claudeCode.finished(bare), null);
 });
 
 test("no CLAUDE_CODE_SESSION_ID: locate returns null without reading", () => {
@@ -156,9 +155,10 @@ test("S27 (board-split D25): a wait run --as another member is that member's: pl
   assert.equal(other.boardWait, undefined, "another seat's wait is work");
   fs.appendFileSync(file, jsonl([toolResult("toolu_other"), toolCall("Bash", { command: "swarm wait --mentions --as g/v1" }, "toolu_own", "2026-10-22T10:01:00.000Z")]));
   assert.equal(observe(file, null, binding).activity.openTool!.boardWait, true, "its own seat's wait is waiting");
-  assert.equal(commandActsAsOther("swarm wait --as g/orchestrator", { verb: "open", group: "g" }), false);
-  assert.equal(commandActsAsOther("swarm wait --as h/orchestrator", { verb: "open", group: "g" }), true);
-  assert.equal(commandActsAsOther("swarm wait --mentions", binding), false);
+  // a wait `--as` another member is never this member's wait
+  assert.equal(commandFacts("swarm wait --as g/orchestrator", "Bash", { verb: "open", group: "g" }).boardWait, true);
+  assert.equal(commandFacts("swarm wait --as h/orchestrator", "Bash", { verb: "open", group: "g" }).boardWait, false);
+  assert.equal(commandFacts("swarm wait --mentions", "Bash", binding).boardWait, true);
 });
 
 test("S22 (board-split D25): a joining subagent's transcript, written after the link first looks, is found on a later look", () => {

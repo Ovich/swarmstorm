@@ -145,8 +145,8 @@ One set every bench follows; the API and the thresholds are `references/sidecar.
 
 ## Reworking an existing bench
 
-A bench whose data sits in the page (made before the sidecar, fed through
-`scripts/data-block.mjs`) opens and feeds as it did; no mechanism upgrades it. When it is next
+A bench whose data sits in the page (made before the sidecar, fed through its own skill's copy
+of the old data-block script, which this skill no longer ships) opens and feeds as it did; no mechanism upgrades it. When it is next
 worked on, it is reworked to this shape: page made fresh by `page.mjs --replace` at the same
 path, code put back by `code.mjs`, sidecar filled by the feed. Read `references/sidecar.md`
 first; its last section is the order.

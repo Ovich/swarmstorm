@@ -13,3 +13,5 @@ skills/companions/aiview/aiview.port
 
 # Playwright MCP scratch output (screenshots, console logs).
 .playwright-mcp/
+
+*.stackdump

@@ -11,8 +11,10 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { linkPidFile, linkPipe, runLink, type LinkStop, type LinkTiming } from "../src/link/link.ts";
-import { bundleVersion, decode, encode, serverLogFile, serverStateFile, type Call, type Frame } from "../src/wire.ts";
+import { linkPipe, runLink, type LinkStop, type LinkTiming } from "../src/link/link.ts";
+import { linkPidFile } from "../src/host/links.ts";
+import { bundleVersion, decode, encode, type Call, type Frame } from "../src/contract/wire.ts";
+import { serverLogFile, serverStateFile } from "../src/host/home.ts";
 import { bashCall, textLine, writeSubagent } from "./fixtures/transcripts.ts";
 
 const MEMBER = "plan-x/S1";

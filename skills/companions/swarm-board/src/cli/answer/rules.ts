@@ -1,8 +1,8 @@
 // The answer rules (board-rework D1, D2): pure functions over the member's situation choosing the lines of WORDING it
 // reads. No board read, no printing: the same situation always gives the same lines.
-import type { Message, Participant } from "../../board/board.ts";
-import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
-import { profileOf } from "../../board/kinds.ts";
+import type { Message, Participant } from "../../contract/board.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
+import { profileOf } from "../../contract/kinds.ts";
 import { codeCloseStep, codeEventStep } from "./code-rules.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
@@ -197,4 +197,16 @@ export const circlingLine = (earlier: readonly string[], name: string): string |
   const kinds = earlier.map(phaseKind);
   const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
   return passes % 3 === 0 ? W.circling(kind, passes) : null;
+};
+
+/** `--protocol none`: a run phaseless on purpose. */
+const PHASELESS = "none";
+/** idea 3: the orchestrator's step after `open` of a task or plan run: open the protocol's first phase before any task,
+ *  or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm). */
+export const firstPhaseLine = (kind: string, protocol: string | null, cli: string, as: string): string | null => {
+  if (kind !== "task" && kind !== "plan") return null;
+  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
+  if (protocol === PHASELESS) return W.firstPhasePhaseless;
+  const phase = W.phaseCommand(cli, as);
+  return protocol ? W.firstPhaseOfProtocol(protocol, phase) : W.firstPhaseNoProtocol(phase);
 };

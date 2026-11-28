@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, progressText, type Board, type Presence } from "../src/board/board.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { LOST_MS } from "../src/board/liveness.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 

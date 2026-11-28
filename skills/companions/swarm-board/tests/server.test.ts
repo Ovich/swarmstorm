@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { openBoard } from "../src/board/board.ts";
 import { silentTooLong, startBoardServer, stopBoardServer } from "../src/server/server.ts";
-import { decode, encode, serverLogFile, serverStateFile, SERVER_STARTER_ENV, type Frame, type Hello, type MemberActivity, type RpcMethod, type ServerState } from "../src/wire.ts";
+import { decode, encode, SERVER_STARTER_ENV, type Frame, type Hello, type MemberActivity, type RpcMethod, type ServerState } from "../src/contract/wire.ts";
+import { serverLogFile, serverStateFile } from "../src/host/home.ts";
 
 const REPO = "/repos/one/.git";
 const SEATS = [

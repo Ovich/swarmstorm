@@ -1,7 +1,7 @@
 // The orchestrators board: one permanent run per project, group `orchestrators`, where every orchestrator registers,
 // whatever roles it holds. The answers to `open` and `status` give each open run not yet seated there the command
 // that registers it: the board's open when the project has none, else the seat's add and its join. Never closed.
-import { ORCHESTRATORS_GROUP } from "../../wire.ts";
+import { ORCHESTRATORS_GROUP } from "../../contract/wire.ts";
 import { shellWord, WORDING as W, type Command } from "./wording.ts";
 
 export { ORCHESTRATORS_GROUP };

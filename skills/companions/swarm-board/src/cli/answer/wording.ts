@@ -1,11 +1,17 @@
 // The answer module's wording (board-rework D1): every line and command template of the wait cluster's answers, in one
 // typed table. A placeholder is a typed parameter, so a template called with a missing or wrong value does not compile.
 // The rules choosing which line a member reads are in rules.ts; no verb writes these lines itself.
-import { FOREGROUND_WAIT_MS } from "../../board/events.ts";
+import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 const FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1000} s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty`;
 
 /** A command as printed: the words joined, ready to copy. */
 export type Command = string;
+/** Where the orchestrator reads a protocol's phases, before the colon of its first-phase step. */
+const FIRST_PHASE_POINTER = "(its protocol.md's phase table names them)";
+
+/** A verb's entry in VERB_USAGE (usage.ts): its help lines, and the corrected form an argument error offers to copy,
+ *  `as` the caller's --as. */
+export type VerbUsage = { lines: (cli: Command) => readonly string[]; example?: (as: string) => string };
 
 export const WORDING = {
   // ── commands ──
@@ -279,6 +285,25 @@ export const WORDING = {
   /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
   joinAsOtherGroup: (given: string, run: number, group: string, corrected: Command) =>
     `join: refused: --as ${given} is not this seat of run ${run}, whose group is ${group}: ${corrected}`,
+
+  // ── codebase-rework#D13: lines the CLI's verbs wrote themselves before ──
+  /** idea 3: the orchestrator's step after `open` of a task or plan run; the reading pointer before the colon, the command last (F6) */
+  phaseCommand: (cli: Command, as: string): Command => `${cli} phase <name> "<its message>" --as ${as}`,
+  firstPhasePhaseless: "next: phaseless: the workers take tasks on call",
+  firstPhaseOfProtocol: (protocol: string, phase: Command) => `next: open ${protocol}'s first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
+  firstPhaseNoProtocol: (phase: Command) =>
+    `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
+  /** D21, D36: a member of a kind without worktree, at join: the checkout is shared, so every call names it */
+  sharedCheckoutAs: (member: string) => `pass --as ${member} on every call: this checkout is shared, the board cannot tell you apart`,
+  /** D49: the exact command that re-arms a wait, and its foreground form, which always holds FOREGROUND_WAIT_MS (F22) */
+  waitAgain: (cli: Command, w: { mentions: boolean; as?: string; timeout?: string; json: boolean }): { again: Command; foreground: Command } => {
+    const words = (timeout: string | undefined): string =>
+      [cli, "wait", ...(w.mentions ? ["--mentions"] : []), ...(w.as !== undefined ? ["--as", w.as] : []), ...(timeout !== undefined ? ["--timeout", timeout] : []), ...(w.json ? ["--json"] : [])].join(" ");
+    return { again: words(w.timeout), foreground: `${words(undefined)} --timeout ${FOREGROUND_WAIT_MS}` };
+  },
+  /** `end` once the run closed: the close ended the member; it returns its summary */
+  closedEndSummary: (run: number, member: string) =>
+    `run ${run} closed: ${member} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
 } as const;
 
 /** A POSIX shell word, double-quoted when it holds anything else than plain characters: a command runs as printed. */

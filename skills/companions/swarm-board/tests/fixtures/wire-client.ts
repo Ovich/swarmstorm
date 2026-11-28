@@ -3,7 +3,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { decode, encode, serverStateFile, type Frame, type RpcMethod, type ServerState } from "../../src/wire.ts";
+import { decode, encode, type Frame, type RpcMethod, type ServerState } from "../../src/contract/wire.ts";
+import { serverStateFile } from "../../src/host/home.ts";
 
 export const BOARD_CLI = fileURLToPath(new URL("../../src/cli/index.ts", import.meta.url));
 

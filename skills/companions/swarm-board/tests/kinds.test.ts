@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard } from "../src/board/board.ts";
-import { profileOf } from "../src/board/kinds.ts";
+import { profileOf } from "../src/contract/kinds.ts";
 
 test("profileOf gives the plan and brainstorm profiles", () => {
   assert.deepEqual(profileOf("plan"), { kind: "plan", member: "worker", wholeThread: false });

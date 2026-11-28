@@ -1,5 +1,5 @@
 import type { Phase } from "../../../../../swarm-board/src/client/reader.ts";
-import { phaseCountText, type PauseChip, type PhaseCount } from "../../../lib/board/view.ts";
+import { phaseCountText, type PauseChip, type PhaseCount } from "../../../lib/board/runs.ts";
 
 /** A run tab's head (plan D31): its pause, its phases (`swarm phase`) and the open phase's done count; none before
  *  the first phase and while it runs unpaused. */

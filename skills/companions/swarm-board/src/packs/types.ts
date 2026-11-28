@@ -3,11 +3,11 @@
 // the board server and reaches only its own tables and `insertMessage` (D9); it holds no module-level state, every
 // call scoped to one run through its `PackCtx` (D10). Git and other slow work run in `run`, before any transaction
 // opens (D19).
-import type { Declared, Kind, Message, Participant, RunId } from "../board/board.ts";
-import type { EventDef } from "../board/events.ts";
+import type { Declared, Message, Participant, RunId } from "../contract/board.ts";
+import type { Kind } from "../contract/kinds.ts";
 import type { Claims, ClaimsDeps } from "./code/claims.ts";
 import type { CodeSnapshot, CodeSnapshotDeps } from "./code/snapshot.ts";
-import type { CodeMemberFact } from "./code/types.ts";
+import type { CodeMemberFact } from "../contract/code.ts";
 
 /** A verb a pack adds to the CLI's dispatch (D12: listed under the pack's section of the static help). */
 interface VerbSpec {
@@ -73,8 +73,6 @@ export interface Pack {
   /** The registry's name of it; "code" in this plan. */
   name: string;
   verbs: VerbSpec[];
-  /** The events the pack posts, by name; the registry adds them to the core's (D18), so they parse and wake alike. */
-  events?: Record<string, EventDef<string>>;
   /** Opens the pack's tables, once per board. */
   openTables?(deps: PackTablesDeps): PackTables;
   /** The server side of a pack verb, called before the core's transaction (D19): the facts it gives the CLI, or a

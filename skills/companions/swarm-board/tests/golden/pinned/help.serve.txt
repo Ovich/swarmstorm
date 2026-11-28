@@ -1,0 +1,1 @@
+usage: swarm serve [stop]   # the board server of the data home, started on demand by any verb; `serve stop` ends it

@@ -3,6 +3,7 @@
 // one server, shared by every project.
 import fs from "node:fs";
 import path from "node:path";
+import { isAlive } from "../../../swarm-board/src/host/proc.ts";
 import { DATA_ROOT, ensureHome } from "./home.ts";
 
 export const PID_FILE = path.join(DATA_ROOT, "aiview.pid");
@@ -28,15 +29,6 @@ const readInt = (f: string): number | null => {
     return Number.isInteger(n) && n > 0 ? n : null;
   } catch {
     return null;
-  }
-};
-
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 };
 
@@ -80,6 +72,6 @@ export function readServerStatus(): ServerStatus {
   if (pid === null || port === null)
     return { running: false, pid: null, port: null, version: null, stale: pid !== null || port !== null };
   const version = readText(VERSION_FILE);
-  if (!alive(pid)) return { running: false, pid, port, version, stale: true };
+  if (!isAlive(pid)) return { running: false, pid, port, version, stale: true };
   return { running: true, pid, port, version, stale: false };
 }

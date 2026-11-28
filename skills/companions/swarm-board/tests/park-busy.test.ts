@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 import { observe } from "../src/link/transcripts.ts";
 import { toolCall, writeMain } from "./fixtures/transcripts.ts";

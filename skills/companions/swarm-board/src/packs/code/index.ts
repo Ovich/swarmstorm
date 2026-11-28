@@ -3,13 +3,13 @@
 // at join, in the board server, before any transaction opens (D19); its end refuses work not merged and removes the worktree after (D38).
 import fs from "node:fs";
 import path from "node:path";
-import type { Conflicts, Participant } from "../../board/board.ts";
-import { baseAt } from "../../git.ts";
+import type { Conflicts, Participant } from "../../contract/board.ts";
+import { baseAt } from "../../host/git.ts";
 import type { Pack, PackCtx, PackRefusal, PackVerbInput, PackWrite } from "../types.ts";
 import { type Claims, claimsOf } from "./claims.ts";
 import { codeSnapshotOf, heldOf } from "./snapshot.ts";
 import { forgetMemberRows, migrateCodeTables } from "./schema.ts";
-import { CODE_EVENTS, MERGE_LOCK } from "./events.ts";
+import { CODE_EVENTS, MERGE_LOCK } from "../../contract/code.ts";
 import { sweepAll, worktrees, type WorktreeRecord } from "./worktrees.ts";
 
 const slashed = (p: string): string => p.split("\\").join("/");
@@ -57,7 +57,6 @@ const CLAIM_WRITES: Record<string, PackWrite> = {
 
 export const codePack: Pack = {
   name: "code",
-  events: CODE_EVENTS,
   verbs: ["join", "merge-lock", "merged", "flag", "conflicts", "guides"].map((name) => ({ name })),
   // from any run, an agreement or endorsement about a path the member holds is for it too (D26, plan D2)
   alsoFor: (member, message, ctx) =>

@@ -63,9 +63,13 @@ file the person was looking for. Refresh the cache with
 
 6. **MUST bump `version` to the same value in `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`, rebuild, and commit `dist/` and `dist-cli/` before pushing `main`.** Without the bump no existing user receives the change, and without the build they receive the old viewer. The sequence is `RELEASING.md`.
 
+15. **MUST take a helper aiview shares with swarm-board (process spawn, liveness, git, paths, the data home) from swarm-board's `src/host/`, bundled into `dist-cli/`, never a copy in aiview.** Copies drift: `isAlive` existed five times with two behaviours. aiview still reaches the board's data only through `client/reader.ts`.
+
 ## swarm-board
 
 13. **MUST write a command or next-step line a member reads in the answer module (`skills/companions/swarm-board/src/cli/answer/`: wording in `wording.ts`, the choice in `rules.ts`), never in a verb or a board event.** Each verb writing its own lines is what repeated the phase three times and set verbs contradicting each other; fixed per verb, the fixes looped. The sites predating the rule are counted by `tests/answer-ratchet.test.ts`, whose baseline only falls.
+
+14. **MUST keep swarm-board's units in one layer order, bottom to top: `host/`, `contract/`, `link/` and `packs/`, `board/`, `client/` and `server/`, `cli/`; a unit imports only units of a lower row, never one of its own row, and `host/` only `node:*`.** An upward import is a ring: one change lands in every unit at once. `tests/layers.test.ts` holds the ranks; the bench's `layers --full` reads 0 upward.
 
 ## Documents
 

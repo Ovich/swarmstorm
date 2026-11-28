@@ -1,7 +1,7 @@
 // The code pack's wording (board-split D8): every line a code verb (merge-lock, merged) or a code event
 // (an overlap) makes a member read, and the code verbs' help. Still the answer module (AGENTS rule 13); which line a member
 // reads is code-rules.ts's choice. The core lines stay in wording.ts.
-import type { Command } from "./wording.ts";
+import type { Command, VerbUsage } from "./wording.ts";
 
 /** The code pack's words inside the core help's lines (D12: one static help, its code parts the pack's), so the
  *  core help reads as before. */
@@ -15,18 +15,36 @@ export const CODE_IN_CORE_HELP = {
   withoutAs: "the member joined from this worktree",
 };
 
+/** The code verbs' entries of VERB_USAGE (codebase-rework#D12): their help lines and the corrected form an argument
+ *  error offers, in help order. */
+export const CODE_VERB_USAGE = {
+  "merge-lock": {
+    lines: () => [
+      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
+      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
+    ],
+    example: (as) => `merge-lock --onto main --as ${as}`,
+  },
+  merged: {
+    lines: () => [
+      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
+    ],
+    example: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
+  },
+} satisfies Record<string, VerbUsage>;
+
+/** The code verb whose line sits in the core help (`worktree prune`), its entry of VERB_USAGE. */
+export const CODE_IN_CORE_VERB_USAGE = {
+  worktree: { lines: () => [CODE_IN_CORE_HELP.pruneLine], example: () => "worktree prune" },
+} satisfies Record<string, VerbUsage>;
+
 export const CODE_WORDING = {
   // board-fixes#D6: a code run's close: its members finish by merging, the closing table names each merge
   closeFinish: "merged, reported, done",
   closeColumns: "| task | seat | state | merge sha |",
-  /** The code verbs' help, apart from the core (D22). */
-  usage: (cli: Command): string =>
-    [
-      `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
-      "  merge-lock [--report <text>|--report-stdin|--report-file <path>] [--onto <branch>] [--as <member>]   # delivers your committed branch, one merge at a time per repository: the board rebases it, fast-forwards and records merged, your report posted to the orchestrator (none given: your commits' subjects; a long one piped in with --report-stdin); only a clean merge passes: a conflict is handed back, nothing merged, the lock released; edit the files it names, then run it again (it stages them and goes on); --onto defaults to the run's own",
-      "  merge-lock --lock-only [--onto <branch>] [--as <member>]        # the lock alone, for a merge made by hand, recorded with merged; what a member with no worktree always gets",
-      "  merged  [--as <member>] <sha> --report <text>|- | --report-file <path> [--unlocked <why>]   # records a merge made by hand; refused without the merge lock on a code run (--unlocked: the orchestrator's alone, the why posted in the run); releases the lock, tells who holds a file it changed and who was refused the lock, names whom to tell of a resolved conflict; posts \"@orchestrator merged <sha>: <text>\", your report and its one wake; --report-file <path>: a long report from a file; --report - merges silently",
-    ].join("\n"),
+  /** The code help's first line; its verbs' lines are CODE_VERB_USAGE's (D22). */
+  usageHead: (cli: Command): string =>
+    `usage: ${cli} <verb> [--json]        the code verbs; refused on a run whose kind has none; the files you hold are what your worktree changed, read by your link`,
 
   /** board-split D36: what the code pack says of a member beside its state, on its roster line */
   /** board-split D19 (F9): files a member declared at join that another member held, so not claimed; shown till claimed */
@@ -97,4 +115,22 @@ export const CODE_WORDING = {
 
   // ── spec §7: an overlap, a path two members' worktrees both changed: the one told settles it with the other ──
   overlapSettle: (cli: Command, other: string, otherName: string, about: string, as: string) => `settle it: ${cli} agree ${other} --with ${otherName} --about ${about} --as ${as}`,
+
+  // ── codebase-rework#D13: lines the CLI's code verbs wrote themselves before ──
+  /** a call with no --as from a place no single member joined from (board-split D24: the core says no worktree) */
+  whoIsCalling: "who is calling? no single member joined from this worktree; pass --as <group>/<seat>",
+  /** a close kept a worktree not clean or not merged: why, and the prune once it is */
+  keptWorktree: (worktree: string, member: string, why: string | null, cli: Command) => `kept ${worktree} (${member}): ${why}; merge it or discard it, then: ${cli} worktree prune`,
+  /** join, on a code run: the member's own worktree and how to work there */
+  ownWorktreeAs: (own: { branch: string; base: string; reused: boolean }, path: string, pathWord: string, member: string) =>
+    `your worktree: ${path} (branch ${own.branch} from ${own.base}${own.reused ? ", reused" : ""}). Work there by absolute paths and git -C ${pathWord}, never cd into it; pass --as ${member} on every call`,
+  /** the same merge-lock call, as the member runs it again once what was handed back is fixed; `report` its report words */
+  mergeLockAgain: (cli: Command, onto: string, report: readonly string[], as: string): Command => [cli, "merge-lock", "--onto", onto, ...report, "--as", as].join(" "),
+  /** merged on a code run without the merge lock */
+  mergedWithoutLock: (cli: Command, onto: string, as: string) => `merged: you do not hold the merge lock; run ${cli} merge-lock --onto ${onto} --as ${as} first, then merge, then merged again`,
+  /** end refused: the member's worktree holds work not merged; `step` what it does first, the merge command last */
+  endUnmerged: (worktree: string, left: string, step: string, merge: Command) => `end: your worktree ${worktree} holds work not merged: ${left}. ${step}: ${merge}; then end again`,
+  endCommitThenMerge: "Commit it, then merge it",
+  endMergeIt: "Merge it",
+  mergeLockReport: (cli: Command, onto: string, as: string): Command => `${cli} merge-lock --onto ${onto} --report "<what you did>" --as ${as}`,
 } as const;

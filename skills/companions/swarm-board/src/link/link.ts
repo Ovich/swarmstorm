@@ -1,22 +1,20 @@
 // A member's link (swarm-relay D1): the pipe its member's CLI calls come in on, one WebSocket to the
 // board server, every Call forwarded and its Result sent back to the pipe that asked. It keeps no
 // state file (D15): a restart re-locates the server and re-reads. Its one file is its pid, for `stopLinks`.
-import { hiddenSpawnSync } from "../proc.ts";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { DATA_ROOT } from "../board/home.ts";
-import { HEARTBEAT_MS } from "../board/liveness.ts";
-import { changedSet } from "../packs/code/changes.ts";
-import { bundleVersion, decode, encode, isAlive, serverLogFile, serverStateFile, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../wire.ts";
-import { locate, observe, type Binding, type TranscriptCursor } from "./transcripts.ts";
+import { serverLogFile } from "../host/home.ts";
+import { changedSet } from "../host/git.ts";
+import { linkPidFile } from "../host/links.ts";
+import { isAlive } from "../host/proc.ts";
+import { HEARTBEAT_MS, bundleVersion, decode, encode, readServerState, type Activity, type Bye, type Call, type Refused, type Frame, type ServerState } from "../contract/wire.ts";
+import { locate, observe, type TranscriptCursor } from "./transcripts.ts";
+import type { Binding } from "./shell.ts";
 
 type RunId = number;
-
-/** What started the link: the verb its transcript search looks for (declared by transcripts.ts). */
-export type { Binding };
 
 /** The link's clocks; tests shorten them. */
 export type LinkTiming = {
@@ -47,19 +45,6 @@ export function linkPipe(dataRoot: string, run: RunId, member: string): string {
   const home = crypto.createHash("sha256").update(path.resolve(dataRoot)).digest("hex").slice(0, 12);
   const name = `swarm-${home}-${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return process.platform === "win32" ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), `${name}.sock`);
-}
-
-/** Where a live link writes its pid: under its data home, so a stop never reaches another home's link. */
-export function linkPidFile(dataRoot: string, run: RunId, member: string): string {
-  return path.join(dataRoot, "links", `${run}-${member.replace(/[^A-Za-z0-9_-]/g, "_")}.pid`);
-}
-
-function readServerState(dataRoot: string): ServerState | null {
-  try {
-    return JSON.parse(fs.readFileSync(serverStateFile(dataRoot), "utf8")) as ServerState;
-  } catch {
-    return null;
-  }
 }
 
 /** Why a link stopped (D42): said on stderr, and in the server's log while the server answers. */
@@ -203,9 +188,8 @@ export async function runLink(opts: {
     transcript ??= locate(opts.binding, env);
     if (!transcript) return; // not found (yet), or a harness that keeps none: no activity
     const read = observe(transcript, cursor, opts.binding);
-    const grew = read.cursor.offset !== cursor?.offset;
     cursor = read.cursor;
-    if (grew) lastStirAt = Date.now();
+    if (read.grew) lastStirAt = Date.now();
     // the path rides along so the server can stat it while this link is lost (idea 1, link lost)
     const activity = { ...read.activity, transcript };
     const seen = JSON.stringify(activity);
@@ -407,60 +391,4 @@ export async function runLink(opts: {
     watchTranscript();
   }
   return finished;
-}
-
-const alive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** A value that may enter a process query as a pid: a positive whole number, nothing else (trust-adaptations#D8). */
-export const isProcessId = (pid: unknown): pid is number => typeof pid === "number" && Number.isInteger(pid) && pid > 0;
-
-/** The command line of a live process; null when it is gone or cannot be read, and for anything but a pid, which
- *  never reaches the PowerShell command (trust-adaptations#D8). */
-export function commandLine(pid: number): string | null {
-  if (!isProcessId(pid)) return null;
-  const r =
-    process.platform === "win32"
-      ? hiddenSpawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", `(Get-CimInstance Win32_Process -Filter "ProcessId=${pid}").CommandLine`], { encoding: "utf8", windowsHide: true })
-      : hiddenSpawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" });
-  return (r.stdout ?? "").trim() || null;
-}
-
-/** How long `stopLinks` lets a link the server already told (its run closed, its member ended) exit on its own. */
-const OWN_EXIT_GRACE_MS = 3000;
-
-/** Stops the members' links before their worktrees go (Windows refuses to remove a folder a live process holds):
- *  only the pid each link wrote under this data home, and only while that process is still a link. The server has
- *  told each its run closed or its member ended, so each is given its grace to exit 0 on its own (V-17); a kill, exit 1
- *  on Windows, is the fallback for one still there. */
-export function stopLinks(runId: number, members: string[]): void {
-  const pids: number[] = [];
-  for (const member of members) {
-    const file = linkPidFile(DATA_ROOT, runId, member);
-    let pid: number;
-    try {
-      pid = Number(fs.readFileSync(file, "utf8").trim());
-    } catch {
-      continue;
-    }
-    if (isProcessId(pid) && pid !== process.pid && alive(pid) && /\slink(\s|$)/.test(commandLine(pid) ?? "")) pids.push(pid);
-    try {
-      fs.rmSync(file);
-    } catch {}
-  }
-  const pauseSync = (ms: number) => hiddenSpawnSync(process.execPath, ["-e", `setTimeout(()=>{},${ms})`]);
-  for (const end = Date.now() + OWN_EXIT_GRACE_MS; Date.now() < end && pids.some(alive); ) pauseSync(100);
-  const left = pids.filter(alive);
-  for (const pid of left) {
-    try {
-      process.kill(pid);
-    } catch {}
-  }
-  for (let i = 0; i < 40 && left.some(alive); i++) pauseSync(50);
 }

@@ -8,8 +8,9 @@ import { join, relative, sep } from "node:path";
 const BASELINE = 0;
 const SRC = join(import.meta.dirname, "..", "src");
 const ANSWER = join(SRC, "cli", "answer") + sep;
-// a template that prints the CLI followed by a verb: `${cli} wait …`
-const COMMAND = /\$\{(cli|s\.cli|CLI|this\.cli)[^}]*\} [a-z-]+/;
+// a template that prints the CLI followed by a verb (`${cli} wait …`, `${self().join(" ")} wait …`), a command built
+// as words (`[...self(), "wait"`), or a next step written as a literal (`"next: …`) (codebase-rework#D13)
+const COMMAND = /\$\{(cli|s\.cli|CLI|this\.cli|ctx\.cli|self\(\)\.join)[^}]*\} [a-z-]+|\[\.\.\.self\(\), "|["'`]next: /;
 const EXCEPTION = "AGENTS EXCEPTION (rule 13)";
 
 const files = (dir: string): string[] =>

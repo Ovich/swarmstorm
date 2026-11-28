@@ -5,7 +5,7 @@ description: "Use when a JavaScript or TypeScript project's dependencies must be
 
 # Dependency graph
 
-**The graph is parsed, never written by hand or guessed.** `scripts/graph.mjs` runs dependency-cruiser over the code, with the project's own TypeScript, and turns the ask into options. The same options give the same graph on the same commit.
+**The graph is parsed, never written by hand or guessed.** `scripts/graph.mjs` runs dependency-cruiser over the code, with the project's own TypeScript (from TypeScript 7 on, with TypeScript 6, which its answer then names), and turns the ask into options. The same options give the same graph on the same commit.
 
 ## Run it
 
@@ -22,7 +22,7 @@ node <skill-dir>/scripts/graph.mjs --root <the package's folder> [--from <path>]
 - **Folders, not files**: `--level 2` folds `src/<area>/…` into one node per area; the coarser view first, then open the part that matters.
 - **Noise out**: `--exclude "tests|generated"`; node_modules and Node's own modules are always out.
 
-The root is the folder holding the package's `tsconfig.json` (its `extends` resolves from there); in a monorepo, one package per graph. The first run installs dependency-cruiser and the project's TypeScript into a cache, needing the network once.
+The root is the folder holding the package's `tsconfig.json` (its `extends` resolves from there); in a monorepo, one package per graph. The first run installs dependency-cruiser and the project's TypeScript (TypeScript 6 for a project on 7 or later) into a cache, needing the network once.
 
 ## The document
 

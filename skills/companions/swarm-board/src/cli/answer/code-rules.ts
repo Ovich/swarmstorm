@@ -1,7 +1,7 @@
 // The code pack's answer rules (board-split D8): which line of CODE_WORDING a member reads after a code event. Pure
 // functions over the event and its reader, as rules.ts is for the core.
-import type { Message, Participant } from "../../board/board.ts";
-import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../board/events.ts";
+import type { Message, Participant } from "../../contract/board.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { CODE_WORDING as CW } from "./code-wording.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 import type { Situation } from "./situation.ts";
@@ -21,7 +21,7 @@ const mentionFrom = (me: Participant, member: string): string => {
 export const pausedMergingStep = (s: Situation): string | null =>
   s.pause ? CW.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), W.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
 
-/** The merge lock's name in an `unlocked` event, as the code pack posts it (packs/code/events.ts MERGE_LOCK). */
+/** The merge lock's name in an `unlocked` event, as the code pack posts it (contract/code.ts MERGE_LOCK). */
 const MERGE_LOCK = "merge-lock";
 
 /** The line under a code event for `me`; null for one that asks nothing of it; undefined for an event not the code
@@ -46,3 +46,7 @@ export function codeEventStep(m: Message, me: Participant, cli: string, event: E
   const other = me.name === holder ? writer : holder;
   return CW.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
 }
+
+/** codebase-rework#D13: an end refused over work not merged: uncommitted work is committed first, then merged. */
+export const endUnmergedLine = (worktree: string, left: string, merge: string): string =>
+  CW.endUnmerged(worktree, left, /uncommitted/.test(left) ? CW.endCommitThenMerge : CW.endMergeIt, merge);

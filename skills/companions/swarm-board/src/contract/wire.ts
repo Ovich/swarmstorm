@@ -1,0 +1,201 @@
+// The frames between the board server, a member's link and a CLI (swarm-relay D4): one JSON
+// text message per frame. A frame type added later is added here only.
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { serverLogFile, serverStartLock, serverStateFile } from "../host/home.ts";
+import { isAlive } from "../host/proc.ts";
+
+/** The Board methods a verb calls over the wire: all but onChange, close, livenessTick, recordActivity,
+ *  memberStates, upkeepIfDue and prune, which only the server's own process runs; board.ts checks them against Board. */
+export const RPC_METHODS = [
+  "openRun",
+  "addSeat",
+  "closeRun",
+  "phase",
+  "currentPhase",
+  "showPhase",
+  "pause",
+  "resume",
+  "pausedOf",
+  "done",
+  "phaseProgress",
+  "lastActivity",
+  "owedPhase",
+  "idle",
+  "unreadMentions",
+  "runs",
+  "packCall",
+  "join",
+  "participant",
+  "identify",
+  "setDoing",
+  "end",
+  "roster",
+  "endedMembers",
+  "owingMembers",
+  "heldBy",
+  "post",
+  "endorse",
+  "deliverMentions",
+  "wait",
+  "repos",
+  "snapshot",
+  "composition",
+  "phases",
+  "thread",
+  "message",
+] as const;
+export type RpcMethod = (typeof RPC_METHODS)[number];
+
+/** The orchestrators board's group: one permanent run per project where every orchestrator registers. Known to the
+ *  server (its runs' `addSeat` and `closeRun` stay open, plan D5) and to the CLI's answers alike. */
+export const ORCHESTRATORS_GROUP = "orchestrators";
+
+export type MemberActivity = {
+  /** last time the transcript grew */
+  grewAt: number | null;
+  /** the counter, as link/harness/claude-code.ts sums it: movement, never cost */
+  tokens: number;
+  /** the last call's input + cache tokens: how full the member is */
+  context: number | null;
+  /** a tool_use with no result yet */
+  /** `boardWait`: the call runs the board's own `wait` verb, the one call that is waiting (swarm-relay D45) */
+  /** `label`, `command` (board-split D45): the call's own description and its whole command; absent from an older link */
+  openTool: { name: string; target: string; since: number; boardWait?: boolean; label?: string | null; command?: string | null } | null;
+  /** "<name> <target, 50 chars>" */
+  lastTool: string | null;
+  /** the harness says the agent ended (meta.json) */
+  finished: boolean;
+  // Accurate states (idea 1): all optional, so an older link's activity still parses.
+  /** the agent's turn is open: its last user/assistant line is not an assistant line ending the turn */
+  inTurn?: boolean;
+  /** the last assistant text (50 chars), or "<tool> <target>" */
+  lastLine?: string | null;
+  /** the oldest awaited background task (latest turn, board's own excluded); null when none */
+  background?: { target: string; since: number; outputGrewAt: number | null; label?: string | null; command?: string | null } | null;
+  /** the transcript's path, for the server to stat while the link is lost */
+  transcript?: string;
+  /** the member's last kill that was not by PID (idea 4): by name or pattern always a breach; by a port lookup a breach
+   *  only for a port whose lock it does not hold, which the board checks. Null or absent when none was seen. */
+  breach?: { command: string; kind: "pattern" | "port"; ports?: number[]; at: number } | null;
+  /** the member's background listener (D4, G16): `running` while a background `wait --mentions` it started is not yet
+   *  notified; `endedAt` when the last one was. Absent from an older link: the board falls back to its in-wait column. */
+  listener?: { running: boolean; endedAt: number | null } | null;
+};
+
+// up: a link (or a CLI with no member) to the server
+/** `member`: who the connection speaks for, bound by the server (trust-adaptations#D5). `presence: false`: a direct or
+ *  fallback connection carrying a member's calls, not its link: bound to the member, writing no presence, superseding
+ *  nothing, open to an ended member or a closed run. */
+export type Hello = { type: "hello"; version: string; ticket: string; member?: { name: string; run: number }; supersede?: boolean; presence?: false };
+export type Call = { type: "call"; id: string; method: RpcMethod; args: unknown[] };
+/** a wait whose CLI went away */
+type Cancel = { type: "cancel"; id: string };
+export type Activity = { type: "activity"; at: number; activity: MemberActivity };
+/** spec §7: what its member's worktree changed since it left its target, sent on a change */
+type Changes = { type: "changes"; files: string[] };
+/** board-split D55: the link's heartbeat, every HEARTBEAT_MS */
+type Beat = { type: "beat" };
+export type Bye = { type: "bye"; reason: "ended" | "closed" | "finished" | "idle" };
+/** a reader (aiview) asks to hear every commit as `changed` (swarm-relay D23) */
+type Subscribe = { type: "subscribe" };
+// down: the server to a link or a CLI
+/** `watched`: the member's folder and the branch it is read against, for its link's changes (spec §7); absent for none */
+type Welcome = { type: "welcome"; version: string; watched?: { dir: string; against: string } };
+export type Result = { type: "result"; id: string; ok: true; value: unknown } | { type: "result"; id: string; ok: false; error: string };
+/** `member`: the Hello names a member that run does not have (trust-adaptations#D5). */
+export type Refused = { type: "refused"; reason: "ticket" | "version" | "superseded" | "shutdown" | "closed" | "member" };
+/** to a reader that called subscribe, after each commit */
+type Changed = { type: "changed"; repo: string };
+
+export type Frame = Hello | Call | Cancel | Activity | Changes | Beat | Bye | Subscribe | Welcome | Result | Refused | Changed;
+
+const FRAME_TYPES: ReadonlySet<string> = new Set<Frame["type"]>(["hello", "call", "cancel", "activity", "changes", "beat", "bye", "subscribe", "welcome", "result", "refused", "changed"]);
+
+/** One JSON text. */
+export function encode(f: Frame): string {
+  return JSON.stringify(f);
+}
+
+/** Throws on text that is not JSON, or on a frame of an unknown type. */
+export function decode(text: string): Frame {
+  const f: unknown = JSON.parse(text);
+  const type = f && typeof f === "object" ? (f as { type?: unknown }).type : undefined;
+  if (typeof type !== "string" || !FRAME_TYPES.has(type)) throw new Error(`unknown frame type: ${String(type)}`);
+  return f as Frame;
+}
+
+const versionsByBuild = new Map<string, string>();
+let ownVersion: string | undefined;
+
+/** The file a version is read from: the built CLI beside a launcher (`<entry dir>/dist-cli/cli.mjs`), else the entry itself. */
+function builtCliOf(entry: string): string {
+  const file = path.resolve(entry);
+  const bundle = path.join(path.dirname(file), "dist-cli", "cli.mjs");
+  return fs.existsSync(bundle) ? bundle : file;
+}
+
+/** D28, D40 (board-split): the hash of the built CLI an entry runs, never of the launcher `swarm.mjs`, so a rebuilt
+ *  bundle is another version and its next call replaces a server of the old build, whichever checkout or reader
+ *  started it. With no entry, this process's own build, read once: what it runs never changes under it. */
+export function bundleVersion(entry?: string): string {
+  if (entry === undefined) return (ownVersion ??= bundleVersion(process.argv[1] ?? ""));
+  const file = builtCliOf(entry);
+  const st = fs.statSync(file);
+  const key = `${file}|${st.mtimeMs}|${st.size}`;
+  let v = versionsByBuild.get(key);
+  if (v === undefined) {
+    v = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+    versionsByBuild.set(key, v);
+  }
+  return v;
+}
+
+/** What the running server writes for its clients: `<dataRoot>/swarm-server.json` (D7, D17). */
+export type ServerState = { pid: number; port: number; ticket: string; version: string };
+
+/** The state the running server wrote; null when there is none, it cannot be read, or its pid or port is not a whole number. */
+export function readServerState(dataRoot: string): ServerState | null {
+  try {
+    const s = JSON.parse(fs.readFileSync(serverStateFile(dataRoot), "utf8")) as ServerState;
+    return Number.isInteger(s.pid) && Number.isInteger(s.port) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/** board-split D55: a link's heartbeat, a sign of life each time: the card's freshness, a fact on it within seconds (D55 (6)). */
+export const HEARTBEAT_MS = 5 * 1000;
+
+/** Set by a CLI spawning a server to its own command line, which the server's start line names (D42). */
+export const SERVER_STARTER_ENV = "SWARM_SERVER_STARTER";
+
+/** The pid holding `dataRoot`'s start lock; null when none holds it or the file cannot be read. */
+export function serverLockHolder(dataRoot: string): number | null {
+  try {
+    const pid = Number(fs.readFileSync(serverStartLock(dataRoot), "utf8").trim());
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How long a start lock's holder may go without writing the state file before its lock is taken for
+ *  stale: its pid reused by another process, or a server stuck starting. */
+const START_LOCK_GRACE_MS = 15_000;
+
+/** The server process holding `dataRoot`'s start lock, starting or running (D40); null when the lock is
+ *  free or stale: its holder dead, or the lock past its grace with no state file naming its holder. */
+export function liveStartLockHolder(dataRoot: string): number | null {
+  const holder = serverLockHolder(dataRoot);
+  if (holder === null || !isAlive(holder)) return null;
+  try {
+    if ((JSON.parse(fs.readFileSync(serverStateFile(dataRoot), "utf8")) as ServerState).pid === holder) return holder;
+  } catch {}
+  try {
+    return Date.now() - fs.statSync(serverStartLock(dataRoot)).mtimeMs < START_LOCK_GRACE_MS ? holder : null;
+  } catch {
+    return null;
+  }
+}

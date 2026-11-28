@@ -9,10 +9,10 @@ import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
 import { observe } from "../src/link/transcripts.ts";
-import type { MemberActivity } from "../src/wire.ts";
+import type { MemberActivity } from "../src/contract/wire.ts";
 import { toolCall, writeSubagent } from "./fixtures/transcripts.ts";
 import { eventStep } from "../src/cli/answer/rules.ts";
-const stepOf = (e: import("../src/board/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
+const stepOf = (e: import("../src/contract/events.ts").EventName) => (m: Parameters<typeof eventStep>[0], me: Parameters<typeof eventStep>[1], cli: string) => eventStep(m, me, cli, e);
 
 let dir: string;
 let board: Board;
