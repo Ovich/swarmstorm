@@ -3,9 +3,13 @@
 import type { Message, Participant } from "../../contract/board.ts";
 import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { profileOf } from "../../contract/kinds.ts";
-import { codeCloseStep, codeEventStep } from "./code-rules.ts";
+import { codeCloseStep, codeEventStep } from "./code.ts";
 import type { Situation } from "./situation.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
+
+// product-shape#D20: the rules one feature alone reads sit in its file, read through here as before
+export { lostMentionLines, mentionReaches, taskHintLines, unreachedMentionLines } from "./conversation.ts";
+export { circlingLine, firstPhaseLine, phaseKind, phaseStep } from "./phases.ts";
 
 /** The member's wait command: a background listener holds until something comes, a foreground wait carries its hold. */
 export const waitCommand = (s: Situation, foreground = false): string => W.wait(s.cli, s.as, foreground ? FOREGROUND_WAIT_MS : undefined);
@@ -49,14 +53,6 @@ export const unreadLine = (s: Situation, verb: string): string | null =>
 
 export const owesNothingLine = (s: Situation): string | null => pausedLine(s) ?? (s.owesNothing && s.seat !== "orchestrator" ? ((s.unread ?? 0) > 0 ? W.unreadNow(s.unread!, W.wait(s.cli, s.as)) : W.owesNothingEndTurn) : null);
 
-/** Whether a post's stored mentions reach `name` (`<group>/<seat>`): by name, or by its group (`@swarm`, `@<CODE>` are stored as `<group>/*`). */
-export const mentionReaches = (mentions: readonly string[], name: string): boolean =>
-  mentions.includes(name) || mentions.includes(`${name.slice(0, name.lastIndexOf("/"))}/*`);
-
-/** simple-states: what the orchestrator's post tells it of a member it mentions whose link is down, by its board state. */
-export const unreachedMentionLines = (targets: { name: string; state: string }[]): string[] =>
-  targets.flatMap((t) => (t.state === "away" ? [W.postToAway(t.name)] : t.state === "lost" ? [W.postToLost(t.name)] : []));
-
 /** The line that starts the member's listener: a seat waits in the foreground, a worker and the orchestrator listen in the
  *  background. `afterPhase`: it follows the owed line, so a seat waits only once its part is in. */
 export const listenNow = (s: Situation, afterPhase = false): string =>
@@ -90,13 +86,6 @@ export const heardStep = (s: Situation): string | null => {
   return pausedLine(s) ?? owedLine(s, { brief: true });
 };
 
-/** board-fixes#D13: an orchestrator's plain post to exactly one seat of its run, posted without --task, is told how a task is
- *  posted; nothing otherwise. */
-export const taskHintLines = (p: { orchestrator: boolean; plain: boolean; task: boolean; mentions: string[]; group: string }): string[] => {
-  const oneSeat = p.mentions.length === 1 && p.mentions[0].startsWith(`${p.group}/`) && !p.mentions[0].endsWith("/*") && !p.mentions[0].endsWith("/orchestrator");
-  return p.orchestrator && p.plain && !p.task && oneSeat ? [W.taskHint(p.mentions[0])] : [];
-};
-
 /** The phase header: whole the first time a member is shown it, then the short form naming where its text is;
  *  the pause beside it. `printed` for the human answer, `full` always whole, for --json. */
 export const phaseHeaders = (s: Situation, showPause = true): { printed: string | null; full: string | null; first: boolean } => {
@@ -109,15 +98,6 @@ export const phaseHeaders = (s: Situation, showPause = true): { printed: string 
 };
 
 /** The one line a member of a closed run reads from every member verb. */
-/** break-flow V-47: the orchestrator's post that mentions a lost member is recorded, and says so with the move, as
- *  `phase` does (V-35). `lost`: the mentioned members whose badge reads lost, `<group>/<seat>`. */
-export const lostMentionLines = (lost: string[], cli: string, as: string): string[] =>
-  lost.map((member) => W.mentionLost(member, W.lostMove(cli, shellWord(member.slice(member.lastIndexOf("/") + 1)), as)));
-
-/** The first `phase`'s answer: confirm the next phase, the fixed opt-ins weighed first, ending on the confirming call;
- *  two steps by the answer alone, no state between them, as `close`. */
-export const phaseStep = (name: string, confirm: string): string => W.phaseConfirmStep(name, W.phaseOptIns, confirm);
-
 /** board-fixes#D6: the first `close`'s answer: while a member owes, who, and post no new task; else the closing steps,
  *  ending on the confirming call. */
 export const closeStep = (owing: string[], run: number, confirm: string, code: boolean): string =>
@@ -186,27 +166,3 @@ const READING_VERBS: ReadonlySet<string> = new Set(["status", "roster", "read", 
 export const closedConnectionHint = (verb: string, cli: string): string =>
   READING_VERBS.has(verb) ? W.retryReading(verb) : W.retryWriting(verb, W.status(cli));
 
-/** A phase's kind: the word its name opens with, lowercased (`verify-38`, `verify1`, `build-desk`); null when the name
- *  opens on no letter, which the phase verb refuses. Any word is a kind: the list is never fixed. */
-export const phaseKind = (name: string): string | null => /^[a-z]+/i.exec(name)?.[0].toLowerCase() ?? null;
-/** The reminder at a phase's open that a loop may be circling: the opening phase's kind at its 3rd, 6th, 9th… pass
- *  since the run's last reflect; null otherwise, and for a reflect itself. */
-export const circlingLine = (earlier: readonly string[], name: string): string | null => {
-  const kind = phaseKind(name);
-  if (!kind || kind === "reflect") return null;
-  const kinds = earlier.map(phaseKind);
-  const passes = kinds.slice(kinds.lastIndexOf("reflect") + 1).filter((k) => k === kind).length + 1;
-  return passes % 3 === 0 ? W.circling(kind, passes) : null;
-};
-
-/** `--protocol none`: a run phaseless on purpose. */
-const PHASELESS = "none";
-/** idea 3: the orchestrator's step after `open` of a task or plan run: open the protocol's first phase before any task,
- *  or, with none, why there are no phases; null for a kind that opens on its phases already (a brainswarm). */
-export const firstPhaseLine = (kind: string, protocol: string | null, cli: string, as: string): string | null => {
-  if (kind !== "task" && kind !== "plan") return null;
-  // --protocol none: phaseless on purpose, so no reminder (the person's addition to idea 3)
-  if (protocol === PHASELESS) return W.firstPhasePhaseless;
-  const phase = W.phaseCommand(cli, as);
-  return protocol ? W.firstPhaseOfProtocol(protocol, phase) : W.firstPhaseNoProtocol(phase);
-};

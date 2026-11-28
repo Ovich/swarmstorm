@@ -3,14 +3,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Participant } from "../contract/board.ts";
-import { HOME_OVERRIDE } from "../board/home.ts";
+import { HOME_OVERRIDE } from "../store/home.ts";
 import { connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { DATA_ROOT } from "../host/home.ts";
 import { repoOf as placeRepoOf, worktreeOf } from "../host/place.ts";
-import { pausedMergingStep } from "./answer/code-rules.ts";
+import { pausedMergingStep } from "./answer/code.ts";
 import { answer, CODE_WORDING, ORCHESTRATORS_GROUP, readSituation, shellWord, verbHelp, WORDING, type Situation } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-import { projectPaths } from "./aiview-board.ts";
+import { projectPaths } from "./verbs/run/aiview.ts";
 import { parseArgs, type ParsedArgs } from "./args.ts";
 import { fail } from "./fail.ts";
 import { fwd, repoOf, toolRoot } from "./paths.ts";

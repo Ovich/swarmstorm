@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type http from "node:http";
-import { openIndex, type Index } from "../src/core/db.ts";
+import { openIndex, type Index } from "../src/store/index-db.ts";
 import { startServer } from "../src/server/index.ts";
 
 let tmp: string;

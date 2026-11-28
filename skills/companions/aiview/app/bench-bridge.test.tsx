@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { BENCH_BRIDGE_MARK, isSidecarPath } from "./lib/bench-bridge.ts";
-import { PrototypeFrame } from "./components/viewers/PrototypeFrame.tsx";
+import { PrototypeFrame } from "./prototype/PrototypeFrame.tsx";
 
 afterEach(() => {
   cleanup();

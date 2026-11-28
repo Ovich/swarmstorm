@@ -1,29 +1,29 @@
 // Every verb of the swarm CLI, in help order (codebase-rework#D11): what it needs before it runs, never its text,
 // which is VERB_USAGE's under the same names (D12).
 import type { Verb } from "../dispatch.ts";
-import { closeVerb } from "./close.ts";
-import { doingVerb } from "./doing.ts";
-import { doneVerb } from "./done.ts";
-import { endVerb } from "./end.ts";
-import { endorseVerb } from "./endorse.ts";
-import { joinVerb } from "./join.ts";
-import { linkVerb } from "./link.ts";
+import { closeVerb } from "./run/close.ts";
+import { doingVerb } from "./members/doing.ts";
+import { doneVerb } from "./phases/done.ts";
+import { endVerb } from "./members/end.ts";
+import { endorseVerb } from "./conversation/endorse.ts";
+import { joinVerb } from "./members/join.ts";
+import { linkVerb } from "./members/link.ts";
 import { logLevelVerb } from "./log-level.ts";
-import { mergeLockVerb } from "./merge-lock.ts";
-import { mergedVerb } from "./merged.ts";
-import { openVerb } from "./open.ts";
-import { pauseVerb } from "./pause.ts";
-import { phaseVerb } from "./phase.ts";
-import { phasesVerb } from "./phases.ts";
-import { postVerb } from "./post.ts";
-import { readVerb } from "./read.ts";
-import { rosterVerb } from "./roster.ts";
-import { seatVerb } from "./seat.ts";
+import { mergeLockVerb } from "./code/merge-lock.ts";
+import { mergedVerb } from "./code/merged.ts";
+import { openVerb } from "./run/open.ts";
+import { pauseVerb } from "./run/pause.ts";
+import { phaseVerb } from "./phases/phase.ts";
+import { phasesVerb } from "./phases/phases.ts";
+import { postVerb } from "./conversation/post.ts";
+import { readVerb } from "./conversation/read.ts";
+import { rosterVerb } from "./members/roster.ts";
+import { seatVerb } from "./run/seat.ts";
 import { serveVerb } from "./serve.ts";
-import { statusVerb } from "./status.ts";
-import { threadVerb } from "./thread.ts";
-import { waitVerb } from "./wait.ts";
-import { worktreeVerb } from "./worktree.ts";
+import { statusVerb } from "./run/status.ts";
+import { threadVerb } from "./conversation/thread.ts";
+import { waitVerb } from "./conversation/wait.ts";
+import { worktreeVerb } from "./code/worktree.ts";
 
 export const VERBS: readonly Verb[] = [
   { names: ["open"], server: "board", help: "core", who: "anyone", run: openVerb },
@@ -45,9 +45,9 @@ export const VERBS: readonly Verb[] = [
   { names: ["end"], server: "board", help: "core", who: "caller", run: endVerb },
   { names: ["log-level"], server: "none", help: "core", who: "anyone", run: logLevelVerb },
   { names: ["status"], server: "board", help: "core", who: "anyone", run: statusVerb },
-  { names: ["worktree"], server: "board", help: "core", who: "anyone", run: worktreeVerb },
   { names: ["merge-lock"], server: "board", help: "code", who: "member", refusedPaused: true, run: mergeLockVerb },
   { names: ["merged"], server: "board", help: "code", who: "member", run: mergedVerb },
+  { names: ["worktree"], server: "board", help: "code", who: "anyone", run: worktreeVerb },
   { names: ["serve"], server: "self", help: "hidden", who: "anyone", run: serveVerb },
   { names: ["link"], server: "self", help: "hidden", who: "anyone", run: linkVerb },
 ];

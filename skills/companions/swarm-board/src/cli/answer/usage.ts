@@ -1,10 +1,10 @@
 // The CLI's static help (board-rework D12; codebase-rework#D12): one record, VERB_USAGE, keyed by verb name, holding each
 // verb's help lines and the corrected form an argument error offers; the core help, the code help, a hidden verb's
-// help and one verb's own usage all render from it. The code verbs' entries are the code pack's, in code-wording.ts.
+// help and one verb's own usage all render from it. The code verbs' entries are the code pack's, in code.ts.
 // `cli` is this CLI as a member runs it.
-import { CODE_IN_CORE_HELP, CODE_IN_CORE_VERB_USAGE, CODE_VERB_USAGE, CODE_WORDING } from "./code-wording.ts";
+import { CODE_IN_CORE_HELP, CODE_VERB_USAGE, CODE_WORDING } from "./code.ts";
 import type { Command, VerbUsage } from "./wording.ts";
-import { STALL_MS_DEFAULT } from "../../board/liveness.ts";
+import { STALL_MS_DEFAULT } from "../../board/stall.ts";
 import { THREAD_LIMIT } from "../../board/board.ts";
 
 /** The core help's verbs, in help order. */
@@ -73,7 +73,6 @@ const CORE_VERB_USAGE = {
   },
   "log-level": { lines: () => ["  log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept"] },
   status: { lines: () => ["  status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it"] },
-  ...CODE_IN_CORE_VERB_USAGE,
 } satisfies Record<string, VerbUsage>;
 
 /** The hidden verbs: no line in either help; their own help never starts them. */

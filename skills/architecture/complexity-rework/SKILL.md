@@ -1,6 +1,6 @@
 ---
 name: complexity-rework
-description: "Use when code is hard to follow and is to be audited or reworked: long if/else or switch chains, cascades of type checks or parse attempts, kind fields compared to strings, flag parameters, deep nesting, a function hard to read. Also for complexity guardrails, or one long conditional function pasted. Produces a ranked audit of families, one family reworked behind characterization tests, or the guardrails."
+description: "Use when code is hard to follow and is to be audited or reworked: long if/else or switch chains, cascades of type checks or parse attempts, kind fields compared to strings, flag parameters, deep nesting, a function hard to read. Also for complexity guardrails, or one long conditional function pasted. Produces a ranked audit of families, one family reworked behind characterization tests, or the guardrails. Not for code placed apart from the product it serves (screaming-architecture-rework)."
 ---
 
 # Complexity rework

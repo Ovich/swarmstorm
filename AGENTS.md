@@ -55,7 +55,7 @@ file the person was looking for. Refresh the cache with
 
 11. **MUST NOT ship a harness hook (`hooks/hooks.json`, a `hooks` key in the plugin manifest, any PreToolUse, PostToolUse, Stop or other event hook), nor write to the person's harness settings (`settings.json`, `settings.local.json`, user or project).** A plugin hook runs in every session on the machine, in every project, whether or not a skill of this collection is in use, and a settings change outlives the session that made it. What a skill needs from the agent goes through the skill, its CLI's answers and the agent's own tools. A swarm member hears the board through its own listener or its own wait, and the orchestrator may always message a member directly; no skill forbids that.
 
-12. **MUST name one concept with one word across the skills, the CLI and its answers: a `seat` is a place in a run (a worker, a verifier, a brainswarm role are seats), a `member` is the agent holding a seat, a `slice` is only a plan's cut of work, which a seat carries out; never `runner`.** Two words for one thing read as two things, and an agent looks for the second. A seat's role may be absent; the seats file always exists, empty for a run with none declared.
+12. **MUST name one concept with one word across the skills, the CLI and its answers: a `seat` is a place in a run (a worker, a verifier, a brainswarm role are seats), a `member` is the agent holding a seat, a `slice` is only a plan's cut of work, which a seat carries out; never `runner`.** Two words for one thing read as two things, and an agent looks for the second. A seat's role may be absent; the seats file always exists, empty for a run with none declared. These words are rows of the product map, `.claude/skills/guide-product-map/SKILL.md`; a new concept's word is added there.
 
 ## aiview
 
@@ -69,7 +69,11 @@ file the person was looking for. Refresh the cache with
 
 13. **MUST write a command or next-step line a member reads in the answer module (`skills/companions/swarm-board/src/cli/answer/`: wording in `wording.ts`, the choice in `rules.ts`), never in a verb or a board event.** Each verb writing its own lines is what repeated the phase three times and set verbs contradicting each other; fixed per verb, the fixes looped. The sites predating the rule are counted by `tests/answer-ratchet.test.ts`, whose baseline only falls.
 
-14. **MUST keep swarm-board's units in one layer order, bottom to top: `host/`, `contract/`, `link/` and `packs/`, `board/`, `client/` and `server/`, `cli/`; a unit imports only units of a lower row, never one of its own row, and `host/` only `node:*`.** An upward import is a ring: one change lands in every unit at once. `tests/layers.test.ts` holds the ranks; the bench's `layers --full` reads 0 upward.
+14. **MUST keep swarm-board's units in one layer order, bottom to top: `host/`, `contract/` and `store/`, `link/` and `packs/`, `board/`, `client/` and `server/`, `cli/`; a unit imports only units of a lower row, never one of its own row, and `host/` only `node:*`.** An upward import is a ring: one change lands in every unit at once. `tests/layers.test.ts` holds the ranks; the bench's `layers --full` reads 0 upward.
+
+## Code
+
+16. **MUST put the companions' product code under its feature's home, named in the product's words, as `.claude/skills/guide-product-map/SKILL.md` maps them (layer, then feature: `board/<feature>/`, `cli/verbs/<feature>/`, `app/board/<feature>/`); storage, transport, process and the answer wording stay in the map's horizontal folders; `node skills/guides/guide-screaming-architecture/scripts/check.mjs` exits 0 before a merge.** A verb's code spread over folders named for mechanism is found only by reading them all, and a code word that differs from the verb's reads as a second concept. A new verb, screen or concept is a row or alias of the map in the same change; the bench's `check` reports the checker's new violations.
 
 ## Documents
 

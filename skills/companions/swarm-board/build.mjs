@@ -7,7 +7,7 @@ import { build } from "esbuild";
 const inlineMigrations = {
   name: "inline-migrations",
   setup(b) {
-    b.onLoad({ filter: /[\\/]board[\\/]store[\\/]migrations\.ts$/ }, (args) => {
+    b.onLoad({ filter: /[\\/]src[\\/]store[\\/]migrations\.ts$/ }, (args) => {
       const dir = path.join(path.dirname(args.path), "migrations");
       const texts = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort().map((f) => fs.readFileSync(path.join(dir, f), "utf8"));
       return { contents: `export const MIGRATIONS = ${JSON.stringify(texts)};`, loader: "js" };

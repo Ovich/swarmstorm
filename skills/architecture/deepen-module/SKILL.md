@@ -13,7 +13,7 @@ description: Use when a person asks to design a new module's interface or to rew
 
 ## Discover
 
-**For an existing module, discover its actual boundaries before designing.** Its code may be scattered across the codebase. Document its files, its callers and its application dependencies in *Today*. A new module starts at Design.
+**For an existing module, discover its actual boundaries before designing.** Its code may be scattered across the codebase; scattered over feature folders, it is the `guide-screaming-architecture` skill's first symptom. Document its files, its callers and its application dependencies in *Today*. A new module starts at Design.
 
 ## Design
 
@@ -24,7 +24,7 @@ description: Use when a person asks to design a new module's interface or to rew
 3. **Outside**: what stays in the project: its data, and the one binding that passes the project's names to the module.
 4. **The conditions**, each marked held or broken today:
    - all access to the module goes through the entry
-   - the module imports nothing from the application, and receives any collaborator it drives
+   - the module imports nothing from the application, and receives any collaborator it drives (for a building block or infrastructure; a feature folder holds deep modules of the application, as the `guide-screaming-architecture` skill says)
    - it reads no environment and no global state
    - every project-specific name, path or setting is an option with a working default
    - its tuning numbers (a limit, a retry count, a default, a threshold) are named once in one constants file beside its entry, never written as a literal in a branch or a schema bound

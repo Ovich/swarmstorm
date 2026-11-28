@@ -4,7 +4,7 @@
 // orchestrator as one of its cards, each with its token counter. And a tab of an older build reloads.
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { BoardView } from "./components/viewers/board/BoardView.tsx";
+import { BoardView } from "./board/BoardView.tsx";
 import { isStaleBuild, pageBuild, reloadOnNewBuild } from "./lib/build.ts";
 
 class FakeEventSource {
@@ -138,10 +138,10 @@ test("a stall something came after has passed and leaves the thread", async () =
 
 test("the agent strip: the orchestrator is its first card; each card shows its counter, flat past the run's threshold marked, an unreadable one said", async () => {
   render(<BoardView repos={[REPO]} run={32} />);
-  const strip = await screen.findByRole("region", { name: "Agents" });
+  const strip = await screen.findByRole("region", { name: "Members" });
   const cards = Array.from(strip.querySelectorAll("button.card"));
   expect(cards).toHaveLength(6);
-  expect(cards.every((c) => c.getAttribute("data-component") === "AgentCard")).toBe(true);
+  expect(cards.every((c) => c.getAttribute("data-component") === "MemberCard")).toBe(true);
   expect(cards[0].className).toMatch(/\borch\b/);
   // the token counter is not drawn on the cards (user, 2026-10-16: it misled); the stall check reads it
   expect(document.querySelector('[data-component="TokenCounter"]')).toBeNull();

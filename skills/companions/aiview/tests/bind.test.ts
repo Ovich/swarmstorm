@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parse, serialize } from "parse5";
-import { parseRef, resolveBindings, type SourceReader } from "../src/core/bind.ts";
+import { parseRef, resolveBindings, type SourceReader } from "../src/prototype/bind.ts";
 
 const TOOLS = "2026-09-03-dock-tools.prototype.html";
 
@@ -146,7 +146,7 @@ for (const f of fs.existsSync(fixtures) ? fs.readdirSync(fixtures).filter((n) =>
 }
 
 test("listComponents: what a file offers and pulls, with the rule violations", async () => {
-  const { listComponents } = await import("../src/core/bind.ts");
+  const { listComponents } = await import("../src/prototype/bind.ts");
   const r = listComponents(toolsSheet);
   assert.deepEqual(r.offers.map((o) => o.name), ["ToolPrefix", "ToolMakeroom", "Twice", "Twice", "WithId", "Nesting"]);
   assert.equal(r.offers[0].tag, "span");

@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import type { ProxyOptions } from "vite";
-import { readServerToken } from "./src/core/serverstate.ts";
+import { readServerToken } from "./src/host/serverstate.ts";
 import { TOKEN_HEADER } from "./src/server/guard.ts";
 
 const devProxy: ProxyOptions = {

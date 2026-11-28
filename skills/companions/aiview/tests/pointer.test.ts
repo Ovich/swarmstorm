@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pointerHash, readPointer, unknownNames } from "../src/core/pointer.ts";
+import { pointerHash, readPointer, unknownNames } from "../src/prototype/pointer.ts";
 
 test("a pointer is the viewer's hash, and reads back as itself", () => {
   const p = { id: 12, components: ["ApplicationStrip", "MenuSquare"], variant: "step-2" };

@@ -1,7 +1,7 @@
-// Typed client over the backend-for-frontend API. Types come from src/core (type-only,
+// Typed client over the backend-for-frontend API. Types come from src/contract and src/store (type-only,
 // erased at build) so the contract-guard test can hold server and app to one shape.
-import type { BindingsSummary, DocumentsResponse, DocumentResponse } from "../../src/core/api.ts";
-import type { Document, DocumentWithState, Pending } from "../../src/core/db.ts";
+import type { BindingsSummary, DocumentsResponse, DocumentResponse } from "../../src/contract/api.ts";
+import type { Document, DocumentWithState, Pending } from "../../src/store/index-db.ts";
 
 export type { BindingsSummary, DocumentsResponse, DocumentResponse, Document, DocumentWithState, Pending };
 

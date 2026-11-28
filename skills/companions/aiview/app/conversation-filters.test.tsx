@@ -4,9 +4,9 @@ import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { conversation, narrow, type Narrow } from "./lib/board/conversation.ts";
-import { Conversation } from "./components/viewers/board/Conversation.tsx";
-import { ConversationFilters } from "./components/viewers/board/ConversationFilters.tsx";
+import { conversation, narrow, type Narrow } from "./board/conversation/conversation.ts";
+import { Conversation } from "./board/conversation/Conversation.tsx";
+import { ConversationFilters } from "./board/conversation/ConversationFilters.tsx";
 
 vi.mock("mermaid", () => ({
   default: { initialize: () => {}, render: async () => ({ svg: "<svg></svg>" }) },
@@ -17,6 +17,7 @@ afterEach(cleanup);
 const AT = "2026-10-14T10:00:00Z";
 const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
 const member = (seat: string, nick: string): SnapshotMember => ({
+  context: null,
   badge: null,
   member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working",
   files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,

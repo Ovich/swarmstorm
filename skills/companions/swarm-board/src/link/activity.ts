@@ -15,8 +15,8 @@ export type TranscriptEvent =
   | { kind: "foreign" }
   /** the harness told the agent these background tasks ended */
   | { kind: "notified"; toolUseIds: string[]; at: number }
-  /** how full the agent is: the last assistant line's input and cache tokens */
-  | { kind: "context"; tokens: number }
+  /** how full the agent is: the last assistant line's input and cache tokens, `at` the line's own time */
+  | { kind: "context"; tokens: number; at: number }
   /** the agent's own text */
   | { kind: "said"; text: string }
   /** a tool call: `target` its main input as text, `command` its shell command when it has one, `stopsTask` the id
@@ -38,6 +38,8 @@ export type ActivityState = {
   open: Map<string, OpenCall>;
   lastTool: string | null;
   context: number | null;
+  /** when the line that gave `context` was written, ms epoch (product-shape#D3) */
+  contextAt: number | null;
   /** the last assistant text (50 chars), or "<tool> <target>" */
   lastLine: string | null;
   /** the last user/assistant line was not an assistant line ending the turn */
@@ -57,7 +59,7 @@ export type ActivityState = {
 };
 
 export function emptyActivity(): ActivityState {
-  return { open: new Map(), lastTool: null, context: null, lastLine: null, inTurn: false, endedTurns: 0, background: new Map(), boardsOwn: new Set(), breach: null, listeners: new Set(), listenerEndedAt: null };
+  return { open: new Map(), lastTool: null, context: null, contextAt: null, lastLine: null, inTurn: false, endedTurns: 0, background: new Map(), boardsOwn: new Set(), breach: null, listeners: new Set(), listenerEndedAt: null };
 }
 
 const SHORT_CHARS = 50;
@@ -78,6 +80,7 @@ const FOLDS: { [K in TranscriptEvent["kind"]]: (s: ActivityState, e: Extract<Tra
   },
   context: (s, e) => {
     s.context = e.tokens;
+    s.contextAt = e.at;
   },
   said: (s, e) => {
     s.lastLine = short(e.text);
@@ -146,6 +149,7 @@ export function activityOf(s: ActivityState, io: { grewAt: number | null; tokens
     grewAt: io.grewAt,
     tokens: io.tokens,
     context: s.context,
+    contextAt: s.contextAt,
     openTool: openTool && { ...openTool },
     lastTool: s.lastTool,
     finished: io.finished,

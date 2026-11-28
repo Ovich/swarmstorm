@@ -7,10 +7,10 @@
 // The sidebar says "live" while the document on screen is hours old, until a manual
 // refresh (2026-09-18). The heartbeat is what makes both ends notice: a write that fails
 // prunes the client here, and a tab that hears nothing for several beats reconnects
-// there (app/hooks/useDocuments.ts). It is a `ping` event rather than an SSE comment so
+// there (app/documents/useDocuments.ts). It is a `ping` event rather than an SSE comment so
 // the tab's watchdog can see it — a comment frame never reaches `onmessage`.
 import type { ServerResponse } from "node:http";
-import type { PingEventPayload } from "../core/api.ts";
+import type { PingEventPayload } from "../contract/api.ts";
 
 /** How often every client is pinged. The client's watchdog allows several of these. */
 export const HEARTBEAT_MS = 15_000;

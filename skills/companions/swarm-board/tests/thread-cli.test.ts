@@ -2,7 +2,7 @@
 // run under way is told how to read what came before it.
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];
 afterEach(() => {
@@ -13,7 +13,7 @@ afterEach(() => {
 test("phases, thread and read: one line per post, the next page's command, a post whole", () => {
   const r = makeRepo();
   repos.push(r);
-  const run = String(openTwoRunners(r));
+  const run = String(openTwoMembers(r));
   const as = ["--as", "review-tool/orchestrator"];
   r.cli(r.repo, "phase", "build", "go", "--confirm", ...as);
   for (let i = 0; i < 22; i++) r.cli(r.wtA, "post", `@S5 note ${i} ${"y".repeat(150)}`);
@@ -37,7 +37,7 @@ test("phases, thread and read: one line per post, the next page's command, a pos
 test("a member taking a seat back, in a run under way, is told how to read what came before it", () => {
   const r = makeRepo();
   repos.push(r);
-  const run = String(openTwoRunners(r));
+  const run = String(openTwoMembers(r));
   r.cli(r.repo, "phase", "build", "go", "--confirm", "--as", "review-tool/orchestrator");
   r.cli(r.repo, "end", "--seat", "S5", "--as", "review-tool/orchestrator");
   const joined = r.cli(r.wtB, "join", "--run", run, "--seat", "S5", "--doing", "again");

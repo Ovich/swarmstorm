@@ -127,7 +127,9 @@ function assistantEvents(line: TranscriptLine, content: ContentPart[], at: numbe
   const usage = line.message?.usage;
   if (usage) {
     const n = (k: string) => (typeof usage[k] === "number" ? (usage[k] as number) : 0);
-    events.push({ kind: "context", tokens: n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") });
+    const tokens = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+    // product-shape#D2: a line counting nothing (Claude Code's `<synthetic>`) says nothing of how full the member is
+    if (tokens > 0) events.push({ kind: "context", tokens, at });
   }
   for (const part of content) {
     if (part?.type === "text" && typeof part.text === "string" && part.text.trim()) events.push({ kind: "said", text: part.text });

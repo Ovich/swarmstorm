@@ -5,10 +5,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BoardSnapshot, RunSummary, SnapshotEvent, SnapshotMember } from "../../swarm-board/src/client/reader.ts";
-import { conversation, TIPS } from "./lib/board/conversation.ts";
-import { Conversation } from "./components/viewers/board/Conversation.tsx";
-import { TipLayer } from "./components/viewers/board/Tip.tsx";
-import { PHASED } from "./board-fixtures.ts";
+import { conversation, TIPS } from "./board/conversation/conversation.ts";
+import { Conversation } from "./board/conversation/Conversation.tsx";
+import { TipLayer } from "./board/Tip.tsx";
+import { PHASED } from "./board/fixtures.ts";
 
 // jsdom cannot lay mermaid out: it is mocked, its render resolving an svg
 vi.mock("mermaid", () => ({
@@ -22,6 +22,7 @@ vi.stubGlobal("matchMedia", () => ({ matches: false }));
 const AT = "2026-10-14T10:00:00Z";
 const RUN: RunSummary = { run: 1, kind: "plan", plan: "alpha", group: "alpha", code: "AL", title: "Alpha", link: null, open: true, members: 2, done: 0, of: 2 };
 const member = (seat: string, nick: string): SnapshotMember => ({
+  context: null,
   badge: null,
   member: `alpha/${seat}`, nick, plan: "alpha", seat, role: seat, doing: "", state: "working",
   files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
@@ -82,7 +83,7 @@ test("decided and talk carry no edge class; a plain message no word", () => {
 });
 
 test("the stylesheet: an item has no fill but the open flag's tint and act's; act a red edge, wait an amber one", () => {
-  const css = readFileSync(join(__dirname, "components/viewers/board/board.css"), "utf8");
+  const css = readFileSync(join(__dirname, "board/board.css"), "utf8");
   // every rule whose selector is the item itself, with any of its classes, under the board's root
   const itemRules = [...css.matchAll(/^\.board (\.item(?:\.[\w-]+)*)\s*\{([^}]*)\}/gm)].map((m) => ({ selector: m[1], body: m[2] }));
   expect(itemRules.filter((r) => /background/.test(r.body)).map((r) => r.selector)).toEqual([".item.flag.open", ".item.act"]);
@@ -136,15 +137,15 @@ test("a message carrying a mermaid fence shows it as a diagram in the conversati
 test("a member reads its mark, then its nick and role, code·seat on hover; the agreement word names the other member by code and nick", () => {
   const { li } = show();
   const agreed = li(/S1 the top/);
-  expect(agreed.querySelector('[data-component="AgentMark"]')?.textContent).toBe("S2");
-  expect(agreed.querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("AL·S2");
+  expect(agreed.querySelector('[data-component="MemberMark"]')?.textContent).toBe("S2");
+  expect(agreed.querySelector('[data-component="MemberLabel"]')?.getAttribute("title")).toBe("AL·S2");
   expect(agreed.querySelector('[data-component="MemberTag"]')).toBeNull();
   expect(screen.getByText("✔ agreed with AL·S1 Sleepy Otter")).toBeTruthy();
 });
 
 // ── What the board looked like before the move, kept (plan D9): board.css's source, and the DOM ──
 
-const boardCss = () => readFileSync(join(__dirname, "components/viewers/board/board.css"), "utf8");
+const boardCss = () => readFileSync(join(__dirname, "board/board.css"), "utf8");
 const ruleOf = (css: string, selector: string): string => {
   const at = css.indexOf(`\n${selector} {`);
   expect(at, selector).toBeGreaterThanOrEqual(0);
@@ -203,7 +204,7 @@ test("a board event's text sits below its author line, as a message's does", () 
   const event = li(/^abc/);
   const head = event.querySelector(":scope > .head")!;
   const text = event.querySelector(":scope > .text")!;
-  expect(head.querySelector('[data-component="AgentLabel"]')).not.toBeNull();
+  expect(head.querySelector('[data-component="MemberLabel"]')).not.toBeNull();
   expect(head.contains(text)).toBe(false);
   expect(head.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(ruleOf(boardCss(), ".board .event .text")).toContain("grid-column: 2");
@@ -225,7 +226,7 @@ test("a phase is a line cut by its name, its text on hover; neither a post nor a
   expect(sep.querySelector(".name")?.textContent).toBe("diverge");
   expect(sep.querySelector(".said")?.textContent).toBe("every name a run could carry, no judgment yet");
   expect(sep.querySelector(".head, .time")).toBeNull();
-  const css = readFileSync(join(import.meta.dirname, "components/viewers/board/board.css"), "utf8");
+  const css = readFileSync(join(import.meta.dirname, "board/board.css"), "utf8");
   expect(css).toMatch(/\.board \.phase::before, \.board \.phase::after \{[^}]*border-top: 1px solid/);
   expect(css).toMatch(/\.board \.phase \.label \{[^}]*white-space: nowrap/);
   expect(css).toMatch(/\.board \.phase \.said \{ display: none; \}/);

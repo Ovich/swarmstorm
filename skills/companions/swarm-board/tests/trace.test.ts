@@ -4,7 +4,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];
 afterEach(() => {
@@ -21,7 +21,7 @@ test("debug: calls, posts, deliveries and the lock are traced, no message text",
   const r = makeRepo();
   repos.push(r);
   r.cli(r.repo, "log-level", "debug");
-  openTwoRunners(r);
+  openTwoMembers(r);
   r.cli(r.wtA, "post", "@S5 hello there");
   r.cli(r.wtB, "wait", "--mentions", "--timeout", "2000");
   r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
@@ -39,7 +39,7 @@ test("debug-extended: each post's text in messages/run-<n>.jsonl; off: nothing m
   const r = makeRepo();
   repos.push(r);
   assert.match(r.cli(r.repo, "log-level", "debug-extended"), /^log level debug-extended/);
-  openTwoRunners(r);
+  openTwoMembers(r);
   r.cli(r.wtA, "post", "@S5 the whole text");
   const dir = path.join(r.home, "logs", day(), "messages");
   const lines = fs.readdirSync(dir).flatMap((f) => fs.readFileSync(path.join(dir, f), "utf8").trim().split("\n").map((l) => JSON.parse(l)));
@@ -58,7 +58,7 @@ test("info (the default): logfmt lines in the server log, no day folder", () => 
   const r = makeRepo();
   repos.push(r);
   assert.match(r.cli(r.repo, "log-level"), /^log level info/);
-  openTwoRunners(r);
+  openTwoMembers(r);
   r.cli(r.wtB, "merge-lock", "--lock-only", "--onto", "main");
   const lines = fs
     .readFileSync(path.join(r.home, "swarm-server.log"), "utf8")

@@ -14,7 +14,7 @@ description: "Use to keep a TypeScript/JavaScript codebase in the state that mak
 | Verb | Answers |
 |---|---|
 | `overview [scope] [--since <ref>]` | drift since the base first, then net lines, size, cycles, upward imports, hubs, hotspots, outliers, fat units, dead exports, shallow modules |
-| `check [--since <ref>]` | the gate: exit 1 on a structural regression; hotspots touched and growth are warnings |
+| `check [--since <ref>]` | the gate: exit 1 on a structural regression, the guide-screaming-architecture checker's new violations among them; hotspots touched and growth are warnings |
 | `cycles [scope]` | import cycles between modules and between files, one import site each |
 | `deps <folder\|file\|package> [--edges]` | who imports it and what it imports, by unit, with the import lines; `--edges` every file:line behind each |
 | `layers [scope]` | the order the imports imply, one stack per group of parts that never import each other; upward imports go against it |

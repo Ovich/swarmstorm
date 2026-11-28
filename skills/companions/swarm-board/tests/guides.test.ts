@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SHIPPED_GUIDE_PATHS, discoverGuides, parseGuide } from "../src/cli/guides.ts";
+import { SHIPPED_GUIDE_PATHS, discoverGuides, parseGuide } from "../src/cli/verbs/members/guides.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 
@@ -168,7 +168,7 @@ test("golden V-32 (D69): merged --report naming an existing file is refused with
 test("the shipped guides carry no paths: key, and the board gives them every code file", () => {
   const toolRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const shipped = discoverGuides(toolRoot, null);
-  assert.deepEqual(shipped.map((g) => g.name).sort(), ["complexity", "deepen-module"]);
+  assert.deepEqual(shipped.map((g) => g.name).sort(), ["complexity", "deepen-module", "screaming-architecture"]);
   for (const g of shipped) assert.deepEqual(g.paths, SHIPPED_GUIDE_PATHS);
   assert.equal(parseGuide("---\nname: guide-x\ndescription: d\n---\n", "guide-x"), null, "a project guide still needs its own paths");
 });

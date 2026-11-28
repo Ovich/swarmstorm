@@ -10,7 +10,7 @@ const SRC = path.resolve(import.meta.dirname, "..", "src");
 const AIVIEW = path.resolve(import.meta.dirname, "..", "..", "aiview");
 
 /** §3.1, bottom to top. */
-const RANK: Record<string, number> = { host: 0, contract: 1, link: 2, packs: 2, board: 3, client: 4, server: 4, cli: 5 };
+const RANK: Record<string, number> = { host: 0, contract: 1, store: 1, link: 2, packs: 2, board: 3, client: 4, server: 4, cli: 5 };
 
 type Import = { from: string; spec: string; target: string | null; dynamic: boolean };
 

@@ -11,6 +11,7 @@ import { openRawStore } from "./fixtures/raw-store.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 import type { MemberActivity } from "../src/contract/wire.ts";
 import { tick2 } from "./fixtures/tick2.ts";
+import { rosterLine } from "../src/cli/lines.ts";
 
 const REPO = "/repos/one/.git";
 let dir: string;
@@ -136,4 +137,19 @@ test("U-F20: a badge that comes with time alone is a change the readers redraw o
   tick2(board, run.id, new Date(base), (m) => (m === "a" ? { connected: false, lostAt: base - 300_000 } : linked(m)));
   assert.ok(version() > before);
   pins("g/a", "lost", "lost");
+});
+
+test("product-shape#D1, D3: the roster line, the roster and the snapshot carry the context size and its age; a null keeps it", () => {
+  const { run } = setup();
+  const line = (): string => rosterLine(board.roster(REPO).find((r) => r.name === "g/a")!, board.roster(REPO));
+  assert.match(line(), /  working  context unknown  doing: x/);
+  const readAt = Date.now() - 4 * 60_000;
+  board.recordActivity(run.id, "a", act({ grewAt: Date.now(), context: 85_000, contextAt: readAt }), new Date());
+  assert.match(line(), /  working  context 85k \(4m ago\)  doing: x/);
+  board.recordActivity(run.id, "a", act({ grewAt: Date.now(), context: null }), new Date());
+  assert.deepEqual(board.roster(REPO).find((r) => r.name === "g/a")!.context, { tokens: 85_000, at: readAt });
+  // an older link sends no contextAt: the frame's receive time dates the size
+  const received = new Date();
+  board.recordActivity(run.id, "a", act({ context: 90_000 }), received);
+  assert.deepEqual(board.snapshot(REPO).roster.find((r) => r.member === "g/a")!.context, { tokens: 90_000, at: received.getTime() });
 });

@@ -15,7 +15,7 @@ table flag_posts: CREATE TABLE flag_posts(repo TEXT NOT NULL,path TEXT NOT NULL,
 table liveness_warned: CREATE TABLE liveness_warned(run INTEGER NOT NULL,member TEXT NOT NULL,cond TEXT NOT NULL,PRIMARY KEY(run,member,cond))
 table lock_requests: CREATE TABLE lock_requests(repo TEXT NOT NULL,participant INTEGER NOT NULL,asked_at TEXT NOT NULL,granted_at TEXT,merged_at TEXT,refused INTEGER NOT NULL DEFAULT 0)
 table lock_waiters: CREATE TABLE lock_waiters(repo TEXT NOT NULL,participant INTEGER NOT NULL,PRIMARY KEY(repo,participant))
-table member_activity: CREATE TABLE member_activity(run INTEGER NOT NULL,member TEXT NOT NULL,grew_at INTEGER,tokens INTEGER NOT NULL DEFAULT 0,context INTEGER,open_tool TEXT,open_target TEXT,open_since INTEGER,last_tool TEXT,finished INTEGER NOT NULL DEFAULT 0,at INTEGER NOT NULL,open_wait INTEGER NOT NULL DEFAULT 0,in_turn INTEGER,last_line TEXT,bg_target TEXT,bg_since INTEGER,bg_grew_at INTEGER,transcript TEXT,open_label TEXT,open_command TEXT,bg_label TEXT,bg_command TEXT,listener_running INTEGER,listener_ended_at INTEGER,PRIMARY KEY(run,member))
+table member_activity: CREATE TABLE member_activity(run INTEGER NOT NULL,member TEXT NOT NULL,grew_at INTEGER,tokens INTEGER NOT NULL DEFAULT 0,context INTEGER,open_tool TEXT,open_target TEXT,open_since INTEGER,last_tool TEXT,finished INTEGER NOT NULL DEFAULT 0,at INTEGER NOT NULL,open_wait INTEGER NOT NULL DEFAULT 0,in_turn INTEGER,last_line TEXT,bg_target TEXT,bg_since INTEGER,bg_grew_at INTEGER,transcript TEXT,open_label TEXT,open_command TEXT,bg_label TEXT,bg_command TEXT,listener_running INTEGER,listener_ended_at INTEGER,context_at INTEGER,PRIMARY KEY(run,member))
 table member_links: CREATE TABLE member_links(run INTEGER NOT NULL,member TEXT NOT NULL,connected INTEGER NOT NULL,lost_at INTEGER,seen_at INTEGER,cause TEXT,PRIMARY KEY(run,member))
 table merge_locks: CREATE TABLE merge_locks(repo TEXT PRIMARY KEY,participant INTEGER NOT NULL,at TEXT NOT NULL,onto TEXT,reflog_mark INTEGER,files TEXT)
 table messages: CREATE TABLE messages(seq INTEGER PRIMARY KEY AUTOINCREMENT,repo TEXT NOT NULL,author INTEGER NOT NULL,body TEXT NOT NULL,about TEXT,kind TEXT NOT NULL DEFAULT 'msg',mentions TEXT NOT NULL DEFAULT '[]',at TEXT NOT NULL,by_board INTEGER NOT NULL DEFAULT 0,meta TEXT,run INTEGER,endorses INTEGER,event TEXT,task INTEGER NOT NULL DEFAULT 0,after TEXT)
@@ -28,4 +28,4 @@ table settings: CREATE TABLE settings(name TEXT PRIMARY KEY,value TEXT NOT NULL)
 table sqlite_sequence: CREATE TABLE sqlite_sequence(name,seq)
 table token_readings: CREATE TABLE token_readings(run INTEGER NOT NULL,member TEXT NOT NULL,t TEXT NOT NULL,tokens INTEGER NOT NULL)
 table transcripts: CREATE TABLE transcripts(run INTEGER NOT NULL,member TEXT NOT NULL,path TEXT NOT NULL,adapter TEXT,offset INTEGER NOT NULL DEFAULT 0,tokens INTEGER NOT NULL DEFAULT 0,readable INTEGER NOT NULL DEFAULT 0,read_at TEXT,moved_at TEXT,PRIMARY KEY(run,member))
-user_version 1
+user_version 2

@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBoardOfKey, fetchDocument, fetchProjectBoard, type DocumentResponse } from "./lib/api.ts";
-import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
-import { useDocuments } from "./hooks/useDocuments.ts";
-import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
-import { Sidebar } from "./components/shell/Sidebar.tsx";
-import { TopBar } from "./components/shell/TopBar.tsx";
-import { DocumentsPanel, type ListSection } from "./components/docs/DocumentsPage.tsx";
-import { DocHeader } from "./components/docs/DocHeader.tsx";
-import { MarkdownView } from "./components/viewers/MarkdownView.tsx";
-import { PendingCards } from "./components/docs/PendingCards.tsx";
-import { PrototypeFrame } from "./components/viewers/PrototypeFrame.tsx";
-import { PdfFrame } from "./components/viewers/PdfFrame.tsx";
-import { BoardView } from "./components/viewers/board/BoardView.tsx";
-import { readRunInHash } from "./lib/board/hash.ts";
+import { boardHash, hashWithBoardProject, readBoardHash } from "../src/board/hash.ts";
+import { useDocuments } from "./documents/useDocuments.ts";
+import { pointerHash, readPointer, type Pointer } from "../src/prototype/pointer.ts";
+import { Sidebar } from "./shell/Sidebar.tsx";
+import { TopBar } from "./shell/TopBar.tsx";
+import { DocumentsPanel, type ListSection } from "./documents/DocumentsPage.tsx";
+import { DocHeader } from "./documents/DocHeader.tsx";
+import { MarkdownView } from "./ui/viewers/MarkdownView.tsx";
+import { PendingCards } from "./pending/PendingCards.tsx";
+import { PrototypeFrame } from "./prototype/PrototypeFrame.tsx";
+import { PdfFrame } from "./ui/viewers/PdfFrame.tsx";
+import { BoardView } from "./board/BoardView.tsx";
+import { readRunInHash } from "./board/hash.ts";
 
 /** The board page's older address, still read; the board's own is its hash, `#board&project=<name>` (board-split#D41, D47). */
 export const BOARD_PATH = "/board";

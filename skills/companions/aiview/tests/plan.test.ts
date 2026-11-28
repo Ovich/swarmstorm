@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { check, readApproval } from "../src/core/plan.ts";
+import { check, readApproval } from "../src/plan/approval.ts";
 
 /** A plan as write-plan writes it: the status in the header, the decisions in §8. */
 const plan = (status: string, rows: string) => `# feed, plan

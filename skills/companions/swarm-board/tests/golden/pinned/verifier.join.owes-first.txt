@@ -2,8 +2,8 @@ exit 0
 you are g/v1, <nick:v1>: @v1 or @<Nick:v1> mentions you
 orchestrator <nick:orchestrator>: working
 v1 <nick:v1>: working
-g/orchestrator  run 1  working  <n> unread  doing: -
-<nick:v1> · g/v1  run 1  working  doing: x
+g/orchestrator  run 1  working  context unknown  <n> unread  doing: -
+<nick:v1> · g/v1  run 1  working  context unknown  doing: x
 pass --as g/v1 on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post
 before you: what this seat said and was told: node <cli> thread --run 1 --with v1 --phase all; the run's phases: node <cli> phases --run 1
 node <cli> post "@orchestrator <your verdict and findings table>" --as g/v1    # your report: a finding at a stop, or the table at the walk's end

@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Presence } from "../src/board/board.ts";
-import { STALL_MS_DEFAULT } from "../src/board/liveness.ts";
+import { STALL_MS_DEFAULT } from "../src/board/stall.ts";
 import { answer, lostMentionLines } from "../src/cli/answer/index.ts";
 import type { Situation } from "../src/cli/answer/situation.ts";
 import { WORDING } from "../src/cli/answer/wording.ts";

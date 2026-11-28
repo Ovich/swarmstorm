@@ -1,11 +1,11 @@
 // No test path reaches a real browser (board-split: a test run flooded the person's browser with tabs).
-// Every opener goes through src/core/browser.ts, which refuses under AIVIEW_NO_BROWSER=1 and for any home but the person's.
+// Every opener goes through src/host/browser.ts, which refuses under AIVIEW_NO_BROWSER=1 and for any home but the person's.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { browserCommand, browserRefusal } from "../src/core/browser.ts";
+import { browserCommand, browserRefusal } from "../src/host/browser.ts";
 
 const SRC = path.resolve(import.meta.dirname, "..", "src");
 
@@ -30,8 +30,8 @@ test("on Windows the URL reaches the protocol handler as one untouched argument,
   assert.deepEqual(browserCommand(url, "linux"), ["xdg-open", [url]]);
 });
 
-test("no file under src/ but core/browser.ts names a browser launcher", () => {
-  const files = fs.readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((f) => /\.(ts|tsx)$/.test(f) && path.normalize(f) !== path.normalize("core/browser.ts"));
+test("no file under src/ but host/browser.ts names a browser launcher", () => {
+  const files = fs.readdirSync(SRC, { recursive: true, encoding: "utf8" }).filter((f) => /\.(ts|tsx)$/.test(f) && path.normalize(f) !== path.normalize("host/browser.ts"));
   const launchers = files.flatMap((f) =>
     fs
       .readFileSync(path.join(SRC, f), "utf8")

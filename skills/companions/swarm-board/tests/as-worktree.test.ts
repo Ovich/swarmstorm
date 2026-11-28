@@ -4,21 +4,21 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];
 afterEach(() => {
   for (const r of repos) r.cleanup();
   repos = [];
 });
-const twoRunners = (): { r: Repo; id: string } => {
+const twoMembers = (): { r: Repo; id: string } => {
   const r = makeRepo("swarm-as-");
   repos.push(r);
-  return { r, id: String(openTwoRunners(r)) };
+  return { r, id: String(openTwoMembers(r)) };
 };
 
 test("--as naming another member from a member's worktree is refused, with the command run as that member", () => {
-  const { r, id } = twoRunners();
+  const { r, id } = twoMembers();
   const other = r.swarm(r.wtA, ["doing", "x", "--as", "review-tool/S5"]);
   assert.equal(other.status, 1);
   assert.match(other.stderr, /^--as review-tool\/S5: refused: the folder you run in is review-tool\/S3's, and a member acts only as itself\. Run it as review-tool\/S3: node \S+ doing x --as review-tool\/S3$/m);
@@ -31,7 +31,7 @@ test("--as naming another member from a member's worktree is refused, with the c
 });
 
 test("an ended seat taken back by a fresh join calls from its worktree as before", () => {
-  const { r, id } = twoRunners();
+  const { r, id } = twoMembers();
   r.cli(r.repo, "end", "--seat", "S3", "--as", "review-tool/orchestrator");
   r.cli(r.wtA, "join", "--run", id, "--seat", "S3", "--doing", "back");
   assert.match(r.cli(r.wtA, "doing", "again", "--as", "review-tool/S3"), /review-tool\/S3 doing: again/);
@@ -39,7 +39,7 @@ test("an ended seat taken back by a fresh join calls from its worktree as before
 });
 
 test("v1-F1: join naming another member from a live member's worktree is refused, and that member's task stays unread", () => {
-  const { r, id } = twoRunners();
+  const { r, id } = twoMembers();
   r.cli(r.repo, "post", "@S5 your task", "--as", "review-tool/orchestrator");
   const unreadOfS5 = (): number => (JSON.parse(r.cli(r.repo, "roster", "--json")).roster as { name: string; unread: number }[]).find((m) => m.name === "review-tool/S5")!.unread;
   assert.equal(unreadOfS5(), 1);
@@ -51,14 +51,14 @@ test("v1-F1: join naming another member from a live member's worktree is refused
 });
 
 test("a seat is taken back from its own worktree while its member lives, and from the checkout once it ended", () => {
-  const { r, id } = twoRunners();
+  const { r, id } = twoMembers();
   assert.match(r.cli(r.wtA, "join", "--run", id, "--seat", "S3", "--doing", "again", "--as", "review-tool/S3"), /you are review-tool\/S3/);
   r.cli(r.repo, "end", "--seat", "S5", "--as", "review-tool/orchestrator");
   assert.match(r.cli(r.repo, "join", "--run", id, "--seat", "S5", "--doing", "back", "--as", "review-tool/S5"), /you are review-tool\/S5/);
 });
 
 test("close and seat add refuse anyone but the run's orchestrator, naming the command to run as it", () => {
-  const { r, id } = twoRunners();
+  const { r, id } = twoMembers();
   const asOrchestrator = (verb: string) => new RegExp(`^${verb}: refused: only the orchestrator of run ${id} may .*Run it as the orchestrator: node \\S+ ${verb} .*--run ${id} --as review-tool/orchestrator$`, "m");
   const anonymous = r.swarm(r.repo, ["close", "--run", id]);
   assert.equal(anonymous.status, 1);

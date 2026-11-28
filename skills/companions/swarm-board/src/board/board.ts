@@ -2,33 +2,35 @@
 // calling, and waking a `wait`. `openBoard` composes it from the store and the board's modules, each reaching the others
 // only through what it is given; SQL, the prepare cache, the transaction and waking stay inside them. Callers hold the
 // typed Board it returns. The code pack's claims and merge lock live in its own tables, behind this Board.
-import { SQLITE_PATH } from "./home.ts";
-import { openStore } from "./store/store.ts";
+import { SQLITE_PATH } from "../store/home.ts";
+import { openStore } from "../store/store.ts";
 import type { Participant } from "../contract/board.ts";
 import type { Board } from "./types.ts";
 import { makeRows } from "./rows.ts";
 import { makePaths } from "./paths.ts";
-import { makeMessages } from "./messages.ts";
+import { makeMessages } from "./conversation/messages.ts";
 import { makePackBridge, type PackBridge } from "./pack-bridge.ts";
-import { makePhaseReads } from "./phase-reads.ts";
-import { makeMemberView } from "./member-view.ts";
-import { makeDelivery } from "./delivery.ts";
-import { makeRuns } from "./runs.ts";
-import { makeMembers } from "./members.ts";
-import { makeAllDone, makePhases } from "./phases.ts";
-import { makeTalk } from "./talk.ts";
-import { makeTick } from "./tick.ts";
-import { makeUpkeep } from "./upkeep.ts";
-import { makePage } from "./page.ts";
-import { makeThreadRead } from "./thread-read.ts";
-import { makeCalls } from "./calls.ts";
+import { makePhaseReads } from "./phases/phase-reads.ts";
+import { makeMemberView } from "./members/member-view.ts";
+import { makeDelivery } from "./conversation/delivery.ts";
+import { makeRuns } from "./run/runs.ts";
+import { makePause } from "./run/pause.ts";
+import { makeMembers } from "./members/members.ts";
+import { makeAllDone, makePhases } from "./phases/phases.ts";
+import { makePhaseHistory } from "./phases/phase-history.ts";
+import { makeTalk } from "./conversation/talk.ts";
+import { makeMemberStates } from "./members/states.ts";
+import { makeRetention } from "./run/retention.ts";
+import { makeSnapshot } from "./snapshot.ts";
+import { makeThreadRead } from "./conversation/thread-read.ts";
+import { makeCalls } from "./members/calls.ts";
 
 export type * from "./types.ts";
-export { progressText } from "./owing.ts";
-export { BOARD_AUTHOR } from "./mentions.ts";
-export { projectFolderName } from "./page.ts";
-export { THREAD_LIMIT } from "./thread-read.ts";
-export { UPKEEP_EVERY_MS } from "./upkeep.ts";
+export { progressText } from "./progress-line.ts";
+export { BOARD_AUTHOR } from "./conversation/mentions.ts";
+export { projectFolderName } from "./snapshot.ts";
+export { THREAD_LIMIT } from "./conversation/thread-read.ts";
+export { UPKEEP_EVERY_MS } from "./run/retention.ts";
 
 export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const store = await openStore(dbPath);
@@ -47,11 +49,13 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     ...makeRuns(store, rows, messages, packs, view),
     ...makeMembers(store, rows, messages, packs, owing, view, delivery),
     ...makePhases(store, rows, messages, owing, delivery, allDoneOnce),
+    ...makePause(store, rows, messages, delivery),
     ...makeTalk(store, rows, messages, packs),
-    ...makeTick(store, rows, messages, packs, owing, view, allDoneOnce),
-    ...makeUpkeep(store, packs, delivery),
-    ...makePage(store, rows, paths, packs, owing, view, delivery),
+    ...makeMemberStates(store, rows, messages, packs, owing, view, allDoneOnce),
+    ...makeRetention(store, packs, delivery),
+    ...makeSnapshot(store, rows, paths, packs, owing, view, delivery),
     ...makeThreadRead(store, rows),
+    ...makePhaseHistory(store, rows),
     deliverMentions: delivery.deliverMentions,
     unreadMentions: delivery.unreadMentions,
     wait: delivery.wait,

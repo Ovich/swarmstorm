@@ -17,7 +17,8 @@ Existing code, cited `file:line`, then the after picture. New work has the after
 only. A table of what replaces what.
 
 ## 3. Modules, after
-The module map: who imports whom, and the imports that must not exist. Then one subsection per
+The module map: who imports whom, and the imports that must not exist, grouped by product surface
+in the product's words, as the `guide-screaming-architecture` skill says. Then one subsection per
 deep module, as the `deepen-module` skill designs it: its usage (the complete code a caller
 writes), the entry as signatures without bodies, what it hides, what stays outside, its
 conditions held or broken, the gap from today.
@@ -63,7 +64,8 @@ is a post, judged before the next.
 
 1. **Goal**: two or three lines: what changes, what is out.
 2. **Architecture**: the module map as a diagram (through the `write-diagrams` skill): who imports
-   whom, before → after when it changes, the imports that must not exist.
+   whom, before → after when it changes, the imports that must not exist; grouped by product
+   surface, as the `guide-screaming-architecture` skill says.
 3. **Modules**: one post per deep module, as the `deepen-module` skill designs it: its usage (the
    code a caller writes), its entry as signatures without bodies, what it hides; a condition it
    breaks, one line.

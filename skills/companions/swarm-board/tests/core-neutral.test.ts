@@ -10,10 +10,10 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const SRC = join(import.meta.dirname, "..", "src");
-const CORE_DIRS = ["board", "server", "link", "contract"].map((d) => join(SRC, d));
+const CORE_DIRS = ["board", "store", "server", "link", "contract"].map((d) => join(SRC, d));
 const CONTRACT_CODE = join(SRC, "contract", "code.ts");
 const ANSWER = join(SRC, "cli", "answer");
-const CODE_ANSWER = new Set(["code-rules.ts", "code-wording.ts"]);
+const CODE_ANSWER = new Set(["code.ts"]);
 const DOMAIN_WORDS = new Set(["worktree", "worktrees", "claim", "claims", "merge", "merged", "flag"]);
 const EXCEPTION = "AGENTS EXCEPTION";
 
@@ -91,7 +91,7 @@ test("the core names no code domain beyond today's allowed sites, which may only
     const allowed = ALLOWED[file] ?? 0;
     if (lines.length > allowed) over.push(`${file}: ${lines.length} sites, allowed ${allowed}\n  ${lines.join("\n  ")}`);
   }
-  assert.deepEqual(over, [], "a code-domain word in the core: move it into src/packs/code/ (or code-wording.ts)");
+  assert.deepEqual(over, [], "a code-domain word in the core: move it into src/packs/code/ (or cli/answer/code.ts)");
 });
 
 test("an allowed count above today's sites is lowered, so the list only shrinks (D24)", () => {
