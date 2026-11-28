@@ -6,9 +6,6 @@ import path from "node:path";
 import { isAlive } from "../../../swarm-board/src/host/proc.ts";
 import { DATA_ROOT, ensureHome } from "./home.ts";
 
-/** Whether a pid is a live process, EPERM counting alive (codebase-rework#D19): the one copy, swarm-board's. */
-export { isAlive };
-
 export const PID_FILE = path.join(DATA_ROOT, "aiview.pid");
 export const PORT_FILE = path.join(DATA_ROOT, "aiview.port");
 const VERSION_FILE = path.join(DATA_ROOT, "aiview.version");

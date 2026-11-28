@@ -3,10 +3,10 @@
 import { spawnSync } from "node:child_process"; // AGENTS EXCEPTION (D39): the raw starter of the line marked so
 import fs from "node:fs";
 import path from "node:path";
-import { hiddenSpawn, hiddenSpawnSync } from "../../../swarm-board/src/host/proc.ts";
+import { hiddenSpawn, hiddenSpawnSync, isAlive } from "../../../swarm-board/src/host/proc.ts";
 import { TOOL_ROOT, type Index } from "../core/db.ts";
 import { defaultPort, firstFreePort } from "../core/home.ts";
-import { isAlive, readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
+import { readServerStatus, readServerToken, PID_FILE, PORT_FILE, type ServerStatus } from "../core/serverstate.ts";
 import { TOKEN_HEADER } from "../server/guard.ts";
 import { collectionVersion } from "../core/collectionversion.ts";
 import type { ShowResponse } from "../core/api.ts";
