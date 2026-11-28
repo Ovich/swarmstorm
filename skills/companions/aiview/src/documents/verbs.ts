@@ -2,8 +2,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { type Document, type UpdatePatch } from "../store/index-db.ts";
-import { sidecarOf } from "./paths.ts";
-import { projectForCwd } from "../projects/projects.ts";
+import { sidecarOf } from "../store/paths.ts";
+import { projectForCwd } from "../store/projects.ts";
 import { docsDirFor } from "../host/home.ts";
 import { readServerStatus } from "../host/serverstate.ts";
 import { openBrowser } from "../host/browser.ts";

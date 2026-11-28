@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { formatOf, kindFromName, repoRootOf, titleOf, toAbs, toStored } from "../src/documents/paths.ts";
+import { formatOf, kindFromName, repoRootOf, titleOf, toAbs, toStored } from "../src/store/paths.ts";
 
 test("kindFromName follows <name>.<kind>.<ext>", () => {
   assert.equal(kindFromName("2026-08-23-topic.brainstorm.md"), "brainstorm");

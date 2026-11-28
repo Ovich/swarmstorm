@@ -16,9 +16,9 @@ import type {
   ShowResponse,
   OpenEventPayload,
 } from "../contract/api.ts";
-import { projectForCwd } from "../projects/projects.ts";
+import { projectForCwd } from "../store/projects.ts";
 import { resolveBindings } from "../prototype/bind.ts";
-import { formatOf, isHtml, isPdf, readDoc } from "../documents/paths.ts";
+import { formatOf, isHtml, isPdf, readDoc } from "../store/paths.ts";
 import { isName } from "../prototype/pointer.ts";
 import { clearServerFiles, writeServerFiles } from "../host/serverstate.ts";
 import { collectionVersion } from "../host/collectionversion.ts";

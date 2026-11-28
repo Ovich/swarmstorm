@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { listComponents, resolveBindings } from "./bind.ts";
-import { isHtml, readDoc } from "../documents/paths.ts";
+import { isHtml, readDoc } from "../store/paths.ts";
 import { pointerHash, isName, unknownNames } from "./pointer.ts";
 import type { ShowResponse } from "../contract/api.ts";
 import type { ParsedArgs } from "../cli/args.ts";

@@ -2,7 +2,7 @@
 // index lookups more than one verb makes.
 import path from "node:path";
 import { openIndex, type Document, type Index, type RegisterOptions } from "../store/index-db.ts";
-import { projectForCwd } from "../projects/projects.ts";
+import { projectForCwd } from "../store/projects.ts";
 import type { ParsedArgs } from "./args.ts";
 
 /** A refusal: its message is printed as is, and the verb exits 1. */

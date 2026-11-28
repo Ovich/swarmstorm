@@ -1,5 +1,5 @@
 // The verb of the project's board page in the viewer.
-import { projectForCwd } from "../projects/projects.ts";
+import { projectForCwd } from "../store/projects.ts";
 import { boardHash } from "./hash.ts";
 import { readServerStatus } from "../host/serverstate.ts";
 import { openBrowser } from "../host/browser.ts";

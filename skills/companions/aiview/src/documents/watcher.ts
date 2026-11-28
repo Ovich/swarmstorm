@@ -8,7 +8,7 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import { sidecarOf } from "./paths.ts";
+import { sidecarOf } from "../store/paths.ts";
 
 interface WatchableDoc {
   id: number;

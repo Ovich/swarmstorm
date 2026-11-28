@@ -1,6 +1,6 @@
 // Shared API payload types — the contract between src/server and app/.
 // The contract-guard test asserts the server actually returns these shapes.
-import type { DocFormat } from "../documents/paths.ts";
+import type { DocFormat } from "../store/paths.ts";
 import type { Document, DocumentWithState, Pending } from "../store/index-db.ts";
 import type { BindingIssue } from "../prototype/bind.ts";
 

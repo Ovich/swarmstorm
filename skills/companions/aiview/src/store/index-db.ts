@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { commonGitDir } from "../../../swarm-board/src/host/place.ts";
 import { DATA_ROOT, DOCS_ROOT, ensureHome } from "../host/home.ts";
-import { resolveProject, type Project } from "../projects/projects.ts";
+import { resolveProject, type Project } from "./projects.ts";
 import {
   formatOf,
   currentKind,
@@ -17,7 +17,7 @@ import {
   toAbs,
   toStored,
   type DocFormat,
-} from "../documents/paths.ts";
+} from "./paths.ts";
 
 // node:sqlite prints an ExperimentalWarning on import; keep every other warning.
 process.removeAllListeners("warning");

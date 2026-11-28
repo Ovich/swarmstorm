@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { SQLITE_PATH, TOOL_ROOT } from "../store/index-db.ts";
-import { projectForCwd } from "../projects/projects.ts";
+import { projectForCwd } from "../store/projects.ts";
 import { DATA_ROOT, docsDirFor, DOCS_ROOT, ensureHome } from "../host/home.ts";
 import { readServerStatus } from "../host/serverstate.ts";
 import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, withIndex, type VerbContext } from "../cli/context.ts";
