@@ -3,7 +3,7 @@ import { ListFilter, Search } from "lucide-react";
 import { cn } from "../lib/utils.ts";
 import type { DocumentWithState } from "../lib/api.ts";
 import { useFilters } from "./useFilters.ts";
-import { sidebarEntries } from "../shell/useSidebarEntries.ts";
+import { sidebarEntries } from "./useSidebarEntries.ts";
 import { Input } from "../ui/input.tsx";
 import { Badge } from "../ui/badge.tsx";
 import { KindChip } from "./KindChip.tsx";

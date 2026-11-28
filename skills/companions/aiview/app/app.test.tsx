@@ -7,7 +7,7 @@ import { applyFilters, applyScope } from "./documents/useFilters.ts";
 import { truncatePath, kindHue } from "./lib/utils.ts";
 import { DocPath } from "./documents/DocPath.tsx";
 import { shouldLoad } from "./App.tsx";
-import { sidebarEntries } from "./shell/useSidebarEntries.ts";
+import { sidebarEntries } from "./documents/useSidebarEntries.ts";
 import { docActivity } from "./documents/docActivity.ts";
 import { DocItem } from "./documents/DocItem.tsx";
 import { ProjectSelector } from "./shell/ProjectSelector.tsx";
@@ -71,7 +71,7 @@ describe("utils", () => {
 
 describe("sidebarEntries", () => {
   test("groups collapse into containers, members oldest-first, entries by latest activity", async () => {
-    const { sidebarEntries } = await import("./shell/useSidebarEntries.ts");
+    const { sidebarEntries } = await import("./documents/useSidebarEntries.ts");
     // activity is the file's mtime (updated_at), not the index's last_seen_at
     const docs = [
       doc({ id: 1, group_slug: "g", created_at: "2026-08-20T00:00:00Z", updated_at: "2026-08-23T00:00:00Z" }),
@@ -88,7 +88,7 @@ describe("sidebarEntries", () => {
     expect(group.docs.map((d) => d.id)).toEqual([2, 1]); // oldest-first inside
   });
   test("unknown group title falls back to slug", async () => {
-    const { sidebarEntries } = await import("./shell/useSidebarEntries.ts");
+    const { sidebarEntries } = await import("./documents/useSidebarEntries.ts");
     const entries = sidebarEntries([doc({ id: 1, group_slug: "x" })], {});
     expect(entries[0].type === "group" && entries[0].title).toBe("x");
   });

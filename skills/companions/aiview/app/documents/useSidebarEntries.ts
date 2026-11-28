@@ -1,5 +1,5 @@
 import type { DocumentWithState } from "../lib/api.ts";
-import { docActivity } from "../documents/docActivity.ts";
+import { docActivity } from "./docActivity.ts";
 
 export type SidebarEntry =
   | { type: "doc"; doc: DocumentWithState }
