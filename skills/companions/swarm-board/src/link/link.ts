@@ -16,9 +16,6 @@ import type { Binding } from "./shell.ts";
 
 type RunId = number;
 
-/** What started the link: the verb its transcript search looks for (declared by shell.ts). */
-export type { Binding };
-
 /** The link's clocks; tests shorten them. */
 export type LinkTiming = {
   /** after a drop, how long the link tries to reach a server before it exits (D27) */
