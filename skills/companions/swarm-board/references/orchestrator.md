@@ -174,5 +174,5 @@ active tab. `$S status` flags a run idle a day with its close command; ask the p
 
 **`close` cleans up the worktrees the board made for the run**: each one clean and merged goes,
 its branch kept; its answer names each one kept and why (uncommitted changes, commits not
-merged). Merge or discard what it names, then `$S worktree prune`, which sweeps every worktree
+merged). Merge or discard what it names, then `$S worktree prune` (shown by `$S --help code`), which sweeps every worktree
 of a closed run that is clean and merged, and names the rest.
