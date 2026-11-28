@@ -7,10 +7,10 @@ import { Sidebar } from "./shell/Sidebar.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import { DocumentsPanel, type ListSection } from "./documents/DocumentsPage.tsx";
 import { DocHeader } from "./documents/DocHeader.tsx";
-import { MarkdownView } from "./documents/viewers/MarkdownView.tsx";
+import { MarkdownView } from "./ui/viewers/MarkdownView.tsx";
 import { PendingCards } from "./pending/PendingCards.tsx";
 import { PrototypeFrame } from "./prototype/PrototypeFrame.tsx";
-import { PdfFrame } from "./documents/viewers/PdfFrame.tsx";
+import { PdfFrame } from "./ui/viewers/PdfFrame.tsx";
 import { BoardView } from "./board/BoardView.tsx";
 import { readRunInHash } from "./board/hash.ts";
 

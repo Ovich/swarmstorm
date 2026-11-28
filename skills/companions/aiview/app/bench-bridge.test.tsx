@@ -1,7 +1,7 @@
 // The bench bridge: the sidecar path grammar, and the app's relay as PrototypeFrame runs it.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { BENCH_BRIDGE_MARK, isSidecarPath } from "./workbench/bench-bridge.ts";
+import { BENCH_BRIDGE_MARK, isSidecarPath } from "./lib/bench-bridge.ts";
 import { PrototypeFrame } from "./prototype/PrototypeFrame.tsx";
 
 afterEach(() => {

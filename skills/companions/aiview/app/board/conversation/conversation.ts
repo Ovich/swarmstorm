@@ -3,9 +3,8 @@
 // and file (plan 2026-11-27-codebase-rework#D16). No child computes any of it.
 import type { BoardSnapshot, SnapshotEvent, RunSummary } from "../../../../swarm-board/src/client/reader.ts";
 import { nameHandle, parseMentions } from "../../../../swarm-board/src/client/reader.ts";
-import { memberLabel, ORCHESTRATOR, orchestratorOf, splitMember, type RunId } from "../names.ts";
+import { memberLabel, membersOf, ORCHESTRATOR, orchestratorOf, splitMember, type RunId } from "../names.ts";
 import { readEvent, type EventTone, type Reading } from "../lines.ts";
-import { membersOf } from "../run/runs.ts";
 
 // ── mentions ────────────────────────────────────────────────────────────────────────
 

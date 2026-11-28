@@ -1,7 +1,7 @@
 // The board page's runs and who is in them (plan 2026-11-27-codebase-rework#D16): the run tabs,
 // the archive, a run's roster, and the files its members change or merged. Pure functions of the snapshot.
 import type { BoardSnapshot, SnapshotMember, RunSummary, Kind } from "../../../../swarm-board/src/client/reader.ts";
-import { ORCHESTRATOR, orchestratorOf, type RunId } from "../names.ts";
+import { membersOf, ORCHESTRATOR, orchestratorOf, type RunId } from "../names.ts";
 import { readEvent } from "../lines.ts";
 
 /** An open run as a tab. */
@@ -74,10 +74,6 @@ export function pauseChip(run: RunSummary): PauseChip | null {
 
 /** Each member's funny name (D43), by `<plan>/<seat>`, the orchestrators' included (plan D17). */
 export const nicksOf = (snap: BoardSnapshot): Map<string, string> => new Map(snap.roster.map((r) => [r.member, r.nick]));
-
-/** A run's members: the roster entries of its group. */
-// by run, never by group: runs of one group would otherwise show each other's members
-export const membersOf = (snap: BoardSnapshot, run: RunSummary): SnapshotMember[] => snap.roster.filter((r) => (r.run === undefined ? r.plan === run.group : r.run === run.run));
 
 /** Orchestrators first, then working, waiting, merging, then ended and done. */
 const ORDER: Record<string, number> = { working: 1, waiting: 2, merging: 3, ended: 4, done: 4 };

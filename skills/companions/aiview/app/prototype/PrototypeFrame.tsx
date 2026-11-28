@@ -7,7 +7,7 @@ import { withOverlay } from "./overlay.ts";
 import { prototypeControls, withBridge } from "./bridge.ts";
 import { pointMessage, withSpotlight } from "./spotlight.ts";
 import { THEMES, type Theme, withTheme } from "./theme.ts";
-import { benchState, useBenchRelay, withBenchBridge } from "../workbench/bench-bridge.ts";
+import { benchState, useBenchRelay, withBenchBridge } from "../lib/bench-bridge.ts";
 
 const VIEWPORTS: Array<[string, number]> = [
   ["mobile", 390],

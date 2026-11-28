@@ -1,12 +1,16 @@
 // The board page's formatting primitives: a member's parts, a time, a path, a run's hue and count
 // (plan 2026-11-27-codebase-rework#D16). Pure, of the snapshot's strings alone.
-import type { RunSummary } from "../../../swarm-board/src/client/reader.ts";
+import type { BoardSnapshot, RunSummary, SnapshotMember } from "../../../swarm-board/src/client/reader.ts";
 import { planCode } from "../../../swarm-board/src/client/reader.ts";
 
 /** A run's id, as the BoardReader's summaries carry it. */
 export type RunId = RunSummary["run"];
 
 export const ORCHESTRATOR = "orchestrator";
+
+/** A run's members: the roster entries of its group. */
+// by run, never by group: runs of one group would otherwise show each other's members
+export const membersOf = (snap: BoardSnapshot, run: RunSummary): SnapshotMember[] => snap.roster.filter((r) => (r.run === undefined ? r.plan === run.group : r.run === run.run));
 
 /** "<plan>/<seat>" → its plan and seat. */
 export function splitMember(name: string): { plan: string; seat: string } {

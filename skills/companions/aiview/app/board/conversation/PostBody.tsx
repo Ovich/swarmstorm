@@ -1,6 +1,6 @@
 import { Children, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import type { Components } from "react-markdown";
-import { RenderedMarkdown } from "../../documents/viewers/MarkdownView.tsx";
+import { RenderedMarkdown } from "../../ui/viewers/MarkdownView.tsx";
 import { RichText } from "../chips.tsx";
 
 type MdNode = { type: string; value?: string; children?: MdNode[] };
