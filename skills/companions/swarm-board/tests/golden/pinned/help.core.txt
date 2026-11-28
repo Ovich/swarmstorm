@@ -28,5 +28,4 @@ usage: swarm <verb> [--json]        (swarm --help code: the merge verbs)
   end     --seat <id> [--as <member>]                              # ends a seat's member while the run is open, its context spent, before a fresh agent joins it (orchestrator)
   log-level [off|info|debug|debug-extended]                       # info (default): the swarm's health as logfmt lines in <data home>/swarm-server.log; debug: every event too, in <data home>/logs/<day>/events.jsonl; debug-extended: each post's text too; 30 days kept
   status                                                          # data home, open runs, each run's phase and its n/m done; a run idle a day is flagged with its close command; each run not on the orchestrators board, with the command registering it
-  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why
 a member is <group>/<seat>, the orchestrator <group>/orchestrator; without --as, the member joined from this worktree

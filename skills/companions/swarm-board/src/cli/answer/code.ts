@@ -17,7 +17,6 @@ export const CODE_IN_CORE_HELP = {
   pauseRefuses: "merge-lock refused",
   closeRemoves: "removes the run's worktrees that are clean and merged, names those it kept and why",
   joinMakes: "on a code run (plan, task) it names your worktree, <git dir>/swarm/worktrees/<run>/<seat> on branch swarm/<run>-<group>/<seat>, made at join, or reuses it",
-  pruneLine: "  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why",
   withoutAs: "the member joined from this worktree",
 };
 
@@ -37,11 +36,8 @@ export const CODE_VERB_USAGE = {
     ],
     example: (as) => `merged 1a2b3c4 --report "what I did" --as ${as}`,
   },
-} satisfies Record<string, VerbUsage>;
-
-/** The code verb whose line sits in the core help (`worktree prune`), its entry of VERB_USAGE. */
-export const CODE_IN_CORE_VERB_USAGE = {
-  worktree: { lines: () => [CODE_IN_CORE_HELP.pruneLine], example: () => "worktree prune" },
+  // product-shape#D28 (P-4): worktree prune is the code pack's, so its line is in --help code, no longer the core help
+  worktree: { lines: () => ["  worktree prune                                                  # removes the board's worktrees of closed runs that are clean and merged; names the others and why"], example: () => "worktree prune" },
 } satisfies Record<string, VerbUsage>;
 
 export const CODE_WORDING = {

@@ -127,7 +127,7 @@ test("close removes the run's clean merged worktrees and names those it kept; wo
   assert.match(pruned, /kept .*S1: run \d+ is open/);
   assert.equal(fs.existsSync(wt(run, "w2")), false);
   assert.ok(fs.existsSync(wt(other, "S1")));
-  assert.match(ok("--help"), /worktree prune/);
+  assert.match(ok("--help", "code"), /worktree prune/);
 });
 
 test("two runs whose group and seat join to the same text get their own folders and branches", () => {

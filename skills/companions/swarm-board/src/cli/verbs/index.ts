@@ -45,9 +45,9 @@ export const VERBS: readonly Verb[] = [
   { names: ["end"], server: "board", help: "core", who: "caller", run: endVerb },
   { names: ["log-level"], server: "none", help: "core", who: "anyone", run: logLevelVerb },
   { names: ["status"], server: "board", help: "core", who: "anyone", run: statusVerb },
-  { names: ["worktree"], server: "board", help: "core", who: "anyone", run: worktreeVerb },
   { names: ["merge-lock"], server: "board", help: "code", who: "member", refusedPaused: true, run: mergeLockVerb },
   { names: ["merged"], server: "board", help: "code", who: "member", run: mergedVerb },
+  { names: ["worktree"], server: "board", help: "code", who: "anyone", run: worktreeVerb },
   { names: ["serve"], server: "self", help: "hidden", who: "anyone", run: serveVerb },
   { names: ["link"], server: "self", help: "hidden", who: "anyone", run: linkVerb },
 ];
