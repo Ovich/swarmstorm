@@ -55,6 +55,7 @@ const member = (
   return {
     member: name,
     badge: null,
+    context: null,
     nick: nickOf(name),
     plan: name.slice(0, i),
     seat: name.slice(i + 1),

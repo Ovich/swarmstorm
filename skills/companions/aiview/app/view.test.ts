@@ -10,7 +10,7 @@ const AT = "2026-10-14T10:00:00Z";
 const run = (id: number, group: string, code: string, open = true): RunSummary => ({
   run: id, kind: "plan", plan: group, group, code, title: `${group} title`, link: null, open, members: 0, done: 1, of: 3,
 });
-const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({ badge: undefined as unknown as null /* an older board: no badge, its liveness says the trouble */,
+const member = (group: string, seat: string, nick: string, state: SnapshotMember["state"] = "working"): SnapshotMember => ({ context: null, badge: undefined as unknown as null /* an older board: no badge, its liveness says the trouble */,
   member: `${group}/${seat}`, nick, plan: group, seat, role: seat, doing: "", state,
   files: [], joined: AT, ended: null, calls: 0, listening: false, lastCall: AT,
 });
