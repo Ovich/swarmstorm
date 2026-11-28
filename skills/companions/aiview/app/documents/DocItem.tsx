@@ -1,5 +1,5 @@
 import { cn, fmtStart, fmtUpdated, projectName } from "../lib/utils.ts";
-import { docActivity } from "../shell/useSidebarEntries.ts";
+import { docActivity } from "./docActivity.ts";
 import type { DocumentWithState } from "../lib/api.ts";
 import { KindChip } from "./KindChip.tsx";
 import { PinToggle } from "./PinToggle.tsx";

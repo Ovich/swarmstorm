@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { DocumentWithState } from "../lib/api.ts";
-import { docActivity } from "../shell/useSidebarEntries.ts";
+import { docActivity } from "./docActivity.ts";
 
 export interface Filters {
   query: string;
