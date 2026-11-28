@@ -11,7 +11,7 @@ import type { PhaseProgress } from "./owing.ts";
 import { RPC_METHODS, type RpcMethod } from "../contract/wire.ts";
 
 export type { Kind } from "../contract/kinds.ts";
-export type { Conflicts, Declared, Message, Participant, RunId, Sharer } from "../contract/board.ts";
+export type { BreachMeta, Conflicts, Declared, Message, Participant, PauseMeta, PhaseMeta, RunId, Sharer, UnlockedMeta } from "../contract/board.ts";
 export type { EventName } from "../contract/events.ts";
 export type { PackRefusal } from "../packs/types.ts";
 export type { PhaseProgress } from "./owing.ts";
