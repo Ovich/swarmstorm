@@ -1,17 +1,15 @@
 // The answer module's wording (board-rework D1): every line and command template of the wait cluster's answers, in one
 // typed table. A placeholder is a typed parameter, so a template called with a missing or wrong value does not compile.
-// The rules choosing which line a member reads are in rules.ts; no verb writes these lines itself.
-import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
-const FOREGROUND_NOTE = `it holds ${FOREGROUND_WAIT_MS / 1000} s, as Claude Code detaches a foreground command that runs past 180 s; run it again when it returns empty`;
+// The rules choosing which line a member reads are in rules.ts; no verb writes these lines itself. Each feature's lines
+// are in its own file (run.ts, members.ts, conversation.ts, phases.ts; product-shape#D20), spread in here; what no one
+// feature owns is written here.
+import { shellWord, type Command } from "./command.ts";
+import { CONVERSATION_WORDING } from "./conversation.ts";
+import { MEMBERS_WORDING } from "./members.ts";
+import { PHASES_WORDING } from "./phases.ts";
+import { RUN_WORDING } from "./run.ts";
 
-/** A command as printed: the words joined, ready to copy. */
-export type Command = string;
-/** Where the orchestrator reads a protocol's phases, before the colon of its first-phase step. */
-const FIRST_PHASE_POINTER = "(its protocol.md's phase table names them)";
-
-/** A verb's entry in VERB_USAGE (usage.ts): its help lines, and the corrected form an argument error offers to copy,
- *  `as` the caller's --as. */
-export type VerbUsage = { lines: (cli: Command) => readonly string[]; example?: (as: string) => string };
+export { shellWord, type Command, type VerbUsage } from "./command.ts";
 
 export const WORDING = {
   // ── commands ──
@@ -21,293 +19,38 @@ export const WORDING = {
   status: (cli: Command): Command => `${cli} status`,
   end: (cli: Command, as: string): Command => `${cli} end --as ${as}`,
 
-  /** board-split D55 (amended): `open --stall-ms` under the floor, raised to it */
-  stallClamped: (askedMs: number, floorMs: number): string => `--stall-ms ${askedMs} is under the ${floorMs} ms floor of the stall window: the run uses ${floorMs}`,
-
   // ── a call the server's connection dropped (board-fixes §2) ──
   retryReading: (verb: string): string => `the call did not complete: run the same ${verb} again, as is`,
   retryWriting: (verb: string, status: Command): string =>
     `the ${verb} may or may not have landed: check with ${status} first, and run it again only if it is not there`,
-
-  // ── the run's page ──
-  /** board-split D41: the run's tab on aiview's board, the board's scoped URL (`#board&project=<name>`, D47), as aiview gives it, with the run in it */
-  runBoardUrl: (boardUrl: string, run: number): string => `${boardUrl}${boardUrl.includes("#") ? "&" : "#"}run=${run}`,
-
-  // ── the link and the listener ──
-  linkStart: (link: Command) => `start your link now, in the background (your harness's background task): ${link}`,
-  listenerStart: (wait: Command) => `start your listener now, in the background (your harness's background task): ${wait}`,
-  waitNow: (afterPhase: boolean, wait: Command) =>
-    `${afterPhase ? "only then wait" : "wait now"}, in the foreground (never a background listener: a seat that ends its turn is lost; ${FOREGROUND_NOTE}): ${wait}`,
-  rearmBackground: (wait: Command) => `you received a new message: before reading it, start this listener again, in the background while you work, in the foreground when you are waiting (${FOREGROUND_NOTE}): ${wait}`,
-  rearmForeground: (wait: Command) => `wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  rearmOrchestrator: (wait: Command) => `act on it, then start this listener again, in the background: ${wait}`,
-  rearmAfterOwed: (owed: string, wait: Command) => `${owed}\nonly then wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  // S30: a member's first wait reads the same as a later one: no "again" for a wait it never made
-  nothingYetOrchestrator: (wait: Command) => `nothing yet; wait: ${wait}`,
-  nothingYet: (wait: Command) => `nothing yet; wait, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  superseded: "superseded by a newer wait",
-  // G14, S26 (board-split D30): the seat stays; an idle member only waits again, never ends itself (the orchestrator's word ends a seat)
-  idle: (wait: Command) => `nothing for you now; the run is open and your seat stays in it: wait again, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  ended: (run: number) => `you have ended in run ${run}: this listener stops; nothing to re-arm; return your summary now`,
   /** break-flow V-4, V-17 (D61): every verb of a member that has ended, its run still open, answers this first */
   endedMember: (run: number) =>
     `you have ended in run ${run}: nothing more to do here; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
-  /** break-flow V-29: `end --seat`, to the orchestrator: the state its member was in, and the line it reads now */
-  seatEnded: (member: string, was: string, told: string) => `${member} ended; it was ${was}; its next call answers: ${told}`,
-  /** break-flow V-41: a lost member's state at its end, never its activity from before it was lost */
-  wasLost: (reason: string) => `lost (${reason})`,
-  /** break-flow V-38 (D73): `end --seat orchestrator` while the run is open */
-  endOrchestratorRefused: (run: number, cli: Command, as: string) =>
-    `end --seat orchestrator: refused, run ${run} is open: the orchestrator's seat ends with its run: ${cli} close --run ${run} --as ${as}`,
   /** trust-adaptations#D23: `--as` naming another participant than the live member whose folder the command runs in */
   /** `words`: the verb and its arguments as given, each already a shell word; its --as value becomes the owner */
   asAnotherMember: (cli: Command, words: string[], as: string, owner: string) => {
     const rerun = words.map((w, i) => (words[i - 1] === "--as" ? shellWord(owner) : w));
     return `--as ${as}: refused: the folder you run in is ${owner}'s, and a member acts only as itself. Run it as ${owner}: ${[cli, ...rerun].join(" ")}`;
   },
-  /** trust-adaptations#D23 (v1-F1): a join naming another member than the live one whose folder the command runs in */
-  joinAsAnotherMember: (joining: string, owner: string) =>
-    `join: refused: the folder you run in is ${owner}'s, a live member, and a folder joins only as its own member. Join ${joining} from its own folder, or from the project's checkout`,
-  /** trust-adaptations#D5: `close` and `seat add` resolve their caller, and only the run's orchestrator may run them */
-  orchestratorOnly: (verb: "close" | "seat add", run: number, caller: string | null, rerun: Command) =>
-    `${verb}: refused: only the orchestrator of run ${run} may ${verb === "close" ? "close it" : "add a seat to it"}${caller ? `, and ${caller} is not` : ""}. Run it as the orchestrator: ${rerun}`,
-  closeRun: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --as ${as}`,
-  /** board-fixes#D6: the second step of a close, the one that closes */
-  closeConfirm: (cli: Command, run: number, as: string): Command => `${cli} close --run ${run} --confirm --as ${as}`,
-  phaseConfirm: (cli: Command, name: string, text: string, flags: string, as: string): Command => `${cli} phase ${name} ${text}${flags} --confirm --as ${as}`,
-  /** The opt-in phases, fixed, each with why it would come now: the orchestrator weighs them before every phase opens. */
-  phaseOptIns: [
-    "prototype: the work adds or changes a screen or a user story; a working prototype first, then the person's go",
-    "architecture: a new module, an interface that changes, or a shape still unclear; the system defined first, then the person's go",
-    "verify: the result must be seen working; verifiers who built none of it walk the running product",
-    "reflect: the same kind of fault keeps coming back; the work paused, every member asked once",
-    "simplify: the run nears its close and replaced old code; cut it back, parity verified",
-    "the person: a decision outside your authority; pause --person, the decision as its reason",
-  ] as readonly string[],
-  phaseConfirmStep: (name: string, optIns: readonly string[], confirm: Command) =>
-    `phase ${name}: confirm the next phase. Does the run need one of these first?\n${optIns.map((o) => `- ${o}`).join("\n")}\n- or a phase in your own words.\nAs planned, open it: ${confirm}`,
-  closeWaitRunning: (run: number, owing: string[], finish = "reported, done") =>
-    `close: not yet, run ${run} has members still owing work: ${owing.join(", ")}. Post no new task; let them finish (${finish}), then run close again`,
-  closeSteps: (run: number, confirm: Command, columns = "| task | seat | state | result |") =>
-    `close: one step first. Post the closing table to the run, written from status: one row per task, ${columns}, then the next steps (what is left, what follows). Then close run ${run}: ${confirm}`,
-  // board-fixes#D5: the roster's doing, its age once a minute old, `stale` once its work landed or an event to it came after it
-  doingAge: (ms: number, stale: boolean) => {
-    const min = Math.floor(Math.max(0, ms) / 60_000);
-    const parts = [...(min >= 1 ? [`${min} min`] : []), ...(stale ? ["stale"] : [])];
-    return parts.length ? ` (${parts.join(", ")})` : "";
-  },
-  // product-shape#D1: how full a member is, in thousands of tokens, and how old that reading is (`ago` worded by the caller)
-  contextShown: (context: { tokens: number; at: number } | null, ago: (at: number) => string) =>
-    context ? `  context ${Math.round(context.tokens / 1000)}k (${ago(context.at)} ago)` : "  context unknown",
-  seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
-  /** break-flow V-46: a second link of one member: the first runs on */
-  linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,
-  /** break-flow V-29: a seat's state as status prints it, in the roster's word: a seat whose member ended reads ended */
-  seatState: (state: string) => (state === "done" ? "ended" : state),
   /** D65: a verb the member may not run now (paused), refused with the line saying why */
   verbRefused: (verb: string, why: string) => `${verb} refused: ${why}`,
-  // V-12: told only to a background listener (the orchestrator's), whose end its harness announces too
-  delivered: "these lines are delivered; the task-end notice is the same event",
-
-  // ── the phase ──
-  phaseWhole: (name: string, text: string) => `phase ${name}: ${text}`,
-  phaseShort: (name: string, status: Command) => `phase ${name} (unchanged; its text: ${status})`,
-  phasePaused: (head: string | null, why: string) => [head, `PAUSED${why}`].filter(Boolean).join("  "),
-  // board-split D65: a paused run's header in status and roster; on the person, it says whose move it is
-  runPausedShown: (paused: string | null, onPerson: boolean) =>
-    paused == null ? "" : onPerson ? `  paused · on you: ${paused || "your decision"}` : `  paused${paused ? `: ${paused}` : ""}`,
-  // board-split D65: a phase opened during a pause is open, but nothing wakes the members before the resume
-  phaseOpenedPaused: (name: string, run: number) => `run ${run} is paused: phase ${name} is open, and its members hear it at resume`,
-  pauseWhy: (person: boolean, text: string) => (person ? `: waiting on the person: ${text || "their decision"}` : text ? `: ${text}` : ""),
-  owedOpen: (name: string, text: string, done: Command) => `phase ${name} is open and asks: ${text}. Do your part now, then mark it done: ${done}`,
-  owedBrief: (name: string, done: Command) => `you owe phase ${name}: do your part, then mark it done: ${done}`,
-  /** board-fixes V1-3 */
-  taskStillOpen: (seq: number, done: Command) =>
-    `your task #${seq} is still open: finish it and report, then close it with your next done: ${done}; a later task to you replaces it`,
-  doneWaitNext: (wait: Command) => `wait for the next phase, in the foreground (${FOREGROUND_NOTE}): ${wait}`,
-  doneNone: "no phase is open: nothing to mark",
-  /** simple-states: a member owing nothing (its task merged and reported, its phase done) ends its turn; the board reads it away */
-  owesNothingEndTurn: "you owe nothing now: end your turn with your report, without end; the orchestrator resumes you by message with the next task",
-
-  // ── a post's @-names (D63) ──
-  // S23: an ended member's seat may be joined again, and its join delivers what waited for it (S1)
-  mentionEnded: (name: string) => `@${name} has ended: the post stays on the thread, read at the seat's next join`,
-  mentionNotJoined: (name: string) => `@${name} has not joined yet: the post waits for it, read at its join`,
-  // break-flow V-47: a post reaches a lost member's seat, recorded; the agent is not there to read it
-  mentionLost: (member: string, move: string) => `${member} is lost: the post is recorded, but nothing reads it now; ${move}`,
-  /** simple-states: the orchestrator's post to a member whose link is down, by its state */
-  postToAway: (member: string) => `${member} is away: resume it by message so it reads this post`,
-  postToLost: (member: string) => `${member} is lost: dispatch a fresh agent into its seat`,
-  mentionNobody: (name: string, guesses: string[]) => `@${name} matched nobody on the board${guesses.length ? `: did you mean ${guesses.join(", ")}?` : ""}`,
-
-  // ── agree ──
-  /** S5: every party, the author marked, sorted by name so the line reads the same whoever agrees */
-  agreeParties: (author: string, others: string[]) =>
-    `parties: ${[...new Set([author, ...others])].sort().map((n) => (n === author ? `${n} (you)` : n)).join(", ")}; woken when its file merges`,
-
-  // ── the orchestrator's verbs ──
-  phaseHeard: (watch: string[]) =>
-    watch.length
-      ? `the done of ${watch.join(", ")} wakes you; the board tells you once every member is done`
-      : "the board tells you once every member is done; to hear one done the moment it lands, open the phase with --watch <ids>",
-  phaseFor: (only: string[]) => (only.length ? ` for ${only.join(", ")} alone (the others are not woken and owe no done)` : ""),
-  circling: (kind: string, passes: number) =>
-    `${kind} pass ${passes} since the run began or last reflected: closer to the goal, or circling? When the same kinds of fault keep coming back, a reflect phase may serve better than another pass (the orchestrate skill's references/reflect-phase.md).`,
-  phaseOpened: (name: string, forWhom: string, heard: string, cli: Command, as: string, run: number) =>
-    `phase ${name} is open${forWhom}; ${heard}. Listen in the background: ${cli} wait --mentions --as ${as}. When the board says every member is done, open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
-  briefThePerson: "brief the person: the list of what is done since the session began, one short phrase each, then what comes next",
-  seatIdleEnded: (seat: string) => `${seat} ended idle and still owes this phase: dispatch a member into it (join the same seat) or resume it with SendMessage`,
-  pausedAll: (run: number, person: string | null, cli: Command, as: string) =>
-    `every member of run ${run} is told to stop and wait${person !== null ? `, waiting on the person: ${person}` : ""}; nothing wakes you but an urgent post until the resume, which gives you every line held meanwhile. Resume, with a message if they need one: ${cli} resume "<message>" --as ${as}`,
-  resumed: (run: number, held: number, cli: Command, as: string) =>
-    `run ${run} resumed${held ? `; ${held} held while paused, above` : ""}; listen again in the background: ${cli} wait --mentions --as ${as}`,
-
-  // ── the run ──
-  // the orchestrator's own run is paused: said first at each of its verbs until the resume, so a pause is never forgotten
-  stillPaused: (run: number, why: string, cli: Command, as: string) =>
-    `run ${run} is PAUSED${why}: no member acts on this until you resume (${cli} resume "<message>" --as ${as})`,
-  paused: (run: number, why: string, wait: Command) =>
-    `run ${run} is paused${why}. Stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
-  closed: (run: number, end: Command) =>
-    `run ${run} closed: run end and return your summary: ${end}; your link and listener background tasks end on their own now, and their end notices are not news`,
-  // ── the line under an event, for the member it woke (D36, D59); the board posts the fact, these word it ──
-  backIt: (cli: Command, seq: number, as: string) => `back it: ${cli} endorse ${seq} --as ${as}`,
-  phaseDoneWhen: (name: string, done: Command) => `when your part of ${name} is posted: ${done}`,
-  pauseStop: (person: string | null, wait: Command) =>
-    `${person !== null ? `waiting on the person: ${person || "their decision"}; ` : ""}stop where you are: start nothing new and land nothing; wait in the foreground for the resume (${FOREGROUND_NOTE}): ${wait}`,
-  resumeGoOn: "the run resumed: continue where you stopped, as the resume's message says",
   /** board-split D12: a code-pack verb from a member whose seat carries no code pack */
   packVerbRefused: (verb: string, seatKind: string) =>
     `${verb}: refused: ${verb} is a worker's verb, and a ${seatKind} holds no files; your verbs are in --help`,
   /** a member's end with messages to it not yet read: it reads them first, its wait returning them at once */
   /** told at every other verb of a worker holding undelivered messages: its listener may have lapsed */
   unreadNow: (unread: number, wait: Command) => `you have ${unread} unread message${unread === 1 ? "" : "s"} for you: read ${unread === 1 ? "it" : "them"} now, then start your listener again, in the background: ${wait}`,
-  unreadBeforeEnd: (unread: number, wait: Command) => `you have ${unread} unread mention${unread === 1 ? "" : "s"}: run \`${wait}\` first`,
-  /** board-split D30, D38: a member's own end while its run is open */
-  endRefused: (run: number, wait: Command) =>
-    `end: refused, run ${run} is open: a member never ends itself; your seat stays, wait in the foreground for your next task (${FOREGROUND_NOTE}): ${wait}`,
-  openNextPhase: (cli: Command, as: string, run: number) => `open the next phase: ${cli} phase <name> "<text>" --as ${as}; after the last, ${cli} close --run ${run} --as ${as}`,
-  swarmStopped: (cli: Command, as: string) => `no member is moving: read the board (its page, status), then post the next task, open the next phase (${cli} phase <name> "<text>" --as ${as}) or resume the members by message`,
-  // board-fixes#D13: a post to one seat is no task unless posted as one
-  taskHint: (member: string) =>
-    `a post to ${member} alone: if it is ${member}'s task, post it with --task (or --after <seats> when it waits on others), so the board counts it owed until ${member}'s done`,
-  allJoined: (cli: Command, as: string) => `every declared seat has joined: post the tasks, or open the first phase (${cli} phase <name> "<text>" --as ${as})`,
-  allJoinedTasked: (cli: Command, as: string) => `every declared seat has joined, its tasks already posted: open the first phase if the run has one (${cli} phase <name> "<text>" --as ${as})`,
   breachKill: "you ran a kill by pattern: stop only PIDs you started, and say what you stopped in your report",
-  /** break-flow V-17: the end verb as it runs, never "close its seat" */
-  lostMove: (cli: Command, seat: string, as: string) => `its agent is not running: dispatch it again, or end its seat: ${cli} end --seat ${seat} --as ${as}`,
   /** board-split D47: `--repo` is read as `--project`, the one word for what a run sits in */
   /** board-split D47 (verify 3 F15): --project names a project as aiview does, or a path in it */
   noProject: (name: string) => `no project ${name}: --project takes an aiview project's name or a path inside a repository`,
   /** verify 3 F17: roster on a project with no open run says so, never nothing */
   /** verify-decisions F20: a verb run outside any repository names the flag that picks a project */
   notInRepository: (dir: string) => `${dir} is in no repository: name the project with --project <name> (an aiview project) or --project <path>`,
-  noRunIn: (repo: string) => `no open run in ${repo}`,
-  /** board-split#D28: a run's authority after its title, nothing when it names none */
-  authorityShown: (roles: string[]) => (roles.length ? `  authority ${roles.join(",")}` : ""),
-  /** board-split D36: a member's badge beside its state in the roster, its reason after it */
-  badgeShown: (badge: { name: string; reason: string }) => ` [${badge.name}: ${badge.reason}]`,
-
-  // ── the seat's commands at its join (D21, D36) ──
-  /** board-split D11, D12: a verifier's join: no worktree, the merged branch read from where it is served, findings posted */
-  verifierAs: (as: string) =>
-    `pass --as ${as} on every call: you have no checkout of your own and hold no files; you judge the branch the phase names, in your own instance, and report by post`,
-  verifierCommands: (cli: Command, as: string) => [
-    `${cli} post "@orchestrator <your verdict and findings table>" --as ${as}    # your report: a finding at a stop, or the table at the walk's end`,
-    `${cli} post "@<seat> <question>" --about <path> --as ${as}    # a question to a builder about a file`,
-    `${cli} done <phase> --as ${as}`,
-  ],
-  seatCommands: (cli: Command, as: string, holdMs: number) => [
-    `${cli} post "…" --about <D id> --as ${as}`,
-    `${cli} agree "…" --about <D id> --as ${as}`,
-    `${cli} endorse <seq> --as ${as}`,
-    `${cli} wait --mentions --as ${as} --timeout ${holdMs}    # in the foreground, when waiting; ${FOREGROUND_NOTE}`,
-  ],
-  // ── board-split D36: a seat's state is derived, never set ──
-  forgottenRun: (days: number, cli: Command, run: number, orchestrator: string) => `  no activity for ${days} d: likely left open; ask the person, then archive it: ${cli} close --run ${run} --as ${orchestrator}`,
-
-  // ── the orchestrators board: every orchestrator registers there, whatever its roles; never closed ──
-  orchestratorsOpen: (cli: Command, title: string, seatsFile: string): Command => `${cli} open --kind brainstorm --group orchestrators --title ${title} --seats ${seatsFile}`,
-  orchestratorsSeatAdd: (cli: Command, run: number, seat: string, roles?: string): Command => `${cli} seat add ${seat} --run ${run}${roles ? ` --role ${roles}` : ""}`,
-  orchestratorsNeeded: (open: Command) =>
-    `register on the project's orchestrators board, which every orchestrator joins and nobody closes; it is not open yet: open it (the board wrote its seats file, a seat per open run), then join your seat: ${open}`,
-  orchestratorsRegister: (board: number, commands: Command[]) =>
-    `register on the project's orchestrators board, run ${board}, which every orchestrator joins and nobody closes: ${commands.join(" ; ")}`,
-  orchestratorsNeverClosed: (cli: Command, run: number) =>
-    `close: refused: run ${run} is the project's orchestrators board, which stays open; each orchestrator leaves it with end. Closing it on purpose: ${cli} close --run ${run} --force`,
-  orchestratorsRejoin: (board: number, joins: Command[]) =>
-    `your seat is on the project's orchestrators board, run ${board}; take it back: ${joins.join(" ; ")}`,
-
-  // ── w4 (board-split D62, D47): the done count, the phase that replaces an owed one, the project word ──
-  /** a done of the open phase: the one count (owing.ts), the lost named in it */
-  /** V-43: with a lost member owing the phase, "every member" is not said: the orchestrator's own line says "but the lost" */
-  doneCounted: (phase: string, progress: string, all: boolean, lost: boolean) =>
-    `done ${phase}: ${progress}${all ? (lost ? "; the orchestrator is told every member present is done, the lost not" : "; the orchestrator is told every member is done") : ""}`,
-  /** V-44: `phase --for` with no seat in it */
-  phaseNoKind: (name: string) => `phase ${name}: a phase's name opens on its kind, a word (build, verify, simplify, reflect, or any other), then anything after it: verify-3, build-desk`,
-  phaseForEmpty: (name: string) => `phase ${name}: --for names no seat; name the seats it is for (--for w1,w2), or leave --for out for every member`,
-  /** V-35: a member owing the phase just opened whose agent is lost */
-  phaseLostMember: (member: string, move: string) => `${member} owes this phase and is lost: ${move}`,
-  /** V-28: a done from a seat the open phase's count leaves out: recorded, and why it is not counted */
-  doneNotOwed: (phase: string, why: { forSeats: string[] }) => `done ${phase} recorded; you do not owe ${phase} (it is for ${why.forSeats.join(", ")})`,
-  /** a done run again for the same phase: nothing new recorded; for a phase no longer open, what the member owes now */
-  doneAlready: (phase: string, progress: string | null, late: { owesNow: string | null } | null) =>
-    `already done ${phase}${progress ? `: ${progress}` : ""}; nothing new recorded${late && !late.owesNow ? "; you owe nothing now" : ""}`,
-  /** V-5: a done for a phase no longer open: recorded; the owed line after it names the phase owed now, else this says none is */
-  doneLate: (phase: string, current: string, owesNow: string | null) =>
-    `done ${phase} recorded late (the open phase is ${current}; the orchestrator is told)${owesNow ? "" : "; you owe nothing now"}`,
-  /** V-6: a phase opened while members still owed the one it replaces */
-  phaseStillOwed: (previous: string, members: string[]) => `${members.join(", ")} had not run done for ${previous}; ask each whether its part landed before you count on it`,
-  /** V-18: aiview's project add, with the same env prefix as every other command line */
-  aiviewProjectAdd: (envPrefix: string, launcher: string, cwd: string): Command => `${envPrefix}node ${launcher} project add <slug> --path ${cwd}`,
-  // ── T51 (board-split#D58): open and the run's identity ──
-  /** a second open of a group already open on the project: refused, as `--as <group>/<seat>` would name two members */
-  /** An open that failed after the board began the run: the run closed again, so none is left half-opened. */
-  openFailedUndone: (why: string, run: number) => `open: failed (${why}); run ${run} it began is closed again, no run is left: open again`,
-  /** An open that failed and whose run could not be closed again: how to close it by hand. */
-  openFailedLeft: (why: string, group: string, cli: Command) =>
-    `open: failed (${why}), and the run it began for group ${group} could not be closed again: find it (${cli} roster) and close it (${cli} close --run <run> --as ${group}/orchestrator), then open again`,
-  groupAlreadyOpen: (group: string, run: number, cli: Command) =>
-    `open: refused: group ${group} already has run ${run} open on this project, and --as ${group}/<seat> names one member. Close it first (${cli} close --run ${run} --as ${group}/orchestrator), or open under another --group`,
-  /** V-16 (AGENTS rule 10): how each declared seat joins, its member running it as printed */
-  seatsJoin: (seats: string[], join: Command) => `each seat joins with this, run first by its member, <seat> one of ${seats.join(", ")}: ${join}`,
-  seatJoin: (cli: Command, run: number, group: string, doing: string, seat = "<seat>"): Command => `${cli} join --run ${run} --seat ${seat} --doing ${doing} --as ${group}/${seat}`,
-  // ── reading the thread back (pull only, in pages) ──
-  readWhichRun: (verb: string) => `${verb}: which run? pass --run <id>, or --as <member>`,
-  threadNone: "no post matches",
-  /** `words`: the page's own query, re-listed, so the next page reads the same posts */
-  threadEarlier: (cli: Command, words: string, before: number): Command => `earlier: ${cli} thread ${words} --before ${before}`,
-  threadLater: (cli: Command, words: string, from: number): Command => `later: ${cli} thread ${words} --from ${from}`,
-  readPost: (cli: Command): Command => `a post in full: ${cli} read <seq>`,
-  noPost: (seq: number) => `read: no post #${seq} in this project`,
-  /** a member joining a run already under way: what its seat said and was told before it, read when it needs it */
-  seatHistory: (cli: Command, run: number, seat: string): string =>
-    `before you: what this seat said and was told: ${cli} thread --run ${run} --with ${seat} --phase all; the run's phases: ${cli} phases --run ${run}`,
   /** V-48: a word that is no verb of this CLI, for every caller */
   unknownVerb: (word: string, cli: Command) => `${word}: no such verb; the verbs are in ${cli} --help, the code verbs in ${cli} --help code`,
-  /** V-42 (D58): a join whose --as names another group than the run's; the corrected line runs as printed */
-  joinAsOtherGroup: (given: string, run: number, group: string, corrected: Command) =>
-    `join: refused: --as ${given} is not this seat of run ${run}, whose group is ${group}: ${corrected}`,
-
-  // ── codebase-rework#D13: lines the CLI's verbs wrote themselves before ──
-  /** idea 3: the orchestrator's step after `open` of a task or plan run; the reading pointer before the colon, the command last (F6) */
-  phaseCommand: (cli: Command, as: string): Command => `${cli} phase <name> "<its message>" --as ${as}`,
-  firstPhasePhaseless: "next: phaseless: the workers take tasks on call",
-  firstPhaseOfProtocol: (protocol: string, phase: Command) => `next: open ${protocol}'s first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
-  firstPhaseNoProtocol: (phase: Command) =>
-    `next: no protocol, so the workers take tasks on call with no phases; if the approved proposal names a protocol, open its first phase before any task ${FIRST_PHASE_POINTER}: ${phase}`,
-  /** D21, D36: a member of a kind without worktree, at join: the checkout is shared, so every call names it */
-  sharedCheckoutAs: (member: string) => `pass --as ${member} on every call: this checkout is shared, the board cannot tell you apart`,
-  /** D49: the exact command that re-arms a wait, and its foreground form, which always holds FOREGROUND_WAIT_MS (F22) */
-  waitAgain: (cli: Command, w: { mentions: boolean; as?: string; timeout?: string; json: boolean }): { again: Command; foreground: Command } => {
-    const words = (timeout: string | undefined): string =>
-      [cli, "wait", ...(w.mentions ? ["--mentions"] : []), ...(w.as !== undefined ? ["--as", w.as] : []), ...(timeout !== undefined ? ["--timeout", timeout] : []), ...(w.json ? ["--json"] : [])].join(" ");
-    return { again: words(w.timeout), foreground: `${words(undefined)} --timeout ${FOREGROUND_WAIT_MS}` };
-  },
-  /** `end` once the run closed: the close ended the member; it returns its summary */
-  closedEndSummary: (run: number, member: string) =>
-    `run ${run} closed: ${member} ended; return your summary now (your link and listener background tasks end on their own, and their end notices are not news)`,
+  ...RUN_WORDING,
+  ...MEMBERS_WORDING,
+  ...CONVERSATION_WORDING,
+  ...PHASES_WORDING,
 } as const;
-
-/** A POSIX shell word, double-quoted when it holds anything else than plain characters: a command runs as printed. */
-export const shellWord = (w: string): string => (/^[\w@%+=:,./-]+$/.test(w) ? w : `"${w.replace(/(["\\$`])/g, "\\$1")}"`);

@@ -9,7 +9,7 @@ import { WORDING as W } from "./wording.ts";
 export { readSituation, type Situation } from "./situation.ts";
 export { closedConnectionHint, lostMentionLines, eventStep, gateLine, owesNothingLine, pausedLine } from "./rules.ts";
 export { shellWord, WORDING } from "./wording.ts";
-export { CODE_WORDING } from "./code-wording.ts";
+export { CODE_WORDING } from "./code.ts";
 export { orchestratorsLines, ORCHESTRATORS_GROUP, type WriteOrchestratorSeats } from "./orchestrators.ts";
 export { codeUsage, coreUsage, hiddenUsage, verbHelp, VERB_USAGE, type VerbName } from "./usage.ts";
 

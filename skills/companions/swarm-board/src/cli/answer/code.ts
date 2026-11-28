@@ -1,7 +1,13 @@
-// The code pack's wording (board-split D8): every line a code verb (merge-lock, merged) or a code event
-// (an overlap) makes a member read, and the code verbs' help. Still the answer module (AGENTS rule 13); which line a member
-// reads is code-rules.ts's choice. The core lines stay in wording.ts.
-import type { Command, VerbUsage } from "./wording.ts";
+// The code pack's answers (board-split D8; product-shape#D20): every line a code verb (merge-lock, merged, worktree)
+// or a code event (an overlap) makes a member read, the code verbs' help, and the rules choosing which of them a member
+// reads after a code event, pure functions over the event and its reader, as rules.ts is for the core. Still the answer
+// module (AGENTS rule 13); the core lines stay in wording.ts.
+import type { Message, Participant } from "../../contract/board.ts";
+import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/events.ts";
+import { planCode } from "../../board/conversation/mentions.ts";
+import type { Command, VerbUsage } from "./command.ts";
+import type { Situation } from "./situation.ts";
+import { shellWord, WORDING as W } from "./wording.ts";
 
 /** The code pack's words inside the core help's lines (D12: one static help, its code parts the pack's), so the
  *  core help reads as before. */
@@ -134,3 +140,49 @@ export const CODE_WORDING = {
   endMergeIt: "Merge it",
   mergeLockReport: (cli: Command, onto: string, as: string): Command => `${cli} merge-lock --onto ${onto} --report "<what you did>" --as ${as}`,
 } as const;
+
+// ── the rules ──
+
+/** board-fixes#D6: a code run's first `close`: its members finish by merging, its closing table names each merge sha. */
+export const codeCloseStep = (owing: string[], run: number, confirm: string): string =>
+  owing.length ? W.closeWaitRunning(run, owing, CODE_WORDING.closeFinish) : W.closeSteps(run, confirm, CODE_WORDING.closeColumns);
+
+/** A member as `me` mentions it: `@<seat>` in its own run, `@<CODE>·<seat>` in another. */
+const mentionFrom = (me: Participant, member: string): string => {
+  const [plan, seat] = [member.slice(0, member.lastIndexOf("/")), member.slice(member.lastIndexOf("/") + 1)];
+  return plan === me.plan ? `@${seat}` : `@${planCode(plan)}·${seat}`;
+};
+
+/** board-split V-36 (D71): the paused line of the merge lock's holder: it finishes that merge, then stops. */
+export const pausedMergingStep = (s: Situation): string | null =>
+  s.pause ? CODE_WORDING.pausedMerging(s.run, W.pauseWhy(s.pause.person, s.pause.text), W.wait(s.cli, s.as, FOREGROUND_WAIT_MS)) : null;
+
+/** The merge lock's name in an `unlocked` event, as the code pack posts it (contract/code.ts MERGE_LOCK). */
+const MERGE_LOCK = "merge-lock";
+
+/** The line under a code event for `me`; null for one that asks nothing of it; undefined for an event not the code
+ *  pack's (the core words it). */
+export function codeEventStep(m: Message, me: Participant, cli: string, event: EventName | null = eventOf(m)): string | null | undefined {
+  if (event === "merged") {
+    // V-49: a merge that frees the lock gives each member refused it the merge-lock command, as the lost path does
+    const free = m.meta && "free" in m.meta ? (m.meta.free ?? []) : [];
+    return free.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
+  }
+  if (event === "unlocked") {
+    // board-split V-22: the merge lock freed from a lost holder: a waiter's step is the merge-lock command; the
+    // orchestrator's lost alarm already told it
+    if (!m.meta || !("unlocked" in m.meta) || m.meta.unlocked !== MERGE_LOCK) return undefined;
+    return me.seat !== "orchestrator" && m.mentions.includes(me.name) ? CODE_WORDING.mergeLockFree(cli, shellWord(me.name)) : null;
+  }
+  if (event !== "flag") return undefined;
+  // spec §7: an overlap names the two members whose worktrees changed the path; the one it is posted to settles it
+  // with the other (a row from before the meta: its mentions, the holder then the writer)
+  const [holder, writer] = m.meta && "holder" in m.meta ? [m.meta.holder, m.meta.writer] : m.mentions;
+  if (!m.about || !holder || !writer || (me.name !== holder && me.name !== writer)) return null;
+  const other = me.name === holder ? writer : holder;
+  return CODE_WORDING.overlapSettle(cli, shellWord(`${mentionFrom(me, other)} <who changes what>`), shellWord(other), shellWord(m.about), shellWord(me.name));
+}
+
+/** codebase-rework#D13: an end refused over work not merged: uncommitted work is committed first, then merged. */
+export const endUnmergedLine = (worktree: string, left: string, merge: string): string =>
+  CODE_WORDING.endUnmerged(worktree, left, /uncommitted/.test(left) ? CODE_WORDING.endCommitThenMerge : CODE_WORDING.endMergeIt, merge);

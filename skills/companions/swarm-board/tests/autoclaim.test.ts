@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { changedSet } from "../src/host/git.ts";
 import { openBoard, type Board, type Message } from "../src/board/board.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
-import { codeEventStep } from "../src/cli/answer/code-rules.ts";
+import { codeEventStep } from "../src/cli/answer/code.ts";
 
 let dir: string;
 beforeEach(() => {

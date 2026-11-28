@@ -1,8 +1,8 @@
 // The CLI's static help (board-rework D12; codebase-rework#D12): one record, VERB_USAGE, keyed by verb name, holding each
 // verb's help lines and the corrected form an argument error offers; the core help, the code help, a hidden verb's
-// help and one verb's own usage all render from it. The code verbs' entries are the code pack's, in code-wording.ts.
+// help and one verb's own usage all render from it. The code verbs' entries are the code pack's, in code.ts.
 // `cli` is this CLI as a member runs it.
-import { CODE_IN_CORE_HELP, CODE_IN_CORE_VERB_USAGE, CODE_VERB_USAGE, CODE_WORDING } from "./code-wording.ts";
+import { CODE_IN_CORE_HELP, CODE_IN_CORE_VERB_USAGE, CODE_VERB_USAGE, CODE_WORDING } from "./code.ts";
 import type { Command, VerbUsage } from "./wording.ts";
 import { STALL_MS_DEFAULT } from "../../board/stall.ts";
 import { THREAD_LIMIT } from "../../board/board.ts";
