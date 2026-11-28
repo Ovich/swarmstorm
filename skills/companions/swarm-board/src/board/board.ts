@@ -26,7 +26,7 @@ import { makeThreadRead } from "./conversation/thread-read.ts";
 import { makeCalls } from "./members/calls.ts";
 
 export type * from "./types.ts";
-export { progressText } from "./phases/owing.ts";
+export { progressText } from "./progress-line.ts";
 export { BOARD_AUTHOR } from "./conversation/mentions.ts";
 export { projectFolderName } from "./snapshot.ts";
 export { THREAD_LIMIT } from "./conversation/thread-read.ts";

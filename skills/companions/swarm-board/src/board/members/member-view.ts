@@ -2,7 +2,8 @@
 // Owns the waits this process holds and the presence each run's tick last gave.
 import type { Participant, RunId } from "../../contract/board.ts";
 import { EVENTS, landingEvents } from "../../contract/events.ts";
-import { LOST_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, stallMsFloor, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { LOST_MS, NO_TRANSCRIPT_MS, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
+import { STALL_MS_DEFAULT, stallMsFloor } from "../stall.ts";
 import { callLabel } from "./call-label.ts";
 import type { Composition, CompositionEntry, MemberContext, MemberState, Badge, Presence, Liveness, SnapshotMember } from "../types.ts";
 import { SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, type Rows } from "../rows.ts";

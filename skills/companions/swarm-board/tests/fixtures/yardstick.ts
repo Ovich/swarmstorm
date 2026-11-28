@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type Participant, type Presence } from "../../src/board/board.ts";
-import { STALL_MS_DEFAULT } from "../../src/board/members/liveness.ts";
+import { STALL_MS_DEFAULT } from "../../src/board/stall.ts";
 import { eventOf } from "../../src/contract/events.ts";
 import { observe, type TranscriptCursor } from "../../src/link/transcripts.ts";
 import { textLine, toolCall, writeSubagent } from "./transcripts.ts";

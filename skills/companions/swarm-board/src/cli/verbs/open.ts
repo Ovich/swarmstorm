@@ -3,7 +3,7 @@ import path from "node:path";
 import type { SeatSpec } from "../../board/board.ts";
 import type { Kind } from "../../contract/kinds.ts";
 import { profileOf } from "../../contract/kinds.ts";
-import { stallMsFloor } from "../../board/members/liveness.ts";
+import { stallMsFloor } from "../../board/stall.ts";
 import { HOME_OVERRIDE } from "../../store/home.ts";
 import { DATA_ROOT } from "../../host/home.ts";
 import { connectBoard, connectDirectBoard } from "../../client/remote.ts";

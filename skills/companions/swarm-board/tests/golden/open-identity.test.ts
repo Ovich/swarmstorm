@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { STALL_MS_DEFAULT } from "../../src/board/members/liveness.ts";
+import { STALL_MS_DEFAULT } from "../../src/board/stall.ts";
 import { pin } from "./golden.ts";
 import { openTask, scratchRepo as scene } from "./scratch-repo.ts";
 

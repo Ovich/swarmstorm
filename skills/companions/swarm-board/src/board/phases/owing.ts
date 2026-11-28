@@ -39,10 +39,3 @@ export const phaseCount = (phase: string, members: PhaseMember[], scope: PhaseSc
 
 /** True when every member owing the phase is done (at least one owes it). */
 export const everyOwingDone = (p: PhaseProgress): boolean => p.of > 0 && p.done === p.of;
-
-/** Members as their seats, short: `w2, w3`. */
-const seatsOf = (members: string[]): string => members.map((m) => m.slice(m.lastIndexOf("/") + 1)).join(", ");
-
-/** The count as every line prints it: `3/3 done`, `, 1 lost: w2` naming each member left out of it (D41, D62). */
-export const progressText = (p: PhaseProgress): string =>
-  `${p.done}/${p.of} done${p.gone.length ? `, ${p.gone.length} lost: ${seatsOf(p.gone)}` : ""}`;

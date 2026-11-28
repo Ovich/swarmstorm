@@ -3,7 +3,7 @@ import path from "node:path";
 import { BOARD_AUTHOR, planCode } from "./conversation/mentions.ts";
 import { profileOf } from "../contract/kinds.ts";
 import type { Message, RunId } from "../contract/board.ts";
-import { STALL_MS_DEFAULT } from "./members/liveness.ts";
+import { STALL_MS_DEFAULT } from "./stall.ts";
 import type { MemberState, RunSummary, SnapshotMember, SnapshotMemberState, QueueSeat, Board } from "./types.ts";
 import { SEAT_STATE_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "./rows.ts";
 import { retentionCutoff } from "./run/retention.ts";

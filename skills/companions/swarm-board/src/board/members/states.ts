@@ -3,7 +3,7 @@
 import type { Participant, RunId } from "../../contract/board.ts";
 import { EVENTS } from "../../contract/events.ts";
 import { READINGS_KEPT_MS, badgeConfirmMs } from "./liveness.ts";
-import { progressText } from "../phases/owing.ts";
+import { progressText } from "../progress-line.ts";
 import type { LinkDropCause, Board } from "../types.ts";
 import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
 import type { Messages } from "../conversation/messages.ts";

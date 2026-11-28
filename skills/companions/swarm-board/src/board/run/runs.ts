@@ -2,7 +2,7 @@
 import { profileOf } from "../../contract/kinds.ts";
 import type { RunId } from "../../contract/board.ts";
 import { EVENTS } from "../../contract/events.ts";
-import { STALL_MS_DEFAULT } from "../members/liveness.ts";
+import { STALL_MS_DEFAULT } from "../stall.ts";
 import { ORCHESTRATORS_GROUP } from "../../contract/wire.ts";
 import type { Run, SeatSpec, Board } from "../types.ts";
 import { SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "../rows.ts";

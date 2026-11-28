@@ -4,7 +4,7 @@
 // `cli` is this CLI as a member runs it.
 import { CODE_IN_CORE_HELP, CODE_IN_CORE_VERB_USAGE, CODE_VERB_USAGE, CODE_WORDING } from "./code-wording.ts";
 import type { Command, VerbUsage } from "./wording.ts";
-import { STALL_MS_DEFAULT } from "../../board/members/liveness.ts";
+import { STALL_MS_DEFAULT } from "../../board/stall.ts";
 import { THREAD_LIMIT } from "../../board/board.ts";
 
 /** The core help's verbs, in help order. */
