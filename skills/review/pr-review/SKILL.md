@@ -26,7 +26,7 @@ description: "Use when reviewing a pull request, branch or diff in any language,
 | Layer | Owns | Dispatched when |
 |---|---|---|
 | **L1 Code Primitives** | classes, types, functions, lines; DRY and SOLID; races visible in a function body; test code quality | always |
-| **L2 Code Structure** | directories, modules, files; placement and naming; cohesion and coupling; test file placement | always |
+| **L2 Code Structure** | directories, modules, files; placement and naming, judged against the product map as the `guide-screaming-architecture` skill says; cohesion and coupling; test file placement | always |
 | **L3 Data** | schema, ORM mappings, tables, migration files as artifacts | they are in the diff |
 | **L4 Integration** | blast radius: callers, consumers, contracts, other repos, config, deploy needs, migration execution order | the diff changes a surface something else consumes |
 | **L5 Delivery & Intent** | stated intent against the diff, completeness, scope creep, documentation, coverage of the stated behaviour | the PR states an intent: description, linked issue, commit messages, or a plan, whose user stories are then checked one by one |

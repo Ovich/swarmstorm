@@ -20,7 +20,8 @@ turn), then join the run your brief names. You hold a seat, never a worktree.
   system must hold and serve. A question on a screen goes to the prototyper on the thread.
 - **Read the code first.** Every claim about today cites `file:line` on the branch the architecture
   message names; see who depends on what with the `dependency-graph` skill's script. An architecture
-  that does not fit the code is wrong, however clean.
+  that does not fit the code is wrong, however clean. Read the product map with it, as the
+  `guide-screaming-architecture` skill says where to find one.
 - **Open questions are one line each**, with a recommendation; settle them with the orchestrator
   on the board, never with a builder. A decision outside the orchestrator's
   authority is the person's: say so on the board.

@@ -1,6 +1,6 @@
 ---
 name: simplify-rework
-description: "Use when a whole codebase has grown by accretion and is to be audited or cut back, with no commit range to start from: superseded paths left behind by past shifts, unused exports and files, two implementations of one concern, or the person asks where the dead code is, to clean up the repo, or to stop it coming back. Produces a ranked audit of families, each approved family cut back through the simplify skill, and the guard. Not for the code one piece of work changed (simplify), branching complexity (complexity-rework) or an interface's shape (deepen-module)."
+description: "Use when a whole codebase has grown by accretion and is to be audited or cut back, with no commit range to start from: superseded paths left behind by past shifts, unused exports and files, two implementations of one concern, or the person asks where the dead code is, to clean up the repo, or to stop it coming back. Produces a ranked audit of families, each approved family cut back through the simplify skill, and the guard. Not for the code one piece of work changed (simplify), branching complexity (complexity-rework), code placed apart from the product it serves (screaming-architecture-rework) or an interface's shape (deepen-module)."
 ---
 
 # Simplify rework

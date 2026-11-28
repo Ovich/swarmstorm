@@ -60,6 +60,9 @@ conversation):
 - **See an idea**: the `sketch` skill, a page the agent makes on its own to align on one question.
 - **Design a screen**: the `design-prototype` skill. **Review**: the `pr-review` skill. **Keep
   conventions**: the `write-conventions` skill.
+- **Keep the code shaped like the product** (screaming architecture: folders and names that say
+  what the product does, in its users' words): the `guide-screaming-architecture` skill; to rework
+  a codebase toward it, the `screaming-architecture-rework` skill.
 - **Watch it all**: aiview, the documents and the board.
 
 End on the one you would start with here, and why, offered as the `next-step` skill offers.

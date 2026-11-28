@@ -29,7 +29,8 @@ You are one worker of a swarm. Load the `swarmstorm:swarm-board` skill and read 
    `<topic>#D<n>`.
 4. **Name for purpose.** Every identifier you add or touch says what it is for, readable at the
    call site; no generic names (`data`, `handle`, `utils`, `manager`, `info`), none left from what
-   the code used to do.
+   the code used to do; where the code sits and what its names say follow the product map, as the
+   `guide-screaming-architecture` skill says.
 5. **Deliver**: the full suite first, on your branch, then commit; then `merge-lock`, as
    `references/worker.md` says, onto the branch your brief names: the board rebases and
    fast-forwards, and hands back what does not merge clean for you to rework and deliver again;

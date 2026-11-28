@@ -17,7 +17,7 @@ The **roadmap** is the one document above the pieces of work: what is delivered 
 
 - **`YYYY-MM-DD-<project>.roadmap.md`, kind `roadmap`**, dated at declaration and kept for the life of the project.
 - **`foundation.reference.md`, kind `reference`**, undated, never retiring: the technology decisions, one row each; tags project and `roadmap`.
-- **Their contents and rows: `references/documents.md`**, read before drafting or redrawing either.
+- **Their contents and rows: `references/documents.md`**, read before drafting or redrawing either. The foundation also holds a code-layout row: each slot's feature folder, as the `guide-screaming-architecture` skill says.
 - **Both are registered and served via the `aiview` skill** in the product's group, the one its product-level boards and prototypes share, created and titled after the product when none exists, the roadmap started when the declaration began.
 - **Documents in the project's folder that are not the product's are linked apart**, as not its slots.
 

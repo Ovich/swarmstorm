@@ -34,6 +34,8 @@ run's next `T<n>`, in short headed parts (the `swarm-board` skill's thread):
 - **A task that outgrows a post** (a module's design, a migration, a screen's states) links a
   short document in aiview, kind `task`, in the plan's group when there is a plan; the post keeps
   its goal, files and done-when. The exception, never the habit.
+- **A task that writes code, in a project with a product map**, names the
+  `guide-screaming-architecture` skill's checker in its done-when.
 - **A task that includes tests** says in its done-when that the test run has finished before the
   report or the merge lock.
 - **Its tests are the narrowest covering the seat's change**, named as files or a filter, never
