@@ -10,7 +10,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 const SRC = join(import.meta.dirname, "..", "src");
-const CORE_DIRS = ["board", "server", "link", "contract"].map((d) => join(SRC, d));
+const CORE_DIRS = ["board", "store", "server", "link", "contract"].map((d) => join(SRC, d));
 const CONTRACT_CODE = join(SRC, "contract", "code.ts");
 const ANSWER = join(SRC, "cli", "answer");
 const CODE_ANSWER = new Set(["code-rules.ts", "code-wording.ts"]);

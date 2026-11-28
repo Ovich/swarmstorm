@@ -5,7 +5,7 @@ import { type EventName, eventOf, FOREGROUND_WAIT_MS } from "../../contract/even
 import { CODE_WORDING as CW } from "./code-wording.ts";
 import { shellWord, WORDING as W } from "./wording.ts";
 import type { Situation } from "./situation.ts";
-import { planCode } from "../../board/mentions.ts";
+import { planCode } from "../../board/conversation/mentions.ts";
 
 /** board-fixes#D6: a code run's first `close`: its members finish by merging, its closing table names each merge sha. */
 export const codeCloseStep = (owing: string[], run: number, confirm: string): string =>

@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Participant } from "../contract/board.ts";
-import { HOME_OVERRIDE } from "../board/home.ts";
+import { HOME_OVERRIDE } from "../store/home.ts";
 import { connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { DATA_ROOT } from "../host/home.ts";
 import { repoOf as placeRepoOf, worktreeOf } from "../host/place.ts";

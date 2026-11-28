@@ -1,17 +1,17 @@
 // The server's clock (codebase-rework#D8): a link's activity and presence recorded, and each tick's states, lost and
 // stopped alarms.
-import type { Participant, RunId } from "../contract/board.ts";
-import { EVENTS } from "../contract/events.ts";
+import type { Participant, RunId } from "../../contract/board.ts";
+import { EVENTS } from "../../contract/events.ts";
 import { READINGS_KEPT_MS, badgeConfirmMs } from "./liveness.ts";
-import { progressText } from "./owing.ts";
-import type { LinkDropCause, Board } from "./types.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
-import type { Messages } from "./messages.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { PhaseReads } from "./phase-reads.ts";
+import { progressText } from "../phases/owing.ts";
+import type { LinkDropCause, Board } from "../types.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
+import type { Messages } from "../conversation/messages.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { PhaseReads } from "../phases/phase-reads.ts";
 import type { MemberView } from "./member-view.ts";
-import type { AllDoneOnce } from "./phases.ts";
-import type { Store } from "./store/store.ts";
+import type { AllDoneOnce } from "../phases/phases.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeTick(store: Store, rows: Rows, messages: Messages, packs: PackBridge, owing: PhaseReads, view: MemberView, allDoneOnce: AllDoneOnce) {
   const { db } = store;

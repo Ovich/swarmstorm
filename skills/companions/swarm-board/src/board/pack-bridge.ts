@@ -4,9 +4,9 @@ import { registry } from "../packs/registry.ts";
 import type { PackCtx, MemberFact } from "../packs/types.ts";
 import type { Participant, RunId } from "../contract/board.ts";
 import type { Rows } from "./rows.ts";
-import type { Messages } from "./messages.ts";
+import type { Messages } from "./conversation/messages.ts";
 import type { Paths } from "./paths.ts";
-import type { Store } from "./store/store.ts";
+import type { Store } from "../store/store.ts";
 
 /** The pack a run of `kind` gives a member by default (D22): an orchestrator,
  *  a run's close. A member's verbs read its own `pack` (D11, D12). */

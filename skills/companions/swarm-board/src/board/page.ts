@@ -1,18 +1,18 @@
 // The page (codebase-rework#D8, D39): every project listed, and everything the page draws for one.
 import path from "node:path";
-import { BOARD_AUTHOR, planCode } from "./mentions.ts";
+import { BOARD_AUTHOR, planCode } from "./conversation/mentions.ts";
 import { profileOf } from "../contract/kinds.ts";
 import type { Message, RunId } from "../contract/board.ts";
-import { STALL_MS_DEFAULT } from "./liveness.ts";
+import { STALL_MS_DEFAULT } from "./members/liveness.ts";
 import type { MemberState, RunSummary, SnapshotMember, SnapshotMemberState, QueueSeat, Board } from "./types.ts";
 import { SEAT_STATE_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "./rows.ts";
-import { retentionCutoff } from "./upkeep.ts";
+import { retentionCutoff } from "./run/upkeep.ts";
 import type { Paths } from "./paths.ts";
 import type { PackBridge } from "./pack-bridge.ts";
-import type { PhaseReads } from "./phase-reads.ts";
-import type { MemberView } from "./member-view.ts";
-import type { Deliveries } from "./delivery.ts";
-import type { Store } from "./store/store.ts";
+import type { PhaseReads } from "./phases/phase-reads.ts";
+import type { MemberView } from "./members/member-view.ts";
+import type { Deliveries } from "./conversation/delivery.ts";
+import type { Store } from "../store/store.ts";
 
 /** A project is keyed by its common git dir (the code pack's repository); without an aiview project it is shown by its
  *  checkout's folder name. */

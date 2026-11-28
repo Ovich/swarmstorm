@@ -1,17 +1,17 @@
 // Members (codebase-rework#D8): a seat taken and left, who is calling, the roster.
 import path from "node:path";
-import { canonicalPath } from "../host/place.ts";
-import { profileOf } from "../contract/kinds.ts";
-import type { AllJoinedMeta, Declared, RunId } from "../contract/board.ts";
-import { EVENTS } from "../contract/events.ts";
-import type { MemberState, Board } from "./types.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
-import type { Messages } from "./messages.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { PhaseReads } from "./phase-reads.ts";
+import { canonicalPath } from "../../host/place.ts";
+import { profileOf } from "../../contract/kinds.ts";
+import type { AllJoinedMeta, Declared, RunId } from "../../contract/board.ts";
+import { EVENTS } from "../../contract/events.ts";
+import type { MemberState, Board } from "../types.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
+import type { Messages } from "../conversation/messages.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { PhaseReads } from "../phases/phase-reads.ts";
 import type { MemberView } from "./member-view.ts";
-import type { Deliveries } from "./delivery.ts";
-import type { Store } from "./store/store.ts";
+import type { Deliveries } from "../conversation/delivery.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeMembers(store: Store, rows: Rows, messages: Messages, packs: PackBridge, owing: PhaseReads, view: MemberView, delivery: Deliveries) {
   const { db, now } = store;

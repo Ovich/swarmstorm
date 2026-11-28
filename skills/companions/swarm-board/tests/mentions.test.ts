@@ -2,7 +2,7 @@
 // @<CODE>·<id> one member, @all names nobody.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMentions, planCode, unmatchedMentions } from "../src/board/mentions.ts";
+import { parseMentions, planCode, unmatchedMentions } from "../src/board/conversation/mentions.ts";
 
 const PLANS = ["2026-10-15-swarm-one-conversation", "review-tool"]; // codes SO and RT
 const NAMES = new Map([["sleepyotter", "review-tool/S3"]]);

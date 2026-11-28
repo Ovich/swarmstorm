@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board, type LinkFact, type Presence } from "../src/board/board.ts";
-import { LOST_MS } from "../src/board/liveness.ts";
+import { LOST_MS } from "../src/board/members/liveness.ts";
 import { tick2 } from "./fixtures/tick2.ts";
 
 const REPO = "/repos/lost/.git";

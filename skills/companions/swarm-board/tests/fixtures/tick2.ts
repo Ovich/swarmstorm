@@ -1,4 +1,4 @@
-import { badgeConfirmMs } from "../../src/board/liveness.ts";
+import { badgeConfirmMs } from "../../src/board/members/liveness.ts";
 
 /** board-split D55 (amended, U-F27): a badge opens once its predicate held BADGE_CONFIRM_MS, and closes once it held
  *  false as long; a test that means "the server ticked at `at`" ticks at `at` and BADGE_CONFIRM_MS later, so an

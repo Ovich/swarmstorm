@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { openBoard, type Board } from "../src/board/board.ts";
-import { coreStateOf } from "../src/board/liveness.ts";
+import { coreStateOf } from "../src/board/members/liveness.ts";
 import { quietMember } from "./fixtures/quiet-member.ts";
 
 const REPO = "/repos/one/.git";

@@ -1,10 +1,10 @@
 // Talk (codebase-rework#D8): a member's post, an agreement, an endorsement.
 import { parseMentions } from "./mentions.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
 import type { Messages } from "./messages.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { Board } from "./types.ts";
-import type { Store } from "./store/store.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { Board } from "../types.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeTalk(store: Store, rows: Rows, messages: Messages, packs: PackBridge) {
   const { db } = store;

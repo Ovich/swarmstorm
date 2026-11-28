@@ -1,10 +1,10 @@
 // A member's calls (codebase-rework#D8, D66): each verb counted once, and a pack verb's server side.
-import type { PackRefusal, Pack } from "../packs/types.ts";
-import type { Participant } from "../contract/board.ts";
-import type { Row, Rows } from "./rows.ts";
-import { kindPackOf, type PackBridge } from "./pack-bridge.ts";
-import type { Board } from "./types.ts";
-import type { Store } from "./store/store.ts";
+import type { PackRefusal, Pack } from "../../packs/types.ts";
+import type { Participant } from "../../contract/board.ts";
+import type { Row, Rows } from "../rows.ts";
+import { kindPackOf, type PackBridge } from "../pack-bridge.ts";
+import type { Board } from "../types.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeCalls(store: Store, rows: Rows, packs: PackBridge) {
   const { db, now } = store;

@@ -1,12 +1,12 @@
 // The board's rows read back (codebase-rework#D8): a run, a participant, a message, as the store keeps them.
-import { nameHandle } from "./mentions.ts";
+import { nameHandle } from "./conversation/mentions.ts";
 import { profileOf } from "../contract/kinds.ts";
 import type { Message, MessageKind, MessageMeta, Participant, RunId } from "../contract/board.ts";
 import { type EventName, isEvent } from "../contract/events.ts";
-import { funnyName } from "./names.ts";
+import { funnyName } from "./members/names.ts";
 import type { Phase } from "./types.ts";
 import { kindPackOf, kindVerifyOf } from "./pack-bridge.ts";
-import type { Store } from "./store/store.ts";
+import type { Store } from "../store/store.ts";
 
 /** board-split D36: a seat's state from its member, never stored: the `seats.state` column predating it is left unread.
  *  A correlated subquery over a seats row aliased `s`. */

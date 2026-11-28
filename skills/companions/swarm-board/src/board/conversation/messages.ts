@@ -1,10 +1,10 @@
 // Messages written (codebase-rework#D8): every post and event the board stores, and the tasks they open and wake.
 import { parseMentions } from "./mentions.ts";
-import type { AwaitedMeta, Message, MessageKind, MessageMeta, Participant, RunId } from "../contract/board.ts";
-import { awaitedLine, type EventName, EVENTS, eventDef, isAwaitedCause } from "../contract/events.ts";
-import { trace } from "../host/trace.ts";
-import type { Row, Rows } from "./rows.ts";
-import type { Store } from "./store/store.ts";
+import type { AwaitedMeta, Message, MessageKind, MessageMeta, Participant, RunId } from "../../contract/board.ts";
+import { awaitedLine, type EventName, EVENTS, eventDef, isAwaitedCause } from "../../contract/events.ts";
+import { trace } from "../../host/trace.ts";
+import type { Row, Rows } from "../rows.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeMessages(store: Store, rows: Rows, hooks: { awaitedWording(p: Participant, cause: string): string }) {
   const { db, now } = store;

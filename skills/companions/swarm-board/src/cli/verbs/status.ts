@@ -1,4 +1,4 @@
-import { SQLITE_PATH } from "../../board/home.ts";
+import { SQLITE_PATH } from "../../store/home.ts";
 import { DATA_ROOT } from "../../host/home.ts";
 import { CODE_WORDING, orchestratorsLines, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../answer/index.ts";
 import type { VerbContext } from "../context.ts";

@@ -5,14 +5,14 @@ import type { PackVerbInput, MemberFact } from "../packs/types.ts";
 import type { CodeSnapshotFields } from "../contract/code.ts";
 import type { Declared, Message, MessageKind, MessageMeta, Participant, RunId } from "../contract/board.ts";
 import type { EventName } from "../contract/events.ts";
-import type { CoreMemberState, SeatState } from "./liveness.ts";
+import type { CoreMemberState, SeatState } from "./members/liveness.ts";
 import type { MemberActivity } from "../contract/wire.ts";
-import type { PhaseProgress } from "./owing.ts";
+import type { PhaseProgress } from "./phases/owing.ts";
 import { RPC_METHODS, type RpcMethod } from "../contract/wire.ts";
 
 export type { Message, Participant } from "../contract/board.ts";
 export type { PackRefusal } from "../packs/types.ts";
-export type { PhaseProgress } from "./owing.ts";
+export type { PhaseProgress } from "./phases/owing.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; transcript?: string | null };
 export type Seat = SeatSpec & { state: SeatState };

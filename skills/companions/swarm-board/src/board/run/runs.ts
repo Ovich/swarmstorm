@@ -1,15 +1,15 @@
 // Runs (codebase-rework#D8): opened, given seats, closed, listed.
-import { profileOf } from "../contract/kinds.ts";
-import type { RunId } from "../contract/board.ts";
-import { EVENTS } from "../contract/events.ts";
-import { STALL_MS_DEFAULT } from "./liveness.ts";
-import { ORCHESTRATORS_GROUP } from "../contract/wire.ts";
-import type { Run, SeatSpec, Board } from "./types.ts";
-import { SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "./rows.ts";
-import { kindPackOf, type PackBridge } from "./pack-bridge.ts";
-import type { Messages } from "./messages.ts";
-import type { MemberView } from "./member-view.ts";
-import type { Store } from "./store/store.ts";
+import { profileOf } from "../../contract/kinds.ts";
+import type { RunId } from "../../contract/board.ts";
+import { EVENTS } from "../../contract/events.ts";
+import { STALL_MS_DEFAULT } from "../members/liveness.ts";
+import { ORCHESTRATORS_GROUP } from "../../contract/wire.ts";
+import type { Run, SeatSpec, Board } from "../types.ts";
+import { SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "../rows.ts";
+import { kindPackOf, type PackBridge } from "../pack-bridge.ts";
+import type { Messages } from "../conversation/messages.ts";
+import type { MemberView } from "../members/member-view.ts";
+import type { Store } from "../../store/store.ts";
 
 /** A protocol's name: lower case, digits and dashes. */
 const PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;

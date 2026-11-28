@@ -1,7 +1,7 @@
 // board-split D62: owing.ts, the one count of who owes a phase (break-flow T54, V-11, U-F40).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { owesPhase, phaseCount, progressText, type PhaseMember, type PhaseScope } from "../src/board/owing.ts";
+import { owesPhase, phaseCount, progressText, type PhaseMember, type PhaseScope } from "../src/board/phases/owing.ts";
 
 const member = (seat: string, o: Partial<PhaseMember> = {}): PhaseMember => ({ member: `g/${seat}`, seat, done: false, ended: false, idleEnded: false, lost: false, ...o });
 const open: PhaseScope = { open: true, forSeats: null };

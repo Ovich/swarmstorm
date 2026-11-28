@@ -2,33 +2,33 @@
 // calling, and waking a `wait`. `openBoard` composes it from the store and the board's modules, each reaching the others
 // only through what it is given; SQL, the prepare cache, the transaction and waking stay inside them. Callers hold the
 // typed Board it returns. The code pack's claims and merge lock live in its own tables, behind this Board.
-import { SQLITE_PATH } from "./home.ts";
-import { openStore } from "./store/store.ts";
+import { SQLITE_PATH } from "../store/home.ts";
+import { openStore } from "../store/store.ts";
 import type { Participant } from "../contract/board.ts";
 import type { Board } from "./types.ts";
 import { makeRows } from "./rows.ts";
 import { makePaths } from "./paths.ts";
-import { makeMessages } from "./messages.ts";
+import { makeMessages } from "./conversation/messages.ts";
 import { makePackBridge, type PackBridge } from "./pack-bridge.ts";
-import { makePhaseReads } from "./phase-reads.ts";
-import { makeMemberView } from "./member-view.ts";
-import { makeDelivery } from "./delivery.ts";
-import { makeRuns } from "./runs.ts";
-import { makeMembers } from "./members.ts";
-import { makeAllDone, makePhases } from "./phases.ts";
-import { makeTalk } from "./talk.ts";
-import { makeTick } from "./tick.ts";
-import { makeUpkeep } from "./upkeep.ts";
+import { makePhaseReads } from "./phases/phase-reads.ts";
+import { makeMemberView } from "./members/member-view.ts";
+import { makeDelivery } from "./conversation/delivery.ts";
+import { makeRuns } from "./run/runs.ts";
+import { makeMembers } from "./members/members.ts";
+import { makeAllDone, makePhases } from "./phases/phases.ts";
+import { makeTalk } from "./conversation/talk.ts";
+import { makeTick } from "./members/tick.ts";
+import { makeUpkeep } from "./run/upkeep.ts";
 import { makePage } from "./page.ts";
-import { makeThreadRead } from "./thread-read.ts";
-import { makeCalls } from "./calls.ts";
+import { makeThreadRead } from "./conversation/thread-read.ts";
+import { makeCalls } from "./members/calls.ts";
 
 export type * from "./types.ts";
-export { progressText } from "./owing.ts";
-export { BOARD_AUTHOR } from "./mentions.ts";
+export { progressText } from "./phases/owing.ts";
+export { BOARD_AUTHOR } from "./conversation/mentions.ts";
 export { projectFolderName } from "./page.ts";
-export { THREAD_LIMIT } from "./thread-read.ts";
-export { UPKEEP_EVERY_MS } from "./upkeep.ts";
+export { THREAD_LIMIT } from "./conversation/thread-read.ts";
+export { UPKEEP_EVERY_MS } from "./run/upkeep.ts";
 
 export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const store = await openStore(dbPath);

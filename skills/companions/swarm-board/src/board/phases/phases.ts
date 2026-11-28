@@ -1,13 +1,13 @@
 // Phases (codebase-rework#D8): the orchestrator opens, pauses and resumes them; a member is done with one.
-import type { Message, Participant } from "../contract/board.ts";
-import { EVENTS, wakes } from "../contract/events.ts";
+import type { Message, Participant } from "../../contract/board.ts";
+import { EVENTS, wakes } from "../../contract/events.ts";
 import { everyOwingDone, owesPhase, phaseIsForSeat, type PhaseProgress } from "./owing.ts";
-import type { NotOwed, Board } from "./types.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
-import type { Messages } from "./messages.ts";
+import type { NotOwed, Board } from "../types.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
+import type { Messages } from "../conversation/messages.ts";
 import type { PhaseReads } from "./phase-reads.ts";
-import type { Deliveries } from "./delivery.ts";
-import type { Store } from "./store/store.ts";
+import type { Deliveries } from "../conversation/delivery.ts";
+import type { Store } from "../../store/store.ts";
 
 /** The lost members as a line's suffix: ` (1 lost: idea/b)`, empty when none (D41). */
 const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");

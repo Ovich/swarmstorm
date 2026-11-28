@@ -2,7 +2,7 @@
 // worktree and the same file in the main checkout are one claim.
 import path from "node:path";
 import type { Row } from "./rows.ts";
-import type { Store } from "./store/store.ts";
+import type { Store } from "../store/store.ts";
 
 const CASELESS = process.platform === "win32";
 

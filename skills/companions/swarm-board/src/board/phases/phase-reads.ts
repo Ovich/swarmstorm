@@ -1,9 +1,9 @@
 // Who owes a phase, read from the store (codebase-rework#D8): the members owing.ts counts, and the count itself.
-import type { RunId } from "../contract/board.ts";
-import { EVENTS } from "../contract/events.ts";
+import type { RunId } from "../../contract/board.ts";
+import { EVENTS } from "../../contract/events.ts";
 import { owesPhase, phaseCount, type PhaseMember, type PhaseProgress, type PhaseScope } from "./owing.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
-import type { Store } from "./store/store.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makePhaseReads(store: Store, rows: Rows) {
   const { db } = store;

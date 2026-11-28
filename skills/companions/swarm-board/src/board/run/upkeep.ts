@@ -1,9 +1,9 @@
 // Upkeep (codebase-rework#D8): closed runs pruned past the retention, at most once per UPKEEP_EVERY_MS.
-import type { Row } from "./rows.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { Deliveries } from "./delivery.ts";
-import type { Board } from "./types.ts";
-import type { Store } from "./store/store.ts";
+import type { Row } from "../rows.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { Deliveries } from "../conversation/delivery.ts";
+import type { Board } from "../types.ts";
+import type { Store } from "../../store/store.ts";
 
 /** The board's upkeep runs at most this often, from any process (D16). */
 export const UPKEEP_EVERY_MS = 5 * 60 * 1000;

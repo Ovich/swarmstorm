@@ -1,15 +1,15 @@
 // Waking and delivering (codebase-rework#D8): what is unread for a member, what wakes it, and its wait.
-import { profileOf } from "../contract/kinds.ts";
-import type { Message, Participant } from "../contract/board.ts";
-import { alwaysEventNames, EVENTS, eventOf, mentions as mentionsMe, toAuthorEventNames, wakes } from "../contract/events.ts";
-import { trace } from "../host/trace.ts";
-import { WAIT_POLL_MS } from "./store/changes.ts";
-import type { Delivery, Board } from "./types.ts";
-import { ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
+import { profileOf } from "../../contract/kinds.ts";
+import type { Message, Participant } from "../../contract/board.ts";
+import { alwaysEventNames, EVENTS, eventOf, mentions as mentionsMe, toAuthorEventNames, wakes } from "../../contract/events.ts";
+import { trace } from "../../host/trace.ts";
+import { WAIT_POLL_MS } from "../../store/changes.ts";
+import type { Delivery, Board } from "../types.ts";
+import { ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
 import type { Messages } from "./messages.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { MemberView } from "./member-view.ts";
-import type { Store } from "./store/store.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { MemberView } from "../members/member-view.ts";
+import type { Store } from "../../store/store.ts";
 
 /** A pending wait's looks are logged in call_log at most this often, never a row per tick. */
 const WAIT_LOG_EVERY_MS = 60 * 1000;

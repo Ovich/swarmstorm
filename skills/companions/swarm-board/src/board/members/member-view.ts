@@ -1,15 +1,15 @@
 // A member as the board shows it (codebase-rework#D8): its one state, its activity, its badge, its run's composition.
 // Owns the waits this process holds and the presence each run's tick last gave.
-import type { Participant, RunId } from "../contract/board.ts";
-import { EVENTS, landingEvents } from "../contract/events.ts";
+import type { Participant, RunId } from "../../contract/board.ts";
+import { EVENTS, landingEvents } from "../../contract/events.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, stallMsFloor, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 import { callLabel } from "./call-label.ts";
-import type { Composition, CompositionEntry, MemberContext, MemberState, Badge, Presence, Liveness, SnapshotMember } from "./types.ts";
-import { SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
-import type { PhaseReads } from "./phase-reads.ts";
-import type { Messages } from "./messages.ts";
-import type { PackBridge } from "./pack-bridge.ts";
-import type { Store } from "./store/store.ts";
+import type { Composition, CompositionEntry, MemberContext, MemberState, Badge, Presence, Liveness, SnapshotMember } from "../types.ts";
+import { SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, type Rows } from "../rows.ts";
+import type { PhaseReads } from "../phases/phase-reads.ts";
+import type { Messages } from "../conversation/messages.ts";
+import type { PackBridge } from "../pack-bridge.ts";
+import type { Store } from "../../store/store.ts";
 
 export function makeMemberView(store: Store, rows: Rows, owing: PhaseReads, messages: Messages, packs: PackBridge) {
   const { db } = store;

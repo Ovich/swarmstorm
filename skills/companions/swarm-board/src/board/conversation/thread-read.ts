@@ -1,9 +1,9 @@
 // Reading the thread back (codebase-rework#D8), pull only: a long run read in pages, never whole.
-import type { Message, RunId } from "../contract/board.ts";
-import { EVENTS, eventDef, isEvent } from "../contract/events.ts";
-import type { Row, Rows } from "./rows.ts";
-import type { Board } from "./types.ts";
-import type { Store } from "./store/store.ts";
+import type { Message, RunId } from "../../contract/board.ts";
+import { EVENTS, eventDef, isEvent } from "../../contract/events.ts";
+import type { Row, Rows } from "../rows.ts";
+import type { Board } from "../types.ts";
+import type { Store } from "../../store/store.ts";
 
 /** The board's events a thread page shows without `events`: the ones that mark the work, not the members' comings and
  *  goings; a pack's landing events (`lands`) beside them. */
