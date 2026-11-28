@@ -10,12 +10,9 @@ import type { MemberActivity } from "../contract/wire.ts";
 import type { PhaseProgress } from "./owing.ts";
 import { RPC_METHODS, type RpcMethod } from "../contract/wire.ts";
 
-export type { Kind } from "../contract/kinds.ts";
-export type { BreachMeta, Conflicts, Declared, Message, Participant, PauseMeta, PhaseMeta, RunId, Sharer, UnlockedMeta } from "../contract/board.ts";
-export type { EventName } from "../contract/events.ts";
+export type { Message, Participant } from "../contract/board.ts";
 export type { PackRefusal } from "../packs/types.ts";
 export type { PhaseProgress } from "./owing.ts";
-export type { LockTurn, SnapshotFile } from "../contract/code.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
 export type SeatSpec = { id: string; role?: string; area?: string; blockers: string[]; link?: string | null; transcript?: string | null };
 export type Seat = SeatSpec & { state: SeatState };

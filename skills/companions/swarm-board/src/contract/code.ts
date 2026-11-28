@@ -39,7 +39,7 @@ export type PackMessageMeta = MergedMeta | FlagMeta;
  *  read none from git (no worktree). */
 export type HeldMergeLock = { grantedAt: string; onto: string | null; reflogMark: number | null; files: string[] | null };
 
-export type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
+type LockTurn = { member: string; askedAt: string; grantedAt: string | null; mergedAt: string | null; refused: number };
 /** A file a live member's worktree changes now: who holds it, in claim order (D40); two holders or more make it shared.
  *  The FileMap's rows. */
 export type SnapshotFile = { path: string; holders: string[] };

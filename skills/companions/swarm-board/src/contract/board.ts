@@ -63,13 +63,13 @@ export interface Message {
 }
 
 /** A phase event's name, as data: `phase <name> <text>` stores `<name>`. */
-export type PhaseMeta = { phase: string };
+type PhaseMeta = { phase: string };
 /** An unlocked event's data (idea 4): the lock's name. */
-export type UnlockedMeta = { unlocked: string };
+type UnlockedMeta = { unlocked: string };
 /** A breach event's data (idea 4): the member, `<group>/<id>`, that killed by name, pattern or an unlocked port. */
-export type BreachMeta = { breach: string };
+type BreachMeta = { breach: string };
 /** A pause event's data (idea 2, B12): whether it waits on the person, and its text. */
-export type PauseMeta = { person: boolean; text: string };
+type PauseMeta = { person: boolean; text: string };
 /** An all-joined event's data: whether a post had already been made to one of the run's seats. */
 export type AllJoinedMeta = { tasked: boolean };
 /** board-fixes#D4: an awaited event's task (its seq) and the awaited seat it tells of. */
