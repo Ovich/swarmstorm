@@ -9,7 +9,6 @@ import type { TranscriptEvent } from "../activity.ts";
 import { runsBinding, type Binding } from "../shell.ts";
 
 export interface Harness {
-  name: string;
   /** The transcript holding the tool call that ran this binding verb, newest first, a finished one skipped; null when not (yet) found. */
   locate(b: Binding, env: NodeJS.ProcessEnv): string | null;
   /** The harness's own word that the agent ended; null when it keeps none. */
@@ -159,7 +158,6 @@ function userEvents(line: TranscriptLine, content: ContentPart[], at: number): T
 
 /** Claude Code: `<root>/<project>/<session>.jsonl` and `<root>/<project>/<session>/subagents/agent-*.jsonl`, each with its `.meta.json` beside. */
 export const claudeCode: Harness = {
-  name: "claude-code",
   locate(binding, env) {
     const session = env.CLAUDE_CODE_SESSION_ID;
     if (!session) return null;
