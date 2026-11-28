@@ -4,8 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { commonGitDir } from "../../../swarm-board/src/host/place.ts";
-import { DATA_ROOT, DOCS_ROOT, ensureHome } from "./home.ts";
-import { resolveProject, type Project } from "./projects.ts";
+import { DATA_ROOT, DOCS_ROOT, ensureHome } from "../host/home.ts";
+import { resolveProject, type Project } from "../projects/projects.ts";
 import {
   formatOf,
   currentKind,
@@ -17,7 +17,7 @@ import {
   toAbs,
   toStored,
   type DocFormat,
-} from "./paths.ts";
+} from "../documents/paths.ts";
 
 // node:sqlite prints an ExperimentalWarning on import; keep every other warning.
 process.removeAllListeners("warning");
@@ -29,7 +29,7 @@ const { DatabaseSync } = await import("node:sqlite");
 /** Tool root: where the code and its build output live (app/, dist/, dist-cli/).
  *  The launcher sets AIVIEW_ROOT; the fallback walks up from this module to the
  *  directory holding package.json, which covers both dist-cli/cli.mjs and direct
- *  src/ execution (tests). User data does NOT live here — see core/home.ts. */
+ *  src/ execution (tests). User data does NOT live here — see host/home.ts. */
 function findToolRoot(): string {
   if (process.env.AIVIEW_ROOT) return process.env.AIVIEW_ROOT;
   let dir = path.dirname(fileURLToPath(import.meta.url));

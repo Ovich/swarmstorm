@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { openIndex, type Index } from "../src/core/db.ts";
+import { openIndex, type Index } from "../src/store/index-db.ts";
 
 let tmp: string;
 let root: string;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchDocuments, recordRecentProject, type DocumentWithState } from "../lib/api.ts";
-import type { Pointer } from "../../src/core/pointer.ts";
+import type { Pointer } from "../../src/prototype/pointer.ts";
 import { reloadOnNewBuild } from "../lib/build.ts";
 
 export type ConnectionState = "connecting" | "live" | "reconnecting";

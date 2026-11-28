@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { isInside, projectForCwd, projectFromDocsPath, resolveProject, type Project } from "../src/core/projects.ts";
+import { isInside, projectForCwd, projectFromDocsPath, resolveProject, type Project } from "../src/projects/projects.ts";
 
 const p = (slug: string, ...paths: string[]): Project => ({ slug, title: null, paths });
 const abs = (...parts: string[]) => path.resolve(path.sep, ...parts);

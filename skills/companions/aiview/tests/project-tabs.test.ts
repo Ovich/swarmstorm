@@ -7,14 +7,14 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import type http from "node:http";
-import { openIndex, type Index } from "../src/core/db.ts";
+import { openIndex, type Index } from "../src/store/index-db.ts";
 import { startServer } from "../src/server/index.ts";
 
 /** The token this suite's server is started with; every POST carries it (trust-adaptations#D4). */
 const TOKEN = "test-token";
 const WRITE_HEADERS = { "content-type": "application/json", "x-aiview-token": TOKEN };
-import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
-import type { ShowResponse } from "../src/core/api.ts";
+import { boardHash, hashWithBoardProject, readBoardHash } from "../src/board/hash.ts";
+import type { ShowResponse } from "../src/contract/api.ts";
 
 let tmp: string;
 let index: Index;

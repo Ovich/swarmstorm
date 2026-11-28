@@ -3,8 +3,8 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { openBrowser } from "../core/browser.ts";
-import { TOOL_ROOT, type Document, type Index } from "../core/db.ts";
+import { openBrowser } from "../host/browser.ts";
+import { TOOL_ROOT, type Document, type Index } from "../store/index-db.ts";
 import type {
   DocumentsResponse,
   DocumentResponse,
@@ -15,15 +15,15 @@ import type {
   ShowEventPayload,
   ShowResponse,
   OpenEventPayload,
-} from "../core/api.ts";
-import { projectForCwd } from "../core/projects.ts";
-import { resolveBindings } from "../core/bind.ts";
-import { formatOf, isHtml, isPdf, readDoc } from "../core/paths.ts";
-import { isName } from "../core/pointer.ts";
-import { clearServerFiles, writeServerFiles } from "../core/serverstate.ts";
-import { collectionVersion } from "../core/collectionversion.ts";
-import { DocWatcher, type DataChangedEvent } from "../core/watcher.ts";
-import { mountBoard } from "./board.ts";
+} from "../contract/api.ts";
+import { projectForCwd } from "../projects/projects.ts";
+import { resolveBindings } from "../prototype/bind.ts";
+import { formatOf, isHtml, isPdf, readDoc } from "../documents/paths.ts";
+import { isName } from "../prototype/pointer.ts";
+import { clearServerFiles, writeServerFiles } from "../host/serverstate.ts";
+import { collectionVersion } from "../host/collectionversion.ts";
+import { DocWatcher, type DataChangedEvent } from "../documents/watcher.ts";
+import { mountBoard } from "../board/routes.ts";
 import { makeGuard, newServerToken, tokenCookie } from "./guard.ts";
 import { createSseHub } from "./sse.ts";
 

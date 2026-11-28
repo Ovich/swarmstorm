@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { defaultPort, firstFreePort } from "../src/core/home.ts";
+import { defaultPort, firstFreePort } from "../src/host/home.ts";
 
 test("G22: the default home serves on 4321", () => {
   assert.equal(defaultPort(path.join(os.homedir(), "swarmstorm_appdata")), 4321);

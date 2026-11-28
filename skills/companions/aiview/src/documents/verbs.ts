@@ -1,16 +1,16 @@
 // The verbs of the document index: register, open, update, list, remove and refile.
 import fs from "node:fs";
 import path from "node:path";
-import { type Document, type UpdatePatch } from "../../core/db.ts";
-import { sidecarOf } from "../../core/paths.ts";
-import { projectForCwd } from "../../core/projects.ts";
-import { docsDirFor } from "../../core/home.ts";
-import { readServerStatus } from "../../core/serverstate.ts";
-import { openBrowser } from "../../core/browser.ts";
-import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, rowOf, type VerbContext } from "../context.ts";
-import { askServerToMove, ensureDist, movedLine, noBrowserLine, portOfInstalledServer, recordRecentProject } from "../server.ts";
-import { verbUsage } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import { type Document, type UpdatePatch } from "../store/index-db.ts";
+import { sidecarOf } from "./paths.ts";
+import { projectForCwd } from "../projects/projects.ts";
+import { docsDirFor } from "../host/home.ts";
+import { readServerStatus } from "../host/serverstate.ts";
+import { openBrowser } from "../host/browser.ts";
+import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, rowOf, type VerbContext } from "../cli/context.ts";
+import { askServerToMove, ensureDist, movedLine, noBrowserLine, portOfInstalledServer, recordRecentProject } from "../cli/server.ts";
+import { verbUsage } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 const docLine = (d: Document): string =>
   `#${d.id}  ${d.kind} [${d.tags.join(", ")}]${d.group_slug ? `  group:${d.group_slug}` : ""}  started ${d.created_at}  ${d.title}`;

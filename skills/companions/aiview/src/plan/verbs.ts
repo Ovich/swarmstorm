@@ -1,11 +1,11 @@
 // The verbs of a plan: its tracker judged and synced, its approval checked.
 import fs from "node:fs";
 import path from "node:path";
-import { check as trackerCheck, findTracker, sync as trackerSync } from "../../core/tracker.ts";
-import { check as planCheck, readApproval } from "../../core/plan.ts";
-import { fail, resolveRef, type VerbContext } from "../context.ts";
-import { verbUsage } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import { check as trackerCheck, findTracker, sync as trackerSync } from "./tracker.ts";
+import { check as planCheck, readApproval } from "./approval.ts";
+import { fail, resolveRef, type VerbContext } from "../cli/context.ts";
+import { verbUsage } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 /** A tracker as `findTracker` reads it. */
 type Tracker = NonNullable<ReturnType<typeof findTracker>>;

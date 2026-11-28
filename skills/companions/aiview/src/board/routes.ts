@@ -7,12 +7,12 @@ import fs from "node:fs";
 import type http from "node:http";
 import path from "node:path";
 import { openBoardReader, type BoardReader } from "../../../swarm-board/src/client/reader.ts";
-import type { BoardChangedEventPayload } from "../core/api.ts";
-import { TOOL_ROOT } from "../core/db.ts";
-import { DATA_ROOT } from "../core/home.ts";
+import type { BoardChangedEventPayload } from "../contract/api.ts";
+import { TOOL_ROOT } from "../store/index-db.ts";
+import { DATA_ROOT } from "../host/home.ts";
 import { canonicalPath, commonGitDir } from "../../../swarm-board/src/host/place.ts";
 import { serverStateFile } from "../../../swarm-board/src/host/home.ts";
-import type { SseHub } from "./sse.ts";
+import type { SseHub } from "../server/sse.ts";
 
 interface BoardRoutes {
   /** True when the request was a board route and has been answered (or is being). */

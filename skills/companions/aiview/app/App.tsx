@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchBoardOfKey, fetchDocument, fetchProjectBoard, type DocumentResponse } from "./lib/api.ts";
-import { boardHash, hashWithBoardProject, readBoardHash } from "../src/core/boardhash.ts";
+import { boardHash, hashWithBoardProject, readBoardHash } from "../src/board/hash.ts";
 import { useDocuments } from "./hooks/useDocuments.ts";
-import { pointerHash, readPointer, type Pointer } from "../src/core/pointer.ts";
+import { pointerHash, readPointer, type Pointer } from "../src/prototype/pointer.ts";
 import { Sidebar } from "./components/shell/Sidebar.tsx";
 import { TopBar } from "./components/shell/TopBar.tsx";
 import { DocumentsPanel, type ListSection } from "./components/docs/DocumentsPage.tsx";

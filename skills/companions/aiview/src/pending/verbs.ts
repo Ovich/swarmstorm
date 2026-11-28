@@ -1,9 +1,9 @@
 // The verbs of pending cards: work the reader is waiting on, added, done, listed, cleared.
-import type { Document } from "../../core/db.ts";
-import { fail, resolveRef, type VerbContext } from "../context.ts";
-import { notifyPendingChanged } from "../server.ts";
-import { subVerbUsage, verbUsage } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import type { Document } from "../store/index-db.ts";
+import { fail, resolveRef, type VerbContext } from "../cli/context.ts";
+import { notifyPendingChanged } from "../cli/server.ts";
+import { subVerbUsage, verbUsage } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 /** The document a sub-verb names, which must be registered. */
 function documentOf(ref: string | undefined): Document {

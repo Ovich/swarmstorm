@@ -2,15 +2,15 @@
 // pointing the person's viewer at its components.
 import fs from "node:fs";
 import path from "node:path";
-import { listComponents, resolveBindings } from "../../core/bind.ts";
-import { isHtml, readDoc } from "../../core/paths.ts";
-import { pointerHash, isName, unknownNames } from "../../core/pointer.ts";
-import type { ShowResponse } from "../../core/api.ts";
-import type { ParsedArgs } from "../args.ts";
-import { agentProject, fail, resolveRef, type VerbContext } from "../context.ts";
-import { askServer, askServerToMove, ensureDist, movedLine, portOfInstalledServer } from "../server.ts";
-import { verbUsage, type ListedVerb } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import { listComponents, resolveBindings } from "./bind.ts";
+import { isHtml, readDoc } from "../documents/paths.ts";
+import { pointerHash, isName, unknownNames } from "./pointer.ts";
+import type { ShowResponse } from "../contract/api.ts";
+import type { ParsedArgs } from "../cli/args.ts";
+import { agentProject, fail, resolveRef, type VerbContext } from "../cli/context.ts";
+import { askServer, askServerToMove, ensureDist, movedLine, portOfInstalledServer } from "../cli/server.ts";
+import { verbUsage, type ListedVerb } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 /** An html prototype by registered ref or by path, for the binding verbs. */
 function prototypeArg(args: ParsedArgs, verb: ListedVerb): string {

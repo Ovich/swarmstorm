@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { findTracker, derive, check, sync } from "../src/core/tracker.ts";
+import { findTracker, derive, check, sync } from "../src/plan/tracker.ts";
 
 /** A plan as it is written: the tracker first, the design's diagrams below it. */
 const plan = (body: string) => `# A plan

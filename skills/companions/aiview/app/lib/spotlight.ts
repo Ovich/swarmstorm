@@ -1,5 +1,5 @@
 // Pointing: the components the agent is asking about, lit on the page. The agent runs
-// `aiview show`, the viewer receives the names (src/core/pointer.ts) and posts them into
+// `aiview show`, the viewer receives the names (src/prototype/pointer.ts) and posts them into
 // the frame; the script below dims the rest of the page and outlines each named
 // component with its name on it, so the word in the question and the thing on the screen
 // are the same word.

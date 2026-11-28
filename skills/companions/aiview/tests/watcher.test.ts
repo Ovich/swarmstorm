@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DocWatcher, type ChangedEvent } from "../src/core/watcher.ts";
+import { DocWatcher, type ChangedEvent } from "../src/documents/watcher.ts";
 
 const waitFor = <T>(check: () => T | undefined, timeoutMs = 3000): Promise<T> =>
   new Promise((resolve, reject) => {

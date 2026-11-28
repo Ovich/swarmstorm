@@ -1,13 +1,13 @@
 // The verbs of the data home: where everything lives, and where a document belongs.
 import fs from "node:fs";
 import path from "node:path";
-import { SQLITE_PATH, TOOL_ROOT } from "../../core/db.ts";
-import { projectForCwd } from "../../core/projects.ts";
-import { DATA_ROOT, docsDirFor, DOCS_ROOT, ensureHome } from "../../core/home.ts";
-import { readServerStatus } from "../../core/serverstate.ts";
-import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, withIndex, type VerbContext } from "../context.ts";
-import { verbUsage } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import { SQLITE_PATH, TOOL_ROOT } from "../store/index-db.ts";
+import { projectForCwd } from "../projects/projects.ts";
+import { DATA_ROOT, docsDirFor, DOCS_ROOT, ensureHome } from "../host/home.ts";
+import { readServerStatus } from "../host/serverstate.ts";
+import { fail, noProjectLine, noSuchProjectLine, projectOfVerb, resolveRef, withIndex, type VerbContext } from "../cli/context.ts";
+import { verbUsage } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 function runStatus(ctx: VerbContext): void {
   const index = ctx.index();

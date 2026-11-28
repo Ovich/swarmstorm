@@ -1,6 +1,6 @@
 // One pipeline for every verb (codebase-rework#D11): find its entry, give it what it needs,
 // run it, map its failure to the line and exit the person reads, tell the tabs what moved.
-import { openIndex, type Index } from "../core/db.ts";
+import { openIndex, type Index } from "../store/index-db.ts";
 import { parseArgs } from "./args.ts";
 import { contextFor, Refusal, type VerbContext } from "./context.ts";
 import { ensureDist, notifyIndexChanged } from "./server.ts";

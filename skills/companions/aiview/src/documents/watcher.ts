@@ -1,7 +1,7 @@
 // One fs.watch per document directory, debounced per doc, emitting "changed".
 // Who touches the index or broadcasts SSE is the caller's business.
 //
-// A document can depend on sibling files it binds components from (core/bind.ts). The
+// A document can depend on sibling files it binds components from (prototype/bind.ts). The
 // caller tells the watcher which files a host was composed from, and a change on any of
 // them emits "changed" for the host too. Sources need not be registered documents: the
 // directory watch already covers the folder, and their names are matched here.

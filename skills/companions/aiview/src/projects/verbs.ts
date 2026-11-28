@@ -1,11 +1,11 @@
 // The verbs of projects: declaring, listing and removing them.
 import fs from "node:fs";
 import path from "node:path";
-import { projectForCwd } from "../../core/projects.ts";
-import { docsDirFor } from "../../core/home.ts";
-import { fail, type VerbContext } from "../context.ts";
-import { projectSlugUsage, verbUsage } from "../usage.ts";
-import type { Verb } from "../dispatch.ts";
+import { projectForCwd } from "./projects.ts";
+import { docsDirFor } from "../host/home.ts";
+import { fail, type VerbContext } from "../cli/context.ts";
+import { projectSlugUsage, verbUsage } from "../cli/usage.ts";
+import type { Verb } from "../cli/dispatch.ts";
 
 function listProjects(ctx: VerbContext): void {
   const { emit } = ctx;

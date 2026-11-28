@@ -1,8 +1,8 @@
 // Shared API payload types — the contract between src/server and app/.
 // The contract-guard test asserts the server actually returns these shapes.
-import type { DocFormat } from "./paths.ts";
-import type { Document, DocumentWithState, Pending } from "./db.ts";
-import type { BindingIssue } from "./bind.ts";
+import type { DocFormat } from "../documents/paths.ts";
+import type { Document, DocumentWithState, Pending } from "../store/index-db.ts";
+import type { BindingIssue } from "../prototype/bind.ts";
 
 /** What the server resolved for an html document with `data-bind` placeholders. */
 export interface BindingsSummary {
@@ -59,7 +59,7 @@ export interface IndexEventPayload {
 }
 
 /** The heartbeat. It carries nothing: what matters is that it arrives, so a tab whose
- *  stream died in silence can tell (app/hooks/useDocuments.ts) and reconnect. */
+ *  stream died in silence can tell (app/documents/useDocuments.ts) and reconnect. */
 export interface PingEventPayload {
   type: "ping";
 }
