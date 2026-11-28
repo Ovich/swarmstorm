@@ -10,7 +10,7 @@ import { repoOf as placeRepoOf, worktreeOf } from "../host/place.ts";
 import { pausedMergingStep } from "./answer/code.ts";
 import { answer, CODE_WORDING, ORCHESTRATORS_GROUP, readSituation, shellWord, verbHelp, WORDING, type Situation } from "./answer/index.ts";
 import * as rules from "./answer/rules.ts";
-import { projectPaths } from "./verbs/run/aiview-board.ts";
+import { projectPaths } from "./verbs/run/aiview.ts";
 import { parseArgs, type ParsedArgs } from "./args.ts";
 import { fail } from "./fail.ts";
 import { fwd, repoOf, toolRoot } from "./paths.ts";

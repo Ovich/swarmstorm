@@ -7,7 +7,7 @@ import { stallMsFloor } from "../../../board/stall.ts";
 import { HOME_OVERRIDE } from "../../../store/home.ts";
 import { DATA_ROOT } from "../../../host/home.ts";
 import { connectBoard, connectDirectBoard } from "../../../client/remote.ts";
-import { boardHome, registerBoard } from "./aiview-board.ts";
+import { boardHome, registerBoard } from "./aiview.ts";
 import { baseAt, worktreeHolding } from "../../../host/git.ts";
 import { CODE_WORDING, orchestratorsLines, shellWord, WORDING } from "../../answer/index.ts";
 import * as rules from "../../answer/rules.ts";

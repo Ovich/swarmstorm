@@ -8,7 +8,7 @@ import { DATA_ROOT } from "../host/home.ts";
 import { git, gitAnswer } from "../host/git.ts";
 import { relativeIn, repoOf as placeRepoOf } from "../host/place.ts";
 import { hiddenSpawnSync } from "../host/proc.ts";
-import { projectNamer } from "./verbs/run/aiview-board.ts";
+import { projectNamer } from "./verbs/run/aiview.ts";
 import type { WriteOrchestratorSeats } from "./answer/index.ts";
 import { fail } from "./fail.ts";
 
