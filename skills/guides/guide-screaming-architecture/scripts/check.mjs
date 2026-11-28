@@ -262,6 +262,9 @@ function measureCrossFeatureImports({ root, layout, scopes }) {
       const to = (dependency.resolved ?? "").replace(/\\/g, "/");
       const toFolder = layout.featureFolderOf(to);
       if (!toFolder || toFolder === fromFolder) continue;
+      // one feature across its layers (cli/verbs/<f>/ to board/<f>/) is no crossing (product-shape#D26)
+      const fromFeature = layout.homeOf(from);
+      if (fromFeature && fromFeature === layout.homeOf(to)) continue;
       const key = `M4|${from}|${toFolder}`;
       if (!violations.has(key)) violations.set(key, { key, file: from, fromFolder, to, toFolder });
     }

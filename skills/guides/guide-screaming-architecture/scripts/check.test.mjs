@@ -144,6 +144,19 @@ test("a home under a horizontal folder is a home; its sibling folders are featur
   assert.match(out, /2 new violations/);
 });
 
+test("M4: an import within one feature across its layers is none; into another feature's folder is one", () => {
+  const { repo, base } = fixtureRepo();
+  // a stand-in dependency-cruiser, found as the repository's own, answering with these imports
+  const modules = [
+    { source: "app/conversation/post.ts", dependencies: [{ resolved: "src/conversation/post.ts" }, { resolved: "src/members/join.ts" }] },
+  ];
+  writeFiles(repo, { "node_modules/dependency-cruiser/bin/dependency-cruiser.mjs": `console.log(${JSON.stringify(JSON.stringify({ modules }))});\n` });
+  const { out } = runChecker(repo, "--base", base, "--all");
+  assert.match(out, /M4 app\/conversation\/post\.ts: imports src\/members\/join\.ts from the feature src\/members\//);
+  assert.doesNotMatch(out, /M4 app\/conversation\/post\.ts: imports src\/conversation\//);
+  assert.match(out, /M4 cross-feature imports: 1 /);
+});
+
 test("no map: one line naming the guide's product-map reference, exit 0", () => {
   const { repo, base } = fixtureRepo({ withMap: false });
   const { status, out } = runChecker(repo, "--base", base);
