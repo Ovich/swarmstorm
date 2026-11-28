@@ -47,7 +47,7 @@ afterEach(async () => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-const aRunWithARunner = async () => {
+const aRunWithAMember = async () => {
   const run = await writer.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
   seatBoard = await connectBoard({ dataRoot: dir });
   const s1 = (await seatBoard.join({ run: run.id, seat: "S1", doing: "the schema", files: [] })).member;
@@ -70,7 +70,7 @@ const firstHeard = (r: BoardReader, ms: number): Promise<string | null> =>
   });
 
 test("repos and snapshot answer what the server's board answers", async () => {
-  const { run, s1, seat } = await aRunWithARunner();
+  const { run, s1, seat } = await aRunWithAMember();
   await seat.post(s1, "@orchestrator the schema is in", { about: "src/schema.ts" });
   const repos = await reader!.repos();
   assert.deepEqual(repos, await writer.repos());
@@ -80,14 +80,14 @@ test("repos and snapshot answer what the server's board answers", async () => {
 });
 
 test("a post committed on the server reaches the reader as changed within 1 s", async () => {
-  const { s1, seat } = await aRunWithARunner();
+  const { s1, seat } = await aRunWithAMember();
   const listening = firstHeard(reader!, 1000);
   await seat.post(s1, "progress: half way");
   assert.equal(await listening, REPO);
 });
 
 test("the server restarted: the reader reconnects and tells each repository once", async () => {
-  await aRunWithARunner();
+  await aRunWithAMember();
   await server!.close();
   server = await startBoardServer({ dataRoot: dir });
   const heard = await heardWithin(reader!, 2000);
@@ -108,7 +108,7 @@ test("with no server running, the reader starts it", async () => {
 });
 
 test("close stops the listening", async () => {
-  const { s1, seat } = await aRunWithARunner();
+  const { s1, seat } = await aRunWithAMember();
   const repos: string[] = [];
   reader!.onChange((repo) => repos.push(repo));
   reader!.close();
