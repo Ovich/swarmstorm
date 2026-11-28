@@ -1,4 +1,4 @@
-// The page (codebase-rework#D8, D39): every project listed, and everything the page draws for one.
+// The snapshot (codebase-rework#D8, D39): every project listed, and everything the page draws for one.
 import path from "node:path";
 import { BOARD_AUTHOR, planCode } from "./conversation/mentions.ts";
 import { profileOf } from "../contract/kinds.ts";
@@ -6,7 +6,7 @@ import type { Message, RunId } from "../contract/board.ts";
 import { STALL_MS_DEFAULT } from "./members/liveness.ts";
 import type { MemberState, RunSummary, SnapshotMember, SnapshotMemberState, QueueSeat, Board } from "./types.ts";
 import { SEAT_STATE_SQL, ORCHESTRATOR, type Row, authorityOf, type Rows } from "./rows.ts";
-import { retentionCutoff } from "./run/upkeep.ts";
+import { retentionCutoff } from "./run/retention.ts";
 import type { Paths } from "./paths.ts";
 import type { PackBridge } from "./pack-bridge.ts";
 import type { PhaseReads } from "./phases/phase-reads.ts";
@@ -35,7 +35,7 @@ function alarmSubjectOf(m: Message): string | null {
 /** The page shows the last this many messages of a thread. */
 const EVENTS_SHOWN = 500;
 
-export function makePage(store: Store, rows: Rows, paths: Paths, packs: PackBridge, owing: PhaseReads, view: MemberView, delivery: Deliveries) {
+export function makeSnapshot(store: Store, rows: Rows, paths: Paths, packs: PackBridge, owing: PhaseReads, view: MemberView, delivery: Deliveries) {
   const { db } = store;
   const { phaseOf, nickOf, PARTICIPANT_SQL, memoizedParticipants, toMessage, isLive } = rows;
   const { relPath } = paths;

@@ -17,18 +17,18 @@ import { makeRuns } from "./run/runs.ts";
 import { makeMembers } from "./members/members.ts";
 import { makeAllDone, makePhases } from "./phases/phases.ts";
 import { makeTalk } from "./conversation/talk.ts";
-import { makeTick } from "./members/tick.ts";
-import { makeUpkeep } from "./run/upkeep.ts";
-import { makePage } from "./page.ts";
+import { makeMemberStates } from "./members/states.ts";
+import { makeRetention } from "./run/retention.ts";
+import { makeSnapshot } from "./snapshot.ts";
 import { makeThreadRead } from "./conversation/thread-read.ts";
 import { makeCalls } from "./members/calls.ts";
 
 export type * from "./types.ts";
 export { progressText } from "./phases/owing.ts";
 export { BOARD_AUTHOR } from "./conversation/mentions.ts";
-export { projectFolderName } from "./page.ts";
+export { projectFolderName } from "./snapshot.ts";
 export { THREAD_LIMIT } from "./conversation/thread-read.ts";
-export { UPKEEP_EVERY_MS } from "./run/upkeep.ts";
+export { UPKEEP_EVERY_MS } from "./run/retention.ts";
 
 export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
   const store = await openStore(dbPath);
@@ -48,9 +48,9 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     ...makeMembers(store, rows, messages, packs, owing, view, delivery),
     ...makePhases(store, rows, messages, owing, delivery, allDoneOnce),
     ...makeTalk(store, rows, messages, packs),
-    ...makeTick(store, rows, messages, packs, owing, view, allDoneOnce),
-    ...makeUpkeep(store, packs, delivery),
-    ...makePage(store, rows, paths, packs, owing, view, delivery),
+    ...makeMemberStates(store, rows, messages, packs, owing, view, allDoneOnce),
+    ...makeRetention(store, packs, delivery),
+    ...makeSnapshot(store, rows, paths, packs, owing, view, delivery),
     ...makeThreadRead(store, rows),
     deliverMentions: delivery.deliverMentions,
     unreadMentions: delivery.unreadMentions,

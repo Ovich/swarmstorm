@@ -13,7 +13,7 @@ import type { MemberView } from "./member-view.ts";
 import type { AllDoneOnce } from "../phases/phases.ts";
 import type { Store } from "../../store/store.ts";
 
-export function makeTick(store: Store, rows: Rows, messages: Messages, packs: PackBridge, owing: PhaseReads, view: MemberView, allDoneOnce: AllDoneOnce) {
+export function makeMemberStates(store: Store, rows: Rows, messages: Messages, packs: PackBridge, owing: PhaseReads, view: MemberView, allDoneOnce: AllDoneOnce) {
   const { db } = store;
   const transaction = store.tx;
   const bump = store.changes.bump;

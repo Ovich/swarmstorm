@@ -26,7 +26,7 @@ paths: ["skills/companions/**/*.{ts,tsx,js,mjs}"]
 
 | word | entries | home | retired |
 |---|---|---|---|
-| run, runs, retention, orchestrators | open, seat, close, pause, resume, status | skills/companions/swarm-board/src/board/run, skills/companions/swarm-board/src/cli/verbs/run, skills/companions/aiview/app/board/run | upkeep |
+| run, runs, retention, orchestrators | open, seat, close, pause, resume, status | skills/companions/swarm-board/src/board/run, skills/companions/swarm-board/src/cli/verbs/run, skills/companions/aiview/app/board/run | |
 | members, member, liveness, guides | join, end, roster, doing, link | skills/companions/swarm-board/src/board/members, skills/companions/swarm-board/src/cli/verbs/members, skills/companions/aiview/app/board/members | runner |
 | conversation, mention, mentions, talk, messages, delivery | post, agree, endorse, read, thread, wait | skills/companions/swarm-board/src/board/conversation, skills/companions/swarm-board/src/cli/verbs/conversation, skills/companions/aiview/app/board/conversation | |
 | phases, owing, all-done | phase, done | skills/companions/swarm-board/src/board/phases, skills/companions/swarm-board/src/cli/verbs/phases | |
@@ -39,6 +39,8 @@ paths: ["skills/companions/**/*.{ts,tsx,js,mjs}"]
 | plan, tracker, slice | plan, tracker | skills/companions/aiview/src/plan | |
 | workbench, bench | Workbench | skills/companions/aiview/app/workbench | |
 | home | status, init | skills/companions/aiview/src/home | |
+
+`upkeep` (run) is not retired while `Board.upkeepIfDue` and `UPKEEP_EVERY_MS` hold the name (product-shape#D15); a new name says retention.
 
 ## Horizontal
 

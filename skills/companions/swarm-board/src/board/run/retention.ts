@@ -1,4 +1,4 @@
-// Upkeep (codebase-rework#D8): closed runs pruned past the retention, at most once per UPKEEP_EVERY_MS.
+// Retention (codebase-rework#D8): closed runs pruned past the retention, at most once per UPKEEP_EVERY_MS.
 import type { Row } from "../rows.ts";
 import type { PackBridge } from "../pack-bridge.ts";
 import type { Deliveries } from "../conversation/delivery.ts";
@@ -18,7 +18,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const retentionCutoff = (at: Date): string => new Date(at.getTime() - RETENTION_DAYS * DAY_MS).toISOString();
 
-export function makeUpkeep(store: Store, packs: PackBridge, delivery: Deliveries) {
+export function makeRetention(store: Store, packs: PackBridge, delivery: Deliveries) {
   const { db } = store;
   const transaction = store.tx;
   const bump = store.changes.bump;
