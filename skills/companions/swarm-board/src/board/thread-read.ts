@@ -14,7 +14,7 @@ const shownInThread = (event: string | null): boolean => event !== null && (THRE
 /** A page's posts by default, and its most at once. */
 export const THREAD_LIMIT = 20;
 
-export const THREAD_LIMIT_MAX = 200;
+const THREAD_LIMIT_MAX = 200;
 
 export function makeThreadRead(store: Store, rows: Rows) {
   const { db } = store;

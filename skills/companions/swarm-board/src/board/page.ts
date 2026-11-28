@@ -23,7 +23,7 @@ export const projectFolderName = (repo: string): string => {
 
 /** board-split D51: the board's own alarms about a member. Stored under the orchestrator's row (its run, its wake), they
  *  are always served as the board's (`from: swarm`), never the orchestrator's (D51 over D36), with the member they tell of as `subject`. */
-export const BOARD_ALARMS: ReadonlySet<string> = new Set(["stopped", "lost"]);
+const BOARD_ALARMS: ReadonlySet<string> = new Set(["stopped", "lost"]);
 
 /** The member a board alarm tells of: the body's head. */
 function alarmSubjectOf(m: Message): string | null {

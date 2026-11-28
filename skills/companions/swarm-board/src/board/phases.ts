@@ -10,7 +10,7 @@ import type { Deliveries } from "./delivery.ts";
 import type { Store } from "./store/store.ts";
 
 /** The lost members as a line's suffix: ` (1 lost: idea/b)`, empty when none (D41). */
-export const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");
+const goneSuffix = (gone: string[]): string => (gone.length ? ` (${gone.length} lost: ${gone.join(", ")})` : "");
 
 /** A phase's name: one word. */
 const PHASE_NAME = /^[\w.-]+$/;
@@ -18,7 +18,7 @@ const PHASE_NAME = /^[\w.-]+$/;
 const LINE_WIDTH = 100;
 
 /** One line for a message, as resume lists what the pause held. */
-export function messageLine(m: Message): string {
+function messageLine(m: Message): string {
   const first = m.body.split(/\r?\n/)[0];
   const text = first.length > LINE_WIDTH ? `${first.slice(0, LINE_WIDTH - 1)}…` : first;
   const kind = m.kind === "msg" ? "" : ` (${m.kind})`;

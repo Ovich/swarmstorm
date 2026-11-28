@@ -26,10 +26,8 @@ import { makeCalls } from "./calls.ts";
 export type * from "./types.ts";
 export { progressText } from "./owing.ts";
 export { BOARD_AUTHOR } from "./mentions.ts";
-export { AUTHORITY_ROLE, PROTOCOL_NAME } from "./runs.ts";
-export { goneSuffix, messageLine } from "./phases.ts";
-export { BOARD_ALARMS, projectFolderName } from "./page.ts";
-export { THREAD_LIMIT, THREAD_LIMIT_MAX } from "./thread-read.ts";
+export { projectFolderName } from "./page.ts";
+export { THREAD_LIMIT } from "./thread-read.ts";
 export { UPKEEP_EVERY_MS } from "./upkeep.ts";
 
 export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {

@@ -12,10 +12,10 @@ import type { MemberView } from "./member-view.ts";
 import type { Store } from "./store/store.ts";
 
 /** A protocol's name: lower case, digits and dashes. */
-export const PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
+const PROTOCOL_NAME = /^[a-z0-9][a-z0-9-]*$/;
 
 /** A role of a run's authority (board-split#D28): plain strings, the core knows no list of them (D18, D24). */
-export const AUTHORITY_ROLE = /^[a-z0-9][a-z0-9-]*$/;
+const AUTHORITY_ROLE = /^[a-z0-9][a-z0-9-]*$/;
 
 export function makeRuns(store: Store, rows: Rows, messages: Messages, packs: PackBridge, view: MemberView) {
   const { db, now } = store;
