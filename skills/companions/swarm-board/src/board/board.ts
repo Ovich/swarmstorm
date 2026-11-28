@@ -17,6 +17,7 @@ import { makeRuns } from "./run/runs.ts";
 import { makePause } from "./run/pause.ts";
 import { makeMembers } from "./members/members.ts";
 import { makeAllDone, makePhases } from "./phases/phases.ts";
+import { makePhaseHistory } from "./phases/phase-history.ts";
 import { makeTalk } from "./conversation/talk.ts";
 import { makeMemberStates } from "./members/states.ts";
 import { makeRetention } from "./run/retention.ts";
@@ -54,6 +55,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     ...makeRetention(store, packs, delivery),
     ...makeSnapshot(store, rows, paths, packs, owing, view, delivery),
     ...makeThreadRead(store, rows),
+    ...makePhaseHistory(store, rows),
     deliverMentions: delivery.deliverMentions,
     unreadMentions: delivery.unreadMentions,
     wait: delivery.wait,

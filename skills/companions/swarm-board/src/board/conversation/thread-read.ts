@@ -1,9 +1,10 @@
 // Reading the thread back (codebase-rework#D8), pull only: a long run read in pages, never whole.
-import type { Message, RunId } from "../../contract/board.ts";
-import { EVENTS, eventDef, isEvent } from "../../contract/events.ts";
+import type { Message } from "../../contract/board.ts";
+import { eventDef, isEvent } from "../../contract/events.ts";
 import type { Row, Rows } from "../rows.ts";
 import type { Board } from "../types.ts";
 import type { Store } from "../../store/store.ts";
+import { makeRunThread } from "../openings.ts";
 
 /** The board's events a thread page shows without `events`: the ones that mark the work, not the members' comings and
  *  goings; a pack's landing events (`lands`) beside them. */
@@ -18,34 +19,9 @@ const THREAD_LIMIT_MAX = 200;
 
 export function makeThreadRead(store: Store, rows: Rows) {
   const { db } = store;
-  const { runRowOrNone, memoizedParticipants, toMessage } = rows;
-  /** The seq of the `phase` event that opened `run`'s current phase (0 before any): the one "since the phase opened". */
-  /** Reading the thread back: the run's row, refused when it is not of `repo`, and its phase openings in order. */
-  const threadOf = (repo: string, run: RunId): { row: Row; openings: { name: string; seq: number; at: string }[] } => {
-    const row = runRowOrNone(run);
-    if (!row || String(row.repo) !== repo) throw new Error(`no run ${run} in this project`);
-    const openings = (db.prepare("SELECT seq, at, meta FROM messages WHERE run = ? AND event = ? ORDER BY seq").all(run, EVENTS.phase.name) as Row[]).map((r) => ({
-      name: String(JSON.parse(String(r.meta ?? "{}")).phase ?? ""),
-      seq: Number(r.seq),
-      at: String(r.at),
-    }));
-    return { row, openings };
-  };
-  const runMessages = (run: RunId): Row[] => db.prepare("SELECT * FROM messages WHERE run = ? ORDER BY seq").all(run) as Row[];
-  const verbs: Pick<Board, "phases" | "thread" | "message"> = {
-    phases(repo, run) {
-      const { openings } = threadOf(repo, run);
-      const rows = runMessages(run);
-      const current = openings.at(-1)?.seq ?? null;
-      return openings.map((o, i) => {
-        const end = openings[i + 1]?.seq ?? Infinity;
-        const inside = rows.filter((r) => Number(r.seq) > o.seq && Number(r.seq) < end);
-        const latest = !openings.some((x, j) => j > i && x.name === o.name);
-        const done = latest ? Number((db.prepare("SELECT COUNT(*) AS n FROM phase_done WHERE run = ? AND phase = ?").get(run, o.name) as Row).n) : null;
-        return { name: o.name, seq: o.seq, at: o.at, current: o.seq === current, posts: inside.filter((r) => r.kind !== "event").length, urgent: inside.filter((r) => r.kind === "urgent").length, done };
-      });
-    },
-
+  const { memoizedParticipants, toMessage } = rows;
+  const { threadOf, runMessages } = makeRunThread(store, rows);
+  const verbs: Pick<Board, "thread" | "message"> = {
     thread(repo, run, q) {
       const { row, openings } = threadOf(repo, run);
       const asked = q.phase ?? "current";
