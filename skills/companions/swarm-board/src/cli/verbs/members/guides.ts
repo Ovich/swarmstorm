@@ -78,7 +78,7 @@ function guidesIn(dir: string, keep: (folder: string) => boolean, fallback: (fol
 /** What the shipped guides cover: every code file. Their frontmatter leaves `paths:` out (the plugin
  *  directory accepts no such key from community plugins); a project guide still names its own. */
 export const SHIPPED_GUIDE_PATHS = ["**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,rs,java,kt,cs,rb,php,swift,c,cpp,h}"];
-const SHIPPED_GUIDES = new Set(["guide-complexity", "guide-deepen-module"]);
+const SHIPPED_GUIDES = new Set(["guide-complexity", "guide-deepen-module", "guide-screaming-architecture"]);
 
 /** The shipped guides (the plugin root is three levels above the swarm-board skill), then the project's;
  *  a project guide of the same name stands in for the shipped one. */
