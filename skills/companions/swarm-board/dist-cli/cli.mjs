@@ -1733,7 +1733,7 @@ function makeRows(store) {
   };
   const isLive = (id) => db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== void 0;
   const orchestratorIn = (run2) => participantById(Number(db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run2, ORCHESTRATOR).id));
-  return { runRowOrNone, runRow, phaseOf, nickOf, unusedNick, PARTICIPANT_SQL, listensNow, toParticipant, memoizedParticipants, participantById, toMessage, lastSeq, openPlans, activeNames, live, isLive, orchestratorIn };
+  return { runRowOrNone, runRow, phaseOf, nickOf, unusedNick, PARTICIPANT_SQL, toParticipant, memoizedParticipants, participantById, toMessage, lastSeq, openPlans, activeNames, live, isLive, orchestratorIn };
 }
 var SEAT_STATE_SQL, SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, authorityOf;
 var init_rows = __esm({
@@ -1783,7 +1783,7 @@ function makePaths(store) {
     }
     return null;
   };
-  return { fold: fold3, slashes, roots, relPath };
+  return { fold: fold3, slashes, relPath };
 }
 var CASELESS;
 var init_paths = __esm({
@@ -1918,7 +1918,7 @@ function makePhaseReads(store, rows) {
     return me && owesPhase(me, phaseScopeOf(run2, phase)) ? phase : null;
   };
   const progressOf = (run2, phase) => phase == null ? null : phaseCount(phase, phaseMembersOf(run2, phase), phaseScopeOf(runRow(run2), phase));
-  return { phaseScopeOf, phaseOpenedSeqOf, taskedSeatsNotJoinedOf, phaseMembersOf, joinedPhaseMembersOf, owedNameOf, progressOf };
+  return { phaseScopeOf, phaseOpenedSeqOf, phaseMembersOf, owedNameOf, progressOf };
 }
 var init_phase_reads = __esm({
   "src/board/phase-reads.ts"() {
@@ -2115,7 +2115,7 @@ function makeMemberView(store, rows, owing, messages, packs) {
     };
   };
   const agesOf = (l) => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
-  return { seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, noPresence, heldWaits, activityOf: activityOf2, packLockWaitOf, memberStateOf, owedAtDropOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, progressAtOf, activityShown, activityShownOf, serverUpAt, lostOf, episodeOpenOf, memberView, minutes, statesOf, livenessOf, agesOf };
+  return { seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, heldWaits, memberStateOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, activityShown, memberView, minutes, statesOf, livenessOf, agesOf };
 }
 var init_member_view = __esm({
   "src/board/member-view.ts"() {
@@ -2284,7 +2284,7 @@ function makeDelivery(store, rows, messages, packs, view) {
       });
     }
   };
-  return { ...verbs, unseenRows, sinceSeqOf, wakingSeqs, unreadOf, deliverTo, markPhaseOpenDelivered, forgetWaking };
+  return { ...verbs, unseenRows, unreadOf, markPhaseOpenDelivered, forgetWaking };
 }
 var WAIT_LOG_EVERY_MS;
 var init_delivery = __esm({
@@ -3523,8 +3523,6 @@ var init_board = __esm({
     init_calls();
     init_owing();
     init_mentions();
-    init_runs();
-    init_phases();
     init_page();
     init_thread_read();
     init_upkeep();
@@ -7215,7 +7213,7 @@ function makeAuthority(board) {
     end: selfOrOwnRunsOrchestrator,
     packCall,
     // orchestrator-only: acting for the orchestrator itself; that it is the orchestrator is the board's own rule
-    // (board.ts phase, pause, resume), whose refusal the CLI words
+    // (phases.ts phase, pause, resume), whose refusal the CLI words
     phase: self,
     pause: self,
     resume: self,
@@ -8251,7 +8249,6 @@ function userEvents(line, content, at) {
   return events;
 }
 var claudeCode = {
-  name: "claude-code",
   locate(binding, env) {
     const session = env.CLAUDE_CODE_SESSION_ID;
     if (!session) return null;
