@@ -3,14 +3,14 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { LINES, makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { LINES, makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 import { openRawStore } from "./fixtures/raw-store.ts";
 
 let repos: Repo[] = [];
 const fresh = (): Repo => {
   const r = makeRepo();
   repos.push(r);
-  openTwoRunners(r);
+  openTwoMembers(r);
   return r;
 };
 afterEach(() => {

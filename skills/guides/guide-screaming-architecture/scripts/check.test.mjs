@@ -182,3 +182,12 @@ test("no map: one line naming the guide's product-map reference, exit 0", () => 
   assert.match(out, /references\/product-map\.md/);
   assert.equal(out.trim().split("\n").length, 1);
 });
+
+test("a plural carries its word: `posts` is spread, `chattersLevel` drifts", () => {
+  const { repo, base } = fixtureRepo();
+  writeFiles(repo, { "src/members/posts.ts": "export const chattersLevel = 1;\n" });
+  const { status, out } = runChecker(repo, "--base", base);
+  assert.equal(status, 1, out);
+  assert.match(out, /M1 src\/members\/posts\.ts: carries "post" .*\(new\)/);
+  assert.match(out, /M3 src\/members\/posts\.ts: the retired word "chatter" in `chattersLevel` at line 1 \(new\)/);
+});

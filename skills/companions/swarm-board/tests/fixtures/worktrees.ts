@@ -118,7 +118,7 @@ const SLICES = JSON.stringify([
 ]);
 
 /** A plan run `review-tool` with S3 joined in worktree a holding src/a.ts and S5 in worktree b; its id. */
-export function openTwoRunners(r: Repo, plan = "review-tool", title = "T"): number {
+export function openTwoMembers(r: Repo, plan = "review-tool", title = "T"): number {
   const slices = path.join(r.home, `slices-${plan}.json`);
   fs.writeFileSync(slices, SLICES);
   const id = Number(r.cli(r.repo, "open", "--plan", plan, "--title", title, "--seats", slices).split("\n")[0].trim());

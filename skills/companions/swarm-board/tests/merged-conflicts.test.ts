@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { LINES, makeRepo, openTwoRunners, tellLines, type Repo } from "./fixtures/worktrees.ts";
+import { LINES, makeRepo, openTwoMembers, tellLines, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];
 const fresh = (): Repo => {
@@ -36,7 +36,7 @@ const conflictAfterGrant = (r: Repo, file: string): string => {
 
 test("a conflicting rebase after the grant tells its holder (US4, D3, D5)", () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   const sha = conflictAfterGrant(r, "src/a.ts");
   const out = r.cli(r.wtB, "merged", "--report", "-", sha);
   assert.deepEqual(tellLines(out), [TELL_S3("src/a.ts")]);
@@ -45,7 +45,7 @@ test("a conflicting rebase after the grant tells its holder (US4, D3, D5)", () =
 test("v1-1: `merged` from a folder deep in the worktree, or in the main checkout, keeps the path repository-relative and wakes its holder", () => {
   for (const cwdOf of [(r: Repo) => path.join(r.wtB, "src"), (r: Repo) => path.join(r.repo, "src")]) {
     const r = fresh();
-    openTwoRunners(r);
+    openTwoMembers(r);
     const sha = conflictAfterGrant(r, "src/a.ts");
     const merged = JSON.parse(r.cli(cwdOf(r), "merged", "--report", "-", sha, "--json", "--as", "review-tool/S5"));
     assert.deepEqual(merged.files, ["src/a.ts"]);
@@ -56,7 +56,7 @@ test("v1-1: `merged` from a folder deep in the worktree, or in the main checkout
 
 test("a clean rebase, or none since the grant, prints no tell line (D3, D5)", () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   // a clean rebase: both sides edit the shared file, at its two ends
   r.commitFile(r.wtB, "src/a.ts", edit(4, "export const five = 'b';"));
   r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
@@ -90,7 +90,7 @@ const rebaseAt = (r: Repo, wt: string, second: number): void => {
 
 test("a rebase in the grant's own second, before the grant, is not replayed (D36)", () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   r.commitFile(r.wtB, "src/a.ts", edit(0, "export const one = 'b';"));
   r.commitFile(r.repo, "src/a.ts", edit(0, "export const one = 'main';"));
   assert.deepEqual(r.rebaseOntoMain(r.wtB, { "src/a.ts": edit(0, "export const one = 'both';") }).conflicted, ["src/a.ts"]);
@@ -105,7 +105,7 @@ test("a rebase in the grant's own second, before the grant, is not replayed (D36
 
 test("a conflicted file nobody else held prints no tell line (D5)", () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   const sha = conflictAfterGrant(r, "src/old.ts");
   const out = r.cli(r.wtB, "merged", "--report", "-", sha);
   assert.deepEqual(tellLines(out), []);
@@ -113,7 +113,7 @@ test("a conflicted file nobody else held prints no tell line (D5)", () => {
 
 test("an old git: `merged` succeeds with today's tell line per shared file (US4, D13, D41)", () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   // S3 declared src/a.ts at its join; src/c.ts and src/old.ts only S5 touches
   fs.writeFileSync(path.join(r.wtB, "src", "a.ts"), "export const b = 1;\n");
   fs.writeFileSync(path.join(r.wtB, "src", "c.ts"), "export const b = 1;\n");
@@ -128,7 +128,7 @@ test("an old git: `merged` succeeds with today's tell line per shared file (US4,
 
 test("a merger with no worktree merges, no tell line (D33)", () => {
   const r = fresh();
-  const id = openTwoRunners(r);
+  const id = openTwoMembers(r);
   const plain = path.join(r.home, "plain");
   fs.mkdirSync(plain);
   assert.notEqual(spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd: plain }).status, 0, "setup: the folder is no worktree");
@@ -146,7 +146,7 @@ const drain = (r: ReturnType<typeof fresh>) => {
 
 test("`merged`'s output, human and `--json`, carries no new field or line (D25)", () => {
   const human = fresh();
-  openTwoRunners(human);
+  openTwoMembers(human);
   const sha = conflictAfterGrant(human, "src/a.ts");
   // read first: an unread message would add its own line (the unread rule), not this guard's concern
   drain(human);
@@ -154,7 +154,7 @@ test("`merged`'s output, human and `--json`, carries no new field or line (D25)"
   assert.equal(out, `merged ${sha}: lock released\n${TELL_S3("src/a.ts")}\n`);
 
   const json = fresh();
-  openTwoRunners(json);
+  openTwoMembers(json);
   const sha2 = conflictAfterGrant(json, "src/a.ts");
   drain(json);
   assert.deepEqual(JSON.parse(json.cli(json.wtB, "merged", "--report", "-", sha2, "--json")), {

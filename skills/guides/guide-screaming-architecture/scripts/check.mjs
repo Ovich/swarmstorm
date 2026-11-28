@@ -63,8 +63,11 @@ const spellingOf = (text) => wordsOf(text).join("-");
 /** Each part of a path as its words, the file name's extension off: `cli/code-wording.ts` is [[cli], [code, wording]]. */
 const pathPartsOf = (path) => path.split("/").map((part, i, all) => wordsOf(i === all.length - 1 ? part.replace(/\.[^.]+$/, "") : part));
 
+/** Whether a token is `word` or its plural: `runners` carries `runner`, `posts` carries `post`. */
+const spells = (token, word) => token === word || token === `${word}s` || token === `${word}es`;
+
 /** Whether `words` holds `term` as a contiguous run. */
-const carries = (words, term) => words.some((_, start) => term.every((word, k) => words[start + k] === word));
+const carries = (words, term) => words.some((_, start) => term.every((word, k) => start + k < words.length && spells(words[start + k], word)));
 
 const isUnder = (path, folder) => folder === "" || path === folder || path.startsWith(`${folder}/`);
 

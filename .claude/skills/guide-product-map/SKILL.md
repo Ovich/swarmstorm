@@ -65,3 +65,5 @@ paths: ["skills/companions/**/*.{ts,tsx,js,mjs}"]
 
 - open
 - status
+- path
+- read

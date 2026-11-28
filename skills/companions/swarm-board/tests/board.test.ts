@@ -39,7 +39,7 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-const twoRunners = () => {
+const twoMembers = () => {
   const run = board.openRun({ repo: REPO, group: "review-tool", title: "Review tool", seats: SLICES });
   const s3 = board.join({ run: run.id, seat: "S3", doing: "page", files: [] }).member;
   const s5 = board.join({ run: run.id, seat: "S5", doing: "skill", files: [] }).member;
@@ -81,7 +81,7 @@ test("join returns every participant of the repository, both plans", () => {
 });
 
 test("a mention is delivered in full; a post to nobody is not delivered", () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   const named = board.post(s3, "@S5 I take src/a.ts first\nthen the rest");
   board.post(s3, "progress: half way");
   const d = board.deliverMentions(s5);
@@ -90,14 +90,14 @@ test("a mention is delivered in full; a post to nobody is not delivered", () => 
 });
 
 test("a member never receives its own message", () => {
-  const { s3 } = twoRunners();
+  const { s3 } = twoMembers();
   board.post(s3, "@S3 note to self");
   const d = board.deliverMentions(s3);
   assert.deepEqual(d, { full: [] });
 });
 
 test("a delivery marks delivered, a second is empty", () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   board.post(s3, "one");
   board.post(s3, "@S5 two");
   const first = board.deliverMentions(s5);
@@ -106,7 +106,7 @@ test("a delivery marks delivered, a second is empty", () => {
 });
 
 test("@swarm reaches its run only, @<plan>/S1 and @<CODE>·S3 cross; @all names nobody (D3)", () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   const b = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const far = board.join({ run: b.id, seat: "S1", doing: "board", files: [] }).member;
   board.deliverMentions(far);
@@ -130,7 +130,7 @@ test("@swarm reaches its run only, @<plan>/S1 and @<CODE>·S3 cross; @all names 
 });
 
 test("wait resolves within 100 ms of a post for it", async () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   // the post through the same board, as the server commits every call in its one process (swarm-relay D14)
   let posted = 0;
   setTimeout(() => {
@@ -146,7 +146,7 @@ test("wait resolves within 100 ms of a post for it", async () => {
 });
 
 test("wait resolves empty on timeout", async () => {
-  const { s5 } = twoRunners();
+  const { s5 } = twoMembers();
   const t0 = Date.now();
   const d = await board.wait(s5, { timeoutMs: 150 });
   assert.deepEqual(d, { full: [] });
@@ -154,7 +154,7 @@ test("wait resolves empty on timeout", async () => {
 });
 
 test("a mentions-only wait: an event or a post to someone else does not end it, a mention does", async () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   const poster = await another();
   const s3There = poster.participant(s3.name)!;
   const waiting = board.wait(s5, { timeoutMs: 5000, mentionsOnly: true });
@@ -175,7 +175,7 @@ test("a mentions-only wait: an event or a post to someone else does not end it, 
 });
 
 test("a mentions-only wait ends on an urgent post that does not mention it", async () => {
-  const { s5, orchestrator } = twoRunners();
+  const { s5, orchestrator } = twoMembers();
   const poster = await another();
   setTimeout(() => poster.post(poster.participant(orchestrator.name)!, "stop: main is red", { kind: "urgent" }), 100);
   const d = await board.wait(s5, { timeoutMs: 5000, mentionsOnly: true });
@@ -184,7 +184,7 @@ test("a mentions-only wait ends on an urgent post that does not mention it", asy
 });
 
 test("a newer wait of a member, from another process, supersedes the older: it returns empty at once; the newer gets the message", async () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   const other = await another(); // the foreground wait, in a second process
   const older = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   let olderAt = 0;
@@ -206,7 +206,7 @@ test("a newer wait of a member, from another process, supersedes the older: it r
 });
 
 test("a superseded wait leaves the newer one's state: listening while a mentions wait is pending, waiting for a plain one", async () => {
-  const { s5 } = twoRunners();
+  const { s5 } = twoMembers();
   const watcher = await another();
   // board-split D49: the state is read where the wait is held (the server, in production)
   const s5Of = () => watcher.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
@@ -226,7 +226,7 @@ test("a superseded wait leaves the newer one's state: listening while a mentions
 });
 
 test("end releases a pending wait of that member, empty, at once", async () => {
-  const { s5 } = twoRunners();
+  const { s5 } = twoMembers();
   const other = await another(); // end from a second connection, as the member's next call would
   const waiting = board.wait(s5, { timeoutMs: 10_000, mentionsOnly: true });
   await new Promise((r) => setTimeout(r, 100));
@@ -238,13 +238,13 @@ test("end releases a pending wait of that member, empty, at once", async () => {
 });
 
 test("post by an ended member throws", () => {
-  const { s3 } = twoRunners();
+  const { s3 } = twoMembers();
   board.end(s3);
   assert.throws(() => board.post(s3, "late"), /review-tool\/S3 has ended/);
 });
 
 test("an agreement is a message of kind agreement", () => {
-  const { s3, s5 } = twoRunners();
+  const { s3, s5 } = twoMembers();
   const m = board.post(s3, "@S5 I own src/a.ts until my merge", { kind: "agreement", about: "src/a.ts" });
   assert.equal(posted(m.seq).kind, "agreement");
   assert.equal(posted(m.seq).about, "src/a.ts");
@@ -492,7 +492,7 @@ test("a member's state: ended, working", async () => {
 });
 
 test("a pending mentions-only wait is listening; working while its open call is another (D49), a plain wait is waiting", async () => {
-  const { s5 } = twoRunners();
+  const { s5 } = twoMembers();
   const s5Of = () => board.snapshot(REPO).roster.find((r) => r.member === s5.name)!;
   assert.equal(s5Of().listening, false);
   const listening = board.wait(s5, { timeoutMs: 300, mentionsOnly: true });
@@ -648,7 +648,7 @@ test("a run and its slices carry their links, opaque, to the snapshot (D44)", ()
 // One conversation (plan D1, D2): every item carries its author's run; another run's member is
 // reached only by what is its own.
 const twoRuns = () => {
-  const { run, s3, s5 } = twoRunners();
+  const { run, s3, s5 } = twoMembers();
   const other = board.openRun({ repo: REPO, group: "swarm", title: "B", seats: SLICES });
   const far = board.join({ run: other.id, seat: "S1", doing: "board", files: [] }).member;
   const near = board.join({ run: other.id, seat: "S3", doing: "page", files: [] }).member;
@@ -778,7 +778,7 @@ const SEATS = [
 ];
 
 test("the board's events store their name; an agreement maps by kind, with no name stored", () => {
-  const { s3 } = twoRunners();
+  const { s3 } = twoMembers();
   const agreement = board.post(s3, "we agree", { kind: "agreement", with: ["orchestrator"] });
   assert.equal(agreement.event, null);
   board.end(s3);

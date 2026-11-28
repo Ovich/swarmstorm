@@ -14,7 +14,7 @@ import { connectBoard } from "../src/client/remote.ts";
 import { linkPipe } from "../src/link/link.ts";
 import { bundleVersion, type ServerState } from "../src/contract/wire.ts";
 import { serverStateFile } from "../src/host/home.ts";
-import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
@@ -74,7 +74,7 @@ function countSpawns(): string[] {
 
 test("a post of A in one process wakes B's wait in another, through the server and both links", async () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   const wait = spawn(process.execPath, [CLI, "wait", "--mentions", "--timeout", "20000"], { cwd: r.wtB, env: { ...process.env, SWARM_ROOT: r.home, SWARMSTORM_HOME: r.home } });
   let out = "";
   wait.stdout.on("data", (b) => (out += b));
@@ -88,7 +88,7 @@ test("a post of A in one process wakes B's wait in another, through the server a
 
 test("the server and a link are started when absent, a verb that finds no link answering spawning a detached one, and the second verb in a row starts nothing (D6, D32)", async () => {
   const r = fresh();
-  const run = openTwoRunners(r);
+  const run = openTwoMembers(r);
   const member = { name: "review-tool/S3", run };
   stopServerOf(r.home);
   assert.ok(await until(() => state(r.home) === null || !alive(state(r.home)!.pid)), "serve stop stopped the server");
@@ -186,7 +186,7 @@ test("a server that cannot start makes the verb exit 1, naming swarm serve (D19)
 
 test("a wait whose process is killed leaves the member not waiting (D16)", async () => {
   const r = fresh();
-  openTwoRunners(r);
+  openTwoMembers(r);
   const waiting = () => {
     const db = openRawStore(r.store, { readOnly: true });
     try {
@@ -205,7 +205,7 @@ test("a wait whose process is killed leaves the member not waiting (D16)", async
 
 test("stopping the data home's server leaves no node process of it behind (D27)", async () => {
   const r = fresh();
-  const run = openTwoRunners(r);
+  const run = openTwoMembers(r);
   const pid = state(r.home)!.pid;
   stopServerOf(r.home);
   assert.ok(await until(() => !alive(pid)), "the server exited");

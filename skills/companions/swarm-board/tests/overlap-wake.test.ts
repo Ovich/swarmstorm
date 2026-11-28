@@ -4,13 +4,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openBoard, type Board, type Participant } from "../src/board/board.ts";
-import { makeRepo, openTwoRunners, type Repo } from "./fixtures/worktrees.ts";
+import { makeRepo, openTwoMembers, type Repo } from "./fixtures/worktrees.ts";
 import { stopServerOf } from "./fixtures/server.ts";
 import { codeVerbs } from "../src/packs/code/calls.ts";
 
 const PLAN = "review-tool";
 
-/** The two runners of `openTwoRunners`, S3 (worktree a, holding src/a.ts) and S5 (worktree b), driven on the board
+/** The two runners of `openTwoMembers`, S3 (worktree a, holding src/a.ts) and S5 (worktree b), driven on the board
  *  itself with the server stopped, as their links' frames and merges would; then each reads through `wait --mentions`. */
 async function onTheBoard(r: Repo, drive: (board: Board, s3: Participant, s5: Participant, code: ReturnType<typeof codeVerbs<Board>>) => void): Promise<void> {
   stopServerOf(r.home);
@@ -26,7 +26,7 @@ const waitIn = (r: Repo, cwd: string): string => r.cli(cwd, "wait", "--mentions"
 test("the overlap flag wakes its writer, with the agree step, and not the holder", async () => {
   const r = makeRepo("swarm-claims-wake-");
   try {
-    openTwoRunners(r, PLAN);
+    openTwoMembers(r, PLAN);
     // S3 holds src/a.ts; S5's worktree changes it too: the flag is posted in S5's name
     await onTheBoard(r, (_board, _s3, s5, code) => code.changes(s5, ["src/a.ts"]));
     const writer = waitIn(r, r.wtB);
