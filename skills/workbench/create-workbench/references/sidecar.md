@@ -85,7 +85,7 @@ bench.state.get(key) / set(key, value) · bench.text(s)
 ## Reworking an existing bench
 
 A bench made before this shape (its data in a `data block` inside the page, written by
-the copy of `data-block.mjs` in its own skill, no longer shipped here) opens and feeds as it did; it is reworked when it is next worked on,
+its own skill's copy of the old data-block script, no longer shipped here) opens and feeds as it did; it is reworked when it is next worked on,
 never by a mechanism:
 
 1. `node scripts/page.mjs <path> --label "<label>" --replace` makes the page fresh at the same
