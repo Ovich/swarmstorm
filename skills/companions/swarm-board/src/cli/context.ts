@@ -2,7 +2,7 @@
 // who is calling, the gates before a member verb, and how an answer prints. The dispatcher builds one per call.
 import fs from "node:fs";
 import path from "node:path";
-import type { Participant } from "../board/board.ts";
+import type { Participant } from "../contract/board.ts";
 import { HOME_OVERRIDE } from "../board/home.ts";
 import { connectBoard, connectDirectBoard, linkVerbArgs, type BoardMember, type ConnectedBoard } from "../client/remote.ts";
 import { DATA_ROOT } from "../host/home.ts";

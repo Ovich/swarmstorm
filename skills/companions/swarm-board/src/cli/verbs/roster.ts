@@ -1,4 +1,4 @@
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { CODE_WORDING, WORDING } from "../answer/index.ts";
 import type { VerbContext } from "../context.ts";
 import { phaseSuffix, rosterLine } from "../lines.ts";

@@ -1,4 +1,5 @@
-import type { Delivery, Message, Participant } from "../../board/board.ts";
+import type { Delivery } from "../../board/board.ts";
+import type { Message, Participant } from "../../contract/board.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../../contract/events.ts";
 import { answer, eventStep, shellWord, WORDING } from "../answer/index.ts";
 import * as rules from "../answer/rules.ts";

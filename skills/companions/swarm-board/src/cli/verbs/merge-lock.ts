@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import type { HeldMergeLock } from "../../contract/code.ts";
 import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { baseRef, git, worktreeHolding } from "../../host/git.ts";

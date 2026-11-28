@@ -1,4 +1,4 @@
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { endUnmergedLine } from "../answer/code-rules.ts";
 import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";

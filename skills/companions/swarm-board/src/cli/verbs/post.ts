@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { seqLine } from "../format.ts";
 import { nameHandle, unmatchedMentions } from "../../board/mentions.ts";
 import { resolveIn } from "../../host/place.ts";

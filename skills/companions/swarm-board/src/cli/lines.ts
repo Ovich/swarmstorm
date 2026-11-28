@@ -1,5 +1,6 @@
 // How the board's members, runs and posts read on one line of an answer: roster, status, join and wait.
-import { progressText, type Message, type PhaseProgress, type RosterEntry } from "../board/board.ts";
+import { progressText, type PhaseProgress, type RosterEntry } from "../board/board.ts";
+import type { Message } from "../contract/board.ts";
 import { eventOf } from "../contract/events.ts";
 import { CODE_WORDING, WORDING } from "./answer/index.ts";
 import { fullText } from "./format.ts";

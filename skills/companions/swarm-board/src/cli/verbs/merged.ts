@@ -1,4 +1,4 @@
-import type { Sharer, Participant } from "../../board/board.ts";
+import type { Sharer, Participant } from "../../contract/board.ts";
 import type { HeldMergeLock } from "../../contract/code.ts";
 import { git, gitAnswer } from "../../host/git.ts";
 import { conflictsOf, MERGE_CONFLICTS_ENV, type Conflicts } from "../conflicts.ts";

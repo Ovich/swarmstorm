@@ -1,4 +1,4 @@
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { seqLine } from "../format.ts";
 import { shellWord, WORDING } from "../answer/index.ts";
 import * as rules from "../answer/rules.ts";

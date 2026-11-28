@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Declared, Participant } from "../../board/board.ts";
+import type { Declared, Participant } from "../../contract/board.ts";
 import { FOREGROUND_WAIT_MS, eventOf } from "../../contract/events.ts";
 import { discoverGuides, guidesLine, type Guide } from "../guides.ts";
 import { resolveIn, worktreeOf } from "../../host/place.ts";

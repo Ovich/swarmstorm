@@ -1,7 +1,7 @@
 // One pipeline for every verb (codebase-rework#D11, plan §3.4): the helps first, then the verb's entry, the refs it
 // hands git, the board when it talks to one, who is calling and the gates before a member verb, the verb itself, and
 // the line and exit a failure maps to. An entry holds no text: its names key VERB_USAGE (D12).
-import type { Participant } from "../board/board.ts";
+import type { Participant } from "../contract/board.ts";
 import { connectBoard, SERVER_CLOSED_CONNECTION } from "../client/remote.ts";
 import { refArg } from "../host/git.ts";
 import { DATA_ROOT } from "../host/home.ts";

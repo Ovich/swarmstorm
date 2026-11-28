@@ -2,7 +2,8 @@
 // worktree made at join or delivery, the merge locks held, and the report a merge carries.
 import fs from "node:fs";
 import path from "node:path";
-import type { PackRefusal, Participant } from "../board/board.ts";
+import type { PackRefusal } from "../board/board.ts";
+import type { Participant } from "../contract/board.ts";
 import { baseAt } from "../host/git.ts";
 import { worktreeOf } from "../host/place.ts";
 import { CODE_WORDING, WORDING } from "./answer/index.ts";

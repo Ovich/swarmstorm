@@ -1,4 +1,5 @@
-import { progressText, type Participant } from "../../board/board.ts";
+import { progressText } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { answer, CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
 import type { VerbContext } from "../context.ts";
 

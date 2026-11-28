@@ -1,4 +1,4 @@
-import type { Participant } from "../../board/board.ts";
+import type { Participant } from "../../contract/board.ts";
 import { seqLine } from "../format.ts";
 import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
 import type { VerbContext } from "../context.ts";

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Kind, SeatSpec } from "../../board/board.ts";
+import type { SeatSpec } from "../../board/board.ts";
+import type { Kind } from "../../contract/kinds.ts";
 import { profileOf } from "../../contract/kinds.ts";
 import { stallMsFloor } from "../../board/liveness.ts";
 import { HOME_OVERRIDE } from "../../board/home.ts";
