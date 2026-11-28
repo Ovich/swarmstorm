@@ -11,10 +11,9 @@ import type { PhaseProgress } from "./owing.ts";
 import { RPC_METHODS, type RpcMethod } from "../contract/wire.ts";
 
 export type { Kind } from "../contract/kinds.ts";
-export type { AllJoinedMeta, AwaitedMeta, BreachMeta, Conflicts, Declared, Message, MessageKind, MessageMeta, Participant, PauseMeta, PhaseMeta, RunId, Sharer, UnlockedMeta } from "../contract/board.ts";
+export type { Conflicts, Declared, Message, Participant, RunId, Sharer } from "../contract/board.ts";
 export type { EventName } from "../contract/events.ts";
 export type { PackRefusal } from "../packs/types.ts";
-export type { CoreMemberState, SeatState } from "./liveness.ts";
 export type { PhaseProgress } from "./owing.ts";
 export type { LockTurn, SnapshotFile } from "../contract/code.ts";
 /** A seat of a run (D22). `link`: the slice document's URL, opaque to the board (D44). */
