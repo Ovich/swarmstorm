@@ -65,5 +65,3 @@ export const registry = {
     return opener.openTables(deps);
   },
 };
-
-export type { PackCtx, PackRefusal, PackVerbInput } from "./types.ts";
