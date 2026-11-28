@@ -103,6 +103,24 @@ test("a new violation fails, the old ones are not listed", () => {
   assert.match(out, /2 new violations/);
 });
 
+test("M3 reads identifiers only: a retired word in a comment, a string or a regex is no drift", () => {
+  const { repo, base } = fixtureRepo();
+  writeFiles(repo, {
+    "src/members/join.ts": [
+      "/** the old name was",
+      " *  chatter, in prose */",
+      'export const label = "chatter"; // chatter again',
+      "export const spelled = `C:\\\\chatter~1 ${label} chatter`, matcher = /chatter`/;",
+      "export const chatterLevel = 1;",
+      "",
+    ].join("\n"),
+  });
+  const { status, out } = runChecker(repo, "--base", base);
+  assert.equal(status, 1, out);
+  assert.match(out, /M3 word drift: 1 \(1 new\)/);
+  assert.match(out, /M3 src\/members\/join\.ts: the retired word "chatter" in `chatterLevel` at line 5 \(new\)/);
+});
+
 test("the new violation committed still counts against the base, and --scope narrows to it", () => {
   const { repo, base } = fixtureRepo();
   writeFiles(repo, { "src/members/thread.ts": "export const t = 1;\n" });

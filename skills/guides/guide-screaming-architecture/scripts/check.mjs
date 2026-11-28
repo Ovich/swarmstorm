@@ -139,7 +139,66 @@ function layoutOf(map) {
 
 // ── what a revision holds ────────────────────────────────────────────────────────────────────────────────────
 
-/** The files in scope at `revision`, or in the working tree when it is null, and the lines naming a retired word. */
+/** A character after which `/` opens a regex literal, not a division. */
+const BEFORE_REGEX = /[(,=:[!&|?{};+\-*%<>~^]/;
+
+/** The source with every comment, string, template text and regex literal blanked, line breaks kept: what M3 reads, so a
+ *  retired word in prose or a path spelling is no drift, only one in an identifier. A template's `${…}` stays code. */
+function identifiersOnly(source) {
+  const blank = (text) => text.replace(/[^\n]/g, " ");
+  const openTemplates = []; // the brace depth at each open `${`
+  let braces = 0;
+  let out = "";
+  let i = 0;
+  const skipTo = (end) => {
+    out += blank(source.slice(i, end));
+    i = end;
+  };
+  /** The index past a literal closed by `close`, escapes skipped; a quoted string also stops at its line's end. */
+  const literalEnd = (from, close, stopAtLine) => {
+    let j = from;
+    while (j < source.length && source[j] !== close && !(stopAtLine && source[j] === "\n")) j += source[j] === "\\" ? 2 : 1;
+    return Math.min(j + 1, source.length);
+  };
+  /** Template text from `from` to its closing backtick, or to a `${`, which opens code. */
+  const templateText = (from) => {
+    let j = from;
+    while (j < source.length && source[j] !== "`" && !(source[j] === "$" && source[j + 1] === "{")) j += source[j] === "\\" ? 2 : 1;
+    if (source[j] === "$") {
+      openTemplates.push(braces);
+      return j + 2;
+    }
+    return Math.min(j + 1, source.length);
+  };
+  while (i < source.length) {
+    const c = source[i];
+    const next = source[i + 1];
+    if (c === "/" && next === "/") skipTo(source.indexOf("\n", i) < 0 ? source.length : source.indexOf("\n", i));
+    else if (c === "/" && next === "*") skipTo(source.indexOf("*/", i + 2) < 0 ? source.length : source.indexOf("*/", i + 2) + 2);
+    else if (c === '"' || c === "'") skipTo(literalEnd(i + 1, c, true));
+    else if (c === "`") skipTo(templateText(i + 1));
+    else if (c === "}" && openTemplates.at(-1) === braces) {
+      openTemplates.pop();
+      skipTo(templateText(i + 1));
+    } else if (c === "/" && (BEFORE_REGEX.test(out.trimEnd().at(-1) ?? "(") || /\b(return|typeof|case|in|of|void|yield|await)\s*$/.test(out))) {
+      let j = i + 1;
+      for (let inClass = false; j < source.length && source[j] !== "\n" && (inClass || source[j] !== "/"); j++) {
+        if (source[j] === "\\") j++;
+        else if (source[j] === "[") inClass = true;
+        else if (source[j] === "]") inClass = false;
+      }
+      skipTo(Math.min(j + 1, source.length));
+    } else {
+      if (c === "{") braces++;
+      else if (c === "}") braces--;
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/** The files in scope at `revision`, or in the working tree when it is null, and the code lines naming a retired word. */
 function snapshotOf(root, revision, scopes, retiredWords) {
   const inScope = (file) => scopes.length === 0 || scopes.some((scope) => isUnder(file, scope));
   const split = (out) => (out ?? "").split("\0").filter(Boolean);
@@ -156,11 +215,18 @@ function snapshotOf(root, revision, scopes, retiredWords) {
     const pathspecs = scopes.length > 0 ? ["--", ...scopes] : [];
     const grep = revision ? ["grep", "-I", "-n", "-i", "-z", "-E", "-e", pattern, revision] : ["grep", "--untracked", "-I", "-n", "-i", "-z", "-E", "-e", pattern];
     const out = tryGit(root, [...grep, ...pathspecs]) ?? "";
+    const hitsByFile = new Map();
     for (const row of out.split("\n")) {
       const [path, number, text] = row.split("\0");
       if (text === undefined) continue;
       const file = revision ? path.slice(revision.length + 1) : path;
-      if (CODE_FILE.test(file) && inScope(file)) lines.push({ file, number: Number(number), text });
+      if (CODE_FILE.test(file) && inScope(file)) hitsByFile.set(file, [...(hitsByFile.get(file) ?? []), Number(number)]);
+    }
+    // only the files grep hit are read whole, to blank their comments and strings (a comment may open lines above the hit)
+    for (const [file, numbers] of hitsByFile) {
+      const source = revision ? tryGit(root, ["show", `${revision}:${file}`]) : readFileSync(join(root, file), "utf8");
+      const codeLines = identifiersOnly(source ?? "").split("\n");
+      for (const number of numbers) lines.push({ file, number, text: codeLines[number - 1] ?? "" });
     }
   }
   return { files, lines };
