@@ -19,10 +19,12 @@ const PRODUCT_MAP = `# Product map
 |---|---|---|---|
 | conversation | post, thread, view | src/conversation, app/conversation | chatter |
 | members | join | src/members | — |
+| run | open | src/cli/verbs/run | — |
 
 ## Horizontal
 
 - \`src/store\`
+- \`src/cli\`
 
 ## Stoplist
 
@@ -123,6 +125,23 @@ test("a word inside a compound name is spread; a stoplist word, alone or as a to
   assert.match(out, /M1 src\/members\/postQueue\.ts: carries "post" .*\(new\)/);
   assert.doesNotMatch(out, /src\/members\/view/);
   assert.match(out, /1 new violation:/);
+});
+
+test("a home under a horizontal folder is a home; its sibling folders are feature folders", () => {
+  const { repo, base } = fixtureRepo();
+  writeFiles(repo, {
+    "src/cli/verbs/run/open.ts": "export const o = 1;\n",
+    "src/cli/verbs/run/post.ts": "export const p = 1;\n",
+    "src/cli/verbs/misc/x.ts": "export const x = 1;\n",
+    "src/cli/answer/wording.ts": "export const w = 1;\n",
+  });
+  const { status, out } = runChecker(repo, "--base", base);
+  assert.equal(status, 1, out);
+  assert.match(out, /M1 src\/cli\/verbs\/run\/post\.ts: carries "post" .*\(new\)/);
+  assert.match(out, /M2 src\/cli\/verbs\/misc\/: .*\(new\)/);
+  assert.doesNotMatch(out, /src\/cli\/verbs\/run\/open\.ts|src\/cli\/answer/);
+  assert.match(out, /alignment 75% \(6 of 8 files/);
+  assert.match(out, /2 new violations/);
 });
 
 test("no map: one line naming the guide's product-map reference, exit 0", () => {

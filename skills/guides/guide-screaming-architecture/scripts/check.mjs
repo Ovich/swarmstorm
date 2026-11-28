@@ -68,6 +68,9 @@ const carries = (words, term) => words.some((_, start) => term.every((word, k) =
 
 const isUnder = (path, folder) => folder === "" || path === folder || path.startsWith(`${folder}/`);
 
+/** The folders none of the others holds, each once. */
+const outermostFolders = (folders) => [...new Set(folders)].filter((folder, _, all) => !all.some((other) => other !== folder && isUnder(folder, other)));
+
 // ── the map ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 function sectionLines(text, heading) {
@@ -113,8 +116,16 @@ function readProductMap(text) {
 /** Folders holding a home are the feature layers; a layer's child folders are its feature folders. */
 function layoutOf(map) {
   const layers = [...new Set(map.features.flatMap((feature) => feature.homes.map((home) => home.split("/").slice(0, -1).join("/"))))];
-  const isHorizontal = (path) => map.horizontal.some((folder) => isUnder(path, folder));
   const layerOf = (file) => layers.filter((layer) => isUnder(file, layer)).sort((a, b) => b.length - a.length)[0];
+  const isHome = (file, feature) => feature.homes.some((home) => isUnder(file, home));
+  const homeOf = (file) => map.features.find((feature) => isHome(file, feature));
+  // A horizontal folder covers only what lies below its path's feature layer, never a layer it holds (homes may sit
+  // under a horizontal folder, as feature folders of a layer inside it); a path under a home is never horizontal.
+  const isHorizontal = (path) => {
+    const layer = layerOf(path);
+    const coversPath = (folder) => isUnder(path, folder) && (layer === undefined || (folder !== layer && isUnder(folder, layer)));
+    return !homeOf(path) && map.horizontal.some(coversPath);
+  };
   const featureFolderOf = (file) => {
     const layer = layerOf(file);
     if (layer === undefined) return null;
@@ -123,8 +134,6 @@ function layoutOf(map) {
     const folder = layer === "" ? rest[0] : `${layer}/${rest[0]}`;
     return isHorizontal(folder) ? null : folder;
   };
-  const isHome = (file, feature) => feature.homes.some((home) => isUnder(file, home));
-  const homeOf = (file) => map.features.find((feature) => isHome(file, feature));
   return { layers, isHorizontal, layerOf, featureFolderOf, isHome, homeOf };
 }
 
@@ -224,7 +233,11 @@ function findCruiser(root) {
 function measureCrossFeatureImports({ root, layout, scopes }) {
   const cruiser = findCruiser(root);
   if (!cruiser) return { notMeasured: "dependency-cruiser not found (the dependency-graph skill installs it)" };
-  const roots = layout.layers.map((layer) => layer || ".").filter((layer) => scopes.length === 0 || scopes.some((scope) => isUnder(layer, scope) || isUnder(scope, layer)));
+  const roots = layout.layers
+    .filter((layer) => existsSync(join(root, layer)))
+    .filter((layer) => scopes.length === 0 || scopes.some((scope) => isUnder(layer, scope) || isUnder(scope, layer)))
+    .map((layer) => layer || ".");
+  if (roots.length === 0) return { notMeasured: "no feature layer on disk" };
   let modules;
   try {
     const out = execFileSync(process.execPath, [cruiser, "--no-config", "--output-type", "json", "--exclude", "node_modules", "--do-not-follow", "node_modules", ...roots], {
@@ -315,7 +328,7 @@ function main() {
     return 0;
   }
   const layout = layoutOf(map);
-  const scopes = options.scopes.length > 0 ? options.scopes : [...layout.layers, ...map.horizontal];
+  const scopes = outermostFolders(options.scopes.length > 0 ? options.scopes : [...layout.layers, ...map.horizontal]);
   const scopesShown = scopes.includes("") ? "the whole repository" : scopes.join(", ");
   const base = resolveBase(root, options.base);
   const retiredWords = map.features.flatMap((feature) => feature.retired);
