@@ -17,7 +17,7 @@ const PRODUCT_MAP = `# Product map
 
 | word | entries | home | retired |
 |---|---|---|---|
-| conversation | post, thread | src/conversation, app/conversation | chatter |
+| conversation | post, thread, view | src/conversation, app/conversation | chatter |
 | members | join | src/members | — |
 
 ## Horizontal
@@ -27,6 +27,7 @@ const PRODUCT_MAP = `# Product map
 ## Stoplist
 
 - util
+- view
 `;
 
 const git = (repo, ...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", windowsHide: true }).trim();
@@ -108,6 +109,20 @@ test("the new violation committed still counts against the base, and --scope nar
   assert.equal(runChecker(repo, "--base", base).status, 1);
   const scoped = runChecker(repo, "--base", base, "--all", "--scope", "src/conversation");
   assert.equal(scoped.status, 0, scoped.out);
+});
+
+test("a word inside a compound name is spread; a stoplist word, alone or as a token, is not", () => {
+  const { repo, base } = fixtureRepo();
+  writeFiles(repo, {
+    "src/members/postQueue.ts": "export const q = 1;\n",
+    "src/members/view-cache.ts": "export const c = 1;\n",
+    "src/members/view.ts": "export const v = 1;\n",
+  });
+  const { status, out } = runChecker(repo, "--base", base);
+  assert.equal(status, 1, out);
+  assert.match(out, /M1 src\/members\/postQueue\.ts: carries "post" .*\(new\)/);
+  assert.doesNotMatch(out, /src\/members\/view/);
+  assert.match(out, /1 new violation:/);
 });
 
 test("no map: one line naming the guide's product-map reference, exit 0", () => {

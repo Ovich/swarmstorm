@@ -57,8 +57,11 @@ const wordsOf = (text) =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
 
-/** A path part or a map word in one spelling, so `merge-lock`, `merge_lock` and `mergeLock` compare equal. */
-const partOf = (text) => wordsOf(text).join("-");
+/** A map word in one spelling, so `merge-lock`, `merge_lock` and `mergeLock` compare equal. */
+const spellingOf = (text) => wordsOf(text).join("-");
+
+/** Each part of a path as its words, the file name's extension off: `cli/code-wording.ts` is [[cli], [code, wording]]. */
+const pathPartsOf = (path) => path.split("/").map((part, i, all) => wordsOf(i === all.length - 1 ? part.replace(/\.[^.]+$/, "") : part));
 
 /** Whether `words` holds `term` as a contiguous run. */
 const carries = (words, term) => words.some((_, start) => term.every((word, k) => words[start + k] === word));
@@ -101,7 +104,7 @@ function readProductMap(text) {
   return {
     features,
     horizontal: bulletsOf(sectionLines(text, "horizontal")).map(normalizeFolder),
-    stoplist: new Set(bulletsOf(sectionLines(text, "stoplist")).map((word) => word.toLowerCase())),
+    stoplist: new Set(bulletsOf(sectionLines(text, "stoplist")).map(spellingOf)),
   };
 }
 
@@ -158,17 +161,17 @@ function snapshotOf(root, revision, scopes, retiredWords) {
 
 function measureSpread({ map, layout, snapshot }) {
   const terms = map.features.flatMap((feature) =>
-    [feature.word, ...feature.aliases, ...feature.entries].filter((term) => !map.stoplist.has(term.toLowerCase())).map((term) => ({ term, termPart: partOf(term), feature })),
+    [feature.word, ...feature.aliases, ...feature.entries].filter((term) => !map.stoplist.has(spellingOf(term))).map((term) => ({ term, words: wordsOf(term), feature })),
   );
   const violations = [];
   for (const file of snapshot.files) {
     const layer = layout.layerOf(file);
     if (layer === undefined || TEST_FILE.test(file) || layout.isHorizontal(file)) continue;
-    // Whole path parts below the feature layer, exact (product-shape#D22): a folder, or a file name without its extensions.
-    const parts = file.slice(layer === "" ? 0 : layer.length + 1).split("/").map((part, i, all) => partOf(i === all.length - 1 ? part.split(".")[0] : part));
+    // Path parts below the feature layer (product-shape#D22): a word matches a whole part or a contiguous run inside a compound one.
+    const parts = pathPartsOf(file.slice(layer === "" ? 0 : layer.length + 1));
     const seen = new Set();
-    for (const { term, termPart, feature } of terms) {
-      if (seen.has(feature) || layout.isHome(file, feature) || !parts.includes(termPart)) continue;
+    for (const { term, words, feature } of terms) {
+      if (seen.has(feature) || layout.isHome(file, feature) || !parts.some((part) => carries(part, words))) continue;
       seen.add(feature);
       violations.push({ key: `M1|${file}|${feature.word}`, file, term, feature });
     }
@@ -190,7 +193,7 @@ function measureWordDrift({ map, snapshot }) {
     const key = `M3|${file}|${entry.word}`;
     if (!violations.has(key)) violations.set(key, { key, file, word: entry.word, feature: entry.feature, where });
   };
-  for (const file of snapshot.files) for (const entry of retired) if (carries(wordsOf(file), entry.words)) note(file, entry, "its path");
+  for (const file of snapshot.files) for (const entry of retired) if (pathPartsOf(file).some((part) => carries(part, entry.words))) note(file, entry, "its path");
   for (const line of snapshot.lines) {
     const identifiers = line.text.match(/[A-Za-z_$][\w$]*/g) ?? [];
     for (const entry of retired) {
