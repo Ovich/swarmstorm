@@ -1,5 +1,5 @@
-import type { VerbContext } from "../context.ts";
-import { shortAt } from "../lines.ts";
+import type { VerbContext } from "../../context.ts";
+import { shortAt } from "../../lines.ts";
 
 export async function phasesVerb(ctx: VerbContext): Promise<void> {
   const run = await ctx.readRun("phases");

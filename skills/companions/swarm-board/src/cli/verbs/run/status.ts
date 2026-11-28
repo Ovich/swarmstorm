@@ -1,10 +1,10 @@
-import { SQLITE_PATH } from "../../store/home.ts";
-import { DATA_ROOT } from "../../host/home.ts";
-import { CODE_WORDING, orchestratorsLines, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { heldLine, phaseSuffix, stateAndContextLine } from "../lines.ts";
-import { projectNameOf, writeOrchestratorSeats } from "../paths.ts";
-import { mergeLocksHeld } from "../pack-calls.ts";
+import { SQLITE_PATH } from "../../../store/home.ts";
+import { DATA_ROOT } from "../../../host/home.ts";
+import { CODE_WORDING, orchestratorsLines, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { heldLine, phaseSuffix, stateAndContextLine } from "../../lines.ts";
+import { projectNameOf, writeOrchestratorSeats } from "../../paths.ts";
+import { mergeLocksHeld } from "../../pack-calls.ts";
 
 /** An open run idle this long is shown by status as likely forgotten, with its close command. */
 const FORGOTTEN_MS = 24 * 60 * 60 * 1000;

@@ -1,7 +1,7 @@
-import type { ThreadQuery } from "../../board/board.ts";
-import { shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { shortAt } from "../lines.ts";
+import type { ThreadQuery } from "../../../board/board.ts";
+import { shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { shortAt } from "../../lines.ts";
 
 /** How much of a post a thread line shows; `read <seq>` shows it whole. */
 const THREAD_EXCERPT = 100;

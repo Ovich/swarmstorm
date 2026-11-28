@@ -1,5 +1,5 @@
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
 
 export async function worktreeVerb(ctx: VerbContext): Promise<void> {
   if (ctx.args.positional[0] !== "prune") fail(`worktree: the one subcommand is prune\n${ctx.verbHelp()}`);

@@ -1,8 +1,8 @@
-import type { Participant } from "../../contract/board.ts";
-import { seqLine } from "../format.ts";
-import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { mergeLocksHeld } from "../pack-calls.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { seqLine } from "../conversation/format.ts";
+import { CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { mergeLocksHeld } from "../../pack-calls.ts";
 
 export async function pauseVerb(ctx: VerbContext, p: Participant): Promise<void> {
   // pause --person "<what they decide>": a pause waiting on the person (idea 2, B12)

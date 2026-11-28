@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { conflictsOf, headReflogLength } from "../src/cli/conflicts.ts";
+import { conflictsOf, headReflogLength } from "../src/cli/verbs/code/conflicts.ts";
 import { LINES, makeRepo, type Repo } from "./fixtures/worktrees.ts";
 
 let repos: Repo[] = [];

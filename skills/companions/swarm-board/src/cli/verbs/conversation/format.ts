@@ -1,5 +1,5 @@
 // How the board's messages read in a terminal: one place for the CLI's verbs.
-import type { Message } from "../contract/board.ts";
+import type { Message } from "../../../contract/board.ts";
 
 /** A posted message's seq. */
 export const seqLine = (m: Message): string => `#${m.seq}`;

@@ -1,14 +1,14 @@
 import path from "node:path";
-import type { Declared, Participant } from "../../contract/board.ts";
-import { FOREGROUND_WAIT_MS, eventOf } from "../../contract/events.ts";
-import { discoverGuides, guidesLine, type Guide } from "../guides.ts";
-import { resolveIn, worktreeOf } from "../../host/place.ts";
-import { answer, CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { rosterLine, shownOf } from "../lines.ts";
-import { fwd, repoRelative, toolRoot } from "../paths.ts";
-import { madeWorktree, memberWorktree } from "../pack-calls.ts";
+import type { Declared, Participant } from "../../../contract/board.ts";
+import { FOREGROUND_WAIT_MS, eventOf } from "../../../contract/events.ts";
+import { discoverGuides, guidesLine, type Guide } from "./guides.ts";
+import { resolveIn, worktreeOf } from "../../../host/place.ts";
+import { answer, CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { rosterLine, shownOf } from "../../lines.ts";
+import { fwd, repoRelative, toolRoot } from "../../paths.ts";
+import { madeWorktree, memberWorktree } from "../../pack-calls.ts";
 
 export async function joinVerb(ctx: VerbContext): Promise<void> {
   // V-42 (board-split#D58): --as names the run's own group, never another run's member

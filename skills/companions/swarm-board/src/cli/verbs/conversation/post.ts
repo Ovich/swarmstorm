@@ -1,14 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Participant } from "../../contract/board.ts";
-import { seqLine } from "../format.ts";
-import { nameHandle, unmatchedMentions } from "../../board/conversation/mentions.ts";
-import { resolveIn } from "../../host/place.ts";
-import { lostMentionLines, shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { repoRelative } from "../paths.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { seqLine } from "./format.ts";
+import { nameHandle, unmatchedMentions } from "../../../board/conversation/mentions.ts";
+import { resolveIn } from "../../../host/place.ts";
+import { lostMentionLines, shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { repoRelative } from "../../paths.ts";
 
 export async function postVerb(ctx: VerbContext, p: Participant): Promise<void> {
   // --file: a long body (a table, quotes, guillemets) read from a file, never through the shell's quoting

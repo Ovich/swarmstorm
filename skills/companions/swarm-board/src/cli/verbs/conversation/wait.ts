@@ -1,10 +1,10 @@
-import type { Delivery } from "../../board/board.ts";
-import type { Message, Participant } from "../../contract/board.ts";
-import { FOREGROUND_WAIT_MS, eventOf } from "../../contract/events.ts";
-import { answer, eventStep, shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { shownOf } from "../lines.ts";
+import type { Delivery } from "../../../board/board.ts";
+import type { Message, Participant } from "../../../contract/board.ts";
+import { FOREGROUND_WAIT_MS, eventOf } from "../../../contract/events.ts";
+import { answer, eventStep, shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { shownOf } from "../../lines.ts";
 
 export async function waitVerb(ctx: VerbContext, p: Participant): Promise<void> {
   const raw = ctx.args.flag("--timeout");

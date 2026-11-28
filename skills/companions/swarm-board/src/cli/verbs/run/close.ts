@@ -1,8 +1,8 @@
-import { CODE_WORDING, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { mergeLocksHeld } from "../pack-calls.ts";
+import { CODE_WORDING, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { mergeLocksHeld } from "../../pack-calls.ts";
 
 export async function closeVerb(ctx: VerbContext): Promise<void> {
   const run = ctx.runArg();

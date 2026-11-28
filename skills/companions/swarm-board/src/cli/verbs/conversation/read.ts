@@ -1,6 +1,6 @@
-import { WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
+import { WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
 
 export async function readVerb(ctx: VerbContext): Promise<void> {
   const seq = Number(String(ctx.args.positional[0] ?? "").replace(/^#/, ""));

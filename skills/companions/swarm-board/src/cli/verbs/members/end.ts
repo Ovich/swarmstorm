@@ -1,10 +1,10 @@
-import type { Participant } from "../../contract/board.ts";
-import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
-import { endUnmergedLine } from "../answer/code-rules.ts";
-import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { stateLine } from "../lines.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { FOREGROUND_WAIT_MS } from "../../../contract/events.ts";
+import { endUnmergedLine } from "../../answer/code-rules.ts";
+import { CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { stateLine } from "../../lines.ts";
 
 export async function endVerb(ctx: VerbContext, asker: Participant): Promise<void> {
   // its run closed: the close ended it; end answers what the closed line promised, the summary to return

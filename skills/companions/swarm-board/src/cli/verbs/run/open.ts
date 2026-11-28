@@ -1,19 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { SeatSpec } from "../../board/board.ts";
-import type { Kind } from "../../contract/kinds.ts";
-import { profileOf } from "../../contract/kinds.ts";
-import { stallMsFloor } from "../../board/stall.ts";
-import { HOME_OVERRIDE } from "../../store/home.ts";
-import { DATA_ROOT } from "../../host/home.ts";
-import { connectBoard, connectDirectBoard } from "../../client/remote.ts";
-import { boardHome, registerBoard } from "../aiview-board.ts";
-import { baseAt, worktreeHolding } from "../../host/git.ts";
-import { CODE_WORDING, orchestratorsLines, shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { fwd, repoOf, toolRoot, writeOrchestratorSeats } from "../paths.ts";
+import type { SeatSpec } from "../../../board/board.ts";
+import type { Kind } from "../../../contract/kinds.ts";
+import { profileOf } from "../../../contract/kinds.ts";
+import { stallMsFloor } from "../../../board/stall.ts";
+import { HOME_OVERRIDE } from "../../../store/home.ts";
+import { DATA_ROOT } from "../../../host/home.ts";
+import { connectBoard, connectDirectBoard } from "../../../client/remote.ts";
+import { boardHome, registerBoard } from "./aiview-board.ts";
+import { baseAt, worktreeHolding } from "../../../host/git.ts";
+import { CODE_WORDING, orchestratorsLines, shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { fwd, repoOf, toolRoot, writeOrchestratorSeats } from "../../paths.ts";
 
 export async function openVerb(ctx: VerbContext): Promise<void> {
   const { kind, group } = openKindAndGroup(ctx);

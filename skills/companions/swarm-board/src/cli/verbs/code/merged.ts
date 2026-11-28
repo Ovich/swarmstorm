@@ -1,13 +1,13 @@
-import type { Conflicts, Sharer, Participant } from "../../contract/board.ts";
-import type { HeldMergeLock } from "../../contract/code.ts";
-import { git, gitAnswer } from "../../host/git.ts";
-import { conflictsOf, MERGE_CONFLICTS_ENV } from "../conflicts.ts";
-import { CODE_WORDING, shellWord } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { commitChanged, fwd } from "../paths.ts";
-import { packVerb, refuseWithoutPack, reportGiven } from "../pack-calls.ts";
+import type { Conflicts, Sharer, Participant } from "../../../contract/board.ts";
+import type { HeldMergeLock } from "../../../contract/code.ts";
+import { git, gitAnswer } from "../../../host/git.ts";
+import { conflictsOf, MERGE_CONFLICTS_ENV } from "./conflicts.ts";
+import { CODE_WORDING, shellWord } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { commitChanged, fwd } from "../../paths.ts";
+import { packVerb, refuseWithoutPack, reportGiven } from "../../pack-calls.ts";
 
 export async function mergedVerb(ctx: VerbContext, p: Participant): Promise<void> {
   refuseWithoutPack(p, "merged");

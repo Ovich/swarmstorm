@@ -1,7 +1,7 @@
-import type { Participant } from "../../contract/board.ts";
-import { seqLine } from "../format.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { seqLine } from "./format.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
 
 export async function endorseVerb(ctx: VerbContext, p: Participant): Promise<void> {
   const raw = (ctx.args.positional[0] ?? fail("endorse: which seq?")).replace(/^#/, "");

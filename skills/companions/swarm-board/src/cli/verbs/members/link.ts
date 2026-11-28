@@ -1,9 +1,9 @@
-import { bindingOf } from "../../client/remote.ts";
-import { DATA_ROOT } from "../../host/home.ts";
-import { hiddenSpawn } from "../../host/proc.ts";
-import { runLink } from "../../link/link.ts";
-import { shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
+import { bindingOf } from "../../../client/remote.ts";
+import { DATA_ROOT } from "../../../host/home.ts";
+import { hiddenSpawn } from "../../../host/proc.ts";
+import { runLink } from "../../../link/link.ts";
+import { shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
 
 /** Runs this link's own command line again (the launcher, which loads the bundle built now) and resolves with its exit code. */
 const relaunchLink = async (): Promise<number> => {

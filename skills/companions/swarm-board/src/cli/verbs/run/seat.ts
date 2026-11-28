@@ -1,6 +1,6 @@
-import { shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
+import { shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
 
 export async function seatVerb(ctx: VerbContext): Promise<void> {
   if (ctx.args.positional[0] === "add") {

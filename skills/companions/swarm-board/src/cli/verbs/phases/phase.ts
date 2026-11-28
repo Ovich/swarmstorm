@@ -1,9 +1,9 @@
-import type { Participant } from "../../contract/board.ts";
-import { seqLine } from "../format.ts";
-import { shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import type { VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { seqLine } from "../conversation/format.ts";
+import { shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import type { VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
 
 export async function phaseVerb(ctx: VerbContext, p: Participant): Promise<void> {
   const [name, ...said] = ctx.args.positional;

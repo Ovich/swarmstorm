@@ -1,17 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Conflicts, Participant } from "../../contract/board.ts";
-import type { HeldMergeLock } from "../../contract/code.ts";
-import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
-import { baseRef, git, worktreeHolding } from "../../host/git.ts";
-import { hiddenSpawnSync } from "../../host/proc.ts";
-import { headReflogLength, MERGE_CONFLICTS_ENV } from "../conflicts.ts";
-import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
-import * as rules from "../answer/rules.ts";
-import { EXIT, type VerbContext } from "../context.ts";
-import { fail } from "../fail.ts";
-import { branchChangedIn } from "../paths.ts";
-import { madeWorktree, packVerb, reportGiven } from "../pack-calls.ts";
+import type { Conflicts, Participant } from "../../../contract/board.ts";
+import type { HeldMergeLock } from "../../../contract/code.ts";
+import { FOREGROUND_WAIT_MS } from "../../../contract/events.ts";
+import { baseRef, git, worktreeHolding } from "../../../host/git.ts";
+import { hiddenSpawnSync } from "../../../host/proc.ts";
+import { headReflogLength, MERGE_CONFLICTS_ENV } from "./conflicts.ts";
+import { CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
+import * as rules from "../../answer/rules.ts";
+import { EXIT, type VerbContext } from "../../context.ts";
+import { fail } from "../../fail.ts";
+import { branchChangedIn } from "../../paths.ts";
+import { madeWorktree, packVerb, reportGiven } from "../../pack-calls.ts";
 
 export async function mergeLockVerb(ctx: VerbContext, p: Participant): Promise<void> {
   // the branch merged into: --onto, else the branch the run was opened onto (board-split F3, D2); required only when neither says

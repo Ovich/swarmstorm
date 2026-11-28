@@ -1,7 +1,7 @@
 // The project's board is aiview's /board page (aiview board-page migration): `swarm open` adds
 // the run's repository to the project's board through `aiview board --repo`, and prints the
 // page's link. aiview is called as a command, never imported (swarm plan D16, D17).
-import { hiddenSpawnSync } from "../host/proc.ts";
+import { hiddenSpawnSync } from "../../../host/proc.ts";
 import fs from "node:fs";
 import path from "node:path";
 

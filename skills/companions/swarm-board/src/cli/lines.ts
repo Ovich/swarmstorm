@@ -3,7 +3,7 @@ import { progressText, type PhaseProgress, type RosterEntry } from "../board/boa
 import type { Message } from "../contract/board.ts";
 import { eventOf } from "../contract/events.ts";
 import { CODE_WORDING, WORDING } from "./answer/index.ts";
-import { fullText } from "./format.ts";
+import { fullText } from "./verbs/conversation/format.ts";
 
 /** How long ago an ms epoch was, short: `12s`, `4m`, `2h`; `never` for null. */
 const ago = (at: number | null): string => {

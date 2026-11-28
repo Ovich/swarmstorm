@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { SHIPPED_GUIDE_PATHS, discoverGuides, parseGuide } from "../src/cli/guides.ts";
+import { SHIPPED_GUIDE_PATHS, discoverGuides, parseGuide } from "../src/cli/verbs/members/guides.ts";
 
 const CLI = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli", "index.ts");
 

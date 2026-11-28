@@ -1,9 +1,9 @@
-import type { Participant } from "../../contract/board.ts";
-import { CODE_WORDING, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
-import { phaseSuffix, rosterLine } from "../lines.ts";
-import { projectNameOf } from "../paths.ts";
-import { mergeLocksHeld } from "../pack-calls.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { CODE_WORDING, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
+import { phaseSuffix, rosterLine } from "../../lines.ts";
+import { projectNameOf } from "../../paths.ts";
+import { mergeLocksHeld } from "../../pack-calls.ts";
 
 export async function rosterVerb(ctx: VerbContext, _asker: Participant | null): Promise<void> {
   const repo = ctx.projectRepo();

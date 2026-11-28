@@ -1,7 +1,7 @@
-import { progressText } from "../../board/board.ts";
-import type { Participant } from "../../contract/board.ts";
-import { answer, CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
-import type { VerbContext } from "../context.ts";
+import { progressText } from "../../../board/board.ts";
+import type { Participant } from "../../../contract/board.ts";
+import { answer, CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
+import type { VerbContext } from "../../context.ts";
 
 export async function doneVerb(ctx: VerbContext, p: Participant): Promise<void> {
   // V-21: the example names the phase open now, never a made-up one
