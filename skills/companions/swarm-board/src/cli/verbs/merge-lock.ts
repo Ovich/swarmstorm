@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Participant } from "../../contract/board.ts";
+import type { Conflicts, Participant } from "../../contract/board.ts";
 import type { HeldMergeLock } from "../../contract/code.ts";
 import { FOREGROUND_WAIT_MS } from "../../contract/events.ts";
 import { baseRef, git, worktreeHolding } from "../../host/git.ts";
 import { hiddenSpawnSync } from "../../host/proc.ts";
-import { headReflogLength, MERGE_CONFLICTS_ENV, type Conflicts } from "../conflicts.ts";
+import { headReflogLength, MERGE_CONFLICTS_ENV } from "../conflicts.ts";
 import { CODE_WORDING, shellWord, WORDING } from "../answer/index.ts";
 import * as rules from "../answer/rules.ts";
 import { EXIT, type VerbContext } from "../context.ts";

@@ -1,7 +1,7 @@
-import type { Sharer, Participant } from "../../contract/board.ts";
+import type { Conflicts, Sharer, Participant } from "../../contract/board.ts";
 import type { HeldMergeLock } from "../../contract/code.ts";
 import { git, gitAnswer } from "../../host/git.ts";
-import { conflictsOf, MERGE_CONFLICTS_ENV, type Conflicts } from "../conflicts.ts";
+import { conflictsOf, MERGE_CONFLICTS_ENV } from "../conflicts.ts";
 import { CODE_WORDING, shellWord } from "../answer/index.ts";
 import * as rules from "../answer/rules.ts";
 import type { VerbContext } from "../context.ts";

@@ -2,10 +2,8 @@
 // branch was rebased after the merge lock was granted. Read-only, in the member's worktree: the
 // reflog gives the head before the rebase and the commit it started onto, and one
 // `merge-tree --write-tree` replays them. Never throws; what git cannot answer is an unknown.
-import type { Conflicts } from "../board/board.ts";
+import type { Conflicts } from "../contract/board.ts";
 import { git, gitAnswer } from "../host/git.ts";
-
-export type { Conflicts } from "../board/board.ts";
 
 /** `merge-tree --write-tree` came with git 2.38. */
 const MERGE_TREE_SINCE: [number, number] = [2, 38];
