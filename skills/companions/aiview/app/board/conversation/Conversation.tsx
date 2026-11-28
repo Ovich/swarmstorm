@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { hhmm } from "../names.ts";
 import type { Item } from "./conversation.ts";
-import { AgentLabel, AgentMark, RichText } from "../chips.tsx";
+import { MemberLabel, MemberMark, RichText } from "../chips.tsx";
 import { PostBody } from "./PostBody.tsx";
 
 type Said = Exclude<Item, { kind: "event" | "phase" }>;
@@ -33,10 +33,10 @@ function SaidItem({ item, fresh, seqs }: { item: Said; fresh: boolean; seqs: Rea
       <span className="time" title={item.at}>
         {hhmm(item.at)}
       </span>
-      {!item.joined && <AgentMark name={item.from} />}
+      {!item.joined && <MemberMark name={item.from} />}
       {!item.joined && (
         <div className="head">
-          <AgentLabel name={item.from} />
+          <MemberLabel name={item.from} />
           {item.word && <TipWord word={item.word} tip={item.tip} className="what" />}
         </div>
       )}
@@ -54,7 +54,7 @@ function BoardEventLine({ item, fresh }: { item: BoardEventItem; fresh: boolean 
         {hhmm(item.at)}
       </span>
       <div className="head">
-        <AgentLabel name={item.from} />
+        <MemberLabel name={item.from} />
         {item.word && (
           <span className={`eword ${item.tone}`} data-component="EventWord" {...(item.tip ? { tabIndex: 0, "data-tip": item.tip } : {})}>
             {item.word}

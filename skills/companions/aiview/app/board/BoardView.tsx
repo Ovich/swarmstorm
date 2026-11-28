@@ -8,7 +8,7 @@ import { conversation, narrow, type Narrow, type Pick } from "./conversation/con
 import { readRunInHash } from "./hash.ts";
 import { ConversationFilters } from "./conversation/ConversationFilters.tsx";
 import { NicksContext } from "./chips.tsx";
-import { AgentRail, AgentStrip } from "./members/AgentStrip.tsx";
+import { MemberRail, MemberStrip } from "./members/MemberStrip.tsx";
 import { ArchivePanel } from "./run/ArchivePanel.tsx";
 import { ClaimsRow } from "./code/ClaimsRow.tsx";
 import { MergedFilesRow } from "./code/MergedFilesRow.tsx";
@@ -170,9 +170,9 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
                       </svg>
                     </button>
                     {rosterOpen ? (
-                      <AgentStrip agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
+                      <MemberStrip agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
                     ) : (
-                      <AgentRail agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
+                      <MemberRail agents={members} hue={runHue(selectedRun.code)} follow={focus} onFollow={setFocus} />
                     )}
                   </aside>
                 )}

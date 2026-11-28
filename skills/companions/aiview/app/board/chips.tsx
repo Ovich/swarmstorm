@@ -19,15 +19,15 @@ export function MemberTag({ name, plan = true }: { name: string; plan?: boolean 
 
 /** An agent's mark: a rounded square in its run's hue, its seat in two or three letters
  *  ("S9", "W13", "OR"); the orchestrator's outlined. */
-export function AgentMark({ name }: { name: string }) {
+export function MemberMark({ name }: { name: string }) {
   // D51: the board's own alarms are authored by the board, no member: its own mark
-  if (name === BOARD_AUTHOR) return <span className="mark board" aria-hidden="true" data-component="AgentMark">SW</span>;
+  if (name === BOARD_AUTHOR) return <span className="mark board" aria-hidden="true" data-component="MemberMark">SW</span>;
   const { code, seat } = memberLabel(name);
   const orch = seat === "orchestrator";
   const m = seat.match(/^([a-z])[a-z-]*?(\d+)$/i);
   const text = orch ? "OR" : m ? `${m[1]}${m[2]}`.toUpperCase() : seat.slice(0, 2).toUpperCase();
   return (
-    <span className={orch ? "mark orch" : "mark"} style={{ "--h": runHue(code) } as CSSProperties} aria-hidden="true" data-component="AgentMark">
+    <span className={orch ? "mark orch" : "mark"} style={{ "--h": runHue(code) } as CSSProperties} aria-hidden="true" data-component="MemberMark">
       {text}
     </span>
   );
@@ -52,12 +52,12 @@ export function MemberName({ name, plan = true }: { name: string; plan?: boolean
 /** An agent beside its mark: its funny name, then its role in grey ("Dizzy Yak  orchestrator").
  *  The mark carries the run's colour and the short role, so no chip repeats them; the full
  *  "RT·S3" is the tooltip. With no name, the role alone. */
-export function AgentLabel({ name, role = true }: { name: string; role?: boolean }) {
-  if (name === BOARD_AUTHOR) return <span className="alabel" data-component="AgentLabel" title="the board"><span className="nick">swarm</span></span>;
+export function MemberLabel({ name, role = true }: { name: string; role?: boolean }) {
+  if (name === BOARD_AUTHOR) return <span className="alabel" data-component="MemberLabel" title="the board"><span className="nick">swarm</span></span>;
   const nick = useContext(NicksContext).get(name);
   const { code, seat } = memberLabel(name);
   return (
-    <span className="alabel" data-component="AgentLabel" title={`${code}·${seat}`}>
+    <span className="alabel" data-component="MemberLabel" title={`${code}·${seat}`}>
       {nick ? <span className="nick">{nick}</span> : <span className="nick">{seat}</span>}
       {nick && role && <span className="role">{seat}</span>}
     </span>

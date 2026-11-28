@@ -21,7 +21,7 @@ vi.mock("./board/useBoard.ts", () => ({
 }));
 
 import { BoardView } from "./board/BoardView.tsx";
-import { AgentLabel, AgentMark, MemberTag } from "./board/chips.tsx";
+import { MemberLabel, MemberMark, MemberTag } from "./board/chips.tsx";
 import { countText } from "./board/run/RunTabs.tsx";
 import type { RunTab } from "./board/run/runs.ts";
 import { CLAIMS_EXPANDED_KEY } from "./board/code/ClaimsRow.tsx";
@@ -44,7 +44,7 @@ const show = (repos: string[], run: number | null, boards: BoardSnapshot[] = [LI
 const tabs = () => within(screen.getByRole("navigation", { name: "Runs" }));
 const pressed = () => tabs().getAllByRole("button").find((b) => b.getAttribute("aria-pressed") === "true");
 const convo = () => within(screen.getByRole("region", { name: "The conversation" }));
-const strip = () => screen.queryByRole("region", { name: "Agents" });
+const strip = () => screen.queryByRole("region", { name: "Members" });
 const tabOf = (title: string) => tabs().getByText(title).closest("button")!;
 
 // ── RunTabs ────────────────────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ test("a click outside closes the archive; one inside does not", () => {
   expect(screen.queryByRole("dialog", { name: "Archive" })).toBeNull();
 });
 
-// ── AgentStrip ───────────────────────────────────────────────────────────────────
+// ── MemberStrip ───────────────────────────────────────────────────────────────────
 
 test("under a closed run, its members as they ended, a card still followed", () => {
   const was = LIVE.roster.find((r) => r.state === "ended")!;
@@ -196,8 +196,8 @@ test("under a closed run, its members as they ended, a card still followed", () 
 test("under a picked run, its members, orchestrator first, each its mark then its nick, the code·seat its tooltip", () => {
   show([APP], 1);
   const cards = within(strip()!).getAllByRole("button");
-  expect(cards[0].querySelector('[data-component="AgentMark"]')?.textContent).toBe("OR");
-  expect(cards[0].querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("RT·orchestrator");
+  expect(cards[0].querySelector('[data-component="MemberMark"]')?.textContent).toBe("OR");
+  expect(cards[0].querySelector('[data-component="MemberLabel"]')?.getAttribute("title")).toBe("RT·orchestrator");
   expect(cards[0].textContent).toContain(NICKS["refresh-tokens/orchestrator"]);
   expect(cards[0].classList.contains("orch")).toBe(true);
   expect(cards.every((c) => c.querySelector('[data-component="MemberTag"]') === null)).toBe(true);
@@ -233,13 +233,13 @@ const swarmOf = (n: number): BoardSnapshot => {
 
 test("up to twelve members every one is a card; past it, a row each, the orchestrator still a card", () => {
   show([APP], 1);
-  expect(strip()!.querySelectorAll('[data-component="AgentRow"]')).toHaveLength(0);
+  expect(strip()!.querySelectorAll('[data-component="MemberRow"]')).toHaveLength(0);
   cleanup();
   show([APP], 1, [swarmOf(200)]);
-  const cards = strip()!.querySelectorAll('[data-component="AgentCard"]');
+  const cards = strip()!.querySelectorAll('[data-component="MemberCard"]');
   expect(cards).toHaveLength(1);
   expect(cards[0].classList.contains("orch")).toBe(true);
-  expect(strip()!.querySelectorAll('[data-component="AgentRow"]').length).toBeGreaterThan(100);
+  expect(strip()!.querySelectorAll('[data-component="MemberRow"]').length).toBeGreaterThan(100);
 });
 
 test("a large swarm: lost members under Needs attention, the ended folded until opened", () => {
@@ -247,21 +247,21 @@ test("a large swarm: lost members under Needs attention, the ended folded until 
   const groups = Array.from(strip()!.querySelectorAll('[data-component="RosterGroup"]'));
   expect(groups[0].className).toContain("attention");
   const ended = groups.find((g) => g.className.includes("ended"))!;
-  expect(ended.querySelectorAll('[data-component="AgentRow"]')).toHaveLength(0);
+  expect(ended.querySelectorAll('[data-component="MemberRow"]')).toHaveLength(0);
   fireEvent.click(within(ended as HTMLElement).getByRole("button", { name: /Ended/ }));
   // the forty ended workers and the fixture's own S2
-  expect(ended.querySelectorAll('[data-component="AgentRow"]').length).toBe(41);
+  expect(ended.querySelectorAll('[data-component="MemberRow"]').length).toBe(41);
 });
 
 test("a large swarm: the search and a state chip narrow the rows; a row clicked becomes its card, followed", () => {
   show([APP], 1, [swarmOf(200)]);
   fireEvent.change(within(strip()!).getByRole("searchbox"), { target: { value: "worker 13" } });
-  const rows = strip()!.querySelectorAll('[data-component="AgentRow"]');
+  const rows = strip()!.querySelectorAll('[data-component="MemberRow"]');
   const slices = Array.from(rows).map((r) => r.querySelector(".rseat")!.textContent!);
   expect(slices).toHaveLength(11);
   expect(slices.every((t) => t.includes("worker 13"))).toBe(true);
   fireEvent.click(Array.from(rows).find((r) => r.querySelector(".rseat")!.textContent === "worker 13")!);
-  const followed = strip()!.querySelector('[data-component="AgentCard"][aria-pressed="true"]')!;
+  const followed = strip()!.querySelector('[data-component="MemberCard"][aria-pressed="true"]')!;
   expect(followed.textContent).toContain("W13 · worker 13");
   fireEvent.change(within(strip()!).getByRole("searchbox"), { target: { value: "" } });
   fireEvent.click(within(strip()!).getByRole("button", { name: /Needs attention/ }));
@@ -651,9 +651,9 @@ test("an away card draws no activity line from a stale background call", () => {
 
 // D51 (T35): a board alarm's author is the board, drawn as `swarm` with its own mark, never `undefined`
 test("the board as an author reads swarm, with the board's mark", () => {
-  render(<><AgentMark name="swarm" /><AgentLabel name="swarm" /><MemberTag name="swarm" /></>);
+  render(<><MemberMark name="swarm" /><MemberLabel name="swarm" /><MemberTag name="swarm" /></>);
   expect(document.querySelector(".mark.board")?.textContent).toBe("SW");
-  expect(document.querySelector('[data-component="AgentLabel"]')?.getAttribute("title")).toBe("the board");
+  expect(document.querySelector('[data-component="MemberLabel"]')?.getAttribute("title")).toBe("the board");
   expect(document.querySelector('[data-component="MemberTag"]')?.textContent).toBe("swarm");
   expect(document.body.textContent).not.toMatch(/undefined/);
 });
