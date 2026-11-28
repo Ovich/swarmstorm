@@ -96,6 +96,9 @@ export const WORDING = {
     const parts = [...(min >= 1 ? [`${min} min`] : []), ...(stale ? ["stale"] : [])];
     return parts.length ? ` (${parts.join(", ")})` : "";
   },
+  // product-shape#D1: how full a member is, in thousands of tokens, and how old that reading is (`ago` worded by the caller)
+  contextShown: (context: { tokens: number; at: number } | null, ago: (at: number) => string) =>
+    context ? `  context ${Math.round(context.tokens / 1000)}k (${ago(context.at)} ago)` : "  context unknown",
   seatAdd: (cli: Command, seat: string, run: number, as: string): Command => `${cli} seat add ${seat} --run ${run} --as ${as}`,
   /** break-flow V-46: a second link of one member: the first runs on */
   linkRunning: (member: string) => `${member}'s link already runs: nothing to start`,

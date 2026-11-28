@@ -17,6 +17,11 @@ export const stateLine = (r: Pick<RosterEntry, "state" | "activity" | "progressA
   `${r.state}${r.activity ? ` (${r.activity})` : ""}` +
   (ages ? `  progress ${ago(r.progressAt)}${r.progressAt == null ? "" : " ago"}, link ${ago(r.aliveAt)}${r.aliveAt == null ? "" : " ago"}` : "");
 
+/** product-shape#D1: a member's state line and its context size after it, for roster and status:
+ *  `busy (Bash npm test)  context 85k (4m ago)`. */
+export const stateAndContextLine = (r: Pick<RosterEntry, "state" | "activity" | "progressAt" | "aliveAt" | "context">, ages = false): string =>
+  `${stateLine(r, ages)}${WORDING.contextShown(r.context, ago)}`;
+
 /** F27: a member's held files, the first few and how many more. */
 const HELD_SHOWN = 3;
 export const heldLine = (files: { path: string }[]): string => {
@@ -38,7 +43,7 @@ export const rosterLine = (r: RosterEntry, roster: RosterEntry[], ages = false):
   const declared = unclaimed.length ? CODE_WORDING.declaredNotClaimed(unclaimed) : "";
   const who = r.seat === "orchestrator" ? r.name : `${r.nick} · ${r.name}`;
   const fact = r.fact ? `  ${CODE_WORDING.memberFact[r.fact]}` : "";
-  return `${who}  run ${r.run}  ${stateLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${WORDING.doingAge(Date.now() - r.doingAt, r.doingStale)}${files ? `  files: ${files}` : ""}${declared}`;
+  return `${who}  run ${r.run}  ${stateAndContextLine(r, ages)}${fact}${r.badge ? WORDING.badgeShown(r.badge) : ""}${r.unread ? `  ${r.unread} unread` : ""}  doing: ${r.doing || "-"}${WORDING.doingAge(Date.now() - r.doingAt, r.doingStale)}${files ? `  files: ${files}` : ""}${declared}`;
 };
 
 /** `phase <name>: <text>  <n>/<m> done[, <k> lost]` beside a run's title, or nothing before its first phase. */

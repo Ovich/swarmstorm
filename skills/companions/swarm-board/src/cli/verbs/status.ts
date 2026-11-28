@@ -2,7 +2,7 @@ import { SQLITE_PATH } from "../../board/home.ts";
 import { DATA_ROOT } from "../../host/home.ts";
 import { CODE_WORDING, orchestratorsLines, ORCHESTRATORS_GROUP, shellWord, WORDING } from "../answer/index.ts";
 import type { VerbContext } from "../context.ts";
-import { heldLine, phaseSuffix, stateLine } from "../lines.ts";
+import { heldLine, phaseSuffix, stateAndContextLine } from "../lines.ts";
 import { projectNameOf, writeOrchestratorSeats } from "../paths.ts";
 import { mergeLocksHeld } from "../pack-calls.ts";
 
@@ -12,7 +12,7 @@ const FORGOTTEN_MS = 24 * 60 * 60 * 1000;
 export async function statusVerb(ctx: VerbContext): Promise<void> {
   const runs = await ctx.board.runs();
   // each member's worktree, null for a seat or an orchestrator (D64)
-  const membersOf = async (r: (typeof runs)[number]) => (await ctx.board.roster(r.repo)).filter((m) => m.run === r.id).map((m) => ({ name: m.name, nick: m.nick, worktree: m.worktree, state: m.state, activity: m.activity, progressAt: m.progressAt, aliveAt: m.aliveAt, files: m.held }));
+  const membersOf = async (r: (typeof runs)[number]) => (await ctx.board.roster(r.repo)).filter((m) => m.run === r.id).map((m) => ({ name: m.name, nick: m.nick, worktree: m.worktree, state: m.state, activity: m.activity, context: m.context, progressAt: m.progressAt, aliveAt: m.aliveAt, files: m.held }));
   const cli = ctx.cli;
   const open = await Promise.all(
     runs.map(async (r) => {
@@ -36,7 +36,7 @@ export async function statusVerb(ctx: VerbContext): Promise<void> {
       for (const s of r.seats) console.log(`  ${s.id} ${WORDING.seatState(s.state)}${s.role ? `  ${s.role}` : ""}${s.blockers.length ? `  blocked by ${s.blockers.join(", ")}` : ""}`);
       for (const m of open[i].members) {
         const files = heldLine(m.files);
-        console.log(`  ${m.name}  ${stateLine(m, true)}${files ? `  files: ${files}` : ""}`);
+        console.log(`  ${m.name}  ${stateAndContextLine(m, true)}${files ? `  files: ${files}` : ""}`);
       }
       const idle = open[i].idleMs;
       if (idle >= FORGOTTEN_MS)

@@ -32,6 +32,8 @@ export type BadgeName = "lost";
 export type Badge = { name: BadgeName; reason: string; since: number | null };
 /** `doing`: the open tool, else the last; `since`: ms epoch the state counts from; `badge`: its trouble, null when none.
  *  A lost member keeps the last activity read of it. */
+/** How full a member is (product-shape#D1): its last call's input and cache tokens, and when that line was written, ms epoch. */
+export type MemberContext = { tokens: number; at: number };
 export type MemberState = { member: string; state: MemberStateName; doing: string | null; since: number | null; badge: Badge | null };
 /** board-split D55: why a link dropped, as its server saw it. */
 export type LinkDropCause = "member-closed" | "server-restart" | "superseded" | "version" | "socket";
@@ -83,6 +85,8 @@ export interface RosterEntry {
   held: Declared[];
   /** board-split D36: its trouble beside its state (lost), null when none. */
   badge: Badge | null;
+  /** product-shape#D1: its context size and its age; null while its link has told none. */
+  context: MemberContext | null;
   worktree: string | null; // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen (answers unchanged); its member's place, null for a seat or an orchestrator (D64)
   /** Its one state (working, stopped, away, lost, ended); what it does is `activity`. */
   state: SnapshotMemberState;
@@ -168,6 +172,8 @@ export type SnapshotMember = {
   lastCall: string;
   /** Its token counter; absent from a reader before it. */
   liveness?: Liveness;
+  /** product-shape#D1: its context size and its age; null while its link has told none. */
+  context: MemberContext | null;
   /** Messages for it not yet delivered (swarm-relay D43); absent from a reader before it. */
   unread?: number;
 };

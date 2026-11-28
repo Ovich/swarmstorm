@@ -1,6 +1,6 @@
 exit 0
 run 1  T
-g/orchestrator  run 1  working  progress <age> ago, link <age> ago  <n> unread  doing: -
-<nick:v1> · g/v1  run 1  working  progress <age> ago, link <age> ago  doing: x
+g/orchestrator  run 1  working  progress <age> ago, link <age> ago  context unknown  <n> unread  doing: -
+<nick:v1> · g/v1  run 1  working  progress <age> ago, link <age> ago  context unknown  doing: x
   seat orchestrator <nick:orchestrator>: working
   seat v1 <nick:v1>: working

@@ -59,6 +59,9 @@ export type MemberActivity = {
   tokens: number;
   /** the last call's input + cache tokens: how full the member is */
   context: number | null;
+  /** when the line that gave `context` was written, ms epoch; absent from an older link: the board takes the frame's
+   *  receive time (product-shape#D3) */
+  contextAt?: number | null;
   /** a tool_use with no result yet */
   /** `boardWait`: the call runs the board's own `wait` verb, the one call that is waiting (swarm-relay D45) */
   /** `label`, `command` (board-split D45): the call's own description and its whole command; absent from an older link */

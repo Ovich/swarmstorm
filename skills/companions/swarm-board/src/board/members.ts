@@ -20,7 +20,7 @@ export function makeMembers(store: Store, rows: Rows, messages: Messages, packs:
   const { insertMessage, openTaskOf } = messages;
   const { packOf, packCtxOf, factEntry, registry } = packs;
   const { owedNameOf } = owing;
-  const { doingStaleOf, compositionOf, seatWho, memberStateOf, owesOf, seatedAtOf, statesOf, livenessOf, agesOf } = view;
+  const { contextOf, doingStaleOf, compositionOf, seatWho, memberStateOf, owesOf, seatedAtOf, statesOf, livenessOf, agesOf } = view;
   const { unreadOf } = delivery;
   const verbs: Pick<Board, "join" | "participant" | "identify" | "setDoing" | "end" | "roster" | "endedMembers" | "owingMembers" | "heldBy" | "idle"> = {
     join({ run, seat, doing, files, place }) {
@@ -184,6 +184,7 @@ ${freed.note}` : said, null, "event", freed?.mentions, ended);
         files: JSON.parse(String(r.files)) as Declared[],
         held: registry.heldOf(db, Number(r.id)),
         badge: stateIn(Number(r.run), String(r.seat))?.badge ?? null,
+        context: contextOf(Number(r.run), String(r.seat)),
         worktree: r.place == null ? null : String(r.place), // AGENTS EXCEPTION (rule D24): the roster's JSON key, frozen
         // board-split D49: the one state; what it does (busy on a call or a background task) is its activity
         // U-F12: the pack's fact (merging) is the state word here too, as in the snapshot

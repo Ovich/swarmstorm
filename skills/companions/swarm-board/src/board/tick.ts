@@ -94,10 +94,12 @@ export function makeTick(store: Store, rows: Rows, messages: Messages, packs: Pa
       transaction(() => {
         const o = act.openTool;
         db.prepare(
-          `INSERT INTO member_activity (run, member, grew_at, tokens, context, open_tool, open_target, open_since, open_wait, last_tool, finished, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens, context = excluded.context, open_tool = excluded.open_tool,
-             open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`,
-        ).run(run, member, act.grewAt, act.tokens, act.context, o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
+          `INSERT INTO member_activity (run, member, grew_at, tokens, context, context_at, open_tool, open_target, open_since, open_wait, last_tool, finished, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (run, member) DO UPDATE SET grew_at = excluded.grew_at, tokens = excluded.tokens,
+             context = COALESCE(excluded.context, member_activity.context), context_at = CASE WHEN excluded.context IS NULL THEN member_activity.context_at ELSE excluded.context_at END,
+             open_tool = excluded.open_tool, open_target = excluded.open_target, open_since = excluded.open_since, open_wait = excluded.open_wait, last_tool = excluded.last_tool, finished = excluded.finished, at = excluded.at`,
+          // product-shape#D3: a null size keeps the last one and its time; an older link's size is dated by its arrival
+        ).run(run, member, act.grewAt, act.tokens, act.context, act.context == null ? null : (act.contextAt ?? at.getTime()), o?.name ?? null, o?.target ?? null, o?.since ?? null, o?.boardWait ? 1 : 0, act.lastTool, act.finished ? 1 : 0, at.getTime());
         // idea 1: the turn state, last line, awaited background task and transcript path; null when the link has none
         const bg = act.background ?? null;
         db.prepare("UPDATE member_activity SET in_turn = ?, last_line = ?, bg_target = ?, bg_since = ?, bg_grew_at = ?, transcript = ? WHERE run = ? AND member = ?").run(

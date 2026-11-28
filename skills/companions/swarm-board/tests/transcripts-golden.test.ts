@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { observe, type TranscriptCursor } from "../src/link/transcripts.ts";
-import { writeSubagent } from "./fixtures/transcripts.ts";
+import { jsonl, textLine, writeSubagent } from "./fixtures/transcripts.ts";
 import { PROJECT, SCENARIOS, SESSION } from "./fixtures/yardstick.ts";
 
 const GOLDEN = path.join(import.meta.dirname, "fixtures", "transcripts-golden.jsonl");
@@ -65,4 +65,19 @@ test("observe reads every yardstick transcript as its golden", () => {
   const observed = SCENARIOS.filter((sc) => !sc.blind).flatMap(observedLines).join("\n") + "\n";
   if (process.env.SWARM_UPDATE_GOLDEN === "1") fs.writeFileSync(GOLDEN, observed);
   assert.equal(observed, fs.readFileSync(GOLDEN, "utf8"));
+});
+
+test("product-shape#D2: a synthetic line, counting nothing, keeps the context size and its time", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "swarm-transcripts-synthetic-"));
+  try {
+    const file = writeSubagent(dir, PROJECT, SESSION, "x", [], { finished: false });
+    const counted = { input_tokens: 2_000, output_tokens: 10, cache_creation_input_tokens: 3_000, cache_read_input_tokens: 80_000 };
+    const synthetic = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+    fs.writeFileSync(file, jsonl([textLine("counted", counted, "2026-01-01T00:00:10.000Z"), textLine("No response requested.", synthetic, "2026-01-01T00:00:20.000Z")]));
+    const { activity } = observe(file, null);
+    assert.equal(activity.context, 85_000);
+    assert.equal(activity.contextAt, Date.parse("2026-01-01T00:00:10.000Z"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

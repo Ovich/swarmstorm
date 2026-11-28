@@ -4,7 +4,7 @@ import type { Participant, RunId } from "../contract/board.ts";
 import { EVENTS, landingEvents } from "../contract/events.ts";
 import { LOST_MS, NO_TRANSCRIPT_MS, STALL_MS_DEFAULT, stallMsFloor, coreStateOf, type CoreMemberState, type SeatState } from "./liveness.ts";
 import { callLabel } from "./call-label.ts";
-import type { Composition, CompositionEntry, MemberState, Badge, Presence, Liveness, SnapshotMember } from "./types.ts";
+import type { Composition, CompositionEntry, MemberContext, MemberState, Badge, Presence, Liveness, SnapshotMember } from "./types.ts";
 import { SEAT_STOOD_FOR_CLOSED_SQL, ORCHESTRATOR, type Row, type Rows } from "./rows.ts";
 import type { PhaseReads } from "./phase-reads.ts";
 import type { Messages } from "./messages.ts";
@@ -74,6 +74,11 @@ export function makeMemberView(store: Store, rows: Rows, owing: PhaseReads, mess
   const heldWaits = new Map<number, number>();
   const activityOf = (run: RunId, member: string): Row | undefined =>
     db.prepare("SELECT * FROM member_activity WHERE run = ? AND member = ?").get(run, member) as Row | undefined;
+  /** product-shape#D1: the member's context size and when it was read, from its link's last report; null when none told it. */
+  const contextOf = (run: RunId, member: string): MemberContext | null => {
+    const a = activityOf(run, member);
+    return a?.context == null || a.context_at == null ? null : { tokens: Number(a.context), at: Number(a.context_at) };
+  };
   /** board-split D49 (A1-5): in a board wait this server holds, set and cleared by the wait itself, and that wait is the
    *  member's open call (its link says so; with no link yet, the held wait alone): a background listener is not. */
   /** V-26, V-46: the pack's lock `p` is queued on (the holder and the lock's name), as its pack says; null: none. */
@@ -225,6 +230,6 @@ export function makeMemberView(store: Store, rows: Rows, owing: PhaseReads, mess
     };
   };
   const agesOf = (l: Liveness | undefined): { progressAt: number | null; aliveAt: number | null } => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
-  return { seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, heldWaits, memberStateOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, activityShown, memberView, minutes, statesOf, livenessOf, agesOf };
+  return { contextOf, seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, heldWaits, memberStateOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, activityShown, memberView, minutes, statesOf, livenessOf, agesOf };
 }
 export type MemberView = ReturnType<typeof makeMemberView>;

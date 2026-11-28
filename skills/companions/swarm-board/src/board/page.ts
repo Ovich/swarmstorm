@@ -41,7 +41,7 @@ export function makePage(store: Store, rows: Rows, paths: Paths, packs: PackBrid
   const { relPath } = paths;
   const { registry } = packs;
   const { progressOf } = owing;
-  const { seatStateOf, memberStateOf, activityShown, statesOf, livenessOf } = view;
+  const { seatStateOf, memberStateOf, activityShown, statesOf, livenessOf, contextOf } = view;
   const { unreadOf } = delivery;
   // The page's view (D39, D46): open runs and every closed run within the retention.
   const listedRuns = (): Row[] =>
@@ -142,6 +142,7 @@ export function makePage(store: Store, rows: Rows, paths: Paths, packs: PackBrid
           listening: !ended && Number(r.listening) === 1,
           lastCall: String(r.last_call ?? r.joined_at),
           liveness,
+          context: contextOf(Number(r.run), seat),
           badge: liveness?.badge ?? null,
           unread: ended ? 0 : unreadOf(id, authorOf),
           // U-F13: an ended seat runs nothing the card should show; its last calls are stale
