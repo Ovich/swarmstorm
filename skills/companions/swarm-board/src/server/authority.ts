@@ -105,7 +105,7 @@ export function makeAuthority(board: Board): Authority {
     end: selfOrOwnRunsOrchestrator,
     packCall,
     // orchestrator-only: acting for the orchestrator itself; that it is the orchestrator is the board's own rule
-    // (board.ts phase, pause, resume), whose refusal the CLI words
+    // (phases.ts phase, pause, resume), whose refusal the CLI words
     phase: self,
     pause: self,
     resume: self,
