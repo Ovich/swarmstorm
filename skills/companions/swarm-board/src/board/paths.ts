@@ -36,6 +36,6 @@ export function makePaths(store: Store) {
     }
     return null;
   };
-  return { fold, slashes, roots, relPath };
+  return { fold, slashes, relPath };
 }
 export type Paths = ReturnType<typeof makePaths>;

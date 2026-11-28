@@ -210,6 +210,6 @@ export function makeDelivery(store: Store, rows: Rows, messages: Messages, packs
       });
     },
   };
-  return { ...verbs, unseenRows, sinceSeqOf, wakingSeqs, unreadOf, deliverTo, markPhaseOpenDelivered, forgetWaking };
+  return { ...verbs, unseenRows, unreadOf, markPhaseOpenDelivered, forgetWaking };
 }
 export type Deliveries = ReturnType<typeof makeDelivery>;

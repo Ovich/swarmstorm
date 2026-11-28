@@ -115,6 +115,6 @@ export function makeRows(store: Store) {
     db.prepare("SELECT 1 FROM participants p JOIN runs r ON r.id = p.run WHERE p.id = ? AND p.ended_at IS NULL AND r.state = 'open'").get(id) !== undefined;
   const orchestratorIn = (run: RunId): Participant =>
     participantById(Number((db.prepare("SELECT id FROM participants WHERE run = ? AND seat = ?").get(run, ORCHESTRATOR) as Row).id));
-  return { runRowOrNone, runRow, phaseOf, nickOf, unusedNick, PARTICIPANT_SQL, listensNow, toParticipant, memoizedParticipants, participantById, toMessage, lastSeq, openPlans, activeNames, live, isLive, orchestratorIn };
+  return { runRowOrNone, runRow, phaseOf, nickOf, unusedNick, PARTICIPANT_SQL, toParticipant, memoizedParticipants, participantById, toMessage, lastSeq, openPlans, activeNames, live, isLive, orchestratorIn };
 }
 export type Rows = ReturnType<typeof makeRows>;

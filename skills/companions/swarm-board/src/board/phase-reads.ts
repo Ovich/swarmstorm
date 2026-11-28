@@ -67,6 +67,6 @@ export function makePhaseReads(store: Store, rows: Rows) {
   /** The phase's done count (board-split D62): owing.ts's one count over the run's members. */
   const progressOf = (run: RunId, phase: string | null): PhaseProgress | null =>
     phase == null ? null : phaseCount(phase, phaseMembersOf(run, phase), phaseScopeOf(runRow(run), phase));
-  return { phaseScopeOf, phaseOpenedSeqOf, taskedSeatsNotJoinedOf, phaseMembersOf, joinedPhaseMembersOf, owedNameOf, progressOf };
+  return { phaseScopeOf, phaseOpenedSeqOf, phaseMembersOf, owedNameOf, progressOf };
 }
 export type PhaseReads = ReturnType<typeof makePhaseReads>;

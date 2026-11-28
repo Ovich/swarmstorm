@@ -225,6 +225,6 @@ export function makeMemberView(store: Store, rows: Rows, owing: PhaseReads, mess
     };
   };
   const agesOf = (l: Liveness | undefined): { progressAt: number | null; aliveAt: number | null } => ({ progressAt: l?.progressAt ?? null, aliveAt: l?.aliveAt ?? null });
-  return { seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, noPresence, heldWaits, activityOf, packLockWaitOf, memberStateOf, owedAtDropOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, progressAtOf, activityShown, activityShownOf, serverUpAt, lostOf, episodeOpenOf, memberView, minutes, statesOf, livenessOf, agesOf };
+  return { seatStateOf, doingStaleOf, compositionOf, seatWho, postComposition, presenceOf, heldWaits, memberStateOf, tokensMovedAtOf, stallWindowOf, owesOf, seatedAtOf, activityShown, memberView, minutes, statesOf, livenessOf, agesOf };
 }
 export type MemberView = ReturnType<typeof makeMemberView>;
