@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { posix } from "node:path";
 import { BRANCH_DAYS, CHURN_DAYS, churnWindowOf, compared, delta, emptyFoldersOf, functionChurnOf, headShaOf, inScope, measuresOf, mermaidOf, netByKind, partsGraphOf, pct, perCommitOf, pickUnit, scopedOf, scopeOf, short, stacksOf, stateAt, unitHealthOf } from "./comparison.mjs";
 import { FIT_VERBS } from "./fit-verbs.mjs";
+import { productMapCheckOf } from "./product-map-check.mjs";
 import { baseOf, branchesOf, commitOf } from "./repo.mjs";
 import { runsOf, stepsOf } from "./trace.mjs";
 
@@ -45,11 +46,13 @@ export const VERBS = {
     },
   },
   check: {
-    help: "check [--since <ref>]   the gate: exit 1 on a structural regression since the base (new cycle, upward import, dead export, outlier file), warnings for hotspots and growth; every scope",
+    help: "check [--since <ref>]   the gate: exit 1 on a structural regression since the base (new cycle, upward import, dead export, outlier file, a new product-map violation from the guide's checker), warnings for hotspots and growth; every scope",
     run(root, _args, flags) {
       const c = compared(root, flags.since, flags.head);
-      const { regressions, warnings } = c.cmp;
-      const lines = [...(c.baseNote ? [`base: ${c.baseNote}`] : []), ...regressions.map((r) => `✗ ${r.text}${r.at ? `  ${r.at}` : ""}${r.since ? `
+      // the checker reads the working tree only, so a --head comparison leaves it out
+      const productMap = flags.head ? { line: "product map: not measured at --head (the checker reads the working tree)", regressions: [] } : productMapCheckOf(root, c.base);
+      const regressions = [...c.cmp.regressions, ...productMap.regressions], { warnings } = c.cmp;
+      const lines = [...(c.baseNote ? [`base: ${c.baseNote}`] : []), ...(productMap.line ? [productMap.line] : []), ...regressions.map((r) => `✗ ${r.text}${r.at ? `  ${r.at}` : ""}${r.since ? `
     since ${r.since}` : ""}`), ...warnings.map((w) => `! ${w.text}`), `fixed: ${c.cmp.cycles.gone.length} cycles, ${c.cmp.upward.gone.length} upward imports, ${c.cmp.dead.gone.length} dead code, ${c.cmp.needless.gone.length} needless exports, ${c.cmp.outliers.gone.length} outlier files`];
       return { title: "check", lines, count: `check since ${c.base}: ${regressions.length ? `✗ ${regressions.length} regressions` : "✓ no regression"}, ${warnings.length} warnings`, data: { base: c.base, head: c.head, pass: regressions.length === 0, regressions, warnings, fixed: { cycles: c.cmp.cycles.gone, upward: c.cmp.upward.gone, dead: c.cmp.dead.gone.length, outliers: c.cmp.outliers.gone } }, exit: regressions.length ? 1 : 0 };
     },
