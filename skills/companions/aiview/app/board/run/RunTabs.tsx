@@ -1,9 +1,8 @@
 // The board's top row (D7, prototype #643): Archive first, opening the closed runs, then one tab per open run, an
 // archived run picked as a tab with ×, and the merge lock at the row's end, always visible.
-import type { BoardSnapshot } from "../../../../swarm-board/src/client/reader.ts";
+import type { ReactNode } from "react";
 import { runHue, seatCount, type RunId } from "../names.ts";
 import { phaseCountText, type RunTab } from "./runs.ts";
-import { MergeLock } from "../code/MergeLock.tsx";
 
 /** A tab's count, as words: a plan's slices merged of its slices, a brainstorm's or a task's seats (rule 12); null for none. */
 export function countText(tab: RunTab): string | null {
@@ -47,23 +46,22 @@ export function RunTabs({
   tabs,
   archived,
   pick,
-  lock,
-  lockHistory,
   menuOpen,
   onMenu,
   onPick,
   closedCount = 0,
+  lockSlot,
 }: {
   tabs: RunTab[];
   archived: RunTab | null;
   pick: RunId | null;
-  lock: BoardSnapshot["lock"];
-  lockHistory: BoardSnapshot["lockHistory"];
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   onPick: (run: RunId | null) => void;
   /** How many closed runs the archive holds, on its pill. */
   closedCount?: number;
+  /** The merge lock, drawn at the row's end (the code feature's, passed in by the board). */
+  lockSlot: ReactNode;
 }) {
   return (
     <nav className="runs" data-component="RunTabs" aria-label="Runs">
@@ -98,7 +96,7 @@ export function RunTabs({
       )}
       </span>
       <span className="lockwrap">
-        <MergeLock lock={lock} history={lockHistory} />
+        {lockSlot}
       </span>
     </nav>
   );

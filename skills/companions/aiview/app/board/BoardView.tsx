@@ -13,6 +13,7 @@ import { ArchivePanel } from "./run/ArchivePanel.tsx";
 import { ClaimsRow } from "./code/ClaimsRow.tsx";
 import { MergedFilesRow } from "./code/MergedFilesRow.tsx";
 import { RunTabs } from "./run/RunTabs.tsx";
+import { MergeLock } from "./code/MergeLock.tsx";
 import { RunViewSwitch } from "./run/RunViewSwitch.tsx";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { TipLayer } from "./Tip.tsx";
@@ -135,12 +136,11 @@ export function BoardView({ repos, run: asked }: { repos: string[]; run: number 
             tabs={tabs}
             archived={archived}
             pick={picked}
-            lock={snapshot.lock}
-            lockHistory={snapshot.lockHistory ?? []}
             menuOpen={menuOpen}
             onMenu={setMenuOpen}
             onPick={pickRun}
             closedCount={closedRuns.length}
+            lockSlot={<MergeLock lock={snapshot.lock} history={snapshot.lockHistory ?? []} />}
           />
           {menuOpen && <ArchivePanel runs={searchArchive} total={closedRuns.length} onPick={pickRun} onClose={closeMenu} />}
           {missingRun !== null && <p className="notice">run {missingRun} is not on this board</p>}
