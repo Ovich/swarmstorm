@@ -14,6 +14,7 @@ import { makePhaseReads } from "./phases/phase-reads.ts";
 import { makeMemberView } from "./members/member-view.ts";
 import { makeDelivery } from "./conversation/delivery.ts";
 import { makeRuns } from "./run/runs.ts";
+import { makePause } from "./run/pause.ts";
 import { makeMembers } from "./members/members.ts";
 import { makeAllDone, makePhases } from "./phases/phases.ts";
 import { makeTalk } from "./conversation/talk.ts";
@@ -47,6 +48,7 @@ export async function openBoard(dbPath: string = SQLITE_PATH): Promise<Board> {
     ...makeRuns(store, rows, messages, packs, view),
     ...makeMembers(store, rows, messages, packs, owing, view, delivery),
     ...makePhases(store, rows, messages, owing, delivery, allDoneOnce),
+    ...makePause(store, rows, messages, delivery),
     ...makeTalk(store, rows, messages, packs),
     ...makeMemberStates(store, rows, messages, packs, owing, view, allDoneOnce),
     ...makeRetention(store, packs, delivery),
