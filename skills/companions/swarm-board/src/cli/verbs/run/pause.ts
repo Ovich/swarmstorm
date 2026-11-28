@@ -1,5 +1,5 @@
 import type { Participant } from "../../../contract/board.ts";
-import { seqLine } from "../conversation/format.ts";
+import { seqLine } from "../../format.ts";
 import { CODE_WORDING, shellWord, WORDING } from "../../answer/index.ts";
 import type { VerbContext } from "../../context.ts";
 import { mergeLocksHeld } from "../../pack-calls.ts";

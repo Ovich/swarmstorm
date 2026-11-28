@@ -1,5 +1,5 @@
 import type { Participant } from "../../../contract/board.ts";
-import { seqLine } from "../conversation/format.ts";
+import { seqLine } from "../../format.ts";
 import { shellWord, WORDING } from "../../answer/index.ts";
 import * as rules from "../../answer/rules.ts";
 import type { VerbContext } from "../../context.ts";
